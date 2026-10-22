@@ -40,7 +40,13 @@ import {
   Save,
   Tag,
   Hash,
-  Send
+  Send,
+  Copy,
+  ExternalLink,
+  MessageSquare,
+  AlertTriangle,
+  ChevronRight,
+  ListFilter
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -177,7 +183,7 @@ export default function WakaKurikulumPanel({
   attendanceLogs = [],
   onRefreshData
 }: WakaKurikulumPanelProps) {
-  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'rapor' | 'rapor_tengah_semester' | 'password'>('monitoring');
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'status_belum_input' | 'rapor' | 'rapor_tengah_semester' | 'password'>('monitoring');
   const [masterMapelSubTab, setMasterMapelSubTab] = useState<'mapel_list' | 'bank_tp'>('mapel_list');
   const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
   const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
@@ -445,6 +451,25 @@ export default function WakaKurikulumPanel({
   // Selected Student for Modal View
   const [selectedStudentDetail, setSelectedStudentDetail] = useState<Student | null>(null);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+
+  // Status Belum Input Nilai States
+  const [unfilledRoleFilter, setUnfilledRoleFilter] = useState<'all' | 'subject_teacher' | 'homeroom'>('all');
+  const [unfilledTeacherFilter, setUnfilledTeacherFilter] = useState<string>('all');
+  const [unfilledClassFilter, setUnfilledClassFilter] = useState<string>('all');
+  const [unfilledSubjectFilter, setUnfilledSubjectFilter] = useState<string>('all');
+  const [unfilledComponentFilter, setUnfilledComponentFilter] = useState<'all' | 'empty' | 'formatif' | 'pts' | 'pas' | 'nilai_akhir' | 'deskripsi' | 'kokurikuler'>('all');
+  const [unfilledSearchQuery, setUnfilledSearchQuery] = useState<string>('');
+  const [unfilledViewMode, setUnfilledViewMode] = useState<'by_teacher' | 'by_class' | 'by_student'>('by_teacher');
+  const [expandedTeacherKey, setExpandedTeacherKey] = useState<string | null>(null);
+  const [expandedClassKey, setExpandedClassKey] = useState<string | null>(null);
+  const [selectedUnfilledStudentModal, setSelectedUnfilledStudentModal] = useState<any | null>(null);
+  const [whatsappReminderModal, setWhatsappReminderModal] = useState<{
+    teacherName: string;
+    subject: string;
+    phone?: string;
+    text: string;
+  } | null>(null);
+  const [copySuccessAlert, setCopySuccessAlert] = useState<string | null>(null);
 
   // Live assessments state for real-time synchronization
   const [liveAssessments, setLiveAssessments] = useState<MerdekaAssessment[]>(merdekaAssessments || []);
@@ -1675,6 +1700,464 @@ export default function WakaKurikulumPanel({
     });
   }, [homerooms, availableClasses, activeStudents, filteredAssessments]);
 
+  // UNFILLED / INCOMPLETE GRADES MONITORING LOGIC
+  const unfilledGradesAnalysis = useMemo(() => {
+    // 1. Process Subject Teachers
+    const teacherSummaries: any[] = [];
+    const allUnfilledStudents: any[] = [];
+    const classSubjectSummaries: any[] = [];
+
+    subjectTeachers.forEach(teacher => {
+      const assignedClasses = getTeacherClasses(teacher.name, teacher.subject, teacher.className);
+      const cleanTarget = cleanTeacherName(teacher.name);
+
+      const classesToProcess = assignedClasses.length > 0 ? assignedClasses : (
+        teacher.className && teacher.className !== 'SEMUA KELAS' ? [teacher.className] : availableClasses
+      );
+
+      let teacherTotalExpected = 0;
+      let teacherTotalFilled = 0;
+      let teacherTotalUnfilled = 0;
+      let teacherTotalPartial = 0;
+      let teacherTotalCompletelyEmpty = 0;
+
+      const teacherMissingComps = {
+        formatif: 0,
+        pts: 0,
+        pas: 0,
+        nilaiAkhir: 0,
+        deskripsi: 0
+      };
+
+      const byClassList: any[] = [];
+
+      classesToProcess.forEach(clsName => {
+        const clsStudents = activeStudents.filter(s => s.class && normClass(s.class) === normClass(clsName));
+        if (clsStudents.length === 0) return;
+
+        let classFilledCount = 0;
+        let classUnfilledCount = 0;
+        let classPartialCount = 0;
+        let classEmptyCount = 0;
+
+        const classMissingComps = {
+          formatif: 0,
+          pts: 0,
+          pas: 0,
+          nilaiAkhir: 0,
+          deskripsi: 0
+        };
+
+        const classUnfilledStudents: any[] = [];
+
+        clsStudents.forEach(s => {
+          teacherTotalExpected++;
+
+          // Find assessment
+          const a = filteredAssessments.find(item => {
+            if (item.studentId !== s.id && item.studentId !== s.nis) return false;
+            if (!isSameSubject(item.subject, teacher.subject)) return false;
+            
+            const cleanA = cleanTeacherName(item.teacherName);
+            const isDirect = (item.teacherName && item.teacherName.toLowerCase().trim() === teacher.name.toLowerCase().trim()) ||
+              (cleanA.length > 0 && cleanTarget.length > 0 && cleanA === cleanTarget) ||
+              (item.teacherId && teacher.username && item.teacherId.toLowerCase() === teacher.username.toLowerCase()) ||
+              (item.teacherId && teacher.id && item.teacherId === teacher.id);
+            const isClassDirect = normClass(item.className) === normClass(clsName);
+            return isDirect || isClassDirect;
+          });
+
+          const hasRec = !!a && hasAssessmentData(a);
+          const hasFormatif = Boolean(a && ((Number(a.nilaiRataTp) > 0) || (Number(a.nilaiFormatif) > 0) || (Number(a.nilaiTp1) > 0) || Boolean(a.tp1Uh || a.tp1Tugas1 || a.tp1Tugas2 || a.tp2Uh || a.tp2Tugas1 || a.tp3Uh || a.tp4Uh)));
+          const hasPts = Boolean(a && a.nilaiPts !== undefined && a.nilaiPts !== null && Number(a.nilaiPts) > 0);
+          const hasPas = Boolean(a && ((a.nilaiPas !== undefined && a.nilaiPas !== null && Number(a.nilaiPas) > 0) || (a.nilaiSAS !== undefined && a.nilaiSAS !== null && Number(a.nilaiSAS) > 0)));
+          const hasNilaiAkhir = Boolean(a && ((a.nilaiAkhirMapel !== undefined && a.nilaiAkhirMapel !== null && Number(a.nilaiAkhirMapel) > 0) || (a.nilaiRapor !== undefined && a.nilaiRapor !== null && Number(a.nilaiRapor) > 0)));
+          const hasDeskripsi = Boolean(a && a.deskripsiCapaian && a.deskripsiCapaian.trim().length > 0);
+
+          const missingComps: string[] = [];
+          if (!hasFormatif) {
+            missingComps.push('Formatif (TP 1-4 / Tugas / UH)');
+            classMissingComps.formatif++;
+            teacherMissingComps.formatif++;
+          }
+          if (!hasPts) {
+            missingComps.push('Sumatif Tengah Semester (STS / PTS)');
+            classMissingComps.pts++;
+            teacherMissingComps.pts++;
+          }
+          if (!hasPas) {
+            missingComps.push('Sumatif Akhir Semester (SAS / PAS)');
+            classMissingComps.pas++;
+            teacherMissingComps.pas++;
+          }
+          if (!hasNilaiAkhir) {
+            missingComps.push('Nilai Akhir Rapor');
+            classMissingComps.nilaiAkhir++;
+            teacherMissingComps.nilaiAkhir++;
+          }
+          if (!hasDeskripsi) {
+            missingComps.push('Deskripsi Capaian');
+            classMissingComps.deskripsi++;
+            teacherMissingComps.deskripsi++;
+          }
+
+          const isFullyComplete = hasRec && missingComps.length === 0;
+
+          if (isFullyComplete) {
+            classFilledCount++;
+            teacherTotalFilled++;
+          } else {
+            classUnfilledCount++;
+            teacherTotalUnfilled++;
+
+            const isCompletelyEmpty = !hasRec || missingComps.length >= 4;
+            if (isCompletelyEmpty) {
+              classEmptyCount++;
+              teacherTotalCompletelyEmpty++;
+            } else {
+              classPartialCount++;
+              teacherTotalPartial++;
+            }
+
+            const studentDetail = {
+              studentId: s.id,
+              studentName: s.name,
+              studentNis: getStudentNis(s.id, s.name),
+              className: clsName,
+              teacherId: teacher.id,
+              teacherName: teacher.name,
+              teacherUsername: teacher.username,
+              subject: teacher.subject,
+              hasRecord: hasRec,
+              status: isCompletelyEmpty ? ('empty' as const) : ('partial' as const),
+              missingComponents: {
+                formatif: !hasFormatif,
+                pts: !hasPts,
+                pas: !hasPas,
+                nilaiAkhir: !hasNilaiAkhir,
+                deskripsi: !hasDeskripsi,
+                kokurikuler: false
+              },
+              missingLabels: missingComps,
+              nilaiRataTp: a?.nilaiRataTp ? Number(a.nilaiRataTp) : (a?.nilaiFormatif ? Number(a.nilaiFormatif) : 0),
+              nilaiPts: a?.nilaiPts ? Number(a.nilaiPts) : 0,
+              nilaiPas: a?.nilaiPas ? Number(a.nilaiPas) : (a?.nilaiSAS ? Number(a.nilaiSAS) : 0),
+              nilaiAkhirMapel: a?.nilaiAkhirMapel ? Number(a.nilaiAkhirMapel) : (a?.nilaiRapor ? Number(a.nilaiRapor) : 0),
+              tp1Uh: a?.tp1Uh,
+              tp1Tugas1: a?.tp1Tugas1,
+              tp2Uh: a?.tp2Uh,
+              tp2Tugas1: a?.tp2Tugas1,
+              rawAssessment: a
+            };
+
+            classUnfilledStudents.push(studentDetail);
+            allUnfilledStudents.push(studentDetail);
+          }
+        });
+
+        const classPercent = clsStudents.length > 0 ? Math.round((classFilledCount / clsStudents.length) * 100) : 0;
+        const classSummary = {
+          key: `${teacher.id}-${clsName}`,
+          className: clsName,
+          subject: teacher.subject,
+          teacherName: teacher.name,
+          teacherId: teacher.id,
+          teacherUsername: teacher.username,
+          totalStudents: clsStudents.length,
+          filledStudentsCount: classFilledCount,
+          unfilledStudentsCount: classUnfilledCount,
+          partiallyFilledCount: classPartialCount,
+          completelyEmptyCount: classEmptyCount,
+          completionPercentage: classPercent,
+          status: classPercent === 100 ? ('selesai' as const) : classPercent > 0 ? ('sebagian' as const) : ('belum_input' as const),
+          missingComponents: classMissingComps,
+          students: classUnfilledStudents
+        };
+
+        byClassList.push(classSummary);
+        classSubjectSummaries.push(classSummary);
+      });
+
+      const teacherPercent = teacherTotalExpected > 0 ? Math.round((teacherTotalFilled / teacherTotalExpected) * 100) : 0;
+      teacherSummaries.push({
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        teacherUsername: teacher.username,
+        subject: teacher.subject,
+        classesTaught: classesToProcess,
+        totalStudents: teacherTotalExpected,
+        filledStudentsCount: teacherTotalFilled,
+        unfilledStudentsCount: teacherTotalUnfilled,
+        partiallyFilledCount: teacherTotalPartial,
+        completelyEmptyCount: teacherTotalCompletelyEmpty,
+        completionPercentage: teacherPercent,
+        status: teacherPercent === 100 ? ('selesai' as const) : teacherPercent > 0 ? ('sebagian' as const) : ('belum_input' as const),
+        missingComponents: teacherMissingComps,
+        byClass: byClassList,
+        students: byClassList.flatMap(c => c.students)
+      });
+    });
+
+    // 2. Process Homeroom Teachers (Kokurikuler P5)
+    const homeroomSummaries: any[] = [];
+    homerooms.forEach(hr => {
+      const clsName = hr.className?.trim().toUpperCase();
+      if (!clsName) return;
+
+      const clsStudents = activeStudents.filter(s => s.class && normClass(s.class) === normClass(clsName));
+      if (clsStudents.length === 0) return;
+
+      let filledKokuCount = 0;
+      const missingKokuStudents: any[] = [];
+
+      clsStudents.forEach(s => {
+        const hasKoku = filteredAssessments.some(a => {
+          if (a.studentId !== s.id && a.studentId !== s.nis) return false;
+          return a.nilaiKokurikuler !== undefined && a.nilaiKokurikuler !== null && Number(a.nilaiKokurikuler) > 0;
+        });
+
+        if (hasKoku) {
+          filledKokuCount++;
+        } else {
+          missingKokuStudents.push({
+            studentId: s.id,
+            studentName: s.name,
+            studentNis: getStudentNis(s.id, s.name),
+            className: clsName,
+            homeroomName: hr.name,
+            homeroomId: hr.id,
+            subject: 'Kokurikuler (P5)',
+            missingLabels: ['Nilai Kokurikuler (P5 Wali Kelas)'],
+            status: 'empty' as const
+          });
+        }
+      });
+
+      const kokuPercent = clsStudents.length > 0 ? Math.round((filledKokuCount / clsStudents.length) * 100) : 0;
+      homeroomSummaries.push({
+        homeroomId: hr.id,
+        homeroomName: hr.name,
+        homeroomUsername: hr.username,
+        className: clsName,
+        totalStudents: clsStudents.length,
+        filledKokurikulerCount: filledKokuCount,
+        missingKokurikulerCount: missingKokuStudents.length,
+        completionPercentage: kokuPercent,
+        status: kokuPercent === 100 ? ('selesai' as const) : kokuPercent > 0 ? ('sebagian' as const) : ('belum_input' as const),
+        missingStudents: missingKokuStudents
+      });
+    });
+
+    // Sort teachers: lowest completion percentage first
+    teacherSummaries.sort((a, b) => a.completionPercentage - b.completionPercentage);
+
+    // Filter incomplete teachers
+    const incompleteTeachers = teacherSummaries.filter(t => t.completionPercentage < 100);
+    const incompleteClasses = classSubjectSummaries.filter(c => c.completionPercentage < 100);
+    const incompleteHomerooms = homeroomSummaries.filter(h => h.completionPercentage < 100);
+
+    return {
+      teacherSummaries,
+      incompleteTeachers,
+      homeroomSummaries,
+      incompleteHomerooms,
+      classSubjectSummaries,
+      incompleteClasses,
+      allUnfilledStudents,
+      totalIncompleteTeachers: incompleteTeachers.length,
+      totalIncompleteHomerooms: incompleteHomerooms.length,
+      totalIncompleteClasses: incompleteClasses.length,
+      totalCompletelyEmptyStudents: allUnfilledStudents.filter(s => s.status === 'empty').length,
+      totalPartialStudents: allUnfilledStudents.filter(s => s.status === 'partial').length
+    };
+  }, [subjectTeachers, homerooms, activeStudents, filteredAssessments, availableClasses, getTeacherClasses, classSchedules, studentNisMap]);
+
+  // Filtered Unfilled Teachers & Students for Display
+  const filteredUnfilledData = useMemo(() => {
+    const q = unfilledSearchQuery.toLowerCase().trim();
+
+    // 1. Filtered Teachers
+    let teachers = unfilledGradesAnalysis.incompleteTeachers;
+    if (unfilledRoleFilter === 'homeroom') {
+      teachers = [];
+    } else if (unfilledTeacherFilter !== 'all') {
+      teachers = teachers.filter(t => t.teacherId === unfilledTeacherFilter || t.teacherUsername === unfilledTeacherFilter);
+    }
+    if (unfilledSubjectFilter !== 'all') {
+      teachers = teachers.filter(t => isSameSubject(t.subject, unfilledSubjectFilter));
+    }
+    if (unfilledClassFilter !== 'all') {
+      teachers = teachers.filter(t => t.classesTaught.some(c => normClass(c) === normClass(unfilledClassFilter)));
+    }
+    if (q) {
+      teachers = teachers.filter(t => 
+        t.teacherName.toLowerCase().includes(q) ||
+        t.subject.toLowerCase().includes(q) ||
+        (t.teacherUsername && t.teacherUsername.toLowerCase().includes(q))
+      );
+    }
+    if (unfilledComponentFilter !== 'all') {
+      teachers = teachers.filter(t => {
+        if (unfilledComponentFilter === 'empty') return t.completelyEmptyCount > 0;
+        if (unfilledComponentFilter === 'formatif') return t.missingComponents.formatif > 0;
+        if (unfilledComponentFilter === 'pts') return t.missingComponents.pts > 0;
+        if (unfilledComponentFilter === 'pas') return t.missingComponents.pas > 0;
+        if (unfilledComponentFilter === 'nilai_akhir') return t.missingComponents.nilaiAkhir > 0;
+        if (unfilledComponentFilter === 'deskripsi') return t.missingComponents.deskripsi > 0;
+        return true;
+      });
+    }
+
+    // 2. Filtered Homerooms
+    let homeroomsList = unfilledGradesAnalysis.incompleteHomerooms;
+    if (unfilledRoleFilter === 'subject_teacher') {
+      homeroomsList = [];
+    } else if (unfilledTeacherFilter !== 'all') {
+      homeroomsList = homeroomsList.filter(h => h.homeroomId === unfilledTeacherFilter || h.homeroomUsername === unfilledTeacherFilter);
+    }
+    if (unfilledClassFilter !== 'all') {
+      homeroomsList = homeroomsList.filter(h => normClass(h.className) === normClass(unfilledClassFilter));
+    }
+    if (q) {
+      homeroomsList = homeroomsList.filter(h => 
+        h.homeroomName.toLowerCase().includes(q) ||
+        h.className.toLowerCase().includes(q)
+      );
+    }
+
+    // 3. Filtered Class Subject Summaries
+    let classSummaries = unfilledGradesAnalysis.incompleteClasses;
+    if (unfilledTeacherFilter !== 'all') {
+      classSummaries = classSummaries.filter(c => c.teacherId === unfilledTeacherFilter || c.teacherUsername === unfilledTeacherFilter);
+    }
+    if (unfilledClassFilter !== 'all') {
+      classSummaries = classSummaries.filter(c => normClass(c.className) === normClass(unfilledClassFilter));
+    }
+    if (unfilledSubjectFilter !== 'all') {
+      classSummaries = classSummaries.filter(c => isSameSubject(c.subject, unfilledSubjectFilter));
+    }
+    if (q) {
+      classSummaries = classSummaries.filter(c => 
+        c.className.toLowerCase().includes(q) ||
+        c.subject.toLowerCase().includes(q) ||
+        c.teacherName.toLowerCase().includes(q)
+      );
+    }
+    if (unfilledComponentFilter !== 'all') {
+      classSummaries = classSummaries.filter(c => {
+        if (unfilledComponentFilter === 'empty') return c.completelyEmptyCount > 0;
+        if (unfilledComponentFilter === 'formatif') return c.missingComponents.formatif > 0;
+        if (unfilledComponentFilter === 'pts') return c.missingComponents.pts > 0;
+        if (unfilledComponentFilter === 'pas') return c.missingComponents.pas > 0;
+        if (unfilledComponentFilter === 'nilai_akhir') return c.missingComponents.nilaiAkhir > 0;
+        if (unfilledComponentFilter === 'deskripsi') return c.missingComponents.deskripsi > 0;
+        return true;
+      });
+    }
+
+    // 4. Filtered Students
+    let students = unfilledGradesAnalysis.allUnfilledStudents;
+    if (unfilledTeacherFilter !== 'all') {
+      students = students.filter(s => s.teacherId === unfilledTeacherFilter || s.teacherUsername === unfilledTeacherFilter);
+    }
+    if (unfilledClassFilter !== 'all') {
+      students = students.filter(s => normClass(s.className) === normClass(unfilledClassFilter));
+    }
+    if (unfilledSubjectFilter !== 'all') {
+      students = students.filter(s => isSameSubject(s.subject, unfilledSubjectFilter));
+    }
+    if (unfilledComponentFilter !== 'all') {
+      students = students.filter(s => {
+        if (unfilledComponentFilter === 'empty') return s.status === 'empty';
+        if (unfilledComponentFilter === 'formatif') return s.missingComponents.formatif;
+        if (unfilledComponentFilter === 'pts') return s.missingComponents.pts;
+        if (unfilledComponentFilter === 'pas') return s.missingComponents.pas;
+        if (unfilledComponentFilter === 'nilai_akhir') return s.missingComponents.nilaiAkhir;
+        if (unfilledComponentFilter === 'deskripsi') return s.missingComponents.deskripsi;
+        return true;
+      });
+    }
+    if (q) {
+      students = students.filter(s => 
+        s.studentName.toLowerCase().includes(q) ||
+        s.studentNis.toLowerCase().includes(q) ||
+        s.className.toLowerCase().includes(q) ||
+        s.subject.toLowerCase().includes(q) ||
+        s.teacherName.toLowerCase().includes(q)
+      );
+    }
+
+    return {
+      teachers,
+      homerooms: homeroomsList,
+      classSummaries,
+      students
+    };
+  }, [unfilledGradesAnalysis, unfilledRoleFilter, unfilledTeacherFilter, unfilledClassFilter, unfilledSubjectFilter, unfilledComponentFilter, unfilledSearchQuery]);
+
+  const handleExportUnfilledGradesExcel = () => {
+    const rows = filteredUnfilledData.students.map((s, idx) => ({
+      'No': idx + 1,
+      'NIS': s.studentNis,
+      'Nama Siswa': s.studentName,
+      'Kelas': s.className,
+      'Mata Pelajaran': s.subject,
+      'Guru Pengampu': s.teacherName,
+      'Status Input': s.status === 'empty' ? 'Belum Ada Nilai (0%)' : 'Belum Lengkap (Sebagian)',
+      'Komponen Nilai Belum Tuntas': s.missingLabels.join('; '),
+      'Nilai TP / Formatif': s.nilaiRataTp > 0 ? s.nilaiRataTp : '-',
+      'Nilai PTS / STS': s.nilaiPts > 0 ? s.nilaiPts : '-',
+      'Nilai PAS / SAS': s.nilaiPas > 0 ? s.nilaiPas : '-',
+      'Nilai Akhir Rapor': s.nilaiAkhirMapel > 0 ? s.nilaiAkhirMapel : '-'
+    }));
+
+    if (rows.length === 0) {
+      alert('Tidak ada data siswa belum input yang sesuai dengan filter saat ini.');
+      return;
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Siswa Belum Input');
+    const safeYear = (selectedAcademicYear || '2026-2027').replace('/', '-');
+    XLSX.writeFile(workbook, `Rekap_Siswa_Belum_Input_Nilai_${selectedSemester}_${safeYear}.xlsx`);
+  };
+
+  const handleOpenWhatsappReminder = (teacher: any) => {
+    const incompleteClasses = (teacher.byClass || [])
+      .filter((c: any) => c.unfilledStudentsCount > 0)
+      .map((c: any) => {
+        const missingCompsList: string[] = [];
+        if (c.missingComponents.formatif > 0) missingCompsList.push(`Formatif: ${c.missingComponents.formatif} siswa`);
+        if (c.missingComponents.pts > 0) missingCompsList.push(`PTS: ${c.missingComponents.pts} siswa`);
+        if (c.missingComponents.pas > 0) missingCompsList.push(`PAS: ${c.missingComponents.pas} siswa`);
+        if (c.missingComponents.nilaiAkhir > 0) missingCompsList.push(`Nilai Akhir: ${c.missingComponents.nilaiAkhir} siswa`);
+        return `• *Kelas ${c.className}*: ${c.unfilledStudentsCount}/${c.totalStudents} siswa belum lengkap (${missingCompsList.join(', ')})`;
+      })
+      .join('\n');
+
+    const msg = (
+      `*PENGINGAT PENGINPUTAN NILAI KURIKULUM MERDEKA*\n` +
+      `*SMP AR-RAHMAH MANDIRI PELITA*\n\n` +
+      `Yth. Bapak/Ibu *${teacher.teacherName}*\n` +
+      `Guru Pengampu: *${teacher.subject}*\n` +
+      `Periode: Semester *${selectedSemester}* TA *${selectedAcademicYear}*\n\n` +
+      `Berdasarkan sistem monitoring Kurikulum, progres penginputan nilai Anda saat ini mencapai *${teacher.completionPercentage}%* dengan *${teacher.unfilledStudentsCount}* siswa belum tuntas diinput.\n\n` +
+      `*Rincian Kelas & Komponen Belum Tuntas:*\n` +
+      `${incompleteClasses || '• Perlu penyelesaian nilai'}\n\n` +
+      `Mohon bantuan untuk segera melengkapi dan menyimpan nilai melalui akun Guru Mapel masing-masing agar penerbitan rapor berjalan tepat waktu.\n\n` +
+      `Terima kasih atas kerja sama dan dedikasi Bapak/Ibu sekalian.\n` +
+      `_Waka Kurikulum SMP Ar-Rahmah Mandiri Pelita_`
+    );
+
+    setWhatsappReminderModal({
+      teacherName: teacher.teacherName,
+      subject: teacher.subject,
+      phone: teacher.phone,
+      text: msg
+    });
+  };
+
   // Handle Parse Excel/CSV Input with dynamic column & template awareness
   const handleParseImport = () => {
     setImportError(null);
@@ -2393,6 +2876,23 @@ export default function WakaKurikulumPanel({
         </button>
 
         <button
+          onClick={() => setActiveTab('status_belum_input')}
+          className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'status_belum_input'
+              ? 'border-rose-600 text-rose-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <AlertCircle size={15} className={activeTab === 'status_belum_input' ? 'text-rose-600' : 'text-rose-500'} />
+          <span>Status Belum Input Nilai</span>
+          {unfilledGradesAnalysis.totalIncompleteTeachers > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full font-black text-[10px] bg-rose-100 text-rose-700 animate-pulse">
+              {unfilledGradesAnalysis.totalIncompleteTeachers} Guru
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => setActiveTab('rapor')}
           className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'rapor' || activeTab === 'rapor_tengah_semester'
@@ -2822,35 +3322,35 @@ export default function WakaKurikulumPanel({
       {activeTab === 'monitoring' && (
         <div className="space-y-6 animate-fade-in">
           {/* Top Quick Overview Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Guru Mapel</p>
                 <h3 className="text-2xl font-black text-slate-900 mt-1">{subjectTeachers.length}</h3>
-                <p className="text-[10px] font-bold text-emerald-600 mt-0.5">Pengampu Mata Pelajaran</p>
+                <p className="text-[10px] font-bold text-emerald-600 mt-0.5">Pengampu Mapel</p>
               </div>
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
                 <Users size={22} />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Wali Kelas</p>
                 <h3 className="text-2xl font-black text-slate-900 mt-1">{homerooms.length}</h3>
-                <p className="text-[10px] font-bold text-violet-600 mt-0.5">Penginput Nilai Kokurikuler</p>
+                <p className="text-[10px] font-bold text-violet-600 mt-0.5">Nilai Kokurikuler</p>
               </div>
               <div className="p-3 bg-violet-50 text-violet-600 rounded-xl">
                 <GraduationCap size={22} />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Data Nilai</p>
                 <h3 className="text-2xl font-black text-slate-900 mt-1">{filteredAssessments.length}</h3>
                 <p className="text-[10px] font-bold text-slate-500 mt-0.5">
-                  {selectedSemester === 'all' ? 'Semua Semester' : `Semester ${selectedSemester}`} ({liveAssessments.length} Total Basis Data)
+                  {selectedSemester === 'all' ? 'Semua Sem' : `Sem ${selectedSemester}`} ({liveAssessments.length} Basis Data)
                 </p>
               </div>
               <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
@@ -2858,7 +3358,7 @@ export default function WakaKurikulumPanel({
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Siswa Aktif</p>
                 <h3 className="text-2xl font-black text-slate-900 mt-1">{activeStudents.length}</h3>
@@ -2868,7 +3368,59 @@ export default function WakaKurikulumPanel({
                 <BookOpen size={22} />
               </div>
             </div>
+
+            {/* Card 5: Belum Tuntas Diinput */}
+            <div 
+              onClick={() => setActiveTab('status_belum_input')}
+              className="bg-white hover:bg-rose-50/50 p-4 sm:p-5 rounded-2xl border border-rose-200 hover:border-rose-300 shadow-sm flex items-center justify-between cursor-pointer transition-all group"
+              title="Klik untuk membuka Detail Status Nilai Yang Belum Diinput"
+            >
+              <div>
+                <p className="text-[10px] font-black text-rose-500 uppercase tracking-wider flex items-center gap-1">
+                  <AlertCircle size={11} /> Belum Tuntas
+                </p>
+                <h3 className="text-2xl font-black text-rose-600 mt-1">
+                  {unfilledGradesAnalysis.totalIncompleteTeachers} <span className="text-xs text-slate-500 font-bold">Guru</span>
+                </h3>
+                <p className="text-[10px] font-bold text-slate-500 mt-0.5">
+                  {unfilledGradesAnalysis.totalIncompleteClasses} Rombel Belum Lengkap
+                </p>
+              </div>
+              <div className="p-3 bg-rose-50 text-rose-600 group-hover:bg-rose-100 rounded-xl transition-colors">
+                <AlertTriangle size={22} />
+              </div>
+            </div>
           </div>
+
+          {/* Quick Action Banner for Unfilled Grades */}
+          {unfilledGradesAnalysis.totalIncompleteTeachers > 0 && (
+            <div className="p-4 bg-gradient-to-r from-rose-50 via-amber-50 to-rose-50 border border-rose-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-rose-900 shadow-xs animate-fade-in">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-300 flex items-center justify-center text-rose-700 shrink-0 shadow-2xs">
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm text-rose-950 flex items-center gap-2">
+                    <span>Perhatian Waka Kurikulum: Terdapat {unfilledGradesAnalysis.totalIncompleteTeachers} Guru & {unfilledGradesAnalysis.totalIncompleteClasses} Rombel Belum Tuntas Input Nilai</span>
+                  </h4>
+                  <p className="text-xs text-rose-800 mt-0.5">
+                    Terdata <strong>{unfilledGradesAnalysis.totalCompletelyEmptyStudents}</strong> siswa belum memiliki nilai sama sekali dan <strong>{unfilledGradesAnalysis.totalPartialStudents}</strong> siswa masih kurang komponen nilai (Formatif/PTS/PAS/Kokurikuler).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('status_belum_input')}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Eye size={13} />
+                  <span>Inspeksi Status Belum Input</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Alert Banner when Current Filter has 0 records but other records exist */}
           {filteredAssessments.length === 0 && liveAssessments.length > 0 && (
@@ -3031,25 +3583,49 @@ export default function WakaKurikulumPanel({
                           )}
                         </td>
                         <td className="py-3 px-4 text-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDetailTeacherFilter(getCanonicalTeacherId(t.id));
-                              setDetailSubjectFilter(normalizeSubject(t.subject));
-                              if (selectedClassFilter !== 'all') {
-                                setDetailClassFilter(selectedClassFilter);
-                              } else {
-                                setDetailClassFilter('all');
-                              }
-                              setDetailRoleFilter('subject_teacher');
-                              setActiveTab('detail_nilai');
-                            }}
-                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1 mx-auto cursor-pointer shadow-3xs"
-                            title={`Buka rincian nilai ${t.subject} - ${t.teacherName}`}
-                          >
-                            <Eye size={12} />
-                            <span>Detail Nilai</span>
-                          </button>
+                          <div className="flex flex-col gap-1 items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDetailTeacherFilter(getCanonicalTeacherId(t.id));
+                                setDetailSubjectFilter(normalizeSubject(t.subject));
+                                if (selectedClassFilter !== 'all') {
+                                  setDetailClassFilter(selectedClassFilter);
+                                } else {
+                                  setDetailClassFilter('all');
+                                }
+                                setDetailRoleFilter('subject_teacher');
+                                setActiveTab('detail_nilai');
+                              }}
+                              className="w-full px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-lg text-[10px] font-extrabold transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
+                              title={`Buka rincian nilai ${t.subject} - ${t.teacherName}`}
+                            >
+                              <Eye size={12} />
+                              <span>Detail Nilai</span>
+                            </button>
+
+                            {t.status !== 'selesai' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setUnfilledRoleFilter('subject_teacher');
+                                  setUnfilledTeacherFilter(t.id);
+                                  setUnfilledSubjectFilter(normalizeSubject(t.subject));
+                                  if (selectedClassFilter !== 'all') {
+                                    setUnfilledClassFilter(selectedClassFilter);
+                                  } else {
+                                    setUnfilledClassFilter('all');
+                                  }
+                                  setActiveTab('status_belum_input');
+                                }}
+                                className="w-full px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/70 rounded-lg text-[10px] font-extrabold transition-all flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
+                                title={`Inspeksi siswa & komponen nilai belum diinput untuk ${t.teacherName}`}
+                              >
+                                <AlertTriangle size={11} className="text-rose-600" />
+                                <span>Belum Input ({t.totalStudents - t.assessedCount})</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -3195,24 +3771,44 @@ export default function WakaKurikulumPanel({
                       </div>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDetailClassFilter(hr.className);
-                        if (hr.hasPrimaryTeacher && hr.id && !hr.id.startsWith('cls-')) {
-                          setDetailTeacherFilter(getCanonicalTeacherId(hr.id));
-                        } else {
-                          setDetailTeacherFilter('all');
-                        }
-                        setDetailSubjectFilter('all');
-                        setDetailRoleFilter('homeroom');
-                        setActiveTab('detail_nilai');
-                      }}
-                      className="w-full mt-2 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200/60 rounded-xl text-[10.5px] font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                    >
-                      <Eye size={13} />
-                      <span>Lihat Detail Nilai Kelas {hr.className}</span>
-                    </button>
+                    <div className="flex flex-col gap-1.5 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailClassFilter(hr.className);
+                          if (hr.hasPrimaryTeacher && hr.id && !hr.id.startsWith('cls-')) {
+                            setDetailTeacherFilter(getCanonicalTeacherId(hr.id));
+                          } else {
+                            setDetailTeacherFilter('all');
+                          }
+                          setDetailSubjectFilter('all');
+                          setDetailRoleFilter('homeroom');
+                          setActiveTab('detail_nilai');
+                        }}
+                        className="w-full py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200/60 rounded-xl text-[10.5px] font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <Eye size={13} />
+                        <span>Lihat Detail Nilai Kelas {hr.className}</span>
+                      </button>
+
+                      {hr.kokuPercentage < 100 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUnfilledRoleFilter('homeroom');
+                            setUnfilledClassFilter(hr.className);
+                            if (hr.hasPrimaryTeacher && hr.id && !hr.id.startsWith('cls-')) {
+                              setUnfilledTeacherFilter(hr.id);
+                            }
+                            setActiveTab('status_belum_input');
+                          }}
+                          className="w-full py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/70 rounded-xl text-[10px] font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                        >
+                          <AlertCircle size={12} className="text-rose-600" />
+                          <span>Belum Input Kokurikuler ({hr.totalStudents - hr.kokuCount} Siswa)</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
             </div>
@@ -4045,6 +4641,1102 @@ export default function WakaKurikulumPanel({
                 <button
                   type="button"
                   onClick={() => setSelectedStudentDetail(null)}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* TOAST NOTIFIKASI SALIN */}
+      {copySuccessAlert && (
+        <div className="fixed top-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-2.5 text-xs font-bold animate-bounce">
+          <Check size={16} className="text-emerald-400" />
+          <span>{copySuccessAlert}</span>
+        </div>
+      )}
+
+      {/* TAB: STATUS BELUM INPUT NILAI (DETAIL GURU, MAPEL, KELAS, KOMPONEN, & SISWA) */}
+      {activeTab === 'status_belum_input' && (
+        <div className="space-y-6 animate-fade-in text-left">
+          {/* Header Action Banner */}
+          <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-indigo-950 rounded-3xl p-6 sm:p-8 text-white border border-rose-800/40 shadow-xl relative overflow-hidden">
+            <div className="absolute -right-8 -bottom-8 w-60 h-60 bg-rose-600/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/20 border border-rose-400/30 text-rose-300 font-extrabold text-[10px] uppercase tracking-wider">
+                  <AlertCircle size={12} className="text-rose-400 animate-pulse" />
+                  MONITORING KELENGKAPAN NILAI KURIKULUM
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
+                  <span>Detail Status Nilai Yang Belum Diinput</span>
+                </h2>
+                <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
+                  Laporan detail identifikasi guru yang belum selesai menginput atau nilai belum berhasil terupload ke pangkalan data, 
+                  rincian komponen nilai yang belum tuntas (Formatif/TP 1-4, Tugas, UH, PTS/STS, PAS/SAS, Nilai Akhir, Deskripsi Capaian, &amp; Kokurikuler P5), 
+                  pemetaan rombel per mata pelajaran, serta daftar lengkap siswa yang bersangkutan.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleExportUnfilledGradesExcel}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md"
+                  title="Unduh seluruh rekap siswa yang belum lengkap nilainya ke format Excel (.xlsx)"
+                >
+                  <FileSpreadsheet size={15} />
+                  <span>Unduh Rekap Excel (.xlsx)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUnfilledRoleFilter('all');
+                    setUnfilledTeacherFilter('all');
+                    setUnfilledClassFilter('all');
+                    setUnfilledSubjectFilter('all');
+                    setUnfilledComponentFilter('all');
+                    setUnfilledSearchQuery('');
+                  }}
+                  className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  title="Kembalikan semua filter ke kondisi awal"
+                >
+                  <RefreshCw size={13} />
+                  <span>Reset Filter</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Context Strip */}
+            <div className="mt-6 pt-4 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+              <div className="flex items-center gap-2 font-semibold">
+                <span className="text-slate-200">Periode Aktif:</span>
+                <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-rose-300 font-bold">
+                  Semester {selectedSemester} - TA {selectedAcademicYear}
+                </span>
+                {selectedClassFilter !== 'all' && (
+                  <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-indigo-300 font-bold">
+                    Filter Utama: Kelas {selectedClassFilter}
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] font-medium text-slate-400">
+                Terakhir disinkronkan: {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB
+              </div>
+            </div>
+          </div>
+
+          {/* Key Metric Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+            <div 
+              onClick={() => { setUnfilledRoleFilter('subject_teacher'); setUnfilledComponentFilter('all'); }}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                unfilledRoleFilter === 'subject_teacher' 
+                  ? 'bg-rose-50/80 border-rose-400 shadow-sm' 
+                  : 'bg-white border-slate-200 hover:border-rose-300'
+              }`}
+            >
+              <div className="flex justify-between items-start">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Guru Mapel Belum Tuntas</p>
+                <span className="p-1.5 rounded-lg bg-rose-100 text-rose-700"><Users size={14} /></span>
+              </div>
+              <h3 className="text-2xl font-black text-rose-600 mt-1.5">
+                {unfilledGradesAnalysis.totalIncompleteTeachers} <span className="text-xs text-slate-400 font-bold">/ {subjectTeachers.length} Guru</span>
+              </h3>
+              <p className="text-[10px] font-bold text-slate-500 mt-1">
+                {subjectTeachers.length > 0 ? Math.round(((subjectTeachers.length - unfilledGradesAnalysis.totalIncompleteTeachers) / subjectTeachers.length) * 100) : 0}% Guru sudah selesai 100%
+              </p>
+            </div>
+
+            <div 
+              onClick={() => { setUnfilledRoleFilter('homeroom'); setUnfilledComponentFilter('all'); }}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                unfilledRoleFilter === 'homeroom' 
+                  ? 'bg-violet-50/80 border-violet-400 shadow-sm' 
+                  : 'bg-white border-slate-200 hover:border-violet-300'
+              }`}
+            >
+              <div className="flex justify-between items-start">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Wali Belum Kokurikuler</p>
+                <span className="p-1.5 rounded-lg bg-violet-100 text-violet-700"><GraduationCap size={14} /></span>
+              </div>
+              <h3 className="text-2xl font-black text-violet-600 mt-1.5">
+                {unfilledGradesAnalysis.totalIncompleteHomerooms} <span className="text-xs text-slate-400 font-bold">/ {homerooms.length} Rombel</span>
+              </h3>
+              <p className="text-[10px] font-bold text-slate-500 mt-1">
+                Projek Penguatan Profil Pelajar (P5)
+              </p>
+            </div>
+
+            <div 
+              onClick={() => { setUnfilledViewMode('by_class'); }}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                unfilledViewMode === 'by_class' 
+                  ? 'bg-amber-50/80 border-amber-400 shadow-sm' 
+                  : 'bg-white border-slate-200 hover:border-amber-300'
+              }`}
+            >
+              <div className="flex justify-between items-start">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Rombel Belum Lengkap</p>
+                <span className="p-1.5 rounded-lg bg-amber-100 text-amber-700"><Layers size={14} /></span>
+              </div>
+              <h3 className="text-2xl font-black text-amber-600 mt-1.5">
+                {unfilledGradesAnalysis.totalIncompleteClasses} <span className="text-xs text-slate-400 font-bold">Rombel</span>
+              </h3>
+              <p className="text-[10px] font-bold text-slate-500 mt-1">
+                Mapel di kelas belum tuntas diinput
+              </p>
+            </div>
+
+            <div 
+              onClick={() => { setUnfilledViewMode('by_student'); setUnfilledComponentFilter('empty'); }}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                unfilledComponentFilter === 'empty' 
+                  ? 'bg-red-50/80 border-red-400 shadow-sm' 
+                  : 'bg-white border-slate-200 hover:border-red-300'
+              }`}
+            >
+              <div className="flex justify-between items-start">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Siswa Tanpa Nilai (0%)</p>
+                <span className="p-1.5 rounded-lg bg-red-100 text-red-700"><AlertTriangle size={14} /></span>
+              </div>
+              <h3 className="text-2xl font-black text-red-600 mt-1.5">
+                {unfilledGradesAnalysis.totalCompletelyEmptyStudents} <span className="text-xs text-slate-400 font-bold">Siswa</span>
+              </h3>
+              <p className="text-[10px] font-bold text-slate-500 mt-1">
+                Belum ada rekam nilai terunggah
+              </p>
+            </div>
+
+            <div 
+              onClick={() => { setUnfilledViewMode('by_student'); setUnfilledComponentFilter('formatif'); }}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                unfilledComponentFilter !== 'all' && unfilledComponentFilter !== 'empty' 
+                  ? 'bg-blue-50/80 border-blue-400 shadow-sm' 
+                  : 'bg-white border-slate-200 hover:border-blue-300'
+              }`}
+            >
+              <div className="flex justify-between items-start">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Nilai Parsial / Kurang</p>
+                <span className="p-1.5 rounded-lg bg-blue-100 text-blue-700"><Clock size={14} /></span>
+              </div>
+              <h3 className="text-2xl font-black text-blue-600 mt-1.5">
+                {unfilledGradesAnalysis.totalPartialStudents} <span className="text-xs text-slate-400 font-bold">Siswa</span>
+              </h3>
+              <p className="text-[10px] font-bold text-slate-500 mt-1">
+                Baru terisi sebagian komponen nilai
+              </p>
+            </div>
+          </div>
+
+          {/* Filter Bar & View Mode Switcher */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-indigo-50 text-indigo-700 rounded-xl">
+                  <Filter size={16} />
+                </span>
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-900">Filter &amp; Penelusuran Detail Belum Input</h4>
+                  <p className="text-[11px] text-slate-500">Saring berdasarkan guru, rombel kelas, mapel, atau jenis komponen yang belum terisi</p>
+                </div>
+              </div>
+
+              {/* View Mode Switcher */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setUnfilledViewMode('by_teacher')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    unfilledViewMode === 'by_teacher'
+                      ? 'bg-white text-indigo-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Users size={14} />
+                  <span>Per Guru &amp; Mapel ({filteredUnfilledData.teachers.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setUnfilledViewMode('by_class')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    unfilledViewMode === 'by_class'
+                      ? 'bg-white text-indigo-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Layers size={14} />
+                  <span>Per Rombel Kelas ({filteredUnfilledData.classSummaries.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setUnfilledViewMode('by_student')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    unfilledViewMode === 'by_student'
+                      ? 'bg-white text-indigo-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <ListFilter size={14} />
+                  <span>Daftar Siswa ({filteredUnfilledData.students.length})</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Inputs Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+              {/* Role Filter */}
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Peran Guru</label>
+                <select
+                  value={unfilledRoleFilter}
+                  onChange={(e) => setUnfilledRoleFilter(e.target.value as any)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">Semua Peran</option>
+                  <option value="subject_teacher">Guru Mapel Saja</option>
+                  <option value="homeroom">Wali Kelas (Kokurikuler P5)</option>
+                </select>
+              </div>
+
+              {/* Teacher Filter */}
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Nama Guru</label>
+                <select
+                  value={unfilledTeacherFilter}
+                  onChange={(e) => setUnfilledTeacherFilter(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">Semua Guru</option>
+                  {allTeacherOptions.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.subject || 'Wali Kelas'})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Class Filter */}
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Kelas / Rombel</label>
+                <select
+                  value={unfilledClassFilter}
+                  onChange={(e) => setUnfilledClassFilter(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">Semua Kelas ({availableClasses.length} Rombel)</option>
+                  {availableClasses.map(cls => (
+                    <option key={cls} value={cls}>Kelas {cls}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Subject Filter */}
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Mata Pelajaran</label>
+                <select
+                  value={unfilledSubjectFilter}
+                  onChange={(e) => setUnfilledSubjectFilter(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">Semua Mata Pelajaran</option>
+                  {availableSubjects.map(sub => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Missing Component Filter */}
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Komponen Yang Kosong</label>
+                <select
+                  value={unfilledComponentFilter}
+                  onChange={(e) => setUnfilledComponentFilter(e.target.value as any)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">Semua Komponen Belum Tuntas</option>
+                  <option value="empty">Belum Ada Nilai Sama Sekali (0%)</option>
+                  <option value="formatif">Formatif (TP 1-4 / Tugas / UH) Kosong</option>
+                  <option value="pts">Sumatif Tengah Semester (STS/PTS) Kosong</option>
+                  <option value="pas">Sumatif Akhir (SAS/PAS) Kosong</option>
+                  <option value="nilai_akhir">Nilai Akhir Rapor Kosong</option>
+                  <option value="deskripsi">Deskripsi Capaian Kosong</option>
+                </select>
+              </div>
+
+              {/* Search Box */}
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Cari Cepat</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Nama siswa, NIS, guru..."
+                    value={unfilledSearchQuery}
+                    onChange={(e) => setUnfilledSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-600"
+                  />
+                  <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* VIEW MODE 1: PER GURU & MATA PELAJARAN */}
+          {unfilledViewMode === 'by_teacher' && (
+            <div className="space-y-4">
+              {filteredUnfilledData.teachers.length === 0 && filteredUnfilledData.homerooms.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-3xl p-12 text-center space-y-3">
+                  <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+                    <CheckCircle2 size={32} />
+                  </div>
+                  <h3 className="font-extrabold text-lg text-slate-800">Luar Biasa! Tidak Ada Data Nilai Belum Input</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Semua guru mapel dan wali kelas telah tuntas menginputkan nilai sesuai dengan kriteria filter yang Anda pilih saat ini.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {filteredUnfilledData.teachers.map((teacher: any) => {
+                    const isExpanded = expandedTeacherKey === teacher.teacherId;
+                    return (
+                      <div key={teacher.teacherId} className="bg-white border border-slate-200 hover:border-slate-300 rounded-3xl p-6 shadow-xs space-y-4 transition-all">
+                        {/* Header Guru */}
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-black">
+                                {teacher.subject}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[11px] font-bold">
+                                Kelas: {teacher.classesTaught.join(', ')}
+                              </span>
+                              {teacher.completionPercentage === 0 ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 text-[10px] font-black">
+                                  <AlertCircle size={11} /> Belum Ada Nilai (0%)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black">
+                                  <Clock size={11} /> Sebagian Terisi ({teacher.completionPercentage}%)
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="text-lg font-black text-slate-900 mt-1 flex items-center gap-2">
+                              <span>{teacher.teacherName}</span>
+                              {teacher.teacherUsername && (
+                                <span className="text-xs text-slate-400 font-bold">(@{teacher.teacherUsername})</span>
+                              )}
+                            </h3>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenWhatsappReminder(teacher)}
+                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                              title="Buat format pengingat WhatsApp resmi dengan rincian kelas dan komponen kosong"
+                            >
+                              <MessageSquare size={14} />
+                              <span>Pengingat WhatsApp</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setExpandedTeacherKey(isExpanded ? null : teacher.teacherId)}
+                              className={`px-3.5 py-2 font-extrabold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                isExpanded
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                              }`}
+                            >
+                              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              <span>{isExpanded ? 'Tutup Rincian' : `Periksa ${teacher.unfilledStudentsCount} Siswa`}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDetailTeacherFilter(getCanonicalTeacherId(teacher.teacherId));
+                                setDetailSubjectFilter(normalizeSubject(teacher.subject));
+                                setDetailRoleFilter('subject_teacher');
+                                setActiveTab('detail_nilai');
+                              }}
+                              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all flex items-center gap-1 cursor-pointer"
+                              title="Buka panel Detail Nilai Guru Mapel"
+                            >
+                              <Eye size={13} />
+                              <span>Buka Nilai</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Progress Bar & Quick Metrics */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50/70 p-4 rounded-2xl border border-slate-150">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Progres Penginputan</span>
+                            <div className="flex items-center gap-2 mt-1">
+                              <div className="flex-1 bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full transition-all duration-500 ${
+                                    teacher.completionPercentage > 50 ? 'bg-amber-500' : 'bg-rose-500'
+                                  }`}
+                                  style={{ width: `${teacher.completionPercentage}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-black text-slate-700">{teacher.completionPercentage}%</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-semibold mt-0.5 block">
+                              {teacher.filledStudentsCount} dari {teacher.totalStudents} siswa lengkap
+                            </span>
+                          </div>
+
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Siswa Belum Selesai</span>
+                            <p className="text-base font-black text-rose-600 mt-1">
+                              {teacher.unfilledStudentsCount} Siswa
+                            </p>
+                            <span className="text-[10px] text-slate-500 font-semibold block">
+                              {teacher.completelyEmptyCount} tanpa nilai (0%) • {teacher.partiallyFilledCount} nilai parsial
+                            </span>
+                          </div>
+
+                          <div className="md:col-span-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                              Komponen Nilai Yang Belum Lengkap:
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {teacher.missingComponents.formatif > 0 && (
+                                <span className="px-2 py-0.5 bg-rose-50 border border-rose-200 rounded-md text-[10.5px] font-bold text-rose-700">
+                                  Formatif (TP 1-4 / Tugas / UH): <strong>{teacher.missingComponents.formatif}</strong> siswa
+                                </span>
+                              )}
+                              {teacher.missingComponents.pts > 0 && (
+                                <span className="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-md text-[10.5px] font-bold text-amber-700">
+                                  STS / PTS: <strong>{teacher.missingComponents.pts}</strong> siswa
+                                </span>
+                              )}
+                              {teacher.missingComponents.pas > 0 && (
+                                <span className="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded-md text-[10.5px] font-bold text-blue-700">
+                                  SAS / PAS: <strong>{teacher.missingComponents.pas}</strong> siswa
+                                </span>
+                              )}
+                              {teacher.missingComponents.nilaiAkhir > 0 && (
+                                <span className="px-2 py-0.5 bg-purple-50 border border-purple-200 rounded-md text-[10.5px] font-bold text-purple-700">
+                                  Nilai Akhir: <strong>{teacher.missingComponents.nilaiAkhir}</strong> siswa
+                                </span>
+                              )}
+                              {teacher.missingComponents.deskripsi > 0 && (
+                                <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-md text-[10.5px] font-bold text-slate-600">
+                                  Deskripsi: <strong>{teacher.missingComponents.deskripsi}</strong> siswa
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Rincian Per Kelas Pill Matrix */}
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Status Keterisian Tiap Rombel Pengampu:</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                            {teacher.byClass.map((cls: any) => (
+                              <div
+                                key={cls.className}
+                                className={`p-2.5 rounded-xl border flex items-center justify-between text-xs ${
+                                  cls.completionPercentage === 100
+                                    ? 'bg-emerald-50/50 border-emerald-200 text-emerald-800'
+                                    : cls.completionPercentage > 0
+                                    ? 'bg-amber-50/50 border-amber-200 text-amber-900'
+                                    : 'bg-rose-50/50 border-rose-200 text-rose-900'
+                                }`}
+                              >
+                                <div>
+                                  <span className="font-extrabold block">Kelas {cls.className}</span>
+                                  <span className="text-[10.5px] font-semibold text-slate-500">
+                                    {cls.filledStudentsCount}/{cls.totalStudents} tuntas ({cls.completionPercentage}%)
+                                  </span>
+                                </div>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                                  cls.completionPercentage === 100
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : cls.completionPercentage > 0
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-rose-100 text-rose-700'
+                                }`}>
+                                  {cls.unfilledStudentsCount} belum
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Expandable Table Siswa Yang Belum Input */}
+                        {isExpanded && (
+                          <div className="mt-4 pt-4 border-t border-slate-200 space-y-3 animate-fade-in">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+                                <Users size={14} className="text-indigo-600" />
+                                <span>Daftar {teacher.students.length} Siswa Belum Selesai ({teacher.subject})</span>
+                              </h4>
+                              <span className="text-[11px] text-slate-500 font-medium">
+                                Klik siswa untuk melihat status detail komponen
+                              </span>
+                            </div>
+
+                            <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-100 text-slate-600 font-black uppercase text-[10px] tracking-wider border-b border-slate-200">
+                                    <th className="py-2.5 px-3">No</th>
+                                    <th className="py-2.5 px-3">NIS</th>
+                                    <th className="py-2.5 px-3">Nama Siswa</th>
+                                    <th className="py-2.5 px-3">Kelas</th>
+                                    <th className="py-2.5 px-3">Status Keterisian</th>
+                                    <th className="py-2.5 px-3">Komponen Nilai Yang Kurang</th>
+                                    <th className="py-2.5 px-3 text-center">Formatif</th>
+                                    <th className="py-2.5 px-3 text-center">PTS</th>
+                                    <th className="py-2.5 px-3 text-center">PAS</th>
+                                    <th className="py-2.5 px-3 text-center">NA</th>
+                                    <th className="py-2.5 px-3 text-center">Aksi</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                                  {teacher.students.map((st: any, idx: number) => (
+                                    <tr key={`${st.studentId}-${idx}`} className="hover:bg-slate-50">
+                                      <td className="py-2.5 px-3 text-slate-400 font-medium">{idx + 1}</td>
+                                      <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{st.studentNis}</td>
+                                      <td className="py-2.5 px-3 font-bold text-slate-900">{st.studentName}</td>
+                                      <td className="py-2.5 px-3 font-bold text-indigo-600">Kelas {st.className}</td>
+                                      <td className="py-2.5 px-3">
+                                        {st.status === 'empty' ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 text-[9.5px] font-black">
+                                            <AlertCircle size={10} /> Kosong (0%)
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[9.5px] font-black">
+                                            <Clock size={10} /> Parsial
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 px-3">
+                                        <div className="flex flex-wrap gap-1">
+                                          {st.missingLabels.map((label: string, lIdx: number) => (
+                                            <span key={lIdx} className="px-1.5 py-0.2 bg-rose-50 text-rose-700 border border-rose-200 text-[9.5px] font-bold rounded">
+                                              {label}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center font-bold text-slate-700">
+                                        {st.nilaiRataTp > 0 ? st.nilaiRataTp : <span className="text-rose-500 font-extrabold">-</span>}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center font-bold text-amber-600">
+                                        {st.nilaiPts > 0 ? st.nilaiPts : <span className="text-rose-500 font-extrabold">-</span>}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center font-bold text-blue-600">
+                                        {st.nilaiPas > 0 ? st.nilaiPas : <span className="text-rose-500 font-extrabold">-</span>}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center font-black text-indigo-800">
+                                        {st.nilaiAkhirMapel > 0 ? st.nilaiAkhirMapel : <span className="text-rose-500 font-extrabold">-</span>}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedUnfilledStudentModal(st)}
+                                          className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                                        >
+                                          Detail
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Section Homeroom Teachers (Wali Kelas) Kokurikuler */}
+                  {unfilledRoleFilter !== 'subject_teacher' && filteredUnfilledData.homerooms.length > 0 && (
+                    <div className="pt-6 space-y-4">
+                      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                        <GraduationCap className="text-violet-600" size={20} />
+                        <div>
+                          <h3 className="font-black text-base text-slate-900">
+                            Wali Kelas Belum Selesai Input Nilai Kokurikuler (P5)
+                          </h3>
+                          <p className="text-xs text-slate-500">
+                            Nilai Kokurikuler merupakan kewenangan dan tanggung jawab Wali Kelas pada Kurikulum Merdeka
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {filteredUnfilledData.homerooms.map((hr: any) => (
+                          <div key={hr.homeroomId} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+                            <div className="flex justify-between items-start gap-2">
+                              <div>
+                                <span className="px-2 py-0.5 bg-violet-100 text-violet-800 rounded-md font-black text-[10px] uppercase">
+                                  Kelas {hr.className}
+                                </span>
+                                <h4 className="font-extrabold text-sm text-slate-900 mt-1">{hr.homeroomName}</h4>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black">
+                                {hr.missingKokurikulerCount} Siswa Kosong
+                              </span>
+                            </div>
+
+                            <div>
+                              <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                                <span>Progres Kokurikuler:</span>
+                                <span className="text-violet-700 font-extrabold">{hr.filledKokurikulerCount}/{hr.totalStudents} Siswa ({hr.completionPercentage}%)</span>
+                              </div>
+                              <div className="bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-violet-600 transition-all duration-500"
+                                  style={{ width: `${hr.completionPercentage}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const msg = (
+                                  `*PENGINGAT PENGINPUTAN NILAI KOKURIKULER (P5)*\n` +
+                                  `*SMP AR-RAHMAH MANDIRI PELITA*\n\n` +
+                                  `Yth. Bapak/Ibu *${hr.homeroomName}*\n` +
+                                  `Wali Kelas: *${hr.className}*\n` +
+                                  `Periode: Semester *${selectedSemester}* TA *${selectedAcademicYear}*\n\n` +
+                                  `Berdasarkan data pangkalan kurikulum, masih terdapat *${hr.missingKokurikulerCount} siswa* di Kelas ${hr.className} yang belum memiliki Nilai Kokurikuler (P5).\n\n` +
+                                  `Mohon kesediaannya untuk melengkapi nilai Kokurikuler melalui akun Wali Kelas masing-masing demi kelancaran penerbitan rapor.\n\n` +
+                                  `Terima kasih atas kerja sama dan dedikasi Bapak/Ibu.\n` +
+                                  `_Waka Kurikulum SMP Ar-Rahmah Mandiri Pelita_`
+                                );
+                                setWhatsappReminderModal({
+                                  teacherName: hr.homeroomName,
+                                  subject: `Wali Kelas ${hr.className} (Kokurikuler P5)`,
+                                  text: msg
+                                });
+                              }}
+                              className="w-full py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200/60 rounded-xl text-[10.5px] font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                            >
+                              <MessageSquare size={13} />
+                              <span>Pengingat WhatsApp Wali Kelas</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* VIEW MODE 2: PER KELAS & ROMBEL */}
+          {unfilledViewMode === 'by_class' && (
+            <div className="space-y-4">
+              {filteredUnfilledData.classSummaries.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-3xl p-12 text-center space-y-3">
+                  <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+                    <CheckCircle2 size={32} />
+                  </div>
+                  <h3 className="font-extrabold text-lg text-slate-800">Semua Rombel Telah Lengkap</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Seluruh mata pelajaran di rombel kelas terpilih telah tuntas diinputkan.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredUnfilledData.classSummaries.map((cSummary: any) => (
+                    <div key={cSummary.key} className="bg-white border border-slate-200 hover:border-slate-300 rounded-2xl p-5 shadow-xs space-y-3 flex flex-col justify-between">
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-800 font-black text-xs">
+                            Kelas {cSummary.className}
+                          </span>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                            cSummary.completionPercentage === 0
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            {cSummary.unfilledStudentsCount} belum tuntas
+                          </span>
+                        </div>
+
+                        <div>
+                          <h4 className="font-extrabold text-sm text-slate-900">{cSummary.subject}</h4>
+                          <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                            Pengampu: <strong>{cSummary.teacherName}</strong>
+                          </p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10.5px] font-bold text-slate-600">
+                            <span>Keterisian Nilai:</span>
+                            <span>{cSummary.filledStudentsCount}/{cSummary.totalStudents} ({cSummary.completionPercentage}%)</span>
+                          </div>
+                          <div className="bg-slate-100 h-2 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${cSummary.completionPercentage > 50 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                              style={{ width: `${cSummary.completionPercentage}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Missing breakdown */}
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {cSummary.missingComponents.formatif > 0 && (
+                            <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded text-[9.5px] font-bold">
+                              Formatif: {cSummary.missingComponents.formatif}
+                            </span>
+                          )}
+                          {cSummary.missingComponents.pts > 0 && (
+                            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[9.5px] font-bold">
+                              PTS: {cSummary.missingComponents.pts}
+                            </span>
+                          )}
+                          {cSummary.missingComponents.pas > 0 && (
+                            <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9.5px] font-bold">
+                              PAS: {cSummary.missingComponents.pas}
+                            </span>
+                          )}
+                          {cSummary.missingComponents.nilaiAkhir > 0 && (
+                            <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded text-[9.5px] font-bold">
+                              NA: {cSummary.missingComponents.nilaiAkhir}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUnfilledTeacherFilter(cSummary.teacherId);
+                            setUnfilledSubjectFilter(normalizeSubject(cSummary.subject));
+                            setUnfilledClassFilter(cSummary.className);
+                            setUnfilledViewMode('by_student');
+                          }}
+                          className="flex-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
+                        >
+                          Lihat Siswa
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const msg = (
+                              `*PENGINGAT PENGINPUTAN NILAI KELAS ${cSummary.className}*\n` +
+                              `*SMP AR-RAHMAH MANDIRI PELITA*\n\n` +
+                              `Yth. Bapak/Ibu *${cSummary.teacherName}*\n` +
+                              `Mata Pelajaran: *${cSummary.subject}*\n` +
+                              `Kelas: *${cSummary.className}*\n` +
+                              `Periode: Semester *${selectedSemester}* TA *${selectedAcademicYear}*\n\n` +
+                              `Mohon kesediaannya untuk menyelesaikan input nilai pada *Kelas ${cSummary.className}* (${cSummary.unfilledStudentsCount}/${cSummary.totalStudents} siswa belum lengkap).\n\n` +
+                              `Terima kasih atas kerja samanya.\n` +
+                              `_Waka Kurikulum SMP Ar-Rahmah Mandiri Pelita_`
+                            );
+                            setWhatsappReminderModal({
+                              teacherName: cSummary.teacherName,
+                              subject: `${cSummary.subject} (Kelas ${cSummary.className})`,
+                              text: msg
+                            });
+                          }}
+                          className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl transition-all cursor-pointer"
+                          title="Kirim pesan WhatsApp ke guru mapel ini"
+                        >
+                          <MessageSquare size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* VIEW MODE 3: DAFTAR LENGKAP SISWA BELUM INPUT */}
+          {unfilledViewMode === 'by_student' && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
+                    <ListFilter size={18} className="text-indigo-600" />
+                    <span>Daftar Siswa Yang Belum Tuntas Input Nilai ({filteredUnfilledData.students.length} Siswa)</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Menampilkan rincian siswa, kelas, mata pelajaran, guru pengampu, status, dan komponen nilai yang belum terisi
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleExportUnfilledGradesExcel}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm self-start sm:self-auto"
+                >
+                  <FileSpreadsheet size={14} />
+                  <span>Export Tabel (.xlsx)</span>
+                </button>
+              </div>
+
+              {filteredUnfilledData.students.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 font-bold">
+                  Tidak ada data siswa yang belum lengkap sesuai filter pencarian.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-black uppercase text-[10px] tracking-wider">
+                        <th className="py-3 px-3">No</th>
+                        <th className="py-3 px-3">NIS</th>
+                        <th className="py-3 px-3">Nama Siswa</th>
+                        <th className="py-3 px-3">Kelas</th>
+                        <th className="py-3 px-3">Mata Pelajaran</th>
+                        <th className="py-3 px-3">Guru Pengampu</th>
+                        <th className="py-3 px-3">Status Input</th>
+                        <th className="py-3 px-3">Komponen Belum Tuntas</th>
+                        <th className="py-3 px-3 text-center">TP / Formatif</th>
+                        <th className="py-3 px-3 text-center">STS / PTS</th>
+                        <th className="py-3 px-3 text-center">SAS / PAS</th>
+                        <th className="py-3 px-3 text-center">Nilai Akhir</th>
+                        <th className="py-3 px-3 text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                      {filteredUnfilledData.students.map((st: any, idx: number) => (
+                        <tr key={`${st.studentId}-${st.subject}-${idx}`} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-3 text-slate-400 font-medium">{idx + 1}</td>
+                          <td className="py-3 px-3 font-mono font-bold text-slate-800">{st.studentNis}</td>
+                          <td className="py-3 px-3 font-bold text-slate-900">{st.studentName}</td>
+                          <td className="py-3 px-3 font-bold text-indigo-600">Kelas {st.className}</td>
+                          <td className="py-3 px-3">
+                            <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-md font-bold text-slate-800 text-[11px]">
+                              {st.subject}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-medium text-slate-800">{st.teacherName}</td>
+                          <td className="py-3 px-3">
+                            {st.status === 'empty' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 text-[10px] font-black">
+                                <AlertCircle size={10} /> Kosong (0%)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black">
+                                <Clock size={10} /> Sebagian
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 max-w-xs">
+                            <div className="flex flex-wrap gap-1">
+                              {st.missingLabels.map((l: string, lIdx: number) => (
+                                <span key={lIdx} className="px-1.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 text-[9.5px] font-bold rounded">
+                                  {l}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-slate-700">
+                            {st.nilaiRataTp > 0 ? st.nilaiRataTp : <span className="text-rose-500 font-extrabold">-</span>}
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-amber-600">
+                            {st.nilaiPts > 0 ? st.nilaiPts : <span className="text-rose-500 font-extrabold">-</span>}
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-blue-600">
+                            {st.nilaiPas > 0 ? st.nilaiPas : <span className="text-rose-500 font-extrabold">-</span>}
+                          </td>
+                          <td className="py-3 px-3 text-center font-black text-indigo-800">
+                            {st.nilaiAkhirMapel > 0 ? st.nilaiAkhirMapel : <span className="text-rose-500 font-extrabold">-</span>}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedUnfilledStudentModal(st)}
+                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                                title="Lihat detail siswa"
+                              >
+                                Detail
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const msg = (
+                                    `*PENGINGAT NILAI SISWA BELUM INPUT*\n` +
+                                    `*SMP AR-RAHMAH MANDIRI PELITA*\n\n` +
+                                    `Yth. Bapak/Ibu *${st.teacherName}*\n` +
+                                    `Guru Pengampu: *${st.subject}*\n\n` +
+                                    `Mohon tindak lanjut penginputan nilai untuk siswa:\n` +
+                                    `• Nama: *${st.studentName}*\n` +
+                                    `• NIS: *${st.studentNis}*\n` +
+                                    `• Kelas: *${st.className}*\n` +
+                                    `• Komponen Belum Tuntas: ${st.missingLabels.join(', ')}\n\n` +
+                                    `Terima kasih atas kerja samanya.\n` +
+                                    `_Waka Kurikulum SMP Ar-Rahmah Mandiri Pelita_`
+                                  );
+                                  setWhatsappReminderModal({
+                                    teacherName: st.teacherName,
+                                    subject: `${st.subject} (${st.studentName} - ${st.className})`,
+                                    text: msg
+                                  });
+                                }}
+                                className="p-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition-all cursor-pointer"
+                                title="Kirim pengingat WhatsApp per siswa"
+                              >
+                                <MessageSquare size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MODAL PENGINGAT WHATSAPP RESMI */}
+      <AnimatePresence>
+        {whatsappReminderModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200 text-left"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                    <MessageSquare size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900">Format Pesan Pengingat WhatsApp</h3>
+                    <p className="text-[11px] text-slate-500">{whatsappReminderModal.teacherName} • {whatsappReminderModal.subject}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWhatsappReminderModal(null)}
+                  className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
+                  Isi Pesan Siap Kirim (Formal &amp; Sopan):
+                </label>
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-800 font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                  {whatsappReminderModal.text}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(whatsappReminderModal.text);
+                    setCopySuccessAlert('Teks pengingat WhatsApp berhasil disalin ke papan klip!');
+                    setTimeout(() => setCopySuccessAlert(null), 3000);
+                  }}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <Copy size={14} />
+                  <span>Salin Teks Pesan</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cleanPhone = (whatsappReminderModal.phone || '').replace(/[^0-9]/g, '');
+                      const waUrl = cleanPhone 
+                        ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappReminderModal.text)}`
+                        : `https://wa.me/?text=${encodeURIComponent(whatsappReminderModal.text)}`;
+                      window.open(waUrl, '_blank');
+                    }}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <Send size={14} />
+                    <span>Buka WhatsApp</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL INSPEKSI DETAIL SISWA BELUM INPUT */}
+      <AnimatePresence>
+        {selectedUnfilledStudentModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200 text-left"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div>
+                  <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Inspeksi Status Siswa</span>
+                  <h3 className="font-extrabold text-base text-slate-900 mt-0.5">{selectedUnfilledStudentModal.studentName}</h3>
+                  <p className="text-xs text-slate-500 font-semibold">NIS: {selectedUnfilledStudentModal.studentNis} • Kelas {selectedUnfilledStudentModal.className}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedUnfilledStudentModal(null)}
+                  className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 text-xs">
+                <div className="flex justify-between py-1 border-b border-slate-200/60 font-semibold">
+                  <span className="text-slate-500">Mata Pelajaran:</span>
+                  <span className="font-bold text-slate-900">{selectedUnfilledStudentModal.subject}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-slate-200/60 font-semibold">
+                  <span className="text-slate-500">Guru Pengampu:</span>
+                  <span className="font-bold text-slate-900">{selectedUnfilledStudentModal.teacherName}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-slate-200/60 font-semibold">
+                  <span className="text-slate-500">Status Keterisian:</span>
+                  <span className="font-black text-rose-600">
+                    {selectedUnfilledStudentModal.status === 'empty' ? 'Belum Ada Nilai Terunggah (0%)' : 'Nilai Parsial'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Daftar Komponen Belum Terisi:</span>
+                <div className="space-y-1.5">
+                  {selectedUnfilledStudentModal.missingLabels.map((item: string, i: number) => (
+                    <div key={i} className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                      <AlertCircle size={14} className="text-rose-600 shrink-0" />
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setSelectedUnfilledStudentModal(null)}
                   className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
                   Tutup
@@ -5170,6 +6862,32 @@ export default function WakaKurikulumPanel({
               </div>
 
               <div className="grid grid-cols-2 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('status_belum_input');
+                    setShowMoreMenu(false);
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeTab === 'status_belum_input'
+                      ? 'border-rose-600 bg-rose-50/50'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="p-2 w-fit bg-rose-50 rounded-xl text-rose-600 text-lg">⚠️</span>
+                    {unfilledGradesAnalysis.totalIncompleteTeachers > 0 && (
+                      <span className="px-2 py-0.5 rounded-full font-black text-[9px] bg-rose-100 text-rose-700 animate-pulse">
+                        {unfilledGradesAnalysis.totalIncompleteTeachers} Guru
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-rose-950">Status Belum Input</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Detail guru &amp; nilai belum tuntas</p>
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {

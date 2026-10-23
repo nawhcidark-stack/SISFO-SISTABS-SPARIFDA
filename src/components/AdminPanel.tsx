@@ -25,6 +25,7 @@ import {
   exportStudentSavingsPassbookToExcel,
   exportMiscRecapToExcel,
   exportFilteredMiscBillsToExcel,
+  exportStudentRecapToExcel,
 } from "../utils/excelExport";
 import { MidtransBulkReportModal } from "./MidtransBulkReportModal";
 import { SingleMidtransReconcileModal } from "./SingleMidtransReconcileModal";
@@ -2420,7 +2421,7 @@ export default function AdminPanel({
     "standard" | "thermal"
   >("standard");
   const [reportToPrint, setReportToPrint] = useState<
-    "harian" | "rekap-spp" | "rekap-tabungan" | "rekap-misc" | null
+    "harian" | "rekap-spp" | "rekap-tabungan" | "rekap-misc" | "rekap-siswa" | null
   >(null);
 
   // Student financial subtabs inside roster
@@ -3030,8 +3031,169 @@ export default function AdminPanel({
 
   // Laporan & Rekap states
   const [activeReportSubTab, setActiveReportSubTab] = useState<
-    "harian" | "rekap-spp" | "rekap-tabungan" | "rekap-absen" | "rekap-misc"
+    "harian" | "rekap-spp" | "rekap-tabungan" | "rekap-absen" | "rekap-misc" | "rekap-siswa"
   >("harian");
+  const [rekapSiswaGradeFilter, setRekapSiswaGradeFilter] = useState<string>("all");
+  const [rekapSiswaClassFilter, setRekapSiswaClassFilter] = useState<string>("all");
+  const [rekapSiswaStatusFilter, setRekapSiswaStatusFilter] = useState<"active" | "all" | "mutation" | "alumni">("active");
+  const [rekapSiswaIncludeList, setRekapSiswaIncludeList] = useState<boolean>(false);
+
+  // Distinct classes available for student recap filter
+  const allAvailableClassNames = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach(s => {
+      if (s.class && !['lulus', 'lulusan', 'mutasi', 'mutasi keluar'].includes(s.class.toLowerCase())) {
+        set.add(s.class.trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [students]);
+
+  // Rekapitulasi Data Siswa Memoized Engine
+  const studentRecapData = useMemo(() => {
+    const activeList = students.filter(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      return !isMut && !isLulus && !!s.class;
+    });
+
+    const mutationList = students.filter(s => {
+      return !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+    });
+
+    const alumniList = students.filter(s => {
+      return s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+    });
+
+    let targetStudents = activeList;
+    if (rekapSiswaStatusFilter === "all") {
+      targetStudents = students;
+    } else if (rekapSiswaStatusFilter === "mutation") {
+      targetStudents = mutationList;
+    } else if (rekapSiswaStatusFilter === "alumni") {
+      targetStudents = alumniList;
+    }
+
+    const filtered = targetStudents.filter(s => {
+      if (!s.class) return false;
+      const matchesGrade = rekapSiswaGradeFilter === "all" || s.class.startsWith(rekapSiswaGradeFilter);
+      const matchesClass = rekapSiswaClassFilter === "all" || s.class === rekapSiswaClassFilter;
+      return matchesGrade && matchesClass;
+    });
+
+    let maleCount = 0;
+    let femaleCount = 0;
+    filtered.forEach(s => {
+      const g = (s.gender || 'Laki-laki').trim().toLowerCase();
+      if (g.startsWith('p') || g === 'perempuan') femaleCount++;
+      else maleCount++;
+    });
+
+    const rawClasses = Array.from(new Set(filtered.map(s => s.class))).filter(Boolean);
+    const sortedClasses = rawClasses.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+    const classRows = sortedClasses.map((cls, idx) => {
+      const inCls = filtered.filter(s => s.class === cls);
+      const m = inCls.filter(s => {
+        const g = (s.gender || 'Laki-laki').trim().toLowerCase();
+        return !g.startsWith('p') && g !== 'perempuan';
+      }).length;
+      const f = inCls.filter(s => {
+        const g = (s.gender || 'Laki-laki').trim().toLowerCase();
+        return g.startsWith('p') || g === 'perempuan';
+      }).length;
+
+      let tingkat = 'Lainnya';
+      const match = cls.match(/^\d+/);
+      if (match) tingkat = `Kelas ${match[0]}`;
+      else {
+        const roman = cls.match(/^(IX|IV|V?I{1,3})/i);
+        if (roman) tingkat = `Kelas ${roman[0].toUpperCase()}`;
+      }
+
+      const hr = homerooms.find(h => h.className && h.className.replace(/[\s-]/g, '').toUpperCase() === cls.replace(/[\s-]/g, '').toUpperCase());
+
+      return {
+        no: idx + 1,
+        className: cls,
+        tingkat,
+        homeroomName: hr?.name || 'Belum Ditentukan',
+        male: m,
+        female: f,
+        total: inCls.length,
+        percentage: filtered.length > 0 ? Math.round((inCls.length / filtered.length) * 100) : 0,
+        students: inCls
+      };
+    });
+
+    const tingkatMap: Record<string, { total: number; male: number; female: number; rombels: Set<string> }> = {};
+    filtered.forEach(s => {
+      const cls = s.class || '';
+      let tk = 'Lainnya';
+      const m = cls.match(/^\d+/);
+      if (m) tk = `Tingkat ${m[0]}`;
+      else {
+        const r = cls.match(/^(IX|IV|V?I{1,3})/i);
+        if (r) tk = `Tingkat ${r[0].toUpperCase()}`;
+      }
+
+      if (!tingkatMap[tk]) {
+        tingkatMap[tk] = { total: 0, male: 0, female: 0, rombels: new Set() };
+      }
+      tingkatMap[tk].total++;
+      tingkatMap[tk].rombels.add(cls);
+      const isF = s.gender && (s.gender.toLowerCase().startsWith('p') || s.gender === 'Perempuan');
+      if (isF) tingkatMap[tk].female++;
+      else tingkatMap[tk].male++;
+    });
+
+    const tingkatRows = Object.keys(tingkatMap)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+      .map(tk => ({
+        tingkat: tk,
+        rombelCount: tingkatMap[tk].rombels.size,
+        male: tingkatMap[tk].male,
+        female: tingkatMap[tk].female,
+        total: tingkatMap[tk].total,
+        percentage: filtered.length > 0 ? Math.round((tingkatMap[tk].total / filtered.length) * 100) : 0
+      }));
+
+    return {
+      activeCount: activeList.length,
+      mutationCount: mutationList.length,
+      alumniCount: alumniList.length,
+      filteredTotal: filtered.length,
+      maleCount,
+      femaleCount,
+      totalClasses: sortedClasses.length,
+      classRows,
+      tingkatRows,
+      filteredStudents: filtered
+    };
+  }, [students, homerooms, rekapSiswaGradeFilter, rekapSiswaClassFilter, rekapSiswaStatusFilter]);
+
+  const handleExportStudentRecapExcel = () => {
+    exportStudentRecapToExcel({
+      schoolName: schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN",
+      academicYear: schoolIdentity?.activeAcademicYear || "2026/2027",
+      activeSemester: schoolIdentity?.activeSemester || "Ganjil",
+      totalActive: studentRecapData.filteredTotal,
+      totalMale: studentRecapData.maleCount,
+      totalFemale: studentRecapData.femaleCount,
+      totalClasses: studentRecapData.totalClasses,
+      tingkatRows: studentRecapData.tingkatRows,
+      classRows: studentRecapData.classRows,
+      studentsList: studentRecapData.filteredStudents.map((s, idx) => ({
+        no: idx + 1,
+        nis: s.nis,
+        name: s.name,
+        className: s.class,
+        gender: s.gender || "Laki-laki",
+        phone: s.phone || "-",
+        status: s.mutationDate ? "Mutasi Keluar" : (s.class && (s.class.toLowerCase().includes('lulus')) ? "Alumni" : "Aktif")
+      }))
+    });
+  };
   const [infractionList, setInfractionList] = useState<StudentInfractionLog[]>(
     [],
   );
@@ -12190,6 +12352,12 @@ export default function AdminPanel({
               onImportStudents={onImportStudents}
               onUndoLastImport={onUndoLastImport}
               onRefresh={onRefresh}
+              onPrintStudentRecap={() => {
+                setReportToPrint("rekap-siswa");
+                setPrintId("print-report-section");
+              }}
+              schoolIdentity={schoolIdentity}
+              homerooms={homerooms}
             />
           </motion.div>
         )}
@@ -15323,7 +15491,42 @@ export default function AdminPanel({
                     <ClipboardCheck size={12} /> Rekap Absensi 📊
                   </span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveReportSubTab("rekap-siswa")}
+                  className={`flex-1 sm:flex-initial px-4 py-2 text-center font-bold text-[11px] uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                    activeReportSubTab === "rekap-siswa"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 justify-center">
+                    <GraduationCap size={12} /> Rekap Siswa 👨‍🎓
+                  </span>
+                </button>
               </div>
+
+              {activeReportSubTab === "rekap-siswa" && (
+                <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReportToPrint("rekap-siswa");
+                      setPrintId("print-report-section");
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                  >
+                    <Printer size={12} /> Cetak PDF Rekap 🖨️
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportStudentRecapExcel}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                  >
+                    <Download size={12} /> Ekspor Excel 📊
+                  </button>
+                </div>
+              )}
 
               {activeReportSubTab === "harian" && (
                 <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
@@ -18128,6 +18331,393 @@ export default function AdminPanel({
                   </div>
                 );
               })()}
+
+            {/* ======================= REPORT SUBTAB 6: REKAPITULASI SISWA ======================= */}
+            {activeReportSubTab === "rekap-siswa" &&
+              (() => {
+                const totalFiltered = studentRecapData.filteredTotal;
+                const malePct = totalFiltered > 0 ? Math.round((studentRecapData.maleCount / totalFiltered) * 100) : 0;
+                const femalePct = totalFiltered > 0 ? Math.round((studentRecapData.femaleCount / totalFiltered) * 100) : 0;
+                const avgPerClass = studentRecapData.totalClasses > 0 ? (totalFiltered / studentRecapData.totalClasses).toFixed(1) : "0";
+
+                return (
+                  <div className="flex flex-col gap-6">
+                    {/* Filter and Action Bar */}
+                    <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-xs flex flex-col gap-4">
+                      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 pb-3 border-b border-slate-100">
+                        <div>
+                          <h4 className="font-extrabold text-slate-800 text-xs sm:text-sm uppercase tracking-wider flex items-center gap-2">
+                            <GraduationCap className="text-indigo-600" size={18} />
+                            Rekapitulasi Jumlah Siswa &amp; Distribusi Rombel
+                          </h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Data agregasi statistik jumlah siswa aktif, laki-laki, perempuan, rasio gender, dan persebaran rombongan belajar (rombel) berdasarkan tingkat dan kelas.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReportToPrint("rekap-siswa");
+                              setPrintId("print-report-section");
+                            }}
+                            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider shadow-sm"
+                          >
+                            <Printer size={14} /> Cetak PDF Rekap Siswa 🖨️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleExportStudentRecapExcel}
+                            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider shadow-sm"
+                          >
+                            <Download size={14} /> Ekspor Excel Rapi (.xlsx) 📊
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Filters row */}
+                      <div className="flex flex-wrap items-center gap-4 text-xs">
+                        {/* Tingkat filter */}
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-600 uppercase tracking-wide text-[10px]">
+                            Tingkat:
+                          </span>
+                          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-0.5 rounded-lg">
+                            {["all", "7", "8", "9"].map((lvl) => (
+                              <button
+                                key={lvl}
+                                type="button"
+                                onClick={() => {
+                                  setRekapSiswaGradeFilter(lvl);
+                                  if (lvl !== "all" && rekapSiswaClassFilter !== "all" && !rekapSiswaClassFilter.startsWith(lvl)) {
+                                    setRekapSiswaClassFilter("all");
+                                  }
+                                }}
+                                className={`px-2.5 py-1 rounded font-bold text-[10px] tracking-wide cursor-pointer transition-all ${
+                                  rekapSiswaGradeFilter === lvl
+                                    ? "bg-slate-900 text-white"
+                                    : "text-slate-600 hover:bg-slate-200/60"
+                                }`}
+                              >
+                                {lvl === "all" ? "SEMUA TINGKAT" : `KELAS ${lvl}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Kelas filter */}
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-600 uppercase tracking-wide text-[10px]">
+                            Rombel / Kelas:
+                          </span>
+                          <select
+                            value={rekapSiswaClassFilter}
+                            onChange={(e) => setRekapSiswaClassFilter(e.target.value)}
+                            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-slate-800 transition-all cursor-pointer shadow-2xs font-mono"
+                          >
+                            <option value="all">SEMUA ROMBEL</option>
+                            {allAvailableClassNames
+                              .filter(
+                                (cls) =>
+                                  rekapSiswaGradeFilter === "all" ||
+                                  cls.startsWith(rekapSiswaGradeFilter)
+                              )
+                              .map((cls) => (
+                                <option key={cls} value={cls}>
+                                  KELAS {cls}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+
+                        {/* Status filter */}
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-600 uppercase tracking-wide text-[10px]">
+                            Status:
+                          </span>
+                          <select
+                            value={rekapSiswaStatusFilter}
+                            onChange={(e) => setRekapSiswaStatusFilter(e.target.value as any)}
+                            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-slate-800 transition-all cursor-pointer shadow-2xs"
+                          >
+                            <option value="active">Siswa Aktif Sah (Baku)</option>
+                            <option value="all">Semua Data Siswa</option>
+                            <option value="mutation">Siswa Mutasi Keluar</option>
+                            <option value="alumni">Alumni / Lulusan</option>
+                          </select>
+                        </div>
+
+                        {/* Include list toggle */}
+                        <label className="flex items-center gap-2 font-bold text-[11px] text-slate-700 cursor-pointer select-none ml-auto">
+                          <input
+                            type="checkbox"
+                            checked={rekapSiswaIncludeList}
+                            onChange={(e) => setRekapSiswaIncludeList(e.target.checked)}
+                            className="rounded text-indigo-600 focus:ring-0 cursor-pointer"
+                          />
+                          <span>Sertakan Lampiran Daftar Nama Siswa pada PDF</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Executive Metric KPI Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          Total Siswa
+                        </span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-xl font-black text-slate-900 font-mono">
+                            {studentRecapData.filteredTotal}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-500">Jiwa</span>
+                        </div>
+                        <span className="text-[9px] text-slate-400">
+                          {rekapSiswaStatusFilter === "active" ? "Aktif terdaftar" : rekapSiswaStatusFilter.toUpperCase()}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-xs flex flex-col gap-1 border-t-2 border-t-blue-500">
+                        <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
+                          Laki-laki (L)
+                        </span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-xl font-black text-blue-700 font-mono">
+                            {studentRecapData.maleCount}
+                          </span>
+                          <span className="text-[10px] font-bold text-blue-500">
+                            ({malePct}%)
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-slate-400">Siswa Laki-laki</span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl border border-rose-100 shadow-xs flex flex-col gap-1 border-t-2 border-t-rose-500">
+                        <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider">
+                          Perempuan (P)
+                        </span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-xl font-black text-rose-700 font-mono">
+                            {studentRecapData.femaleCount}
+                          </span>
+                          <span className="text-[10px] font-bold text-rose-500">
+                            ({femalePct}%)
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-slate-400">Siswi Perempuan</span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl border border-purple-100 shadow-xs flex flex-col gap-1 border-t-2 border-t-purple-500">
+                        <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider">
+                          Rasio Gender
+                        </span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-base font-black text-purple-800 font-mono">
+                            {studentRecapData.maleCount} : {studentRecapData.femaleCount}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-slate-400">Proporsi L vs P</span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-xs flex flex-col gap-1 border-t-2 border-t-emerald-500">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
+                          Jumlah Rombel
+                        </span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-xl font-black text-emerald-700 font-mono">
+                            {studentRecapData.totalClasses}
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-600">Kelas</span>
+                        </div>
+                        <span className="text-[9px] text-slate-400">Rombongan Belajar</span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl border border-amber-100 shadow-xs flex flex-col gap-1 border-t-2 border-t-amber-500">
+                        <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">
+                          Rata-rata / Rombel
+                        </span>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-xl font-black text-amber-800 font-mono">
+                            {avgPerClass}
+                          </span>
+                          <span className="text-[10px] font-bold text-amber-600">Siswa</span>
+                        </div>
+                        <span className="text-[9px] text-slate-400">Kepadatan Rombel</span>
+                      </div>
+                    </div>
+
+                    {/* Table 1: Rekapitulasi per Tingkat */}
+                    <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-xs flex flex-col gap-3">
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
+                          I. Rekapitulasi Jumlah Siswa Per Jenjang / Tingkat
+                        </h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          Ringkasan total siswa dan persentase kontribusi per tingkat jenjang kelas
+                        </p>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100 border border-slate-200 rounded-lg">
+                          <thead className="bg-slate-50">
+                            <tr className="text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                              <th className="py-2.5 px-3">Tingkat</th>
+                              <th className="py-2.5 px-3 text-center">Jumlah Rombel</th>
+                              <th className="py-2.5 px-3 text-center text-blue-700">Laki-laki (L)</th>
+                              <th className="py-2.5 px-3 text-center text-rose-700">Perempuan (P)</th>
+                              <th className="py-2.5 px-3 text-center font-black">Total Siswa</th>
+                              <th className="py-2.5 px-3 text-center">Persentase</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-mono">
+                            {studentRecapData.tingkatRows.map((t, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50/50">
+                                <td className="py-2 px-3 font-sans font-bold text-slate-800">{t.tingkat}</td>
+                                <td className="py-2 px-3 text-center text-slate-600">{t.rombelCount} Kelas</td>
+                                <td className="py-2 px-3 text-center text-blue-600 font-bold">{t.male}</td>
+                                <td className="py-2 px-3 text-center text-rose-600 font-bold">{t.female}</td>
+                                <td className="py-2 px-3 text-center font-black text-slate-900">{t.total}</td>
+                                <td className="py-2 px-3 text-center font-bold text-indigo-700">{t.percentage}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-slate-100 font-mono font-bold text-slate-900 border-t-2 border-slate-300">
+                            <tr>
+                              <td className="py-2.5 px-3 font-sans font-black uppercase text-[10px]">TOTAL SEMUA TINGKAT</td>
+                              <td className="py-2.5 px-3 text-center">{studentRecapData.totalClasses} Kelas</td>
+                              <td className="py-2.5 px-3 text-center text-blue-700">{studentRecapData.maleCount}</td>
+                              <td className="py-2.5 px-3 text-center text-rose-700">{studentRecapData.femaleCount}</td>
+                              <td className="py-2.5 px-3 text-center font-black text-slate-950 text-xs">{studentRecapData.filteredTotal}</td>
+                              <td className="py-2.5 px-3 text-center text-indigo-900">100%</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Table 2: Rekapitulasi Detail per Rombel (Kelas) */}
+                    <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-xs flex flex-col gap-3">
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
+                          II. Rekapitulasi Detail Jumlah Siswa Per Rombongan Belajar (Kelas)
+                        </h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          Perincian siswa per rombel lengkap dengan nama wali kelas serta proporsi Laki-laki dan Perempuan
+                        </p>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100 border border-slate-200 rounded-lg">
+                          <thead className="bg-slate-50">
+                            <tr className="text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                              <th className="py-2.5 px-3 text-center w-10">No</th>
+                              <th className="py-2.5 px-3">Rombel / Kelas</th>
+                              <th className="py-2.5 px-3">Jenjang</th>
+                              <th className="py-2.5 px-3">Wali Kelas</th>
+                              <th className="py-2.5 px-3 text-center text-blue-700">Laki-laki (L)</th>
+                              <th className="py-2.5 px-3 text-center text-rose-700">Perempuan (P)</th>
+                              <th className="py-2.5 px-3 text-center font-black">Total Siswa</th>
+                              <th className="py-2.5 px-3 text-center">Rasio L/P</th>
+                              <th className="py-2.5 px-3 text-center">Persentase</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {studentRecapData.classRows.length === 0 ? (
+                              <tr>
+                                <td colSpan={9} className="py-8 text-center text-slate-400 italic">
+                                  Tidak ada rombel yang sesuai dengan kriteria filter
+                                </td>
+                              </tr>
+                            ) : (
+                              studentRecapData.classRows.map((row) => (
+                                <tr key={row.no} className="hover:bg-slate-50/50">
+                                  <td className="py-2 px-3 text-center text-slate-400 font-mono text-[10px]">{row.no}</td>
+                                  <td className="py-2 px-3 font-mono font-bold text-slate-800">Kelas {row.className}</td>
+                                  <td className="py-2 px-3 text-slate-500 text-[10px]">{row.tingkat}</td>
+                                  <td className="py-2 px-3 font-medium text-slate-700">{row.homeroomName}</td>
+                                  <td className="py-2 px-3 text-center font-mono font-bold text-blue-600">{row.male}</td>
+                                  <td className="py-2 px-3 text-center font-mono font-bold text-rose-600">{row.female}</td>
+                                  <td className="py-2 px-3 text-center font-mono font-black text-slate-900">{row.total}</td>
+                                  <td className="py-2 px-3 text-center font-mono text-[10px] text-purple-700">{row.male}:{row.female}</td>
+                                  <td className="py-2 px-3 text-center font-mono font-bold text-indigo-700">{row.percentage}%</td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                          <tfoot className="bg-slate-100 font-mono font-bold text-slate-900 border-t-2 border-slate-300">
+                            <tr>
+                              <td colSpan={4} className="py-2.5 px-3 font-sans font-black uppercase text-[10px]">TOTAL KESELURUHAN</td>
+                              <td className="py-2.5 px-3 text-center text-blue-700">{studentRecapData.maleCount}</td>
+                              <td className="py-2.5 px-3 text-center text-rose-700">{studentRecapData.femaleCount}</td>
+                              <td className="py-2.5 px-3 text-center font-black text-slate-950 text-xs">{studentRecapData.filteredTotal}</td>
+                              <td className="py-2.5 px-3 text-center text-purple-900">{studentRecapData.maleCount}:{studentRecapData.femaleCount}</td>
+                              <td className="py-2.5 px-3 text-center text-indigo-900">100%</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Table 3: Lampiran Siswa (terfilter) */}
+                    {rekapSiswaIncludeList && (
+                      <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-xs flex flex-col gap-3">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
+                              III. Lampiran Daftar Nama Siswa ({studentRecapData.filteredStudents.length} Siswa)
+                            </h4>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              Daftar siswa yang akan disertakan dalam dokumen PDF cetakan resmi
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                          <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100 border border-slate-200 rounded-lg">
+                            <thead className="bg-slate-50 sticky top-0">
+                              <tr className="text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                                <th className="py-2 px-3 text-center w-10">No</th>
+                                <th className="py-2 px-3">NIS</th>
+                                <th className="py-2 px-3">Nama Lengkap</th>
+                                <th className="py-2 px-3 text-center">Kelas</th>
+                                <th className="py-2 px-3 text-center">L/P</th>
+                                <th className="py-2 px-3">No. HP</th>
+                                <th className="py-2 px-3 text-center">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {studentRecapData.filteredStudents.map((s, idx) => {
+                                const isF = (s.gender || 'Laki-laki').trim().toLowerCase().startsWith('p');
+                                return (
+                                  <tr key={s.id || idx} className="hover:bg-slate-50/50">
+                                    <td className="py-1.5 px-3 text-center text-slate-400 font-mono text-[10px]">{idx + 1}</td>
+                                    <td className="py-1.5 px-3 font-mono font-bold text-slate-600">{s.nis}</td>
+                                    <td className="py-1.5 px-3 font-bold text-slate-800">{s.name}</td>
+                                    <td className="py-1.5 px-3 text-center font-mono font-bold text-slate-700">Kelas {s.class}</td>
+                                    <td className="py-1.5 px-3 text-center font-bold">
+                                      {isF ? (
+                                        <span className="text-rose-600">P</span>
+                                      ) : (
+                                        <span className="text-blue-600">L</span>
+                                      )}
+                                    </td>
+                                    <td className="py-1.5 px-3 text-slate-500 font-mono text-[10px]">{s.phone || "-"}</td>
+                                    <td className="py-1.5 px-3 text-center">
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        {s.mutationDate ? "Mutasi Keluar" : s.class && s.class.toLowerCase().includes('lulus') ? "Alumni" : "Aktif"}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
           </motion.div>
         )}
       </div>
@@ -18857,6 +19447,19 @@ export default function AdminPanel({
                     </button>
                   </div>
                 )}
+                {reportToPrint === "rekap-siswa" && (
+                  <div className="flex items-center gap-2 bg-slate-100 p-1 px-2.5 rounded-lg border border-slate-200">
+                    <label className="flex items-center gap-1.5 text-[10.5px] font-bold text-slate-700 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={rekapSiswaIncludeList}
+                        onChange={(e) => setRekapSiswaIncludeList(e.target.checked)}
+                        className="rounded text-indigo-600 focus:ring-0 cursor-pointer"
+                      />
+                      <span>Sertakan Lampiran Daftar Siswa</span>
+                    </label>
+                  </div>
+                )}
               </div>
               <div className="flex gap-2 self-end sm:self-auto">
                 <button
@@ -18971,6 +19574,8 @@ export default function AdminPanel({
                       `Laporan Peringkat & Rekap Buku Tabungan`}
                     {reportToPrint === "rekap-misc" &&
                       `Laporan Rekapitulasi Pembayaran Lain-lain`}
+                    {reportToPrint === "rekap-siswa" &&
+                      `Laporan Rekapitulasi Jumlah Siswa & Distribusi Rombel`}
                   </h2>
                   <p className="text-[9px] text-slate-500 font-mono mt-1 font-semibold">
                     {reportToPrint === "harian" &&
@@ -18981,6 +19586,8 @@ export default function AdminPanel({
                       `Jenjang Filter Tingkat: ${rekapTabunganGradeFilter === "all" ? "SEMUA TINGKAT KELAS 7, 8, & 9" : `KELAS TINGKAT ${rekapTabunganGradeFilter}`} | Filter Kelas: ${rekapTabunganClassFilter === "all" ? "SEMUA KELAS" : `KELAS ${rekapTabunganClassFilter}`}`}
                     {reportToPrint === "rekap-misc" &&
                       `Jenjang Filter Tingkat: ${rekapMiscGradeFilter === "all" ? "SEMUA TINGKAT KELAS 7, 8, & 9" : `KELAS TINGKAT ${rekapMiscGradeFilter}`} | Filter Kelas: ${rekapMiscClassFilter === "all" ? "SEMUA KELAS" : `KELAS ${rekapMiscClassFilter}`}`}
+                    {reportToPrint === "rekap-siswa" &&
+                      `Tingkat: ${rekapSiswaGradeFilter === "all" ? "SEMUA TINGKAT (7, 8, 9)" : `TINGKAT ${rekapSiswaGradeFilter}`} | Kelas: ${rekapSiswaClassFilter === "all" ? "SEMUA ROMBEL" : `KELAS ${rekapSiswaClassFilter}`} | Status: ${rekapSiswaStatusFilter === "active" ? "SISWA AKTIF" : rekapSiswaStatusFilter === "mutation" ? "MUTASI KELUAR" : rekapSiswaStatusFilter === "alumni" ? "ALUMNI" : "SEMUA DATA SISWA"} | TA: ${schoolIdentity?.activeAcademicYear || "2026/2027"} - Semester ${schoolIdentity?.activeSemester || "Ganjil"}`}
                   </p>
                 </div>
 
@@ -19895,6 +20502,167 @@ export default function AdminPanel({
                     );
                   })()}
 
+                {/* ======================= REKAP SISWA PRINT CANVAS ======================= */}
+                {reportToPrint === "rekap-siswa" &&
+                  (() => {
+                    const totalFiltered = studentRecapData.filteredTotal;
+                    const malePct = totalFiltered > 0 ? Math.round((studentRecapData.maleCount / totalFiltered) * 100) : 0;
+                    const femalePct = totalFiltered > 0 ? Math.round((studentRecapData.femaleCount / totalFiltered) * 100) : 0;
+                    const avgPerClass = studentRecapData.totalClasses > 0 ? (totalFiltered / studentRecapData.totalClasses).toFixed(1) : "0";
+
+                    return (
+                      <div className="flex flex-col gap-4 text-slate-900">
+                        {/* Executive Summary Mini Box for Print */}
+                        <div className="grid grid-cols-4 gap-2 border border-slate-800 p-2.5 rounded text-[10px] bg-slate-50">
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-bold text-slate-500 uppercase">Total Siswa:</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-950">{totalFiltered} Siswa</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-bold text-slate-500 uppercase">Komposisi Gender:</span>
+                            <span className="font-bold font-mono text-slate-900">L: {studentRecapData.maleCount} ({malePct}%) | P: {studentRecapData.femaleCount} ({femalePct}%)</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-bold text-slate-500 uppercase">Total Rombel:</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-950">{studentRecapData.totalClasses} Rombel</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-bold text-slate-500 uppercase">Rata-rata per Rombel:</span>
+                            <span className="font-extrabold text-sm font-mono text-slate-950">{avgPerClass} Siswa/Kelas</span>
+                          </div>
+                        </div>
+
+                        {/* Table 1: Tingkat */}
+                        <div className="flex flex-col gap-1 mt-1">
+                          <div className="font-bold text-[10px] uppercase tracking-wider text-slate-800">
+                            I. Rekapitulasi Jumlah Siswa Berdasarkan Tingkat
+                          </div>
+                          <table className="w-full text-left text-[9.5px] border-collapse border border-slate-400">
+                            <thead>
+                              <tr className="bg-slate-100 font-bold uppercase text-[8.5px] text-slate-700">
+                                <th className="p-1 px-2 border border-slate-300 text-center w-8">No</th>
+                                <th className="p-1 px-2 border border-slate-300">Tingkat Jenjang</th>
+                                <th className="p-1 px-2 border border-slate-300 text-center">Jumlah Rombel</th>
+                                <th className="p-1 px-2 border border-slate-300 text-center">Laki-laki (L)</th>
+                                <th className="p-1 px-2 border border-slate-300 text-center">Perempuan (P)</th>
+                                <th className="p-1 px-2 border border-slate-300 text-center font-black">Total Siswa</th>
+                                <th className="p-1 px-2 border border-slate-300 text-center">Persentase</th>
+                              </tr>
+                            </thead>
+                            <tbody className="font-mono">
+                              {studentRecapData.tingkatRows.map((t, idx) => (
+                                <tr key={idx}>
+                                  <td className="p-1 px-2 border border-slate-300 text-center text-slate-500">{idx + 1}</td>
+                                  <td className="p-1 px-2 border border-slate-300 font-sans font-bold">{t.tingkat}</td>
+                                  <td className="p-1 px-2 border border-slate-300 text-center">{t.rombelCount} Kelas</td>
+                                  <td className="p-1 px-2 border border-slate-300 text-center">{t.male}</td>
+                                  <td className="p-1 px-2 border border-slate-300 text-center">{t.female}</td>
+                                  <td className="p-1 px-2 border border-slate-300 text-center font-black">{t.total}</td>
+                                  <td className="p-1 px-2 border border-slate-300 text-center">{t.percentage}%</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot className="bg-slate-100 font-mono font-bold border-t-2 border-slate-800">
+                              <tr>
+                                <td colSpan={2} className="p-1 px-2 border border-slate-400 font-sans font-bold uppercase text-center">TOTAL TINGKAT</td>
+                                <td className="p-1 px-2 border border-slate-400 text-center">{studentRecapData.totalClasses} Kelas</td>
+                                <td className="p-1 px-2 border border-slate-400 text-center">{studentRecapData.maleCount}</td>
+                                <td className="p-1 px-2 border border-slate-400 text-center">{studentRecapData.femaleCount}</td>
+                                <td className="p-1 px-2 border border-slate-400 text-center font-black">{studentRecapData.filteredTotal}</td>
+                                <td className="p-1 px-2 border border-slate-400 text-center">100%</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+
+                        {/* Table 2: Rombel */}
+                        <div className="flex flex-col gap-1 mt-2">
+                          <div className="font-bold text-[10px] uppercase tracking-wider text-slate-800">
+                            II. Rekapitulasi Rombongan Belajar (Rombel) &amp; Wali Kelas
+                          </div>
+                          <table className="w-full text-left text-[9.5px] border-collapse border border-slate-400">
+                            <thead>
+                              <tr className="bg-slate-100 font-bold uppercase text-[8.5px] text-slate-700">
+                                <th className="p-1 px-2 border border-slate-300 text-center w-7">No</th>
+                                <th className="p-1 px-2 border border-slate-300">Kelas / Rombel</th>
+                                <th className="p-1 px-2 border border-slate-300">Tingkat</th>
+                                <th className="p-1 px-2 border border-slate-300">Wali Kelas</th>
+                                <th className="p-1 px-2 border border-slate-300 text-center">L (Laki)</th>
+                                <th className="p-1 px-2 border border-slate-300 text-center">P (Perempuan)</th>
+                                <th className="p-1 px-2 border border-slate-300 text-center font-black">Total Siswa</th>
+                                <th className="p-1 px-2 border border-slate-300 text-center">Rasio (L:P)</th>
+                                <th className="p-1 px-2 border border-slate-300 text-center">Proporsi</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {studentRecapData.classRows.map((row) => (
+                                <tr key={row.no}>
+                                  <td className="p-1 px-2 border border-slate-300 text-center font-mono text-slate-500">{row.no}</td>
+                                  <td className="p-1 px-2 border border-slate-300 font-mono font-bold">Kelas {row.className}</td>
+                                  <td className="p-1 px-2 border border-slate-300">{row.tingkat}</td>
+                                  <td className="p-1 px-2 border border-slate-300">{row.homeroomName}</td>
+                                  <td className="p-1 px-2 border border-slate-300 text-center font-mono">{row.male}</td>
+                                  <td className="p-1 px-2 border border-slate-300 text-center font-mono">{row.female}</td>
+                                  <td className="p-1 px-2 border border-slate-300 text-center font-mono font-black">{row.total}</td>
+                                  <td className="p-1 px-2 border border-slate-300 text-center font-mono text-[8.5px]">{row.male}:{row.female}</td>
+                                  <td className="p-1 px-2 border border-slate-300 text-center font-mono">{row.percentage}%</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot className="bg-slate-100 font-mono font-bold border-t-2 border-slate-800">
+                              <tr>
+                                <td colSpan={4} className="p-1 px-2 border border-slate-400 font-sans font-bold uppercase text-center">TOTAL KESELURUHAN</td>
+                                <td className="p-1 px-2 border border-slate-400 text-center">{studentRecapData.maleCount}</td>
+                                <td className="p-1 px-2 border border-slate-400 text-center">{studentRecapData.femaleCount}</td>
+                                <td className="p-1 px-2 border border-slate-400 text-center font-black">{studentRecapData.filteredTotal}</td>
+                                <td className="p-1 px-2 border border-slate-400 text-center">{studentRecapData.maleCount}:{studentRecapData.femaleCount}</td>
+                                <td className="p-1 px-2 border border-slate-400 text-center">100%</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+
+                        {/* Optional Lampiran Siswa for Print */}
+                        {rekapSiswaIncludeList && (
+                          <div className="flex flex-col gap-1 mt-3 page-break-before">
+                            <div className="font-bold text-[10px] uppercase tracking-wider text-slate-800">
+                              III. Lampiran Daftar Nama Siswa Terdaftar
+                            </div>
+                            <table className="w-full text-left text-[8.5px] border-collapse border border-slate-400">
+                              <thead>
+                                <tr className="bg-slate-100 font-bold uppercase text-[8px] text-slate-700">
+                                  <th className="p-0.5 px-1 border border-slate-300 text-center w-6">No</th>
+                                  <th className="p-0.5 px-1 border border-slate-300 w-16">NIS</th>
+                                  <th className="p-0.5 px-1 border border-slate-300">Nama Lengkap Siswa</th>
+                                  <th className="p-0.5 px-1 border border-slate-300 text-center w-14">Kelas</th>
+                                  <th className="p-0.5 px-1 border border-slate-300 text-center w-8">L/P</th>
+                                  <th className="p-0.5 px-1 border border-slate-300 text-center w-20">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {studentRecapData.filteredStudents.map((s, idx) => {
+                                  const isF = (s.gender || 'Laki-laki').trim().toLowerCase().startsWith('p');
+                                  return (
+                                    <tr key={s.id || idx}>
+                                      <td className="p-0.5 px-1 border border-slate-300 text-center font-mono text-slate-500">{idx + 1}</td>
+                                      <td className="p-0.5 px-1 border border-slate-300 font-mono">{s.nis}</td>
+                                      <td className="p-0.5 px-1 border border-slate-300 font-bold">{s.name}</td>
+                                      <td className="p-0.5 px-1 border border-slate-300 text-center font-mono">Kelas {s.class}</td>
+                                      <td className="p-0.5 px-1 border border-slate-300 text-center font-bold">{isF ? "P" : "L"}</td>
+                                      <td className="p-0.5 px-1 border border-slate-300 text-center text-[7.5px]">
+                                        {s.mutationDate ? "Mutasi Keluar" : s.class && s.class.toLowerCase().includes('lulus') ? "Alumni" : "Aktif"}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                 {/* Sub signatures sign-off blocks */}
                 <div className="grid grid-cols-2 mt-8 pt-4 border-t border-slate-900 text-[10px] leading-relaxed text-slate-900">
                   <div className="flex flex-col justify-between h-[85px]">
@@ -19910,10 +20678,16 @@ export default function AdminPanel({
                   </div>
                   <div className="flex flex-col justify-between items-end h-[85px] text-right">
                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">
-                      Diverifikasi & Pertanggungjawaban
+                      {reportToPrint === "rekap-siswa"
+                        ? "Diverifikasi & Dibuat Oleh"
+                        : "Diverifikasi & Pertanggungjawaban"}
                     </span>
                     <span className="font-bold text-slate-800 font-sans border-t-2 border-slate-900 w-44 pt-1 text-center">
-                      ({schoolIdentity?.treasurer || "Bendahara Sekolah"})
+                      (
+                      {reportToPrint === "rekap-siswa"
+                        ? "Bagian Kesiswaan & Tata Usaha"
+                        : schoolIdentity?.treasurer || "Bendahara Sekolah"}
+                      )
                     </span>
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle, Users, Layers, Hash, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle, Users, Layers, Hash, RotateCcw, CheckCircle2, Printer } from 'lucide-react';
 import { Pagination } from './Pagination';
 import BulkNisEditorModal from './BulkNisEditorModal';
 
@@ -24,6 +24,9 @@ interface StudentManagementProps {
   ) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
   onUndoLastImport?: () => Promise<{ success: boolean; message: string }>;
   onRefresh: () => void;
+  onPrintStudentRecap?: () => void;
+  schoolIdentity?: any;
+  homerooms?: any[];
 }
 
 export default function StudentManagement({
@@ -33,7 +36,10 @@ export default function StudentManagement({
   onDeleteStudent,
   onImportStudents,
   onUndoLastImport,
-  onRefresh
+  onRefresh,
+  onPrintStudentRecap,
+  schoolIdentity,
+  homerooms
 }: StudentManagementProps) {
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -649,6 +655,18 @@ export default function StudentManagement({
             <span>Ekspor Excel</span>
           </button>
 
+          {onPrintStudentRecap && (
+            <button
+              type="button"
+              onClick={onPrintStudentRecap}
+              className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Cetak PDF Laporan Rekapitulasi Jumlah Siswa"
+            >
+              <Printer size={14} className="text-emerald-400" />
+              <span>Cetak PDF Rekap Siswa</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {
@@ -742,7 +760,20 @@ export default function StudentManagement({
             <Layers className="text-indigo-650" size={16} />
             <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Statistik Jumlah Siswa Per Tingkat</h4>
           </div>
-          <span className="text-[9px] bg-slate-100 text-slate-500 px-2.5 py-1 rounded font-black tracking-wider uppercase">Grafik & Gender</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] bg-slate-100 text-slate-500 px-2.5 py-1 rounded font-black tracking-wider uppercase">Grafik & Gender</span>
+            {onPrintStudentRecap && (
+              <button
+                type="button"
+                onClick={onPrintStudentRecap}
+                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-850 border border-emerald-200 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all shadow-3xs"
+                title="Cetak PDF Laporan Rekapitulasi Siswa Per Tingkat"
+              >
+                <Printer size={11} className="text-emerald-700" />
+                <span>Cetak PDF</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -806,7 +837,20 @@ export default function StudentManagement({
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-bold text-slate-805 uppercase tracking-wider">Distribusi Jumlah Siswa per-Kelas</h4>
-          <span className="text-[9px] bg-slate-100 text-slate-550 px-2 py-0.5 rounded font-extrabold tracking-wider uppercase">Tahun Ajaran Aktif</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] bg-slate-100 text-slate-550 px-2 py-0.5 rounded font-extrabold tracking-wider uppercase">Tahun Ajaran Aktif</span>
+            {onPrintStudentRecap && (
+              <button
+                type="button"
+                onClick={onPrintStudentRecap}
+                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-850 border border-emerald-200 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all shadow-3xs"
+                title="Cetak PDF Laporan Rekapitulasi Siswa Per Kelas"
+              >
+                <Printer size={11} className="text-emerald-700" />
+                <span>Cetak PDF</span>
+              </button>
+            )}
+          </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-2">
           {classes.map((cls) => {

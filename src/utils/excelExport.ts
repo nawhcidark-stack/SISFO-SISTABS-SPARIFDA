@@ -1116,3 +1116,153 @@ export function exportFilteredMiscBillsToExcel(params: {
   XLSX.writeFile(wb, fileName);
 }
 
+// 8. Export Student Count Recapitulation (Laporan Rekapitulasi Jumlah Siswa) to Excel
+export function exportStudentRecapToExcel(params: {
+  schoolName?: string;
+  academicYear?: string;
+  activeSemester?: string;
+  totalActive: number;
+  totalMale: number;
+  totalFemale: number;
+  totalClasses: number;
+  tingkatRows: Array<{
+    tingkat: string;
+    rombelCount: number;
+    male: number;
+    female: number;
+    total: number;
+    percentage: number;
+  }>;
+  classRows: Array<{
+    no: number;
+    className: string;
+    tingkat: string;
+    homeroomName: string;
+    male: number;
+    female: number;
+    total: number;
+    percentage: number;
+  }>;
+  studentsList?: Array<{
+    no: number;
+    nis: string;
+    name: string;
+    className: string;
+    gender: string;
+    phone: string;
+    status: string;
+  }>;
+}) {
+  const {
+    schoolName = "SMP MA'ARIF NU PANDAAN",
+    academicYear = "2026/2027",
+    activeSemester = "Ganjil",
+    totalActive,
+    totalMale,
+    totalFemale,
+    totalClasses,
+    tingkatRows,
+    classRows,
+    studentsList = []
+  } = params;
+
+  const wb = XLSX.utils.book_new();
+
+  // SHEET 1: REKAPITULASI JUMLAH SISWA
+  const recapData: any[][] = [
+    ["LEMBAGA PENDIDIKAN MA'ARIF NU"],
+    [schoolName.toUpperCase()],
+    ["LAPORAN REKAPITULASI JUMLAH SISWA DAN DISTRIBUSI ROMBONGAN BELAJAR"],
+    [`Tahun Ajaran: ${academicYear} | Semester: ${activeSemester} | Dicetak: ${new Date().toLocaleDateString("id-ID")}`],
+    [],
+    ["A. RINGKASAN EKSEKUTIF JUMLAH SISWA"],
+    ["Total Siswa Aktif", totalActive, "Siswa"],
+    ["Siswa Laki-laki (L)", totalMale, `(${totalActive > 0 ? Math.round((totalMale / totalActive) * 100) : 0}%)`],
+    ["Siswa Perempuan (P)", totalFemale, `(${totalActive > 0 ? Math.round((totalFemale / totalActive) * 100) : 0}%)`],
+    ["Jumlah Rombongan Belajar", totalClasses, "Rombel"],
+    ["Rata-rata per Rombel", totalClasses > 0 ? (totalActive / totalClasses).toFixed(1) : 0, "Siswa / Kelas"],
+    [],
+    ["B. REKAPITULASI JUMLAH SISWA PER TINGKAT / JENJANG KELAS"],
+    ["No", "Tingkat Kelas", "Jumlah Rombel", "Laki-laki (L)", "Perempuan (P)", "Total Siswa", "Persentase (%)"],
+    ...tingkatRows.map((t, idx) => [
+      idx + 1,
+      t.tingkat,
+      t.rombelCount,
+      t.male,
+      t.female,
+      t.total,
+      `${t.percentage}%`
+    ]),
+    ["", "TOTAL KESELURUHAN", totalClasses, totalMale, totalFemale, totalActive, "100%"],
+    [],
+    ["C. REKAPITULASI DETAIL JUMLAH SISWA PER ROMBONGAN BELAJAR (KELAS)"],
+    ["No", "Kelas / Rombel", "Tingkat", "Wali Kelas", "Laki-laki (L)", "Perempuan (P)", "Total Siswa", "Persentase (%)"],
+    ...classRows.map(c => [
+      c.no,
+      `Kelas ${c.className}`,
+      c.tingkat,
+      c.homeroomName || "Belum Ditentukan",
+      c.male,
+      c.female,
+      c.total,
+      `${c.percentage}%`
+    ]),
+    ["", "TOTAL SELURUH KELAS", "", "-", totalMale, totalFemale, totalActive, "100%"],
+    [],
+    [],
+    ["Mengetahui,", "", "", "", "", `Pandaan, ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`],
+    ["Kepala Sekolah", "", "", "", "", "Petugas Administrasi / Tata Usaha"],
+    [],
+    [],
+    ["( ........................................ )", "", "", "", "", "( ........................................ )"]
+  ];
+
+  const wsRecap = XLSX.utils.aoa_to_sheet(recapData);
+  wsRecap["!cols"] = [
+    { wch: 6 },
+    { wch: 22 },
+    { wch: 16 },
+    { wch: 28 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 16 }
+  ];
+  XLSX.utils.book_append_sheet(wb, wsRecap, "Rekap Jumlah Siswa");
+
+  // SHEET 2: DAFTAR DETAIL SISWA (Jika ada)
+  if (studentsList.length > 0) {
+    const studentData: any[][] = [
+      [schoolName.toUpperCase()],
+      ["DAFTAR LENGKAP SISWA AKTIF"],
+      [`Tahun Ajaran: ${academicYear} | Total: ${studentsList.length} Siswa`],
+      [],
+      ["No", "NIS", "Nama Lengkap Siswa", "Kelas", "Jenis Kelamin", "No. Telepon / HP", "Status"],
+      ...studentsList.map(s => [
+        s.no,
+        s.nis,
+        s.name,
+        s.className,
+        s.gender,
+        s.phone || "-",
+        s.status
+      ])
+    ];
+    const wsStudents = XLSX.utils.aoa_to_sheet(studentData);
+    wsStudents["!cols"] = [
+      { wch: 6 },
+      { wch: 15 },
+      { wch: 32 },
+      { wch: 12 },
+      { wch: 15 },
+      { wch: 18 },
+      { wch: 14 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsStudents, "Daftar Siswa Per Rombel");
+  }
+
+  const safeYear = academicYear.replace("/", "-");
+  XLSX.writeFile(wb, `Laporan_Rekapitulasi_Jumlah_Siswa_${safeYear}_${new Date().toISOString().split("T")[0]}.xlsx`);
+}
+
+

@@ -897,7 +897,8 @@ export default function WakaKurikulumPanel({
       const studentScores = getStudentAssessmentsForRapor(st);
       const homeroomTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(st.class));
       const homeroomTeacherName = homeroomTeacher?.name || 'Wali Kelas';
-      const defaultNote = "Ananda menunjukkan kesungguhan dan ketertiban yang sangat baik selama pembelajaran tengah semester. Pertahankan fokus belajar, kedisiplinan beribadah, dan tingkatkan pemahaman materi untuk persiapan akhir semester.";
+      // Catatan wali kelas dikosongkan pada cetak Rapor Tengah Semester
+      const defaultNote = "";
       const noteText = raporNotes[st.id] || defaultNote;
 
       let totalScore = 0;
@@ -1030,7 +1031,7 @@ export default function WakaKurikulumPanel({
             <div>
               <div style="font-weight: 700; font-size: 8.5pt; text-transform: uppercase; margin-bottom: 2px;">C. CATATAN WALI KELAS</div>
               <div style="border: 1px solid #000; padding: 5px 8px; font-size: 7.8pt; line-height: 1.35; font-style: italic; min-height: 48px; box-sizing: border-box; background-color: #fff;">
-                "${noteText}"
+                ${noteText ? `"${noteText}"` : ''}
               </div>
             </div>
           </div>
@@ -6012,7 +6013,8 @@ export default function WakaKurikulumPanel({
                 const scores = getStudentAssessmentsForRapor(selectedRaporStudent);
                 const homeroomTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporStudent.class));
                 const homeroomTeacherName = homeroomTeacher?.name || 'Wali Kelas';
-                const defaultNote = "Ananda menunjukkan kesungguhan dan ketertiban yang sangat baik selama pembelajaran tengah semester. Pertahankan fokus belajar, kedisiplinan beribadah, dan tingkatkan pemahaman materi untuk persiapan akhir semester.";
+                // Catatan wali kelas dikosongkan pada Rapor Tengah Semester sesuai ketentuan
+                const defaultNote = "";
                 const studentNote = raporNotes[selectedRaporStudent.id] || defaultNote;
 
                 let totalScore = 0;
@@ -6278,7 +6280,11 @@ export default function WakaKurikulumPanel({
                             </div>
                           ) : (
                             <div className="border border-black p-3 text-xs leading-relaxed italic bg-white flex-1 min-h-[70px]">
-                              "{studentNote}"
+                              {studentNote ? (
+                                `"${studentNote}"`
+                              ) : (
+                                <span className="text-slate-400 not-italic">(Catatan dikosongkan)</span>
+                              )}
                             </div>
                           )}
                         </div>

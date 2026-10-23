@@ -4420,9 +4420,7 @@ export default function StudentPanel({
 
                               <div className="border border-black p-2.5 rounded-lg">
                                 <div className="font-bold border-b border-black pb-1 mb-1.5">Catatan Wali Kelas</div>
-                                <p className="italic text-slate-700 leading-relaxed">
-                                  Ananda menunjukkan kesungguhan dan ketertiban yang sangat baik selama pembelajaran tengah semester. Pertahankan fokus belajar, kedisiplinan beribadah, dan tingkatkan pemahaman materi untuk persiapan akhir semester.
-                                </p>
+                                <div className="italic text-slate-700 leading-relaxed min-h-[44px]" />
                               </div>
                             </div>
 

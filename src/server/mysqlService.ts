@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import mysql from 'mysql2/promise';
 import { MysqlDatabaseConfig, MysqlTestResult, MysqlSyncResult, CurriculumSubject, CurriculumTpDescription } from '../types';
+import { toProperCase, toUpperCase, toSentenceCase } from '../utils/textFormatters';
 
 const CONFIG_FILE = path.join(process.cwd(), 'mysql_config.json');
 
@@ -4548,18 +4549,18 @@ export async function saveGuestBookToMysql(entry: any): Promise<{ success: boole
     const category = entry.category === 'pembinaan' ? 'pembinaan' : 'umum';
     const date = entry.date || new Date().toISOString().split('T')[0];
     const time = entry.time || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
-    const name = String(entry.name).trim();
-    const position = entry.position ? String(entry.position).trim() : '';
-    const institution = String(entry.institution).trim();
-    const purpose = String(entry.purpose).trim();
+    const name = toProperCase(String(entry.name).trim());
+    const position = entry.position ? toProperCase(String(entry.position).trim()) : '';
+    const institution = toUpperCase(String(entry.institution).trim());
+    const purpose = toSentenceCase(String(entry.purpose).trim());
     const phone = entry.phone ? String(entry.phone).trim() : '';
-    const notes = entry.notes ? String(entry.notes).trim() : '';
+    const notes = entry.notes ? toSentenceCase(String(entry.notes).trim()) : '';
     const supervisorNip = entry.supervisorNip ? String(entry.supervisorNip).trim() : '';
-    const coachingSubject = entry.coachingSubject ? String(entry.coachingSubject).trim() : '';
-    const findings = entry.findings ? String(entry.findings).trim() : '';
-    const recommendations = entry.recommendations ? String(entry.recommendations).trim() : '';
+    const coachingSubject = entry.coachingSubject ? toSentenceCase(String(entry.coachingSubject).trim()) : '';
+    const findings = entry.findings ? toSentenceCase(String(entry.findings).trim()) : '';
+    const recommendations = entry.recommendations ? toSentenceCase(String(entry.recommendations).trim()) : '';
     const followUpStatus = entry.followUpStatus ? String(entry.followUpStatus).trim() : 'Belum';
-    const followUpNotes = entry.followUpNotes ? String(entry.followUpNotes).trim() : '';
+    const followUpNotes = entry.followUpNotes ? toSentenceCase(String(entry.followUpNotes).trim()) : '';
     const signature = entry.signature ? String(entry.signature) : null;
     const status = entry.status ? String(entry.status).trim() : 'Selesai';
 

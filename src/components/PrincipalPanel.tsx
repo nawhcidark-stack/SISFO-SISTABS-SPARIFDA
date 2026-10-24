@@ -20,6 +20,7 @@ import {
 import QRCode from 'qrcode';
 import ScheduleView from './ScheduleView';
 import { DigitalSignaturePad } from './DigitalSignaturePad';
+import { toProperCase, formatProperWhileTyping, toUpperCase, toSentenceCase } from '../utils/textFormatters';
 import { 
   BarChart, 
   Bar, 
@@ -256,18 +257,18 @@ export default function PrincipalPanel({
         category: guestBookFormCategory,
         date: guestBookFormDate,
         time: guestBookFormTime,
-        name: guestBookFormName.trim(),
-        position: guestBookFormPosition.trim(),
-        institution: guestBookFormInstitution.trim(),
-        purpose: guestBookFormCategory === 'pembinaan' ? (guestBookFormPurpose.trim() || guestBookFormCoachingSubject.trim()) : guestBookFormPurpose.trim(),
+        name: toProperCase(guestBookFormName.trim()),
+        position: toProperCase(guestBookFormPosition.trim()),
+        institution: toUpperCase(guestBookFormInstitution.trim()),
+        purpose: toSentenceCase(guestBookFormCategory === 'pembinaan' ? (guestBookFormPurpose.trim() || guestBookFormCoachingSubject.trim()) : guestBookFormPurpose.trim()),
         phone: guestBookFormPhone.trim(),
-        notes: guestBookFormNotes.trim(),
+        notes: toSentenceCase(guestBookFormNotes.trim()),
         supervisorNip: guestBookFormSupervisorNip.trim(),
-        coachingSubject: guestBookFormCoachingSubject.trim(),
-        findings: guestBookFormFindings.trim(),
-        recommendations: guestBookFormRecommendations.trim(),
+        coachingSubject: toSentenceCase(guestBookFormCoachingSubject.trim()),
+        findings: toSentenceCase(guestBookFormFindings.trim()),
+        recommendations: toSentenceCase(guestBookFormRecommendations.trim()),
         followUpStatus: guestBookFormFollowUpStatus,
-        followUpNotes: guestBookFormFollowUpNotes.trim(),
+        followUpNotes: toSentenceCase(guestBookFormFollowUpNotes.trim()),
         signature: guestBookFormSignature || undefined,
         status: guestBookFormStatus
       };
@@ -6294,7 +6295,8 @@ export default function PrincipalPanel({
                     <input
                       type="text"
                       value={guestBookFormName}
-                      onChange={(e) => setGuestBookFormName(e.target.value)}
+                      onChange={(e) => setGuestBookFormName(formatProperWhileTyping(e.target.value))}
+                      onBlur={() => setGuestBookFormName(toProperCase(guestBookFormName))}
                       placeholder={guestBookFormCategory === 'pembinaan' ? 'Contoh: Drs. H. Bambang Sutrisno, M.Pd' : 'Contoh: Drs. H. Ahmad Fauzi'}
                       required
                       className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
@@ -6326,7 +6328,8 @@ export default function PrincipalPanel({
                     <input
                       type="text"
                       value={guestBookFormPosition}
-                      onChange={(e) => setGuestBookFormPosition(e.target.value)}
+                      onChange={(e) => setGuestBookFormPosition(formatProperWhileTyping(e.target.value))}
+                      onBlur={() => setGuestBookFormPosition(toProperCase(guestBookFormPosition))}
                       placeholder={guestBookFormCategory === 'pembinaan' ? 'Pengawas Pembina' : 'Wali Murid / Mitra'}
                       className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
                     />
@@ -6339,10 +6342,11 @@ export default function PrincipalPanel({
                     <input
                       type="text"
                       value={guestBookFormInstitution}
-                      onChange={(e) => setGuestBookFormInstitution(e.target.value)}
+                      onChange={(e) => setGuestBookFormInstitution(toUpperCase(e.target.value))}
+                      onBlur={() => setGuestBookFormInstitution(toUpperCase(guestBookFormInstitution))}
                       placeholder={guestBookFormCategory === 'pembinaan' ? 'Dinas Pendidikan Kab. Pasuruan' : 'Umum / Perusahaan'}
                       required
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none uppercase"
                     />
                   </div>
                 </div>
@@ -6371,7 +6375,8 @@ export default function PrincipalPanel({
                       <input
                         type="text"
                         value={guestBookFormCoachingSubject}
-                        onChange={(e) => setGuestBookFormCoachingSubject(e.target.value)}
+                        onChange={(e) => setGuestBookFormCoachingSubject(toSentenceCase(e.target.value))}
+                        onBlur={() => setGuestBookFormCoachingSubject(toSentenceCase(guestBookFormCoachingSubject))}
                         placeholder="Contoh: Supervisi Akademik & Perangkat Ajar Kurikulum Merdeka"
                         required
                         className="w-full bg-amber-50/50 border border-amber-300 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
@@ -6385,7 +6390,8 @@ export default function PrincipalPanel({
                       <textarea
                         rows={2}
                         value={guestBookFormFindings}
-                        onChange={(e) => setGuestBookFormFindings(e.target.value)}
+                        onChange={(e) => setGuestBookFormFindings(toSentenceCase(e.target.value))}
+                        onBlur={() => setGuestBookFormFindings(toSentenceCase(guestBookFormFindings))}
                         placeholder="Catatan temuan di lapangan..."
                         className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
                       />
@@ -6398,7 +6404,8 @@ export default function PrincipalPanel({
                       <textarea
                         rows={2}
                         value={guestBookFormRecommendations}
-                        onChange={(e) => setGuestBookFormRecommendations(e.target.value)}
+                        onChange={(e) => setGuestBookFormRecommendations(toSentenceCase(e.target.value))}
+                        onBlur={() => setGuestBookFormRecommendations(toSentenceCase(guestBookFormRecommendations))}
                         placeholder="Arahan tindak lanjut untuk sekolah..."
                         className="w-full bg-emerald-50/40 border border-emerald-300 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
                       />
@@ -6427,7 +6434,8 @@ export default function PrincipalPanel({
                         <input
                           type="text"
                           value={guestBookFormFollowUpNotes}
-                          onChange={(e) => setGuestBookFormFollowUpNotes(e.target.value)}
+                          onChange={(e) => setGuestBookFormFollowUpNotes(toSentenceCase(e.target.value))}
+                          onBlur={() => setGuestBookFormFollowUpNotes(toSentenceCase(guestBookFormFollowUpNotes))}
                           placeholder="Catatan realisasi langkah..."
                           className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
                         />
@@ -6443,7 +6451,8 @@ export default function PrincipalPanel({
                     <textarea
                       rows={2}
                       value={guestBookFormPurpose}
-                      onChange={(e) => setGuestBookFormPurpose(e.target.value)}
+                      onChange={(e) => setGuestBookFormPurpose(toSentenceCase(e.target.value))}
+                      onBlur={() => setGuestBookFormPurpose(toSentenceCase(guestBookFormPurpose))}
                       placeholder="Tujuan kunjungan atau pihak yang ditemui..."
                       required
                       className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
@@ -6459,7 +6468,8 @@ export default function PrincipalPanel({
                   <input
                     type="text"
                     value={guestBookFormNotes}
-                    onChange={(e) => setGuestBookFormNotes(e.target.value)}
+                    onChange={(e) => setGuestBookFormNotes(toSentenceCase(e.target.value))}
+                    onBlur={() => setGuestBookFormNotes(toSentenceCase(guestBookFormNotes))}
                     placeholder="Keterangan tambahan jika ada..."
                     className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
                   />

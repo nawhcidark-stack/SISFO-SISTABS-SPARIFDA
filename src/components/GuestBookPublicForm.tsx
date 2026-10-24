@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { SchoolIdentity, GuestBookEntry, GuestBookCategory } from '../types';
 import { DigitalSignaturePad } from './DigitalSignaturePad';
+import { toProperCase, formatProperWhileTyping, toUpperCase, toSentenceCase } from '../utils/textFormatters';
 
 interface GuestBookPublicFormProps {
   schoolIdentity?: SchoolIdentity;
@@ -137,16 +138,16 @@ export default function GuestBookPublicForm({
         category,
         date,
         time,
-        name: name.trim(),
-        position: position.trim(),
-        institution: institution.trim(),
-        purpose: category === 'pembinaan' ? (purpose.trim() || coachingSubject.trim() || 'Pembinaan & Supervisi') : purpose.trim(),
+        name: toProperCase(name.trim()),
+        position: toProperCase(position.trim()),
+        institution: toUpperCase(institution.trim()),
+        purpose: toSentenceCase(category === 'pembinaan' ? (purpose.trim() || coachingSubject.trim() || 'Pembinaan & Supervisi') : purpose.trim()),
         phone: phone.trim(),
-        notes: notes.trim(),
+        notes: toSentenceCase(notes.trim()),
         supervisorNip: category === 'pembinaan' ? supervisorNip.trim() : undefined,
-        coachingSubject: category === 'pembinaan' ? coachingSubject.trim() : undefined,
-        findings: category === 'pembinaan' ? findings.trim() : undefined,
-        recommendations: category === 'pembinaan' ? recommendations.trim() : undefined,
+        coachingSubject: category === 'pembinaan' ? toSentenceCase(coachingSubject.trim()) : undefined,
+        findings: category === 'pembinaan' ? toSentenceCase(findings.trim()) : undefined,
+        recommendations: category === 'pembinaan' ? toSentenceCase(recommendations.trim()) : undefined,
         followUpStatus: category === 'pembinaan' ? 'Belum' : undefined,
         signature: signature || undefined,
         status: 'Diterima'
@@ -507,7 +508,8 @@ export default function GuestBookPublicForm({
                     <input
                       type="text"
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => setName(formatProperWhileTyping(e.target.value))}
+                      onBlur={() => setName(toProperCase(name))}
                       placeholder={category === 'pembinaan' ? 'Contoh: Drs. H. Bambang Sutrisno, M.Pd' : 'Contoh: Drs. H. Ahmad Fauzi'}
                       required
                       className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-600 focus:bg-white rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 transition-colors focus:outline-none"
@@ -540,7 +542,8 @@ export default function GuestBookPublicForm({
                     <input
                       type="text"
                       value={position}
-                      onChange={(e) => setPosition(e.target.value)}
+                      onChange={(e) => setPosition(formatProperWhileTyping(e.target.value))}
+                      onBlur={() => setPosition(toProperCase(position))}
                       placeholder={category === 'pembinaan' ? 'Contoh: Pengawas Pembina SMP / Tim Monev' : 'Contoh: Wali Murid / Pimpinan Instansi'}
                       className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-600 focus:bg-white rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 transition-colors focus:outline-none"
                     />
@@ -555,10 +558,11 @@ export default function GuestBookPublicForm({
                     <input
                       type="text"
                       value={institution}
-                      onChange={(e) => setInstitution(e.target.value)}
+                      onChange={(e) => setInstitution(toUpperCase(e.target.value))}
+                      onBlur={() => setInstitution(toUpperCase(institution))}
                       placeholder={category === 'pembinaan' ? 'Contoh: Disdik Kab. Pasuruan / LP Ma\'arif NU' : 'Contoh: Dinas / Puskesmas / Umum'}
                       required
-                      className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-600 focus:bg-white rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 transition-colors focus:outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-600 focus:bg-white rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 transition-colors focus:outline-none uppercase"
                     />
                   </div>
                 </div>
@@ -593,7 +597,8 @@ export default function GuestBookPublicForm({
                       <input
                         type="text"
                         value={coachingSubject}
-                        onChange={(e) => setCoachingSubject(e.target.value)}
+                        onChange={(e) => setCoachingSubject(toSentenceCase(e.target.value))}
+                        onBlur={() => setCoachingSubject(toSentenceCase(coachingSubject))}
                         placeholder="Pilih dari preset di bawah atau ketik langsung aspek pembinaan..."
                         required
                         className="w-full bg-amber-50/50 border border-amber-300 focus:border-amber-600 focus:bg-white rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 transition-colors focus:outline-none"
@@ -605,7 +610,7 @@ export default function GuestBookPublicForm({
                           <button
                             key={preset}
                             type="button"
-                            onClick={() => setCoachingSubject(preset)}
+                            onClick={() => setCoachingSubject(toSentenceCase(preset))}
                             className={`text-[10px] px-2.5 py-1 rounded-lg border font-semibold transition-all cursor-pointer ${
                               coachingSubject === preset
                                 ? 'bg-amber-600 text-white border-amber-600'
@@ -628,7 +633,8 @@ export default function GuestBookPublicForm({
                       <textarea
                         rows={3}
                         value={findings}
-                        onChange={(e) => setFindings(e.target.value)}
+                        onChange={(e) => setFindings(toSentenceCase(e.target.value))}
+                        onBlur={() => setFindings(toSentenceCase(findings))}
                         placeholder="Tuliskan temuan di lapangan, evaluasi, aspek positif, atau kendala yang ditemukan..."
                         required
                         className="w-full bg-slate-50 border border-slate-200 focus:border-amber-600 focus:bg-white rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 transition-colors focus:outline-none resize-none leading-relaxed"
@@ -645,7 +651,8 @@ export default function GuestBookPublicForm({
                       <textarea
                         rows={3}
                         value={recommendations}
-                        onChange={(e) => setRecommendations(e.target.value)}
+                        onChange={(e) => setRecommendations(toSentenceCase(e.target.value))}
+                        onBlur={() => setRecommendations(toSentenceCase(recommendations))}
                         placeholder="Tuliskan saran, rekomendasi langkah perbaikan, atau arahan tindak lanjut untuk kepala sekolah dan guru..."
                         required
                         className="w-full bg-emerald-50/30 border border-emerald-300 focus:border-emerald-600 focus:bg-white rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 transition-colors focus:outline-none resize-none leading-relaxed"
@@ -663,7 +670,8 @@ export default function GuestBookPublicForm({
                     <textarea
                       rows={3}
                       value={purpose}
-                      onChange={(e) => setPurpose(e.target.value)}
+                      onChange={(e) => setPurpose(toSentenceCase(e.target.value))}
+                      onBlur={() => setPurpose(toSentenceCase(purpose))}
                       placeholder="Jelaskan maksud dan tujuan kunjungan, atau pihak yang ingin ditemui..."
                       required
                       className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-600 focus:bg-white rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 transition-colors focus:outline-none resize-none leading-relaxed"
@@ -679,7 +687,8 @@ export default function GuestBookPublicForm({
                   <input
                     type="text"
                     value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                    onChange={(e) => setNotes(toSentenceCase(e.target.value))}
+                    onBlur={() => setNotes(toSentenceCase(notes))}
                     placeholder="Keterangan tambahan jika ada..."
                     className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-600 focus:bg-white rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800 transition-colors focus:outline-none"
                   />

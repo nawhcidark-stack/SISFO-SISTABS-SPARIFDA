@@ -7770,7 +7770,7 @@ async function startServer() {
     try {
       const { 
         category, name, institution, purpose, phone, position, date, time, notes, 
-        supervisorNip, coachingSubject, findings, recommendations, followUpStatus, followUpNotes, status 
+        supervisorNip, coachingSubject, findings, recommendations, followUpStatus, followUpNotes, signature, status 
       } = req.body;
       if (!name || !institution || (!purpose && !coachingSubject)) {
         return res.status(400).json({ error: "Nama, Asal Instansi, dan Keperluan/Aspek Pembinaan wajib diisi." });
@@ -7793,6 +7793,7 @@ async function startServer() {
         recommendations: recommendations || "",
         followUpStatus: followUpStatus || "Belum",
         followUpNotes: followUpNotes || "",
+        signature: signature || "",
         status: status || "Selesai"
       });
       if (!result.success) {
@@ -7810,7 +7811,7 @@ async function startServer() {
       const { id } = req.params;
       const { 
         category, name, institution, purpose, phone, position, date, time, notes, 
-        supervisorNip, coachingSubject, findings, recommendations, followUpStatus, followUpNotes, status 
+        supervisorNip, coachingSubject, findings, recommendations, followUpStatus, followUpNotes, signature, status 
       } = req.body;
       const result = await saveGuestBookToMysql({
         id,
@@ -7829,6 +7830,7 @@ async function startServer() {
         recommendations,
         followUpStatus,
         followUpNotes,
+        signature: signature || "",
         status
       });
       if (!result.success) {

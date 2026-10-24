@@ -1025,6 +1025,7 @@ export interface GuestBookEntry {
   recommendations?: string; // Saran / Rekomendasi Tindak Lanjut
   followUpStatus?: string; // 'Belum' | 'Proses' | 'Selesai'
   followUpNotes?: string; // Catatan Realisasi Tindak Lanjut Kepala Sekolah
+  signature?: string; // Tanda Tangan Digital Tamu / Pembina (Data URL / Base64)
   status?: string; // e.g. "Selesai" | "Diterima" | "Menunggu"
   createdAt?: string;
   updatedAt?: string;

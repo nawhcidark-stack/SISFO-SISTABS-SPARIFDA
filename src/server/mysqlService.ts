@@ -1044,6 +1044,7 @@ CREATE TABLE IF NOT EXISTS \`guest_books\` (
   \`recommendations\` TEXT DEFAULT NULL,
   \`follow_up_status\` VARCHAR(32) DEFAULT 'Belum',
   \`follow_up_notes\` TEXT DEFAULT NULL,
+  \`signature\` LONGTEXT DEFAULT NULL,
   \`status\` VARCHAR(32) DEFAULT 'Selesai',
   \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -4459,6 +4460,7 @@ export async function ensureGuestBooksTableExists(): Promise<void> {
         \`recommendations\` TEXT DEFAULT NULL,
         \`follow_up_status\` VARCHAR(32) DEFAULT 'Belum',
         \`follow_up_notes\` TEXT DEFAULT NULL,
+        \`signature\` LONGTEXT DEFAULT NULL,
         \`status\` VARCHAR(32) DEFAULT 'Selesai',
         \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -4483,6 +4485,7 @@ export async function ensureGuestBooksTableExists(): Promise<void> {
     await addCol('`recommendations` TEXT DEFAULT NULL');
     await addCol('`follow_up_status` VARCHAR(32) DEFAULT \'Belum\'');
     await addCol('`follow_up_notes` TEXT DEFAULT NULL');
+    await addCol('`signature` LONGTEXT DEFAULT NULL');
   } catch (err: any) {
     console.warn('[MySQL ensureGuestBooksTableExists Warning]:', err.message || err);
   } finally {
@@ -4514,6 +4517,7 @@ export async function getAllGuestBooksFromMysql(): Promise<any[]> {
         \`recommendations\`,
         \`follow_up_status\` as followUpStatus,
         \`follow_up_notes\` as followUpNotes,
+        \`signature\`,
         \`status\`,
         \`created_at\` as createdAt,
         \`updated_at\` as updatedAt
@@ -4556,13 +4560,14 @@ export async function saveGuestBookToMysql(entry: any): Promise<{ success: boole
     const recommendations = entry.recommendations ? String(entry.recommendations).trim() : '';
     const followUpStatus = entry.followUpStatus ? String(entry.followUpStatus).trim() : 'Belum';
     const followUpNotes = entry.followUpNotes ? String(entry.followUpNotes).trim() : '';
+    const signature = entry.signature ? String(entry.signature) : null;
     const status = entry.status ? String(entry.status).trim() : 'Selesai';
 
     await connection.query(`
       INSERT INTO \`guest_books\` (
         \`id\`, \`category\`, \`date\`, \`time\`, \`name\`, \`position\`, \`institution\`, \`purpose\`, \`phone\`, \`notes\`,
-        \`supervisor_nip\`, \`coaching_subject\`, \`findings\`, \`recommendations\`, \`follow_up_status\`, \`follow_up_notes\`, \`status\`, \`created_at\`
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        \`supervisor_nip\`, \`coaching_subject\`, \`findings\`, \`recommendations\`, \`follow_up_status\`, \`follow_up_notes\`, \`signature\`, \`status\`, \`created_at\`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       ON DUPLICATE KEY UPDATE
         \`category\` = VALUES(\`category\`),
         \`date\` = VALUES(\`date\`),
@@ -4579,11 +4584,12 @@ export async function saveGuestBookToMysql(entry: any): Promise<{ success: boole
         \`recommendations\` = VALUES(\`recommendations\`),
         \`follow_up_status\` = VALUES(\`follow_up_status\`),
         \`follow_up_notes\` = VALUES(\`follow_up_notes\`),
+        \`signature\` = VALUES(\`signature\`),
         \`status\` = VALUES(\`status\`),
         \`updated_at\` = NOW()
     `, [
       id, category, date, time, name, position, institution, purpose, phone, notes,
-      supervisorNip, coachingSubject, findings, recommendations, followUpStatus, followUpNotes, status
+      supervisorNip, coachingSubject, findings, recommendations, followUpStatus, followUpNotes, signature, status
     ]);
 
     const savedItem = {
@@ -4603,6 +4609,7 @@ export async function saveGuestBookToMysql(entry: any): Promise<{ success: boole
       recommendations,
       followUpStatus,
       followUpNotes,
+      signature: signature || undefined,
       status
     };
 

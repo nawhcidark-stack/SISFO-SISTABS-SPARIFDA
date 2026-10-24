@@ -23,6 +23,7 @@ import {
   Search
 } from 'lucide-react';
 import { SchoolIdentity, GuestBookEntry, GuestBookCategory } from '../types';
+import { DigitalSignaturePad } from './DigitalSignaturePad';
 
 interface GuestBookPublicFormProps {
   schoolIdentity?: SchoolIdentity;
@@ -83,6 +84,7 @@ export default function GuestBookPublicForm({
   const [coachingSubject, setCoachingSubject] = useState<string>('');
   const [findings, setFindings] = useState<string>('');
   const [recommendations, setRecommendations] = useState<string>('');
+  const [signature, setSignature] = useState<string>('');
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -146,6 +148,7 @@ export default function GuestBookPublicForm({
         findings: category === 'pembinaan' ? findings.trim() : undefined,
         recommendations: category === 'pembinaan' ? recommendations.trim() : undefined,
         followUpStatus: category === 'pembinaan' ? 'Belum' : undefined,
+        signature: signature || undefined,
         status: 'Diterima'
       };
 
@@ -180,6 +183,7 @@ export default function GuestBookPublicForm({
     setCoachingSubject('');
     setFindings('');
     setRecommendations('');
+    setSignature('');
     setDate(getTodayDate());
     setTime(getCurrentTime());
     setSubmittedEntry(null);
@@ -330,6 +334,21 @@ export default function GuestBookPublicForm({
                   <span className="text-slate-500 font-medium">No. WhatsApp</span>
                   <span className="col-span-2 font-mono font-bold text-slate-700">{submittedEntry.phone}</span>
                 </div>
+
+                {submittedEntry.signature && (
+                  <div className="grid grid-cols-3 gap-2 py-2 border-t border-slate-100 items-center">
+                    <span className="text-slate-500 font-medium">Tanda Tangan</span>
+                    <div className="col-span-2">
+                      <div className="inline-block p-1.5 bg-white border border-slate-200 rounded-xl shadow-xs">
+                        <img 
+                          src={submittedEntry.signature} 
+                          alt="Tanda Tangan Digital" 
+                          className="h-12 max-w-[160px] object-contain" 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs font-medium text-left flex items-start gap-2.5">
@@ -663,6 +682,16 @@ export default function GuestBookPublicForm({
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Keterangan tambahan jika ada..."
                     className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-600 focus:bg-white rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800 transition-colors focus:outline-none"
+                  />
+                </div>
+
+                {/* Tanda Tangan Digital */}
+                <div className="pt-2">
+                  <DigitalSignaturePad
+                    value={signature}
+                    onChange={setSignature}
+                    label={category === 'pembinaan' ? 'Tanda Tangan Digital Pembina / Pengawas' : 'Tanda Tangan Digital Tamu'}
+                    signerName={name.trim()}
                   />
                 </div>
 

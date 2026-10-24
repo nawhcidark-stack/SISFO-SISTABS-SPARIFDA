@@ -19,6 +19,7 @@ import {
 } from '../types';
 import QRCode from 'qrcode';
 import ScheduleView from './ScheduleView';
+import { DigitalSignaturePad } from './DigitalSignaturePad';
 import { 
   BarChart, 
   Bar, 
@@ -139,6 +140,7 @@ export default function PrincipalPanel({
   const [guestBookFormRecommendations, setGuestBookFormRecommendations] = useState<string>('');
   const [guestBookFormFollowUpStatus, setGuestBookFormFollowUpStatus] = useState<string>('Belum');
   const [guestBookFormFollowUpNotes, setGuestBookFormFollowUpNotes] = useState<string>('');
+  const [guestBookFormSignature, setGuestBookFormSignature] = useState<string>('');
   const [guestBookFormStatus, setGuestBookFormStatus] = useState<string>('Selesai');
   const [isSavingGuestBook, setIsSavingGuestBook] = useState<boolean>(false);
 
@@ -206,6 +208,7 @@ export default function PrincipalPanel({
     setGuestBookFormRecommendations('');
     setGuestBookFormFollowUpStatus('Belum');
     setGuestBookFormFollowUpNotes('');
+    setGuestBookFormSignature('');
     setGuestBookFormStatus('Selesai');
     setIsGuestBookModalOpen(true);
   };
@@ -227,6 +230,7 @@ export default function PrincipalPanel({
     setGuestBookFormRecommendations(entry.recommendations || '');
     setGuestBookFormFollowUpStatus(entry.followUpStatus || 'Belum');
     setGuestBookFormFollowUpNotes(entry.followUpNotes || '');
+    setGuestBookFormSignature(entry.signature || '');
     setGuestBookFormStatus(entry.status || 'Selesai');
     setIsGuestBookModalOpen(true);
   };
@@ -264,6 +268,7 @@ export default function PrincipalPanel({
         recommendations: guestBookFormRecommendations.trim(),
         followUpStatus: guestBookFormFollowUpStatus,
         followUpNotes: guestBookFormFollowUpNotes.trim(),
+        signature: guestBookFormSignature || undefined,
         status: guestBookFormStatus
       };
 
@@ -1684,7 +1689,9 @@ export default function PrincipalPanel({
                       </span>
                       ${item.followUpNotes ? `<br/><span style="font-size: 8px; color: #475569;">${item.followUpNotes}</span>` : ''}
                     </td>
-                    <td class="text-center" style="height: 35px;"></td>
+                    <td class="text-center" style="height: 35px; padding: 2px;">
+                      ${item.signature ? `<img src="${item.signature}" style="max-height: 34px; max-width: 60px; object-fit: contain;" />` : ''}
+                    </td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -1728,7 +1735,9 @@ export default function PrincipalPanel({
                     <td>${item.purpose}</td>
                     <td class="text-center font-mono">${item.phone}</td>
                     <td class="text-center font-semibold">${item.status || 'Selesai'}</td>
-                    <td class="text-center" style="height: 32px;"></td>
+                    <td class="text-center" style="height: 32px; padding: 2px;">
+                      ${item.signature ? `<img src="${item.signature}" style="max-height: 30px; max-width: 65px; object-fit: contain;" />` : ''}
+                    </td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -1747,12 +1756,13 @@ export default function PrincipalPanel({
                   <th>Keperluan / Aspek Pembinaan</th>
                   <th style="width: 90px;">No. WhatsApp</th>
                   <th style="width: 70px;">Status</th>
+                  <th style="width: 65px;">Paraf</th>
                 </tr>
               </thead>
               <tbody>
                 ${entriesToPrint.length === 0 ? `
                   <tr>
-                    <td colspan="9" class="text-center" style="padding: 20px; color: #64748b;">
+                    <td colspan="10" class="text-center" style="padding: 20px; color: #64748b;">
                       Tidak ada data tamu pada periode ini.
                     </td>
                   </tr>
@@ -1780,6 +1790,9 @@ export default function PrincipalPanel({
                     </td>
                     <td class="text-center font-mono">${item.phone}</td>
                     <td class="text-center font-semibold">${item.status || 'Selesai'}</td>
+                    <td class="text-center" style="height: 30px; padding: 2px;">
+                      ${item.signature ? `<img src="${item.signature}" style="max-height: 28px; max-width: 55px; object-fit: contain;" />` : ''}
+                    </td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -1791,9 +1804,13 @@ export default function PrincipalPanel({
               <div class="signature-box">
                 <div>Pandaan, ${dateTodayFormatted}</div>
                 <div>Pengawas / Pembina Sekolah,</div>
-                <div class="signature-space"></div>
-                <div class="signature-name">( .................................................... )</div>
-                <div style="font-size: 10px; color: #475569;">NIP. .............................................</div>
+                <div class="signature-space" style="display: flex; align-items: center; justify-content: center; min-height: 55px;">
+                  ${entriesToPrint.length === 1 && entriesToPrint[0].signature ? `
+                    <img src="${entriesToPrint[0].signature}" style="max-height: 55px; max-width: 140px; object-fit: contain;" />
+                  ` : ''}
+                </div>
+                <div class="signature-name">${entriesToPrint.length === 1 ? entriesToPrint[0].name : '( .................................................... )'}</div>
+                <div style="font-size: 10px; color: #475569;">${entriesToPrint.length === 1 && entriesToPrint[0].supervisorNip ? `NIP. ${entriesToPrint[0].supervisorNip}` : 'NIP. .............................................'}</div>
               </div>
             ` : `<div></div>`}
 
@@ -5633,13 +5650,14 @@ export default function PrincipalPanel({
                     <th className="py-3.5 px-3 w-28 text-center">
                       {guestBookCategoryTab === 'pembinaan' ? 'Tindak Lanjut' : 'Status'}
                     </th>
+                    <th className="py-3.5 px-3 w-24 text-center">Paraf / TTD</th>
                     <th className="py-3.5 px-4 w-28 text-center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs text-slate-700 font-medium">
                   {filteredGuestBooks.length === 0 ? (
                     <tr>
-                      <td colSpan={guestBookCategoryTab === 'all' ? 9 : 8} className="py-12 text-center text-slate-400">
+                      <td colSpan={guestBookCategoryTab === 'all' ? 10 : 9} className="py-12 text-center text-slate-400">
                         <BookOpen size={36} className="mx-auto text-slate-300 mb-2 stroke-[1.5]" />
                         <p className="font-bold text-slate-600">Belum ada catatan buku tamu.</p>
                         <p className="text-[11px] text-slate-400 mt-0.5">
@@ -5768,6 +5786,21 @@ export default function PrincipalPanel({
                               <span className="inline-block px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-slate-100 text-slate-700">
                                 {item.status || 'Selesai'}
                               </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3 text-center">
+                            {item.signature ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedGuestBookForDetail(item)}
+                                className="inline-block p-1 bg-white border border-slate-200 rounded-lg shadow-2xs hover:border-emerald-500 hover:shadow-xs transition-all cursor-pointer"
+                                title="Lihat Tanda Tangan Digital"
+                              >
+                                <img src={item.signature} alt="TTD" className="h-6 max-w-[55px] object-contain mx-auto" />
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-300 italic font-mono">-</span>
                             )}
                           </td>
 
@@ -6032,6 +6065,20 @@ export default function PrincipalPanel({
                   <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-1.5">
                     <span className="text-slate-400 font-semibold">WhatsApp</span>
                     <span className="col-span-2 font-mono font-bold text-emerald-700">{selectedGuestBookForDetail.phone}</span>
+                  </div>
+                )}
+                {selectedGuestBookForDetail.signature && (
+                  <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2 items-center">
+                    <span className="text-slate-400 font-semibold">Tanda Tangan</span>
+                    <div className="col-span-2">
+                      <div className="inline-block p-1.5 bg-white border border-slate-200 rounded-xl shadow-xs">
+                        <img 
+                          src={selectedGuestBookForDetail.signature} 
+                          alt="Tanda Tangan Digital" 
+                          className="h-12 max-w-[160px] object-contain" 
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -6415,6 +6462,16 @@ export default function PrincipalPanel({
                     onChange={(e) => setGuestBookFormNotes(e.target.value)}
                     placeholder="Keterangan tambahan jika ada..."
                     className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                  />
+                </div>
+
+                {/* Tanda Tangan Digital */}
+                <div className="pt-1">
+                  <DigitalSignaturePad
+                    value={guestBookFormSignature}
+                    onChange={setGuestBookFormSignature}
+                    label={guestBookFormCategory === 'pembinaan' ? 'Tanda Tangan Digital Pembina / Pengawas' : 'Tanda Tangan Digital Tamu'}
+                    signerName={guestBookFormName.trim()}
                   />
                 </div>
 

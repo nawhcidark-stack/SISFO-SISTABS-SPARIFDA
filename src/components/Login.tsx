@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Student, SchoolIdentity, HomeroomTeacher, SubjectTeacher } from '../types';
-import { User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles, Smartphone, Apple } from 'lucide-react';
+import { User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles, Smartphone, Apple, QrCode } from 'lucide-react';
 import PWAInstallButton from './PWAInstallButton';
 
 interface LoginProps {

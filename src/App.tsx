@@ -14,6 +14,7 @@ const WakaSarprasPanel = lazy(() => import('./components/WakaSarprasPanel'));
 const CounselorPanel = lazy(() => import('./components/CounselorPanel'));
 const WakaKurikulumPanel = lazy(() => import('./components/WakaKurikulumPanel'));
 const SpmbLandingPage = lazy(() => import('./components/SpmbLandingPage'));
+const GuestBookPublicForm = lazy(() => import('./components/GuestBookPublicForm'));
 
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
@@ -88,12 +89,21 @@ export default function App() {
     return path.startsWith('/spmb') || path === '/daftar' || hash.startsWith('#spmb') || params.get('page') === 'spmb';
   });
 
+  const [isGuestBookView, setIsGuestBookView] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const params = new URLSearchParams(window.location.search);
+    return path.startsWith('/bukutamu') || path.startsWith('/buku-tamu') || path.startsWith('/tamu') || hash.startsWith('#bukutamu') || hash.startsWith('#buku-tamu') || params.get('page') === 'bukutamu' || params.get('page') === 'buku-tamu' || params.get('buku_tamu') === '1' || params.get('bukutamu') === 'true';
+  });
+
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname.toLowerCase();
       const hash = window.location.hash.toLowerCase();
       const params = new URLSearchParams(window.location.search);
       setIsSpmbView(path.startsWith('/spmb') || path === '/daftar' || hash.startsWith('#spmb') || params.get('page') === 'spmb');
+      setIsGuestBookView(path.startsWith('/bukutamu') || path.startsWith('/buku-tamu') || path.startsWith('/tamu') || hash.startsWith('#bukutamu') || hash.startsWith('#buku-tamu') || params.get('page') === 'bukutamu' || params.get('page') === 'buku-tamu' || params.get('buku_tamu') === '1' || params.get('bukutamu') === 'true');
     };
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('hashchange', handlePopState);
@@ -1817,6 +1827,23 @@ export default function App() {
             const cleanUrl = window.location.origin + '/';
             window.history.pushState({}, document.title, cleanUrl);
           }}
+        />
+      </Suspense>
+    );
+  }
+
+  if (isGuestBookView) {
+    return (
+      <Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+            <p className="text-xs font-bold text-slate-300">Membuka Formulir Buku Tamu Digital...</p>
+          </div>
+        </div>
+      }>
+        <GuestBookPublicForm
+          schoolIdentity={schoolIdentity}
         />
       </Suspense>
     );

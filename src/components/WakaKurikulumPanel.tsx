@@ -637,6 +637,64 @@ export default function WakaKurikulumPanel({
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [activeStudents]);
 
+  // Helper to extract grade level / tingkat (e.g. "7", "8", "9")
+  const getStudentGradeLevel = (className?: string): string => {
+    if (!className) return '';
+    const clean = className.trim().toUpperCase().replace(/^KELAS\s+/i, '');
+    const digitMatch = clean.match(/^(\d+)/);
+    if (digitMatch) return digitMatch[1];
+    const romanMatch = clean.match(/^(IX|VIII|VII|XII|XI|X|IV|V?I{1,3})/i);
+    if (romanMatch) {
+      const rom = romanMatch[0].toUpperCase();
+      if (rom === 'VII') return '7';
+      if (rom === 'VIII') return '8';
+      if (rom === 'IX') return '9';
+      return rom;
+    }
+    return clean.split(/[- ]/)[0] || clean;
+  };
+
+  const availableGrades = useMemo(() => {
+    const set = new Set<string>();
+    activeStudents.forEach(s => {
+      const g = getStudentGradeLevel(s.class);
+      if (g) set.add(g);
+    });
+    const list = Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    return list.length > 0 ? list : ['7', '8', '9'];
+  }, [activeStudents]);
+
+  const [selectedRaporGradeFilter, setSelectedRaporGradeFilter] = useState<string>('all');
+  const [isPrintGradeModalOpen, setIsPrintGradeModalOpen] = useState<boolean>(false);
+  const [targetPrintGrade, setTargetPrintGrade] = useState<string>('7');
+
+  const getStudentsByGrade = (grade: string) => {
+    return activeStudents
+      .filter(s => s.class && getStudentGradeLevel(s.class) === grade)
+      .sort((a, b) => {
+        const classCompare = (a.class || '').localeCompare(b.class || '', undefined, { numeric: true, sensitivity: 'base' });
+        if (classCompare !== 0) return classCompare;
+        return a.name.localeCompare(b.name);
+      });
+  };
+
+  const getClassesByGrade = (grade: string) => {
+    const set = new Set<string>();
+    activeStudents.forEach(s => {
+      if (s.class && getStudentGradeLevel(s.class) === grade) {
+        set.add(s.class.trim().toUpperCase());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  };
+
+  const displayedRaporClasses = useMemo(() => {
+    if (selectedRaporGradeFilter === 'all') {
+      return availableClasses;
+    }
+    return availableClasses.filter(cls => getStudentGradeLevel(cls) === selectedRaporGradeFilter);
+  }, [availableClasses, selectedRaporGradeFilter]);
+
   // Rapor Tengah Semester States
   const [selectedRaporClass, setSelectedRaporClass] = useState<string>('');
   const [selectedRaporStudentId, setSelectedRaporStudentId] = useState<string>('');
@@ -692,9 +750,13 @@ export default function WakaKurikulumPanel({
     }
   }, [availableClasses, selectedRaporClass]);
 
-  // Students for chosen Rapor class
+  // Students for chosen Rapor class or chosen Tingkat
   const raporStudents = useMemo(() => {
     if (!selectedRaporClass) return [];
+    if (selectedRaporClass.startsWith('ALL_GRADE_')) {
+      const g = selectedRaporClass.replace('ALL_GRADE_', '');
+      return getStudentsByGrade(g);
+    }
     return activeStudents
       .filter(s => s.class && normClass(s.class) === normClass(selectedRaporClass))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -872,14 +934,25 @@ export default function WakaKurikulumPanel({
     return reportRows;
   };
 
-  const printMidtermReport = (studentsToPrint: Student[]) => {
-    if (studentsToPrint.length === 0) return;
+  const printMidtermReport = (
+    studentsToPrint: Student[],
+    titleLabel?: string,
+    reportType: 'tengah_semester' | 'akhir_semester' = 'tengah_semester'
+  ) => {
+    if (studentsToPrint.length === 0) {
+      alert("Tidak ada siswa yang dipilih untuk dicetak rapornya.");
+      return;
+    }
     const printWin = window.open('', '_blank');
-    if (!printWin) return;
+    if (!printWin) {
+      alert("Gagal membuka jendela cetak. Pastikan pop-up diizinkan pada browser Anda.");
+      return;
+    }
 
     const printDateStr = formatIndonesianDate(raporDate) || new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
     const city = "Pandaan";
     const principalName = schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd";
+    const isAkhir = reportType === 'akhir_semester';
 
     const officialKopHtml = schoolIdentity?.letterhead
       ? `<div style="width: 100%; margin: 0 0 8px 0; padding: 0;">
@@ -897,8 +970,11 @@ export default function WakaKurikulumPanel({
       const studentScores = getStudentAssessmentsForRapor(st);
       const homeroomTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(st.class));
       const homeroomTeacherName = homeroomTeacher?.name || 'Wali Kelas';
-      // Catatan wali kelas dikosongkan pada cetak Rapor Tengah Semester
-      const defaultNote = "";
+      
+      // Catatan wali kelas: jika akhir_semester gunakan default akhir jika kosong, jika tengah_semester kosongkan
+      const defaultNote = isAkhir
+        ? "Ananda telah menuntaskan seluruh proses pembelajaran Kurikulum Merdeka pada semester ini dengan penuh dedikasi. Terus kembangkan potensi diri, pertahankan akhlak mulia dan prestasi pada semester berikutnya."
+        : "";
       const noteText = raporNotes[st.id] || defaultNote;
 
       let totalScore = 0;
@@ -912,16 +988,67 @@ export default function WakaKurikulumPanel({
       const avgScore = assessedCount > 0 ? Math.round(totalScore / assessedCount) : 0;
 
       const subjectRowsHtml = studentScores.length === 0
-        ? `<tr><td colspan="5" style="text-align: center; padding: 12px; border: 1px solid #000; font-style: italic; color: #555;">Belum ada data penilaian mata pelajaran untuk tengah semester ini.</td></tr>`
-        : studentScores.map((s, idx) => `
-            <tr>
-              <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 500;">${idx + 1}</td>
-              <td style="border: 1px solid #000; padding: 3.5px 6px; font-weight: bold;">${s.subject}</td>
-              <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 600; color: #1e293b;">${s.avgTp > 0 ? s.avgTp : '-'}</td>
-              <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 600; color: #3730a3;">${s.pts > 0 ? s.pts : '-'}</td>
-              <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 800; background-color: #f8fafc;">${s.naPts > 0 ? s.naPts : '-'}</td>
-            </tr>
-          `).join('');
+        ? `<tr><td colspan="5" style="text-align: center; padding: 12px; border: 1px solid #000; font-style: italic; color: #555;">Belum ada data penilaian mata pelajaran untuk semester ini.</td></tr>`
+        : isAkhir
+          ? studentScores.map((s, idx) => `
+              <tr>
+                <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 500; width: 6%;">${idx + 1}</td>
+                <td style="border: 1px solid #000; padding: 3.5px 6px; font-weight: bold; width: 26%;">${s.subject}</td>
+                <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 600; width: 10%;">${s.kktp || 75}</td>
+                <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 800; background-color: #f8fafc; width: 12%;">${s.naPts > 0 ? s.naPts : '-'}</td>
+                <td style="border: 1px solid #000; padding: 3.5px 6px; font-size: 7.2pt; line-height: 1.25; color: #334155; width: 46%;">${s.desc}</td>
+              </tr>
+            `).join('')
+          : studentScores.map((s, idx) => `
+              <tr>
+                <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 500;">${idx + 1}</td>
+                <td style="border: 1px solid #000; padding: 3.5px 6px; font-weight: bold;">${s.subject}</td>
+                <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 600; color: #1e293b;">${s.avgTp > 0 ? s.avgTp : '-'}</td>
+                <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 600; color: #3730a3;">${s.pts > 0 ? s.pts : '-'}</td>
+                <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 800; background-color: #f8fafc;">${s.naPts > 0 ? s.naPts : '-'}</td>
+              </tr>
+            `).join('');
+
+      const tableHeaderHtml = isAkhir
+        ? `<tr style="background-color: #f1f5f9; text-align: center; font-weight: bold;">
+             <th style="border: 1px solid #000; padding: 4px 3px; width: 6%;">NO</th>
+             <th style="border: 1px solid #000; padding: 4px 6px; text-align: left; width: 26%;">MATA PELAJARAN</th>
+             <th style="border: 1px solid #000; padding: 4px 3px; width: 10%;">KKTP</th>
+             <th style="border: 1px solid #000; padding: 4px 3px; width: 12%;">NILAI AKHIR</th>
+             <th style="border: 1px solid #000; padding: 4px 6px; text-align: left; width: 46%;">CAPAIAN KOMPETENSI</th>
+           </tr>`
+        : `<tr style="background-color: #f1f5f9; text-align: center; font-weight: bold;">
+             <th style="border: 1px solid #000; padding: 4px 3px; width: 6%;">NO</th>
+             <th style="border: 1px solid #000; padding: 4px 6px; text-align: left;">MATA PELAJARAN</th>
+             <th style="border: 1px solid #000; padding: 4px 3px; width: 16%;">HARIAN</th>
+             <th style="border: 1px solid #000; padding: 4px 3px; width: 16%;">ASTS</th>
+             <th style="border: 1px solid #000; padding: 4px 3px; width: 18%;">NILAI AKHIR</th>
+           </tr>`;
+
+      const titleDocHtml = isAkhir
+        ? `<div style="text-align: center; margin-bottom: 7px;">
+             <div style="font-size: 11pt; font-weight: 800; text-transform: uppercase; text-decoration: underline; letter-spacing: 0.5px;">LAPORAN HASIL BELAJAR AKHIR SEMESTER</div>
+             <div style="font-size: 8.5pt; font-weight: 700; text-transform: uppercase; margin-top: 1px;">(SUMATIF AKHIR SEMESTER / SAS)</div>
+           </div>`
+        : `<div style="text-align: center; margin-bottom: 7px;">
+             <div style="font-size: 11pt; font-weight: 800; text-transform: uppercase; text-decoration: underline; letter-spacing: 0.5px;">LAPORAN PENILAIAN HASIL BELAJAR TENGAH SEMESTER</div>
+             <div style="font-size: 8.5pt; font-weight: 700; text-transform: uppercase; margin-top: 1px;">(RAPOR TENGAH SEMESTER)</div>
+           </div>`;
+
+      const footerRowHtml = isAkhir
+        ? `<tr style="background-color: #f8fafc; font-weight: bold; text-align: center;">
+             <td colspan="3" style="border: 1px solid #000; padding: 3.5px 6px; text-align: right;">RATA-RATA NILAI AKHIR</td>
+             <td style="border: 1px solid #000; padding: 3.5px 3px; font-weight: bold;">${avgScore}</td>
+             <td style="border: 1px solid #000; padding: 3.5px 6px; font-size: 7.5pt; font-style: italic; color: #555;">Tuntas Capaian Pembelajaran Fase D</td>
+           </tr>`
+        : `<tr style="background-color: #f8fafc; font-weight: bold; text-align: center;">
+             <td colspan="4" style="border: 1px solid #000; padding: 3.5px 6px; text-align: right;">JUMLAH NILAI</td>
+             <td style="border: 1px solid #000; padding: 3.5px 3px; font-weight: bold;">${totalScore}</td>
+           </tr>
+           <tr style="background-color: #f8fafc; font-weight: bold; text-align: center;">
+             <td colspan="4" style="border: 1px solid #000; padding: 3.5px 6px; text-align: right;">RATA-RATA NILAI</td>
+             <td style="border: 1px solid #000; padding: 3.5px 3px; font-weight: bold;">${avgScore}</td>
+           </tr>`;
 
       const nameLen = (st.name || '').trim().length;
       let nameFontSize = '9pt';
@@ -941,10 +1068,7 @@ export default function WakaKurikulumPanel({
         <div class="page-container">
           ${officialKopHtml}
 
-          <div style="text-align: center; margin-bottom: 7px;">
-            <div style="font-size: 11pt; font-weight: 800; text-transform: uppercase; text-decoration: underline; letter-spacing: 0.5px;">LAPORAN PENILAIAN HASIL BELAJAR TENGAH SEMESTER</div>
-            <div style="font-size: 8.5pt; font-weight: 700; text-transform: uppercase; margin-top: 1px;">(RAPOR TENGAH SEMESTER)</div>
-          </div>
+          ${titleDocHtml}
 
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7px; font-size: 8.5pt; line-height: 1.35; width: 100%;">
             <table style="border-collapse: collapse; font-size: 8.5pt;">
@@ -978,29 +1102,16 @@ export default function WakaKurikulumPanel({
             </table>
           </div>
 
-          <div style="margin-bottom: 3px; font-weight: 700; font-size: 8.5pt; text-transform: uppercase;">A. CAPAIAN HASIL BELAJAR TENGAH SEMESTER</div>
+          <div style="margin-bottom: 3px; font-weight: 700; font-size: 8.5pt; text-transform: uppercase;">A. CAPAIAN HASIL BELAJAR ${isAkhir ? 'AKHIR SEMESTER' : 'TENGAH SEMESTER'}</div>
           <table style="width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 7px;">
             <thead>
-              <tr style="background-color: #f1f5f9; text-align: center; font-weight: bold;">
-                <th style="border: 1px solid #000; padding: 4px 3px; width: 6%;">NO</th>
-                <th style="border: 1px solid #000; padding: 4px 6px; text-align: left;">MATA PELAJARAN</th>
-                <th style="border: 1px solid #000; padding: 4px 3px; width: 16%;">HARIAN</th>
-                <th style="border: 1px solid #000; padding: 4px 3px; width: 16%;">ASTS</th>
-                <th style="border: 1px solid #000; padding: 4px 3px; width: 18%;">NILAI AKHIR</th>
-              </tr>
+              ${tableHeaderHtml}
             </thead>
             <tbody>
               ${subjectRowsHtml}
             </tbody>
             <tfoot>
-              <tr style="background-color: #f8fafc; font-weight: bold; text-align: center;">
-                <td colspan="4" style="border: 1px solid #000; padding: 3.5px 6px; text-align: right;">JUMLAH NILAI</td>
-                <td style="border: 1px solid #000; padding: 3.5px 3px; font-weight: bold;">${totalScore}</td>
-              </tr>
-              <tr style="background-color: #f8fafc; font-weight: bold; text-align: center;">
-                <td colspan="4" style="border: 1px solid #000; padding: 3.5px 6px; text-align: right;">RATA-RATA NILAI</td>
-                <td style="border: 1px solid #000; padding: 3.5px 3px; font-weight: bold;">${avgScore}</td>
-              </tr>
+              ${footerRowHtml}
             </tfoot>
           </table>
 
@@ -1065,12 +1176,15 @@ export default function WakaKurikulumPanel({
       `;
     }).join('');
 
+    const effectiveTitle = titleLabel || (selectedRaporClass.startsWith('ALL_GRADE_') ? `Tingkat Kelas ${selectedRaporClass.replace('ALL_GRADE_', '')}` : `Kelas ${selectedRaporClass}`);
+    const docTitle = `${isAkhir ? 'Rapor Akhir Semester' : 'Rapor Tengah Semester'} - ${effectiveTitle}`;
+
     printWin.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>Rapor Tengah Semester - Kelas ${selectedRaporClass}</title>
+          <title>${docTitle}</title>
           <style>
             @page {
               size: A4 portrait;

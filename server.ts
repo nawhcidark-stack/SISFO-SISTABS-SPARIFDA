@@ -13,7 +13,7 @@ import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransCon
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
@@ -7752,6 +7752,107 @@ async function startServer() {
     teacherEvaluations.splice(idx, 1);
     saveState();
     res.json({ success: true, teacherEvaluations });
+  });
+
+  // --- BUKU TAMU (GUEST BOOK) DIRECT MYSQL ENDPOINTS ---
+  // Data disimpan langsung ke database MySQL tanpa melalui penyimpanan file lokal
+  app.get("/api/guest-book", async (req, res) => {
+    try {
+      const items = await getAllGuestBooksFromMysql();
+      res.json(items);
+    } catch (err: any) {
+      console.error("[GET /api/guest-book Error]:", err);
+      res.status(500).json({ error: "Gagal memuat data buku tamu dari database MySQL." });
+    }
+  });
+
+  app.post("/api/guest-book", async (req, res) => {
+    try {
+      const { 
+        category, name, institution, purpose, phone, position, date, time, notes, 
+        supervisorNip, coachingSubject, findings, recommendations, followUpStatus, followUpNotes, status 
+      } = req.body;
+      if (!name || !institution || (!purpose && !coachingSubject)) {
+        return res.status(400).json({ error: "Nama, Asal Instansi, dan Keperluan/Aspek Pembinaan wajib diisi." });
+      }
+      const entryId = req.body.id || `gb-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const result = await saveGuestBookToMysql({
+        id: entryId,
+        category: category || "umum",
+        name,
+        institution,
+        purpose: purpose || coachingSubject || "Kunjungan",
+        phone: phone || "",
+        position: position || "",
+        date: date || new Date().toISOString().split('T')[0],
+        time: time || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':'),
+        notes: notes || "",
+        supervisorNip: supervisorNip || "",
+        coachingSubject: coachingSubject || "",
+        findings: findings || "",
+        recommendations: recommendations || "",
+        followUpStatus: followUpStatus || "Belum",
+        followUpNotes: followUpNotes || "",
+        status: status || "Selesai"
+      });
+      if (!result.success) {
+        return res.status(500).json({ error: result.message || "Gagal menyimpan ke database MySQL." });
+      }
+      res.json({ success: true, item: result.item });
+    } catch (err: any) {
+      console.error("[POST /api/guest-book Error]:", err);
+      res.status(500).json({ error: "Gagal menyimpan buku tamu ke database MySQL." });
+    }
+  });
+
+  app.put("/api/guest-book/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { 
+        category, name, institution, purpose, phone, position, date, time, notes, 
+        supervisorNip, coachingSubject, findings, recommendations, followUpStatus, followUpNotes, status 
+      } = req.body;
+      const result = await saveGuestBookToMysql({
+        id,
+        category: category || "umum",
+        name,
+        institution,
+        purpose: purpose || coachingSubject || "Kunjungan",
+        phone,
+        position,
+        date,
+        time,
+        notes,
+        supervisorNip,
+        coachingSubject,
+        findings,
+        recommendations,
+        followUpStatus,
+        followUpNotes,
+        status
+      });
+      if (!result.success) {
+        return res.status(500).json({ error: result.message || "Gagal memperbarui database MySQL." });
+      }
+      res.json({ success: true, item: result.item });
+    } catch (err: any) {
+      console.error("[PUT /api/guest-book/:id Error]:", err);
+      res.status(500).json({ error: "Gagal memperbarui data buku tamu di database MySQL." });
+    }
+  });
+
+  app.delete("/api/guest-book/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await deleteGuestBookFromMysql(id);
+      if (!result.success) {
+        return res.status(500).json({ error: result.message || "Gagal menghapus dari database MySQL." });
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[DELETE /api/guest-book/:id Error]:", err);
+      res.status(500).json({ error: "Gagal menghapus data buku tamu dari database MySQL." });
+    }
   });
 
   // --- SARPRAS (FACILITIES AND INFRASTRUCTURE) ENDPOINTS ---

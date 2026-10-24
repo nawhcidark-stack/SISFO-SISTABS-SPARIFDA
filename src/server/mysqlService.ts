@@ -1027,6 +1027,33 @@ CREATE TABLE IF NOT EXISTS \`curriculum_tp_levels\` (
   KEY \`idx_tpl_sem_year\` (\`semester\`, \`academic_year\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS \`guest_books\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`category\` VARCHAR(32) DEFAULT 'umum',
+  \`date\` VARCHAR(32) NOT NULL,
+  \`time\` VARCHAR(16) DEFAULT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`position\` VARCHAR(100) DEFAULT NULL,
+  \`institution\` VARCHAR(150) NOT NULL,
+  \`purpose\` TEXT NOT NULL,
+  \`phone\` VARCHAR(32) NOT NULL,
+  \`notes\` TEXT DEFAULT NULL,
+  \`supervisor_nip\` VARCHAR(64) DEFAULT NULL,
+  \`coaching_subject\` VARCHAR(255) DEFAULT NULL,
+  \`findings\` TEXT DEFAULT NULL,
+  \`recommendations\` TEXT DEFAULT NULL,
+  \`follow_up_status\` VARCHAR(32) DEFAULT 'Belum',
+  \`follow_up_notes\` TEXT DEFAULT NULL,
+  \`status\` VARCHAR(32) DEFAULT 'Selesai',
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_date\` (\`date\`),
+  KEY \`idx_category\` (\`category\`),
+  KEY \`idx_institution\` (\`institution\`),
+  KEY \`idx_name\` (\`name\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS \`app_configs\` (
   \`id\` VARCHAR(64) NOT NULL,
   \`data\` LONGTEXT NOT NULL,
@@ -4403,5 +4430,210 @@ export async function getAllCurriculumTpFromMysql(): Promise<CurriculumTpDescrip
     if (connection) connection.release();
   }
 }
+
+// ==========================================================
+// DIRECT GUEST BOOK (BUKU TAMU) MYSQL OPERATIONS
+// Disimpan langsung ke database MySQL tanpa melalui penyimpanan lokal
+// ==========================================================
+
+export async function ensureGuestBooksTableExists(): Promise<void> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`guest_books\` (
+        \`id\` VARCHAR(64) NOT NULL,
+        \`category\` VARCHAR(32) DEFAULT 'umum',
+        \`date\` VARCHAR(32) NOT NULL,
+        \`time\` VARCHAR(16) DEFAULT NULL,
+        \`name\` VARCHAR(150) NOT NULL,
+        \`position\` VARCHAR(100) DEFAULT NULL,
+        \`institution\` VARCHAR(150) NOT NULL,
+        \`purpose\` TEXT NOT NULL,
+        \`phone\` VARCHAR(32) NOT NULL,
+        \`notes\` TEXT DEFAULT NULL,
+        \`supervisor_nip\` VARCHAR(64) DEFAULT NULL,
+        \`coaching_subject\` VARCHAR(255) DEFAULT NULL,
+        \`findings\` TEXT DEFAULT NULL,
+        \`recommendations\` TEXT DEFAULT NULL,
+        \`follow_up_status\` VARCHAR(32) DEFAULT 'Belum',
+        \`follow_up_notes\` TEXT DEFAULT NULL,
+        \`status\` VARCHAR(32) DEFAULT 'Selesai',
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`idx_date\` (\`date\`),
+        KEY \`idx_category\` (\`category\`),
+        KEY \`idx_institution\` (\`institution\`),
+        KEY \`idx_name\` (\`name\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Ensure backwards compatibility by adding missing columns if table already existed
+    const addCol = async (colDef: string) => {
+      try {
+        await connection!.query(`ALTER TABLE \`guest_books\` ADD COLUMN ${colDef}`);
+      } catch (_) {}
+    };
+    await addCol('`category` VARCHAR(32) DEFAULT \'umum\'');
+    await addCol('`supervisor_nip` VARCHAR(64) DEFAULT NULL');
+    await addCol('`coaching_subject` VARCHAR(255) DEFAULT NULL');
+    await addCol('`findings` TEXT DEFAULT NULL');
+    await addCol('`recommendations` TEXT DEFAULT NULL');
+    await addCol('`follow_up_status` VARCHAR(32) DEFAULT \'Belum\'');
+    await addCol('`follow_up_notes` TEXT DEFAULT NULL');
+  } catch (err: any) {
+    console.warn('[MySQL ensureGuestBooksTableExists Warning]:', err.message || err);
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function getAllGuestBooksFromMysql(): Promise<any[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureGuestBooksTableExists();
+    const [rows]: any = await connection.query(`
+      SELECT 
+        \`id\`,
+        \`category\`,
+        \`date\`,
+        \`time\`,
+        \`name\`,
+        \`position\`,
+        \`institution\`,
+        \`purpose\`,
+        \`phone\`,
+        \`notes\`,
+        \`supervisor_nip\` as supervisorNip,
+        \`coaching_subject\` as coachingSubject,
+        \`findings\`,
+        \`recommendations\`,
+        \`follow_up_status\` as followUpStatus,
+        \`follow_up_notes\` as followUpNotes,
+        \`status\`,
+        \`created_at\` as createdAt,
+        \`updated_at\` as updatedAt
+      FROM \`guest_books\` 
+      ORDER BY \`date\` DESC, \`created_at\` DESC
+    `);
+    return Array.isArray(rows) ? rows : [];
+  } catch (err: any) {
+    console.error('[MySQL Get Guest Books Error]:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function saveGuestBookToMysql(entry: any): Promise<{ success: boolean; message: string; error?: string; item?: any }> {
+  if (!entry || !entry.name || !entry.institution || !entry.purpose) {
+    return { success: false, message: 'Data buku tamu tidak lengkap (Nama, Asal Instansi, dan Keperluan/Aspek wajib diisi).' };
+  }
+
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureGuestBooksTableExists();
+
+    const id = entry.id || `gb-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const category = entry.category === 'pembinaan' ? 'pembinaan' : 'umum';
+    const date = entry.date || new Date().toISOString().split('T')[0];
+    const time = entry.time || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+    const name = String(entry.name).trim();
+    const position = entry.position ? String(entry.position).trim() : '';
+    const institution = String(entry.institution).trim();
+    const purpose = String(entry.purpose).trim();
+    const phone = entry.phone ? String(entry.phone).trim() : '';
+    const notes = entry.notes ? String(entry.notes).trim() : '';
+    const supervisorNip = entry.supervisorNip ? String(entry.supervisorNip).trim() : '';
+    const coachingSubject = entry.coachingSubject ? String(entry.coachingSubject).trim() : '';
+    const findings = entry.findings ? String(entry.findings).trim() : '';
+    const recommendations = entry.recommendations ? String(entry.recommendations).trim() : '';
+    const followUpStatus = entry.followUpStatus ? String(entry.followUpStatus).trim() : 'Belum';
+    const followUpNotes = entry.followUpNotes ? String(entry.followUpNotes).trim() : '';
+    const status = entry.status ? String(entry.status).trim() : 'Selesai';
+
+    await connection.query(`
+      INSERT INTO \`guest_books\` (
+        \`id\`, \`category\`, \`date\`, \`time\`, \`name\`, \`position\`, \`institution\`, \`purpose\`, \`phone\`, \`notes\`,
+        \`supervisor_nip\`, \`coaching_subject\`, \`findings\`, \`recommendations\`, \`follow_up_status\`, \`follow_up_notes\`, \`status\`, \`created_at\`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ON DUPLICATE KEY UPDATE
+        \`category\` = VALUES(\`category\`),
+        \`date\` = VALUES(\`date\`),
+        \`time\` = VALUES(\`time\`),
+        \`name\` = VALUES(\`name\`),
+        \`position\` = VALUES(\`position\`),
+        \`institution\` = VALUES(\`institution\`),
+        \`purpose\` = VALUES(\`purpose\`),
+        \`phone\` = VALUES(\`phone\`),
+        \`notes\` = VALUES(\`notes\`),
+        \`supervisor_nip\` = VALUES(\`supervisor_nip\`),
+        \`coaching_subject\` = VALUES(\`coaching_subject\`),
+        \`findings\` = VALUES(\`findings\`),
+        \`recommendations\` = VALUES(\`recommendations\`),
+        \`follow_up_status\` = VALUES(\`follow_up_status\`),
+        \`follow_up_notes\` = VALUES(\`follow_up_notes\`),
+        \`status\` = VALUES(\`status\`),
+        \`updated_at\` = NOW()
+    `, [
+      id, category, date, time, name, position, institution, purpose, phone, notes,
+      supervisorNip, coachingSubject, findings, recommendations, followUpStatus, followUpNotes, status
+    ]);
+
+    const savedItem = {
+      id,
+      category,
+      date,
+      time,
+      name,
+      position,
+      institution,
+      purpose,
+      phone,
+      notes,
+      supervisorNip,
+      coachingSubject,
+      findings,
+      recommendations,
+      followUpStatus,
+      followUpNotes,
+      status
+    };
+
+    return { 
+      success: true, 
+      message: 'Buku tamu berhasil disimpan langsung ke database MySQL.',
+      item: savedItem
+    };
+  } catch (err: any) {
+    console.error('[MySQL Save Guest Book Error]:', err.message || err);
+    return { success: false, message: 'Gagal menyimpan buku tamu ke database MySQL', error: err.message || String(err) };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function deleteGuestBookFromMysql(id: string): Promise<{ success: boolean; message: string; error?: string }> {
+  if (!id) return { success: false, message: 'ID buku tamu diperlukan.' };
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query('DELETE FROM `guest_books` WHERE `id` = ?', [id]);
+    return { success: true, message: 'Data buku tamu berhasil dihapus dari database MySQL.' };
+  } catch (err: any) {
+    console.error('[MySQL Delete Guest Book Error]:', err.message || err);
+    return { success: false, message: 'Gagal menghapus data buku tamu dari database MySQL', error: err.message || String(err) };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 
 

@@ -14,8 +14,10 @@ import {
   StudentInfractionLog,
   isSppBillOverdue,
   sortSppBills,
-  ClassSchedule
+  ClassSchedule,
+  GuestBookEntry
 } from '../types';
+import QRCode from 'qrcode';
 import ScheduleView from './ScheduleView';
 import { 
   BarChart, 
@@ -63,7 +65,14 @@ import {
   Smartphone,
   Apple,
   Download,
-  ArrowUpDown
+  ArrowUpDown,
+  Building2,
+  QrCode,
+  Phone,
+  Briefcase,
+  Copy,
+  ExternalLink,
+  Share2
 } from 'lucide-react';
 
 interface PrincipalPanelProps {
@@ -94,8 +103,223 @@ export default function PrincipalPanel({
   classSchedules = []
 }: PrincipalPanelProps) {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'work_programs' | 'evaluations' | 'journals' | 'bk_monitoring' | 'attendance_recap' | 'finance_monitoring' | 'school_profile' | 'sarpras_monitoring' | 'jadwal'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'work_programs' | 'evaluations' | 'journals' | 'bk_monitoring' | 'attendance_recap' | 'finance_monitoring' | 'school_profile' | 'sarpras_monitoring' | 'jadwal' | 'buku_tamu'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+
+  // Guest Book (Buku Tamu) State
+  const [guestBooks, setGuestBooks] = useState<GuestBookEntry[]>([]);
+  const [loadingGuestBooks, setLoadingGuestBooks] = useState<boolean>(false);
+  const [guestBookSearch, setGuestBookSearch] = useState<string>('');
+  const [guestBookDateFilter, setGuestBookDateFilter] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'custom'>('all');
+  const [guestBookStartDate, setGuestBookStartDate] = useState<string>('');
+  const [guestBookEndDate, setGuestBookEndDate] = useState<string>('');
+  const [guestBookStatusFilter, setGuestBookStatusFilter] = useState<string>('all');
+  const [guestBookCategoryTab, setGuestBookCategoryTab] = useState<'all' | 'umum' | 'pembinaan'>('all');
+  
+  // Modals for Guest Book
+  const [isQrModalOpen, setIsQrModalOpen] = useState<boolean>(false);
+  const [qrTypeSelection, setQrTypeSelection] = useState<'all' | 'umum' | 'pembinaan'>('all');
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+  const [isCopiedQrLink, setIsCopiedQrLink] = useState<boolean>(false);
+  const [isGuestBookModalOpen, setIsGuestBookModalOpen] = useState<boolean>(false);
+  const [selectedGuestBookForDetail, setSelectedGuestBookForDetail] = useState<GuestBookEntry | null>(null);
+  const [editingGuestBook, setEditingGuestBook] = useState<GuestBookEntry | null>(null);
+  const [guestBookFormCategory, setGuestBookFormCategory] = useState<'umum' | 'pembinaan'>('umum');
+  const [guestBookFormDate, setGuestBookFormDate] = useState<string>('');
+  const [guestBookFormTime, setGuestBookFormTime] = useState<string>('');
+  const [guestBookFormName, setGuestBookFormName] = useState<string>('');
+  const [guestBookFormPosition, setGuestBookFormPosition] = useState<string>('');
+  const [guestBookFormInstitution, setGuestBookFormInstitution] = useState<string>('');
+  const [guestBookFormPurpose, setGuestBookFormPurpose] = useState<string>('');
+  const [guestBookFormPhone, setGuestBookFormPhone] = useState<string>('');
+  const [guestBookFormNotes, setGuestBookFormNotes] = useState<string>('');
+  const [guestBookFormSupervisorNip, setGuestBookFormSupervisorNip] = useState<string>('');
+  const [guestBookFormCoachingSubject, setGuestBookFormCoachingSubject] = useState<string>('');
+  const [guestBookFormFindings, setGuestBookFormFindings] = useState<string>('');
+  const [guestBookFormRecommendations, setGuestBookFormRecommendations] = useState<string>('');
+  const [guestBookFormFollowUpStatus, setGuestBookFormFollowUpStatus] = useState<string>('Belum');
+  const [guestBookFormFollowUpNotes, setGuestBookFormFollowUpNotes] = useState<string>('');
+  const [guestBookFormStatus, setGuestBookFormStatus] = useState<string>('Selesai');
+  const [isSavingGuestBook, setIsSavingGuestBook] = useState<boolean>(false);
+
+  const fetchGuestBooks = async () => {
+    setLoadingGuestBooks(true);
+    try {
+      const res = await fetch('/api/guest-book');
+      if (res.ok) {
+        const data = await res.json();
+        setGuestBooks(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Failed to load guest books from MySQL:', err);
+    } finally {
+      setLoadingGuestBooks(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGuestBooks();
+  }, []);
+
+  // Live QR Code Generator for Front Desk (with dynamic category parameter)
+  useEffect(() => {
+    if (isQrModalOpen) {
+      const param = qrTypeSelection === 'all' ? '' : `&type=${qrTypeSelection}`;
+      const targetUrl = `${window.location.origin}/?page=bukutamu${param}`;
+      QRCode.toDataURL(targetUrl, {
+        width: 400,
+        margin: 2,
+        color: {
+          dark: '#0f172a',
+          light: '#ffffff'
+        }
+      }).then(url => {
+        setQrDataUrl(url);
+      }).catch(err => {
+        console.error('Failed to generate QR code for Guest Book:', err);
+      });
+    }
+  }, [isQrModalOpen, qrTypeSelection]);
+
+  // Open Add/Edit Guest Book Modal
+  const handleOpenAddGuestBook = (defaultCategory: 'umum' | 'pembinaan' = 'umum') => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+
+    setEditingGuestBook(null);
+    setGuestBookFormCategory(defaultCategory);
+    setGuestBookFormDate(`${y}-${m}-${day}`);
+    setGuestBookFormTime(`${h}:${min}`);
+    setGuestBookFormName('');
+    setGuestBookFormPosition('');
+    setGuestBookFormInstitution('');
+    setGuestBookFormPurpose('');
+    setGuestBookFormPhone('');
+    setGuestBookFormNotes('');
+    setGuestBookFormSupervisorNip('');
+    setGuestBookFormCoachingSubject('');
+    setGuestBookFormFindings('');
+    setGuestBookFormRecommendations('');
+    setGuestBookFormFollowUpStatus('Belum');
+    setGuestBookFormFollowUpNotes('');
+    setGuestBookFormStatus('Selesai');
+    setIsGuestBookModalOpen(true);
+  };
+
+  const handleOpenEditGuestBook = (entry: GuestBookEntry) => {
+    setEditingGuestBook(entry);
+    setGuestBookFormCategory(entry.category === 'pembinaan' ? 'pembinaan' : 'umum');
+    setGuestBookFormDate(entry.date || '');
+    setGuestBookFormTime(entry.time || '');
+    setGuestBookFormName(entry.name || '');
+    setGuestBookFormPosition(entry.position || '');
+    setGuestBookFormInstitution(entry.institution || '');
+    setGuestBookFormPurpose(entry.purpose || '');
+    setGuestBookFormPhone(entry.phone || '');
+    setGuestBookFormNotes(entry.notes || '');
+    setGuestBookFormSupervisorNip(entry.supervisorNip || '');
+    setGuestBookFormCoachingSubject(entry.coachingSubject || '');
+    setGuestBookFormFindings(entry.findings || '');
+    setGuestBookFormRecommendations(entry.recommendations || '');
+    setGuestBookFormFollowUpStatus(entry.followUpStatus || 'Belum');
+    setGuestBookFormFollowUpNotes(entry.followUpNotes || '');
+    setGuestBookFormStatus(entry.status || 'Selesai');
+    setIsGuestBookModalOpen(true);
+  };
+
+  const handleSaveGuestBook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!guestBookFormName.trim() || !guestBookFormInstitution.trim()) {
+      alert('Nama dan Asal Instansi wajib diisi.');
+      return;
+    }
+    if (guestBookFormCategory === 'umum' && !guestBookFormPurpose.trim()) {
+      alert('Keperluan Kunjungan wajib diisi untuk Buku Tamu Umum.');
+      return;
+    }
+    if (guestBookFormCategory === 'pembinaan' && !guestBookFormCoachingSubject.trim()) {
+      alert('Aspek/Materi Pembinaan wajib diisi untuk Buku Tamu Pembinaan.');
+      return;
+    }
+
+    setIsSavingGuestBook(true);
+    try {
+      const payload: Partial<GuestBookEntry> = {
+        category: guestBookFormCategory,
+        date: guestBookFormDate,
+        time: guestBookFormTime,
+        name: guestBookFormName.trim(),
+        position: guestBookFormPosition.trim(),
+        institution: guestBookFormInstitution.trim(),
+        purpose: guestBookFormCategory === 'pembinaan' ? (guestBookFormPurpose.trim() || guestBookFormCoachingSubject.trim()) : guestBookFormPurpose.trim(),
+        phone: guestBookFormPhone.trim(),
+        notes: guestBookFormNotes.trim(),
+        supervisorNip: guestBookFormSupervisorNip.trim(),
+        coachingSubject: guestBookFormCoachingSubject.trim(),
+        findings: guestBookFormFindings.trim(),
+        recommendations: guestBookFormRecommendations.trim(),
+        followUpStatus: guestBookFormFollowUpStatus,
+        followUpNotes: guestBookFormFollowUpNotes.trim(),
+        status: guestBookFormStatus
+      };
+
+      let res: Response;
+      if (editingGuestBook) {
+        res = await fetch(`/api/guest-book/${editingGuestBook.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        res = await fetch('/api/guest-book', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Gagal menyimpan ke database MySQL.');
+      }
+
+      await fetchGuestBooks();
+      setIsGuestBookModalOpen(false);
+      setNotifMsg({ 
+        type: 'success', 
+        text: `Data ${guestBookFormCategory === 'pembinaan' ? 'Buku Tamu Pembinaan' : 'Buku Tamu Umum'} berhasil disimpan langsung ke database MySQL!` 
+      });
+    } catch (err: any) {
+      console.error('Error saving guest book to MySQL:', err);
+      alert(err.message || 'Gagal menyimpan data buku tamu.');
+    } finally {
+      setIsSavingGuestBook(false);
+    }
+  };
+
+  const handleDeleteGuestBook = async (id: string) => {
+    if (!window.confirm('Apakah Anda yakin ingin menghapus catatan tamu ini dari database MySQL?')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/guest-book/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Gagal menghapus dari MySQL.');
+      }
+
+      setGuestBooks(prev => prev.filter(g => g.id !== id));
+      setNotifMsg({ type: 'success', text: 'Catatan buku tamu berhasil dihapus dari database MySQL!' });
+    } catch (err: any) {
+      console.error('Error deleting guest book from MySQL:', err);
+      alert(err.message || 'Gagal menghapus data.');
+    }
+  };
 
   // Local state for Principal endpoints
   const [workPrograms, setWorkPrograms] = useState<PrincipalWorkProgram[]>([]);
@@ -1139,6 +1363,652 @@ export default function PrincipalPanel({
     document.body.removeChild(link);
   };
 
+  // Filtered guest book entries
+  const filteredGuestBooks = useMemo(() => {
+    return guestBooks.filter(item => {
+      // 0. Category filter
+      if (guestBookCategoryTab !== 'all') {
+        const itemCat = item.category || 'umum';
+        if (itemCat !== guestBookCategoryTab) return false;
+      }
+
+      // 1. Search Query
+      if (guestBookSearch.trim()) {
+        const q = guestBookSearch.toLowerCase();
+        const matchName = (item.name || '').toLowerCase().includes(q);
+        const matchInst = (item.institution || '').toLowerCase().includes(q);
+        const matchPurp = (item.purpose || '').toLowerCase().includes(q);
+        const matchPos = (item.position || '').toLowerCase().includes(q);
+        const matchPhone = (item.phone || '').toLowerCase().includes(q);
+        const matchSubj = (item.coachingSubject || '').toLowerCase().includes(q);
+        const matchFindings = (item.findings || '').toLowerCase().includes(q);
+        const matchRecom = (item.recommendations || '').toLowerCase().includes(q);
+        if (!matchName && !matchInst && !matchPurp && !matchPos && !matchPhone && !matchSubj && !matchFindings && !matchRecom) {
+          return false;
+        }
+      }
+
+      // 2. Status Filter
+      if (guestBookStatusFilter !== 'all' && item.status !== guestBookStatusFilter) {
+        return false;
+      }
+
+      // 3. Date Filter
+      if (guestBookDateFilter === 'today') {
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (item.date !== todayStr) return false;
+      } else if (guestBookDateFilter === 'this_week') {
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        if (item.date < sevenDaysAgo) return false;
+      } else if (guestBookDateFilter === 'this_month') {
+        const now = new Date();
+        const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        if (!item.date.startsWith(monthPrefix)) return false;
+      } else if (guestBookDateFilter === 'custom') {
+        if (guestBookStartDate && item.date < guestBookStartDate) return false;
+        if (guestBookEndDate && item.date > guestBookEndDate) return false;
+      }
+
+      return true;
+    });
+  }, [guestBooks, guestBookCategoryTab, guestBookSearch, guestBookStatusFilter, guestBookDateFilter, guestBookStartDate, guestBookEndDate]);
+
+  // Cetak Laporan Rekapitulasi Buku Tamu PDF (Umum, Pembinaan, atau Semua)
+  const handlePrintGuestBookReport = (categoryOverride?: 'umum' | 'pembinaan' | 'all') => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Popup diblokir oleh browser. Izinkan popup untuk mencetak laporan buku tamu.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const schoolAddress = schoolIdentity?.address || "Jl. Raya Kasri No. 19 Pandaan, Pasuruan";
+    const principalName = schoolIdentity?.principal || "H. Ahmad Fuad, S.Pd, M.PdI";
+
+    const activeCat = categoryOverride || guestBookCategoryTab;
+
+    // Filter items according to target category
+    const entriesToPrint = guestBooks.filter(item => {
+      if (activeCat !== 'all') {
+        const itemCat = item.category || 'umum';
+        if (itemCat !== activeCat) return false;
+      }
+      // Apply date filter
+      if (guestBookDateFilter === 'today') {
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (item.date !== todayStr) return false;
+      } else if (guestBookDateFilter === 'this_week') {
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        if (item.date < sevenDaysAgo) return false;
+      } else if (guestBookDateFilter === 'this_month') {
+        const now = new Date();
+        const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        if (!item.date.startsWith(monthPrefix)) return false;
+      } else if (guestBookDateFilter === 'custom') {
+        if (guestBookStartDate && item.date < guestBookStartDate) return false;
+        if (guestBookEndDate && item.date > guestBookEndDate) return false;
+      }
+      return true;
+    });
+
+    let periodLabel = "Semua Riwayat Kunjungan";
+    if (guestBookDateFilter === 'today') periodLabel = `Hari Ini (${new Date().toLocaleDateString('id-ID', { dateStyle: 'full' })})`;
+    else if (guestBookDateFilter === 'this_week') periodLabel = "7 Hari Terakhir";
+    else if (guestBookDateFilter === 'this_month') periodLabel = `Bulan ${new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}`;
+    else if (guestBookDateFilter === 'custom') periodLabel = `Periode: ${guestBookStartDate || 'Awal'} s.d. ${guestBookEndDate || 'Sekarang'}`;
+
+    const dateTodayFormatted = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    let reportTitle = "LAPORAN REKAPITULASI BUKU TAMU KUNJUNGAN SEKOLAH";
+    if (activeCat === 'pembinaan') {
+      reportTitle = "BUKU CATATAN PEMBINAAN & SUPERVISI KEPALA SEKOLAH";
+    } else if (activeCat === 'umum') {
+      reportTitle = "BUKU TAMU UMUM KUNJUNGAN SEKOLAH";
+    }
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${reportTitle} - ${schoolName}</title>
+          <style>
+            @page {
+              size: A4 landscape;
+              margin: 10mm;
+            }
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              margin: 0;
+              padding: 0;
+              font-size: 10.5px;
+              color: #0f172a;
+              background: #fff;
+            }
+            .header-kop {
+              width: 100%;
+              text-align: center;
+              margin: 0 0 12px 0;
+              padding: 0;
+            }
+            .header-kop img.kop-img {
+              width: 100% !important;
+              max-width: 100% !important;
+              height: auto !important;
+              max-height: none !important;
+              display: block !important;
+              margin: 0 auto !important;
+              border: none !important;
+            }
+            .kop-text-box {
+              width: 100%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 16px;
+              border-bottom: 3.5px double #0f172a;
+              padding-bottom: 8px;
+              margin-bottom: 12px;
+            }
+            .kop-text-box h2 {
+              margin: 0;
+              font-size: 16px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .kop-text-box p {
+              margin: 2px 0 0 0;
+              font-size: 11px;
+              color: #334155;
+            }
+            .report-title {
+              text-align: center;
+              margin: 10px 0 6px 0;
+            }
+            .report-title h3 {
+              margin: 0;
+              font-size: 13.5px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .report-title p {
+              margin: 3px 0 0 0;
+              font-size: 10.5px;
+              color: #475569;
+              font-weight: 600;
+            }
+            .meta-bar {
+              display: flex;
+              justify-content: space-between;
+              margin: 10px 0 6px 0;
+              font-size: 10px;
+              color: #334155;
+              border-bottom: 1px solid #cbd5e1;
+              padding-bottom: 4px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 6px;
+              font-size: 9.5px;
+            }
+            th, td {
+              border: 1px solid #94a3b8;
+              padding: 5px 6px;
+              text-align: left;
+              vertical-align: top;
+            }
+            th {
+              background-color: #f1f5f9;
+              font-weight: 800;
+              text-align: center;
+              text-transform: uppercase;
+              font-size: 9px;
+              color: #0f172a;
+            }
+            tr:nth-child(even) {
+              background-color: #f8fafc;
+            }
+            .text-center { text-align: center; }
+            .badge-cat {
+              display: inline-block;
+              padding: 2px 5px;
+              border-radius: 4px;
+              font-weight: bold;
+              font-size: 8.5px;
+              text-transform: uppercase;
+            }
+            .badge-pembinaan { background: #fef3c7; color: #92400e; }
+            .badge-umum { background: #e0e7ff; color: #3730a3; }
+            .signature-section {
+              margin-top: 25px;
+              display: flex;
+              justify-content: space-between;
+              page-break-inside: avoid;
+            }
+            .signature-box {
+              text-align: center;
+              width: 260px;
+              font-size: 10.5px;
+            }
+            .signature-space {
+              height: 60px;
+            }
+            .signature-name {
+              font-weight: 900;
+              text-decoration: underline;
+              font-size: 11px;
+            }
+            @media print {
+              body { padding: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header-kop">
+            ${schoolIdentity?.letterhead ? `
+              <img class="kop-img" src="${schoolIdentity.letterhead}" alt="KOP Sekolah" />
+            ` : `
+              <div class="kop-text-box">
+                ${schoolIdentity?.logo ? `<img src="${schoolIdentity.logo}" style="width: 65px; height: 65px; object-fit: contain;" />` : ''}
+                <div style="text-align: center; flex: 1;">
+                  <h2>${schoolName}</h2>
+                  <p>${schoolAddress}</p>
+                  <p style="font-size: 10px; color: #64748b;">NPSN: ${schoolIdentity?.npsn || '20519300'} • Status: ${schoolIdentity?.accreditation || 'Terakreditasi A'}</p>
+                </div>
+              </div>
+            `}
+          </div>
+
+          <div class="report-title">
+            <h3>${reportTitle}</h3>
+            <p>Periode: ${periodLabel} | Total: ${entriesToPrint.length} Data Terdaftar</p>
+          </div>
+
+          <div class="meta-bar">
+            <span><strong>Dicetak pada:</strong> ${dateTodayFormatted}</span>
+            <span><strong>Sistem Informasi:</strong> Database MySQL (Tersimpan Permanen)</span>
+          </div>
+
+          ${activeCat === 'pembinaan' ? `
+            <!-- TABEL KHUSUS BUKU TAMU PEMBINAAN -->
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25px;">No</th>
+                  <th style="width: 80px;">Hari/Tanggal &amp; Waktu</th>
+                  <th style="width: 140px;">Nama &amp; NIP Pembina</th>
+                  <th style="width: 120px;">Jabatan &amp; Instansi</th>
+                  <th style="width: 140px;">Aspek / Materi Pembinaan</th>
+                  <th>Temuan &amp; Catatan Pembinaan</th>
+                  <th>Saran &amp; Rekomendasi Tindak Lanjut</th>
+                  <th style="width: 85px;">Tindak Lanjut Sekolah</th>
+                  <th style="width: 60px;">Paraf</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${entriesToPrint.length === 0 ? `
+                  <tr>
+                    <td colspan="9" class="text-center" style="padding: 20px; color: #64748b;">
+                      Tidak ada catatan buku tamu pembinaan pada periode ini.
+                    </td>
+                  </tr>
+                ` : entriesToPrint.map((item, idx) => `
+                  <tr>
+                    <td class="text-center">${idx + 1}</td>
+                    <td class="text-center">
+                      <strong>${item.date}</strong><br/>
+                      <span style="color: #64748b; font-size: 8.5px;">${item.time || '-'} WIB</span>
+                    </td>
+                    <td>
+                      <strong>${item.name}</strong>
+                      ${item.supervisorNip ? `<br/><span style="color: #475569; font-size: 8.5px; font-family: monospace;">NIP. ${item.supervisorNip}</span>` : ''}
+                      ${item.phone ? `<br/><span style="color: #059669; font-size: 8px;">WA: ${item.phone}</span>` : ''}
+                    </td>
+                    <td>
+                      <strong>${item.position || 'Pembina / Pengawas'}</strong><br/>
+                      <span>${item.institution}</span>
+                    </td>
+                    <td>
+                      <strong style="color: #92400e;">${item.coachingSubject || item.purpose}</strong>
+                    </td>
+                    <td>${item.findings || item.notes || '-'}</td>
+                    <td>${item.recommendations || '-'}</td>
+                    <td class="text-center">
+                      <span style="font-weight: bold; color: ${item.followUpStatus === 'Selesai' ? '#059669' : item.followUpStatus === 'Proses' ? '#d97706' : '#dc2626'};">
+                        ${item.followUpStatus || 'Belum'}
+                      </span>
+                      ${item.followUpNotes ? `<br/><span style="font-size: 8px; color: #475569;">${item.followUpNotes}</span>` : ''}
+                    </td>
+                    <td class="text-center" style="height: 35px;"></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : activeCat === 'umum' ? `
+            <!-- TABEL KHUSUS BUKU TAMU UMUM -->
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 28px;">No</th>
+                  <th style="width: 90px;">Tanggal &amp; Waktu</th>
+                  <th style="width: 150px;">Nama Lengkap Tamu</th>
+                  <th style="width: 120px;">Jabatan / Profesi</th>
+                  <th style="width: 140px;">Asal Instansi</th>
+                  <th>Keperluan Kunjungan</th>
+                  <th style="width: 95px;">No. WhatsApp</th>
+                  <th style="width: 70px;">Status</th>
+                  <th style="width: 70px;">Tanda Tangan</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${entriesToPrint.length === 0 ? `
+                  <tr>
+                    <td colspan="9" class="text-center" style="padding: 20px; color: #64748b;">
+                      Tidak ada data buku tamu umum pada periode ini.
+                    </td>
+                  </tr>
+                ` : entriesToPrint.map((item, idx) => `
+                  <tr>
+                    <td class="text-center">${idx + 1}</td>
+                    <td class="text-center">
+                      <strong>${item.date}</strong><br/>
+                      <span style="color: #64748b; font-size: 9px;">${item.time || '-'} WIB</span>
+                    </td>
+                    <td>
+                      <strong>${item.name}</strong>
+                      ${item.notes ? `<br/><span style="color: #64748b; font-size: 8.5px;">Ket: ${item.notes}</span>` : ''}
+                    </td>
+                    <td>${item.position || '-'}</td>
+                    <td><strong>${item.institution}</strong></td>
+                    <td>${item.purpose}</td>
+                    <td class="text-center font-mono">${item.phone}</td>
+                    <td class="text-center font-semibold">${item.status || 'Selesai'}</td>
+                    <td class="text-center" style="height: 32px;"></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : `
+            <!-- TABEL GABUNGAN SEMUA TAMU -->
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25px;">No</th>
+                  <th style="width: 60px;">Jenis</th>
+                  <th style="width: 85px;">Tgl &amp; Waktu</th>
+                  <th style="width: 140px;">Nama Tamu / Pembina</th>
+                  <th style="width: 110px;">Jabatan</th>
+                  <th style="width: 120px;">Asal Instansi</th>
+                  <th>Keperluan / Aspek Pembinaan</th>
+                  <th style="width: 90px;">No. WhatsApp</th>
+                  <th style="width: 70px;">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${entriesToPrint.length === 0 ? `
+                  <tr>
+                    <td colspan="9" class="text-center" style="padding: 20px; color: #64748b;">
+                      Tidak ada data tamu pada periode ini.
+                    </td>
+                  </tr>
+                ` : entriesToPrint.map((item, idx) => `
+                  <tr>
+                    <td class="text-center">${idx + 1}</td>
+                    <td class="text-center">
+                      <span class="badge-cat ${item.category === 'pembinaan' ? 'badge-pembinaan' : 'badge-umum'}">
+                        ${item.category === 'pembinaan' ? 'Pembinaan' : 'Umum'}
+                      </span>
+                    </td>
+                    <td class="text-center">
+                      <strong>${item.date}</strong><br/>
+                      <span style="color: #64748b; font-size: 8.5px;">${item.time || '-'} WIB</span>
+                    </td>
+                    <td>
+                      <strong>${item.name}</strong>
+                      ${item.supervisorNip ? `<br/><span style="color: #475569; font-size: 8.5px; font-family: monospace;">NIP: ${item.supervisorNip}</span>` : ''}
+                    </td>
+                    <td>${item.position || '-'}</td>
+                    <td><strong>${item.institution}</strong></td>
+                    <td>
+                      <strong>${item.category === 'pembinaan' ? (item.coachingSubject || item.purpose) : item.purpose}</strong>
+                      ${item.recommendations ? `<br/><span style="color: #059669; font-size: 8.5px;">Saran: ${item.recommendations}</span>` : ''}
+                    </td>
+                    <td class="text-center font-mono">${item.phone}</td>
+                    <td class="text-center font-semibold">${item.status || 'Selesai'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `}
+
+          <div class="signature-section">
+            ${activeCat === 'pembinaan' ? `
+              <div class="signature-box">
+                <div>Pandaan, ${dateTodayFormatted}</div>
+                <div>Pengawas / Pembina Sekolah,</div>
+                <div class="signature-space"></div>
+                <div class="signature-name">( .................................................... )</div>
+                <div style="font-size: 10px; color: #475569;">NIP. .............................................</div>
+              </div>
+            ` : `<div></div>`}
+
+            <div class="signature-box">
+              <div>Pandaan, ${dateTodayFormatted}</div>
+              <div>Mengetahui,</div>
+              <div style="font-weight: bold; margin-top: 2px;">Kepala SMP Ma'arif NU Pandaan</div>
+              <div class="signature-space"></div>
+              <div class="signature-name">${principalName}</div>
+              <div style="font-size: 10px; color: #475569;">NIP/NIK. ${schoolIdentity?.principalNip || '-'}</div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  };
+
+  // Cetak Stand Meja / Akrilik QR Code Buku Tamu
+  const handlePrintQrStandBanner = (qrType: 'all' | 'umum' | 'pembinaan' = qrTypeSelection) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Popup diblokir oleh browser. Izinkan popup untuk mencetak stand banner QR Code.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const schoolAddress = schoolIdentity?.address || "Jl. Raya Kasri No. 19 Pandaan, Pasuruan";
+    const schoolLogo = schoolIdentity?.logo || "";
+
+    const bannerTitle = qrType === 'pembinaan' 
+      ? 'BUKU TAMU PEMBINAAN & SUPERVISI' 
+      : qrType === 'umum' 
+      ? 'BUKU TAMU UMUM KUNJUNGAN' 
+      : 'BUKU TAMU DIGITAL RESMI';
+
+    const bannerSubtitle = qrType === 'pembinaan'
+      ? 'Khusus Pengawas Pembina, Tim Monev, Asesor & Tamu Kedinasan'
+      : qrType === 'umum'
+      ? 'Selamat Datang Tamu, Wali Murid & Mitra Sekolah'
+      : 'Buku Tamu Umum & Buku Tamu Pembinaan Supervisi';
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Stand Banner QR Buku Tamu - ${schoolName}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 15mm;
+            }
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              margin: 0;
+              padding: 0;
+              color: #0f172a;
+              background: #fff;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              min-height: 90vh;
+              text-align: center;
+            }
+            .card-stand {
+              border: 3px solid #0f172a;
+              border-radius: 24px;
+              padding: 30px 24px;
+              max-width: 520px;
+              width: 100%;
+              box-sizing: border-box;
+            }
+            .school-logo {
+              width: 70px;
+              height: 70px;
+              object-fit: contain;
+              margin-bottom: 8px;
+            }
+            h1 {
+              margin: 0;
+              font-size: 20px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              color: #0f172a;
+            }
+            .sub {
+              font-size: 11px;
+              color: #475569;
+              margin-top: 3px;
+              font-weight: 600;
+            }
+            .badge-buku-tamu {
+              display: inline-block;
+              margin: 16px 0 8px 0;
+              padding: 6px 18px;
+              background-color: ${qrType === 'pembinaan' ? '#d97706' : '#059669'};
+              color: #fff;
+              font-size: 12px;
+              font-weight: 900;
+              border-radius: 9999px;
+              letter-spacing: 1px;
+              text-transform: uppercase;
+            }
+            .qr-container {
+              background: #fff;
+              padding: 12px;
+              border: 2px dashed #94a3b8;
+              border-radius: 20px;
+              display: inline-block;
+              margin: 10px 0;
+            }
+            .qr-container img {
+              width: 260px;
+              height: 260px;
+              display: block;
+            }
+            .instruction-box {
+              background-color: #f8fafc;
+              border: 1px solid #cbd5e1;
+              border-radius: 14px;
+              padding: 12px;
+              margin-top: 14px;
+              font-size: 11px;
+              line-height: 1.5;
+            }
+            .instruction-box ol {
+              text-align: left;
+              margin: 6px 0 0 18px;
+              padding: 0;
+            }
+            .instruction-box li {
+              margin-bottom: 3px;
+              font-weight: 600;
+            }
+            .footer-note {
+              margin-top: 16px;
+              font-size: 10px;
+              color: #64748b;
+              font-weight: 600;
+            }
+            @media print {
+              body { min-height: 0; padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="card-stand">
+            ${schoolLogo ? `<img class="school-logo" src="${schoolLogo}" alt="Logo Sekolah" />` : ''}
+            <h1>${schoolName}</h1>
+            <div class="sub">${schoolAddress}</div>
+
+            <div class="badge-buku-tamu">${bannerTitle}</div>
+
+            <p style="font-size: 12px; margin: 4px 0 2px 0; font-weight: bold; color: #334155;">
+              SELAMAT DATANG BAPAK / IBU TAMU
+            </p>
+            <p style="font-size: 10.5px; color: #64748b; margin: 0 0 10px 0;">
+              ${bannerSubtitle}
+            </p>
+
+            <div class="qr-container">
+              <img src="${qrDataUrl}" alt="QR Code Buku Tamu" />
+            </div>
+
+            <div class="instruction-box">
+              <div style="font-weight: bold; color: #0f172a; text-transform: uppercase; font-size: 10px; margin-bottom: 4px;">
+                Cara Pengisian Praktis (Tanpa Perlu Login):
+              </div>
+              <div style="font-size: 9.5px; color: #475569; margin-bottom: 6px; line-height: 1.4;">
+                Dapat dipindai menggunakan <strong>Kamera Bawaan HP</strong>, <strong>Google Lens</strong>, atau <strong>Aplikasi QR Scanner apa saja</strong> yang diunduh dari <strong>Google Play Store / Apple App Store</strong>.
+              </div>
+              <ol>
+                <li>Buka aplikasi Pemindai QR atau Kamera HP Anda.</li>
+                <li>Arahkan kamera ke Kode QR di atas sampai muncul tautan/link formulir.</li>
+                <li>Klik buka link (langsung terbuka di browser tanpa perlu login akun).</li>
+                <li>Pilih jenis buku tamu (1. Buku Tamu Umum / 2. Buku Tamu Pembinaan), isi data kehadiran Anda, lalu tekan <strong>"Kirim &amp; Catat di Buku Tamu"</strong>. Selesai!</li>
+              </ol>
+            </div>
+
+            <div class="footer-note">
+              Terima kasih atas kerja sama dan kunjungan Anda di SMP Ma'arif NU Pandaan.
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  };
+
+  const handleDownloadGuestBookXLS = () => {
+    let content = "No\tKategori\tTanggal\tWaktu\tNama Tamu / Pembina\tNIP Pembina\tJabatan\tAsal Instansi\tKeperluan / Aspek Pembinaan\tTemuan Pembinaan\tRekomendasi Tindak Lanjut\tStatus Tindak Lanjut\tNo. HP / WhatsApp\tStatus\tCatatan\n";
+    filteredGuestBooks.forEach((item, idx) => {
+      content += `${idx + 1}\t${item.category === 'pembinaan' ? 'Pembinaan' : 'Umum'}\t${item.date}\t${item.time || '-'}\t${item.name}\t${item.supervisorNip || '-'}\t${item.position || '-'}\t${item.institution}\t${item.category === 'pembinaan' ? (item.coachingSubject || item.purpose) : item.purpose}\t${(item.findings || '-').replace(/\n/g, ' ')}\t${(item.recommendations || '-').replace(/\n/g, ' ')}\t${item.followUpStatus || '-'}\t${item.phone}\t${item.status || 'Selesai'}\t${(item.notes || '-').replace(/\n/g, ' ')}\n`;
+    });
+
+    const blob = new Blob([content], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Buku_Tamu_SMP_Maarif_${guestBookCategoryTab}_${new Date().toISOString().split('T')[0]}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="flex flex-col gap-6 text-left animate-fade-in pb-16">
       
@@ -1284,6 +2154,26 @@ export default function PrincipalPanel({
             📊 Command Dashboard
           </button>
           <button
+            onClick={() => {
+              setActiveTab('buku_tamu');
+              fetchGuestBooks();
+            }}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'buku_tamu' 
+                ? 'bg-emerald-600 text-white shadow-sm' 
+                : 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100/70 border border-emerald-200/60'
+            }`}
+          >
+            <span>📖 Buku Tamu</span>
+            {guestBooks.length > 0 && (
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                activeTab === 'buku_tamu' ? 'bg-white/20 text-white' : 'bg-emerald-200/80 text-emerald-800'
+              }`}>
+                {guestBooks.length}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setActiveTab('work_programs')}
             className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
               activeTab === 'work_programs' 
@@ -1378,6 +2268,33 @@ export default function PrincipalPanel({
         >
           ⚙️ Identitas Sekolah
         </button>
+      </div>
+
+      {/* Mobile Tab Selector */}
+      <div className="md:hidden bg-white border border-slate-200 rounded-2xl p-2.5 shadow-xs">
+        <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Pilih Menu Panel</label>
+        <select
+          value={activeTab}
+          onChange={(e) => {
+            const val = e.target.value as any;
+            setActiveTab(val);
+            if (val === 'buku_tamu') fetchGuestBooks();
+            if (val === 'sarpras_monitoring') fetchSarprasData();
+          }}
+          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-extrabold text-slate-800 cursor-pointer"
+        >
+          <option value="dashboard">📊 Command Dashboard</option>
+          <option value="buku_tamu">📖 Buku Tamu Kunjungan ({guestBooks.length})</option>
+          <option value="work_programs">📋 Program Kerja Kepsek</option>
+          <option value="evaluations">🏆 Penilaian Kinerja Guru (PKG)</option>
+          <option value="journals">📚 Jurnal KBM Guru</option>
+          <option value="jadwal">🗓️ Matriks Jadwal</option>
+          <option value="bk_monitoring">🛡️ Monitoring BK & Moral</option>
+          <option value="attendance_recap">📅 Rekap Presensi</option>
+          <option value="finance_monitoring">💰 Monitoring Keuangan</option>
+          <option value="sarpras_monitoring">📦 Monitoring Sarpras</option>
+          <option value="school_profile">⚙️ Identitas Sekolah</option>
+        </select>
       </div>
 
       {/* CORE SCREENS VIEW ROUTINGS */}
@@ -4350,6 +5267,1186 @@ export default function PrincipalPanel({
         </div>
       )}
 
+      {/* ======================================================== */}
+      {/* TAB BUKU TAMU & PEMBINAAN DIGITAL KEPALA SEKOLAH         */}
+      {/* Disimpan langsung di Database MySQL tanpa simpan lokal  */}
+      {/* 2 Jenis: 1 Buku Tamu Umum, 2 Buku Tamu Pembinaan         */}
+      {/* ======================================================== */}
+      {activeTab === 'buku_tamu' && (
+        <div className="flex flex-col gap-6 animate-fade-in text-left">
+          
+          {/* Header Card & Quick Actions */}
+          <div className="bg-slate-900 text-white rounded-3xl p-6 md:p-8 shadow-sm relative overflow-hidden">
+            <div className="absolute right-0 top-0 h-full w-1/3 opacity-15 pointer-events-none bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-amber-500 via-indigo-500 to-transparent hidden md:block" />
+            
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative">
+              <div className="flex items-center gap-4">
+                <div className="p-3.5 bg-gradient-to-br from-amber-500 to-indigo-600 rounded-2xl text-white shadow-lg shadow-amber-500/20">
+                  <BookOpen size={28} />
+                </div>
+                <div>
+                  <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black tracking-wider uppercase mb-1 border border-emerald-500/30">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Database MySQL Langsung (Tanpa Simpan Lokal)
+                  </div>
+                  <h2 className="text-xl md:text-2xl font-black text-white tracking-tight">
+                    Buku Tamu Digital &amp; Pembinaan Sekolah
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                    Arsip digital resmi penerimaan tamu: <strong>1. Buku Tamu Umum</strong> (wali murid, vendor, mitra) dan <strong>2. Buku Tamu Pembinaan</strong> (Pengawas Pembina, Tim Monev, Asesor &amp; Dinas Pendidikan).
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsQrModalOpen(true)}
+                  className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black tracking-wider uppercase transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <QrCode size={16} />
+                  <span>QR Meja Tamu</span>
+                </button>
+
+                <div className="relative group">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintGuestBookReport(guestBookCategoryTab)}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black tracking-wider uppercase transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95"
+                  >
+                    <Printer size={16} />
+                    <span>Cetak PDF Laporan</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddGuestBook(guestBookCategoryTab === 'pembinaan' ? 'pembinaan' : 'umum')}
+                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-black tracking-wider uppercase transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <Plus size={16} />
+                  <span>Catat Tamu Manual</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadGuestBookXLS}
+                  className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/15 cursor-pointer"
+                  title="Unduh Data Excel (.xls)"
+                >
+                  <Download size={16} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={fetchGuestBooks}
+                  disabled={loadingGuestBooks}
+                  className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/15 cursor-pointer disabled:opacity-50"
+                  title="Segarkan dari Database MySQL"
+                >
+                  <RefreshCw size={16} className={loadingGuestBooks ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 2 JENIS BUKU TAMU SELECTOR TABS */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-2 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+              <button
+                type="button"
+                onClick={() => setGuestBookCategoryTab('all')}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
+                  guestBookCategoryTab === 'all'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <span>Semua Kategori</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${guestBookCategoryTab === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                  {guestBooks.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGuestBookCategoryTab('umum')}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
+                  guestBookCategoryTab === 'umum'
+                    ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                    : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'
+                }`}
+              >
+                <BookOpen size={14} />
+                <span>1. Buku Tamu Umum</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${guestBookCategoryTab === 'umum' ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+                  {guestBooks.filter(g => (g.category || 'umum') === 'umum').length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGuestBookCategoryTab('pembinaan')}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
+                  guestBookCategoryTab === 'pembinaan'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/25'
+                    : 'text-slate-600 hover:bg-amber-50 hover:text-amber-800'
+                }`}
+              >
+                <Award size={14} />
+                <span>2. Buku Tamu Pembinaan</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${guestBookCategoryTab === 'pembinaan' ? 'bg-slate-900 text-white' : 'bg-amber-100 text-amber-900'}`}>
+                  {guestBooks.filter(g => g.category === 'pembinaan').length}
+                </span>
+              </button>
+            </div>
+
+            {/* Quick Print buttons for the active view */}
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              {guestBookCategoryTab === 'pembinaan' ? (
+                <button
+                  type="button"
+                  onClick={() => handlePrintGuestBookReport('pembinaan')}
+                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-[11px] font-black transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer size={13} />
+                  <span>Cetak Buku Pembinaan (Format Resmi)</span>
+                </button>
+              ) : guestBookCategoryTab === 'umum' ? (
+                <button
+                  type="button"
+                  onClick={() => handlePrintGuestBookReport('umum')}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-xl text-[11px] font-black transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer size={13} />
+                  <span>Cetak Buku Tamu Umum (PDF)</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                  <span>Cetak:</span>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintGuestBookReport('umum')}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10.5px] font-bold text-slate-700 cursor-pointer"
+                  >
+                    Buku Umum
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintGuestBookReport('pembinaan')}
+                    className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 rounded-lg text-[10.5px] font-bold text-amber-900 cursor-pointer"
+                  >
+                    Buku Pembinaan
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Metric KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider">Total Kunjungan</span>
+                <span className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
+                  <Users size={16} />
+                </span>
+              </div>
+              <div>
+                <span className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
+                  {guestBooks.length}
+                </span>
+                <span className="text-[11px] text-slate-400 font-medium ml-1">tamu</span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                {guestBooks.filter(g => (g.category || 'umum') === 'umum').length} Umum • {guestBooks.filter(g => g.category === 'pembinaan').length} Pembinaan
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider">Kunjungan Hari Ini</span>
+                <span className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
+                  <Calendar size={16} />
+                </span>
+              </div>
+              <div>
+                <span className="text-2xl md:text-3xl font-black text-emerald-700 tracking-tight">
+                  {guestBooks.filter(g => g.date === new Date().toISOString().split('T')[0]).length}
+                </span>
+                <span className="text-[11px] text-emerald-600 font-medium ml-1">tamu hari ini</span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                {new Date().toLocaleDateString('id-ID', { dateStyle: 'medium' })}
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider">Buku Tamu Pembinaan</span>
+                <span className="p-2 bg-amber-50 rounded-xl text-amber-600">
+                  <Award size={16} />
+                </span>
+              </div>
+              <div>
+                <span className="text-2xl md:text-3xl font-black text-amber-600 tracking-tight">
+                  {guestBooks.filter(g => g.category === 'pembinaan').length}
+                </span>
+                <span className="text-[11px] text-amber-700 font-medium ml-1">kunjungan</span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                {guestBooks.filter(g => g.category === 'pembinaan' && g.followUpStatus === 'Selesai').length} Selesai Ditindaklanjuti
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider">Instansi Mitra</span>
+                <span className="p-2 bg-purple-50 rounded-xl text-purple-600">
+                  <Building2 size={16} />
+                </span>
+              </div>
+              <div>
+                <span className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
+                  {new Set(guestBooks.map(g => (g.institution || '').trim().toLowerCase()).filter(Boolean)).size}
+                </span>
+                <span className="text-[11px] text-slate-400 font-medium ml-1">lembaga</span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                Mitra, dinas, komite &amp; rekanan
+              </p>
+            </div>
+          </div>
+
+          {/* Filter & Search Bar */}
+          <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="relative w-full md:w-96">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={guestBookSearch}
+                onChange={(e) => setGuestBookSearch(e.target.value)}
+                placeholder="Cari nama, instansi, keperluan, jabatan, NIP, aspek..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-slate-800 transition-colors"
+              />
+              {guestBookSearch && (
+                <button
+                  type="button"
+                  onClick={() => setGuestBookSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+              {/* Date Filter Select */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
+                <Calendar size={13} className="text-slate-500" />
+                <select
+                  value={guestBookDateFilter}
+                  onChange={(e: any) => setGuestBookDateFilter(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
+                >
+                  <option value="all">Semua Waktu</option>
+                  <option value="today">Hari Ini</option>
+                  <option value="this_week">7 Hari Terakhir</option>
+                  <option value="this_month">Bulan Ini</option>
+                  <option value="custom">Rentang Kustom</option>
+                </select>
+              </div>
+
+              {guestBookDateFilter === 'custom' && (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    value={guestBookStartDate}
+                    onChange={(e) => setGuestBookStartDate(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none"
+                  />
+                  <span className="text-xs text-slate-400 font-bold">-</span>
+                  <input
+                    type="date"
+                    value={guestBookEndDate}
+                    onChange={(e) => setGuestBookEndDate(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              {/* Status Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
+                <Filter size={13} className="text-slate-500" />
+                <select
+                  value={guestBookStatusFilter}
+                  onChange={(e) => setGuestBookStatusFilter(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
+                >
+                  <option value="all">Semua Status</option>
+                  <option value="Selesai">Selesai</option>
+                  <option value="Diterima">Diterima</option>
+                  <option value="Menunggu">Menunggu</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* MAIN DATA TABLE VIEW */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-700">
+                  {guestBookCategoryTab === 'pembinaan' ? 'Daftar Buku Tamu Pembinaan / Supervisi' : guestBookCategoryTab === 'umum' ? 'Daftar Buku Tamu Umum' : 'Seluruh Daftar Kunjungan Buku Tamu'}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-600">
+                  {filteredGuestBooks.length} data
+                </span>
+              </div>
+
+              {loadingGuestBooks && (
+                <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+                  <div className="h-3 w-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                  <span>Memuat dari MySQL...</span>
+                </div>
+              )}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/80 text-[10.5px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200/80">
+                    <th className="py-3.5 px-4 w-12 text-center">No</th>
+                    {guestBookCategoryTab === 'all' && (
+                      <th className="py-3.5 px-3 w-28">Kategori</th>
+                    )}
+                    <th className="py-3.5 px-3 w-36">Waktu Kunjungan</th>
+                    <th className="py-3.5 px-4">
+                      {guestBookCategoryTab === 'pembinaan' ? 'Nama Pembina / Pengawas' : 'Nama Tamu'}
+                    </th>
+                    <th className="py-3.5 px-4">Jabatan &amp; Instansi</th>
+                    <th className="py-3.5 px-4">
+                      {guestBookCategoryTab === 'pembinaan' ? 'Aspek Pembinaan & Temuan' : 'Keperluan Kunjungan'}
+                    </th>
+                    <th className="py-3.5 px-3 w-32">WhatsApp</th>
+                    <th className="py-3.5 px-3 w-28 text-center">
+                      {guestBookCategoryTab === 'pembinaan' ? 'Tindak Lanjut' : 'Status'}
+                    </th>
+                    <th className="py-3.5 px-4 w-28 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs text-slate-700 font-medium">
+                  {filteredGuestBooks.length === 0 ? (
+                    <tr>
+                      <td colSpan={guestBookCategoryTab === 'all' ? 9 : 8} className="py-12 text-center text-slate-400">
+                        <BookOpen size={36} className="mx-auto text-slate-300 mb-2 stroke-[1.5]" />
+                        <p className="font-bold text-slate-600">Belum ada catatan buku tamu.</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Tamu dapat scan QR Code di meja resepsionis atau Anda dapat mencatat manual melalui tombol di atas.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredGuestBooks.map((item, idx) => {
+                      const isPembinaan = item.category === 'pembinaan';
+                      return (
+                        <tr 
+                          key={item.id} 
+                          className={`hover:bg-slate-50/70 transition-colors ${isPembinaan ? 'bg-amber-50/20' : ''}`}
+                        >
+                          <td className="py-3 px-4 text-center text-slate-400 font-bold text-[11px]">
+                            {idx + 1}
+                          </td>
+
+                          {guestBookCategoryTab === 'all' && (
+                            <td className="py-3 px-3">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                isPembinaan
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                              }`}>
+                                {isPembinaan ? <Award size={11} /> : <BookOpen size={11} />}
+                                <span>{isPembinaan ? 'Pembinaan' : 'Umum'}</span>
+                              </span>
+                            </td>
+                          )}
+
+                          <td className="py-3 px-3">
+                            <span className="font-bold text-slate-900 block">{item.date}</span>
+                            <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Clock size={10} />
+                              <span>{item.time || '-'} WIB</span>
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <div className="font-black text-slate-900 text-xs">
+                              {item.name}
+                            </div>
+                            {item.supervisorNip && (
+                              <span className="text-[10.5px] font-mono text-slate-500 block">
+                                NIP: {item.supervisorNip}
+                              </span>
+                            )}
+                            {item.notes && (
+                              <span className="text-[10px] text-slate-400 italic block mt-0.5 truncate max-w-xs">
+                                Ket: {item.notes}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            {item.position && (
+                              <span className="text-[11px] font-semibold text-slate-600 block">
+                                {item.position}
+                              </span>
+                            )}
+                            <span className="font-bold text-indigo-700 text-xs">
+                              {item.institution}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-4 max-w-xs">
+                            {isPembinaan ? (
+                              <div className="space-y-1">
+                                <span className="inline-block px-2 py-0.5 rounded-lg text-[10.5px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                                  {item.coachingSubject || item.purpose}
+                                </span>
+                                {item.findings && (
+                                  <p className="text-[11px] text-slate-700 line-clamp-2 leading-relaxed">
+                                    <strong className="text-slate-900">Temuan:</strong> {item.findings}
+                                  </p>
+                                )}
+                                {item.recommendations && (
+                                  <p className="text-[11px] text-emerald-800 line-clamp-2 leading-relaxed bg-emerald-50/60 p-1 rounded-md">
+                                    <strong className="text-emerald-950">Saran:</strong> {item.recommendations}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-800 leading-relaxed font-semibold">
+                                {item.purpose}
+                              </p>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3">
+                            {item.phone ? (
+                              <a
+                                href={`https://wa.me/${item.phone.replace(/[^0-9]/g, '').replace(/^0/, '62')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-mono text-[11px] font-bold transition-colors"
+                                title="Kirim Pesan WhatsApp"
+                              >
+                                <Phone size={11} className="text-emerald-600" />
+                                <span>{item.phone}</span>
+                              </a>
+                            ) : (
+                              <span className="text-slate-400 font-mono text-[11px]">-</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3 text-center">
+                            {isPembinaan ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedGuestBookForDetail(item)}
+                                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-black cursor-pointer transition-all border ${
+                                  item.followUpStatus === 'Selesai'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                                    : item.followUpStatus === 'Proses'
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                                    : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                                }`}
+                                title="Klik untuk update tindak lanjut"
+                              >
+                                {item.followUpStatus || 'Belum'}
+                              </button>
+                            ) : (
+                              <span className="inline-block px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-slate-100 text-slate-700">
+                                {item.status || 'Selesai'}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              {isPembinaan && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedGuestBookForDetail(item)}
+                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-800 transition-colors cursor-pointer"
+                                  title="Lihat Detail & Tindak Lanjut"
+                                >
+                                  <FileText size={13} />
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditGuestBook(item)}
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 transition-colors cursor-pointer"
+                                title="Edit Data Kunjungan"
+                              >
+                                <Edit3 size={13} />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (confirm(`Hapus kunjungan tamu "${item.name}" dari database MySQL secara permanen?`)) {
+                                    try {
+                                      const res = await fetch(`/api/guest-book/${item.id}`, { method: 'DELETE' });
+                                      if (res.ok) {
+                                        await fetchGuestBooks();
+                                        setNotifMsg({ type: 'success', text: 'Data buku tamu berhasil dihapus dari database MySQL!' });
+                                      } else {
+                                        alert('Gagal menghapus data dari database MySQL.');
+                                      }
+                                    } catch (err: any) {
+                                      alert(err.message || 'Gagal menghapus data.');
+                                    }
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-700 transition-colors cursor-pointer"
+                                title="Hapus Data Tamu"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL 1: QR CODE MEJA RESEPSIONIS & PRINT STAND AKRILIK  */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {isQrModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 text-left relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
+                    <QrCode size={20} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-slate-900 uppercase tracking-wide">
+                      QR Code Meja Resepsionis
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Tamu scan QR ini di meja piket untuk mengisi buku tamu
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsQrModalOpen(false)}
+                  className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold cursor-pointer"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* QR Code Target Selector */}
+              <div className="mb-4">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                  Pilihan Formulir Tujuan QR Code:
+                </label>
+                <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setQrTypeSelection('all')}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      qrTypeSelection === 'all'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Semua (Pilihan)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setQrTypeSelection('umum')}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      qrTypeSelection === 'umum'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    1. Buku Umum
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setQrTypeSelection('pembinaan')}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      qrTypeSelection === 'pembinaan'
+                        ? 'bg-amber-500 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    2. Pembinaan
+                  </button>
+                </div>
+              </div>
+
+              {/* QR Image Container */}
+              <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-5 flex flex-col items-center justify-center text-center">
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt="QR Code Buku Tamu"
+                    className="w-56 h-56 rounded-2xl bg-white p-2 shadow-sm border border-slate-200"
+                  />
+                ) : (
+                  <div className="w-56 h-56 rounded-2xl bg-white flex items-center justify-center text-slate-400">
+                    <div className="h-6 w-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
+                <span className="font-mono text-[11px] text-slate-500 mt-2 break-all max-w-xs">
+                  {`${window.location.origin}/?page=bukutamu${qrTypeSelection === 'all' ? '' : `&type=${qrTypeSelection}`}`}
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = `${window.location.origin}/?page=bukutamu${qrTypeSelection === 'all' ? '' : `&type=${qrTypeSelection}`}`;
+                    navigator.clipboard.writeText(link);
+                    setIsCopiedQrLink(true);
+                    setTimeout(() => setIsCopiedQrLink(false), 2000);
+                  }}
+                  className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Copy size={14} />
+                  <span>{isCopiedQrLink ? 'Link Tersalin! ✓' : 'Salin Link Formulir'}</span>
+                </button>
+
+                <a
+                  href={`/?page=bukutamu${qrTypeSelection === 'all' ? '' : `&type=${qrTypeSelection}`}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <ExternalLink size={14} />
+                  <span>Buka Form di Tab Baru</span>
+                </a>
+              </div>
+
+              <div className="mt-3 p-3 rounded-2xl bg-indigo-50/70 border border-indigo-150 text-[11px] text-indigo-900 leading-relaxed">
+                <span className="font-extrabold block text-indigo-950 mb-0.5">💡 Tanpa Perlu Login &amp; Kompatibel Semua Scanner:</span>
+                Tamu dapat memindai QR ini memakai <strong>Kamera Bawaan HP</strong>, <strong>Google Lens</strong>, atau <strong>Aplikasi QR Scanner apa saja</strong> yang diunduh dari Google Play Store / Apple App Store. Form langsung terbuka di browser, tamu isi data lalu tekan Simpan.
+              </div>
+
+              <div className="mt-2.5">
+                <button
+                  type="button"
+                  onClick={() => handlePrintQrStandBanner(qrTypeSelection)}
+                  className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Printer size={15} />
+                  <span>Cetak Stand Meja / Akrilik (Format A4)</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================================================== */}
+      {/* MODAL 2: DETAIL & UPDATE TINDAK LANJUT BUKU PEMBINAAN    */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {selectedGuestBookForDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 text-left relative overflow-hidden space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-amber-50 rounded-xl text-amber-600">
+                    <Award size={20} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-slate-900 uppercase tracking-wide">
+                      Detail Kunjungan Pembinaan &amp; Supervisi
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {selectedGuestBookForDetail.date} • {selectedGuestBookForDetail.time || '-'} WIB
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedGuestBookForDetail(null)}
+                  className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold cursor-pointer"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Pembina Info */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-slate-400 font-semibold">Nama Pembina</span>
+                  <span className="col-span-2 font-bold text-slate-900">{selectedGuestBookForDetail.name}</span>
+                </div>
+                {selectedGuestBookForDetail.supervisorNip && (
+                  <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-1.5">
+                    <span className="text-slate-400 font-semibold">NIP / NUPTK</span>
+                    <span className="col-span-2 font-mono font-bold text-slate-800">{selectedGuestBookForDetail.supervisorNip}</span>
+                  </div>
+                )}
+                <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-1.5">
+                  <span className="text-slate-400 font-semibold">Jabatan &amp; Instansi</span>
+                  <span className="col-span-2 font-semibold text-slate-800">
+                    {selectedGuestBookForDetail.position || '-'} • <strong className="text-indigo-700">{selectedGuestBookForDetail.institution}</strong>
+                  </span>
+                </div>
+                {selectedGuestBookForDetail.phone && (
+                  <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-1.5">
+                    <span className="text-slate-400 font-semibold">WhatsApp</span>
+                    <span className="col-span-2 font-mono font-bold text-emerald-700">{selectedGuestBookForDetail.phone}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Aspek Pembinaan */}
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-amber-900 block mb-1">
+                  Aspek / Sasaran Pembinaan:
+                </label>
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs font-black text-amber-900">
+                  {selectedGuestBookForDetail.coachingSubject || selectedGuestBookForDetail.purpose}
+                </div>
+              </div>
+
+              {/* Temuan */}
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-600 block mb-1">
+                  Temuan &amp; Hasil Pemantauan:
+                </label>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 leading-relaxed font-medium">
+                  {selectedGuestBookForDetail.findings || selectedGuestBookForDetail.notes || 'Tidak ada catatan temuan tertulis.'}
+                </div>
+              </div>
+
+              {/* Rekomendasi */}
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block mb-1">
+                  Saran &amp; Rekomendasi Tindak Lanjut Pengawas:
+                </label>
+                <div className="p-3 bg-emerald-50/70 border border-emerald-300 rounded-xl text-xs text-emerald-950 leading-relaxed font-semibold">
+                  {selectedGuestBookForDetail.recommendations || 'Tidak ada rekomendasi tertulis.'}
+                </div>
+              </div>
+
+              {/* Quick Update Follow-up Section */}
+              <div className="border-t border-slate-100 pt-3">
+                <label className="text-[11px] font-black uppercase tracking-wider text-slate-800 block mb-2">
+                  Tindak Lanjut &amp; Realisasi Kepala Sekolah:
+                </label>
+
+                <div className="flex items-center gap-2 mb-2">
+                  {(['Belum', 'Proses', 'Selesai'] as const).map(st => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setSelectedGuestBookForDetail(prev => prev ? { ...prev, followUpStatus: st } : null)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                        selectedGuestBookForDetail.followUpStatus === st
+                          ? st === 'Selesai'
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                            : st === 'Proses'
+                            ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
+                            : 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {st === 'Selesai' ? '✓ Selesai Ditindaklanjuti' : st === 'Proses' ? '⏳ Dalam Proses' : '✕ Belum Ditindaklanjuti'}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  rows={2}
+                  value={selectedGuestBookForDetail.followUpNotes || ''}
+                  onChange={(e) => setSelectedGuestBookForDetail(prev => prev ? { ...prev, followUpNotes: e.target.value } : null)}
+                  placeholder="Tuliskan catatan realisasi langkah tindak lanjut yang telah diambil sekolah..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-slate-800"
+                />
+
+                <div className="flex justify-end gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedGuestBookForDetail(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!selectedGuestBookForDetail) return;
+                      try {
+                        const res = await fetch(`/api/guest-book/${selectedGuestBookForDetail.id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(selectedGuestBookForDetail)
+                        });
+                        if (res.ok) {
+                          await fetchGuestBooks();
+                          setSelectedGuestBookForDetail(null);
+                          setNotifMsg({ type: 'success', text: 'Tindak lanjut pembinaan berhasil diperbarui di MySQL!' });
+                        } else {
+                          alert('Gagal memperbarui status tindak lanjut.');
+                        }
+                      } catch (err: any) {
+                        alert(err.message || 'Gagal menyimpan perubahan.');
+                      }
+                    }}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer"
+                  >
+                    Simpan Tindak Lanjut
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================================================== */}
+      {/* MODAL 3: TAMBAH / EDIT KUNJUNGAN BUKU TAMU MANUAL        */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {isGuestBookModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 text-left relative overflow-hidden max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2 rounded-xl text-white ${guestBookFormCategory === 'pembinaan' ? 'bg-amber-500' : 'bg-indigo-600'}`}>
+                    {guestBookFormCategory === 'pembinaan' ? <Award size={20} /> : <BookOpen size={20} />}
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-slate-900 uppercase tracking-wide">
+                      {editingGuestBook ? 'Perbarui Data Tamu' : 'Catat Kunjungan Tamu Baru'}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Simpan langsung ke database MySQL resmi sekolah
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsGuestBookModalOpen(false)}
+                  className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold cursor-pointer"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* 2 JENIS BUKU TAMU SELECTOR */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl mb-4">
+                <button
+                  type="button"
+                  onClick={() => setGuestBookFormCategory('umum')}
+                  className={`py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    guestBookFormCategory === 'umum'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <BookOpen size={13} />
+                  <span>1. Buku Tamu Umum</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGuestBookFormCategory('pembinaan')}
+                  className={`py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    guestBookFormCategory === 'pembinaan'
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Award size={13} />
+                  <span>2. Buku Tamu Pembinaan</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveGuestBook} className="space-y-3.5">
+                {/* Tanggal & Waktu */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      Tanggal Kunjungan <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={guestBookFormDate}
+                      onChange={(e) => setGuestBookFormDate(e.target.value)}
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      Waktu / Jam (WIB) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={guestBookFormTime}
+                      onChange={(e) => setGuestBookFormTime(e.target.value)}
+                      placeholder="09:30"
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Nama Lengkap & NIP */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className={guestBookFormCategory === 'pembinaan' ? 'sm:col-span-2' : 'sm:col-span-3'}>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      {guestBookFormCategory === 'pembinaan' ? 'Nama Pembina / Pengawas' : 'Nama Lengkap Tamu'} <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={guestBookFormName}
+                      onChange={(e) => setGuestBookFormName(e.target.value)}
+                      placeholder={guestBookFormCategory === 'pembinaan' ? 'Contoh: Drs. H. Bambang Sutrisno, M.Pd' : 'Contoh: Drs. H. Ahmad Fauzi'}
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+
+                  {guestBookFormCategory === 'pembinaan' && (
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                        NIP / NUPTK
+                      </label>
+                      <input
+                        type="text"
+                        value={guestBookFormSupervisorNip}
+                        onChange={(e) => setGuestBookFormSupervisorNip(e.target.value)}
+                        placeholder="197508..."
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Jabatan & Asal Instansi */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      Jabatan / Profesi
+                    </label>
+                    <input
+                      type="text"
+                      value={guestBookFormPosition}
+                      onChange={(e) => setGuestBookFormPosition(e.target.value)}
+                      placeholder={guestBookFormCategory === 'pembinaan' ? 'Pengawas Pembina' : 'Wali Murid / Mitra'}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      {guestBookFormCategory === 'pembinaan' ? 'Lembaga / Instansi Pembina' : 'Asal Instansi'} <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={guestBookFormInstitution}
+                      onChange={(e) => setGuestBookFormInstitution(e.target.value)}
+                      placeholder={guestBookFormCategory === 'pembinaan' ? 'Dinas Pendidikan Kab. Pasuruan' : 'Umum / Perusahaan'}
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* No. HP / WhatsApp */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                    No. Handphone / WhatsApp
+                  </label>
+                  <input
+                    type="tel"
+                    value={guestBookFormPhone}
+                    onChange={(e) => setGuestBookFormPhone(e.target.value)}
+                    placeholder="Contoh: 081234567890"
+                    className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none font-mono"
+                  />
+                </div>
+
+                {/* KHUSUS BUKU PEMBINAAN */}
+                {guestBookFormCategory === 'pembinaan' ? (
+                  <div className="space-y-3 pt-1 border-t border-slate-100">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-amber-900 block mb-1">
+                        Aspek / Materi Pembinaan <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={guestBookFormCoachingSubject}
+                        onChange={(e) => setGuestBookFormCoachingSubject(e.target.value)}
+                        placeholder="Contoh: Supervisi Akademik & Perangkat Ajar Kurikulum Merdeka"
+                        required
+                        className="w-full bg-amber-50/50 border border-amber-300 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-700 block mb-1">
+                        Temuan &amp; Hasil Pemantauan Pembinaan
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={guestBookFormFindings}
+                        onChange={(e) => setGuestBookFormFindings(e.target.value)}
+                        placeholder="Catatan temuan di lapangan..."
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block mb-1">
+                        Saran &amp; Rekomendasi Tindak Lanjut
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={guestBookFormRecommendations}
+                        onChange={(e) => setGuestBookFormRecommendations(e.target.value)}
+                        placeholder="Arahan tindak lanjut untuk sekolah..."
+                        className="w-full bg-emerald-50/40 border border-emerald-300 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                          Status Tindak Lanjut
+                        </label>
+                        <select
+                          value={guestBookFormFollowUpStatus}
+                          onChange={(e) => setGuestBookFormFollowUpStatus(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                        >
+                          <option value="Belum">Belum Ditindaklanjuti</option>
+                          <option value="Proses">Dalam Proses</option>
+                          <option value="Selesai">Selesai Ditindaklanjuti</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                          Realisasi Tindak Lanjut
+                        </label>
+                        <input
+                          type="text"
+                          value={guestBookFormFollowUpNotes}
+                          onChange={(e) => setGuestBookFormFollowUpNotes(e.target.value)}
+                          placeholder="Catatan realisasi langkah..."
+                          className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* BUKU TAMU UMUM */
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      Keperluan Kunjungan <span className="text-rose-500">*</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={guestBookFormPurpose}
+                      onChange={(e) => setGuestBookFormPurpose(e.target.value)}
+                      placeholder="Tujuan kunjungan atau pihak yang ditemui..."
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                {/* Catatan Tambahan */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                    Catatan Tambahan (Opsional)
+                  </label>
+                  <input
+                    type="text"
+                    value={guestBookFormNotes}
+                    onChange={(e) => setGuestBookFormNotes(e.target.value)}
+                    placeholder="Keterangan tambahan jika ada..."
+                    className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsGuestBookModalOpen(false)}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                  >
+                    Batal
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSavingGuestBook}
+                    className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-2"
+                  >
+                    {isSavingGuestBook ? (
+                      <>
+                        <div className="h-3 w-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <span>Simpan</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* PERSISTENT BOTTOM NAVIGATION BAR (Selaras di Semua Akun) */}
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-4 py-2 flex md:hidden justify-around items-center h-16">
@@ -4570,6 +6667,26 @@ export default function PrincipalPanel({
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Identitas Sekolah</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Perbarui identitas kop surat &amp; nama lembaga</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('buku_tamu');
+                    setShowMoreMenu(false);
+                    fetchGuestBooks();
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeTab === 'buku_tamu'
+                      ? 'border-indigo-600 bg-indigo-50/50'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">📖</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Buku Tamu Digital</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">1. Tamu Umum &amp; 2. Pembinaan Pengawas (MySQL Langsung)</p>
                   </div>
                 </button>
               </div>

@@ -207,6 +207,7 @@ export interface SchoolIdentity {
   email?: string;
   npsn?: string;
   principal: string;
+  principalNip?: string;
   principalSignature?: string;
   treasurer: string;
   logo: string;
@@ -1004,5 +1005,28 @@ export interface MysqlSyncResult {
   error?: string;
 }
 
+export type GuestBookCategory = 'umum' | 'pembinaan';
 
+export interface GuestBookEntry {
+  id: string;
+  category?: GuestBookCategory; // 'umum' | 'pembinaan'
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
+  name: string;
+  position?: string; // Jabatan
+  institution: string; // Asal Instansi
+  purpose: string; // Keperluan Kunjungan
+  phone: string; // No. HP / WhatsApp
+  notes?: string; // Catatan Tambahan
+  // Field Khusus Buku Tamu Pembinaan (Pengawas / Dinas / LP Maarif / Asesor):
+  supervisorNip?: string; // NIP / NUPTK Pembina / Pengawas
+  coachingSubject?: string; // Aspek / Materi Pembinaan
+  findings?: string; // Temuan / Catatan Hasil Pembinaan
+  recommendations?: string; // Saran / Rekomendasi Tindak Lanjut
+  followUpStatus?: string; // 'Belum' | 'Proses' | 'Selesai'
+  followUpNotes?: string; // Catatan Realisasi Tindak Lanjut Kepala Sekolah
+  status?: string; // e.g. "Selesai" | "Diterima" | "Menunggu"
+  createdAt?: string;
+  updatedAt?: string;
+}
 

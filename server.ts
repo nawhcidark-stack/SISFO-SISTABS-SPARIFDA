@@ -13,7 +13,7 @@ import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransCon
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, getConfigFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
@@ -1720,7 +1720,8 @@ function getFullSnapshotForMysql() {
     spmbConfig,
     curriculumSubjects,
     curriculumTpDescriptions,
-    sharedLearningObjectives
+    sharedLearningObjectives,
+    reportReleaseConfig
   };
 }
 
@@ -1872,7 +1873,8 @@ function debouncedSyncConfigsToMysql() {
       { id: "bkConfig", data: bkConfig },
       { id: "curriculumConfig", data: curriculumConfig },
       { id: "adminConfig", data: adminConfig },
-      { id: "spmbConfig", data: spmbConfig }
+      { id: "spmbConfig", data: spmbConfig },
+      { id: "reportReleaseConfig", data: reportReleaseConfig }
     ]).catch(err => {
       console.warn("[MySQL Debounced Config Sync] Gagal menyimpan configs ke MySQL:", err?.message || err);
     });
@@ -2480,6 +2482,7 @@ function applyDataFromMysql(pulledData: any) {
       if (pulledData.configs.curriculumConfig) Object.assign(curriculumConfig, pulledData.configs.curriculumConfig);
       if (pulledData.configs.adminConfig) Object.assign(adminConfig, pulledData.configs.adminConfig);
       if (pulledData.configs.spmbConfig) Object.assign(spmbConfig, pulledData.configs.spmbConfig);
+      if (pulledData.configs.reportReleaseConfig) Object.assign(reportReleaseConfig, pulledData.configs.reportReleaseConfig);
     }
 
     // Persist locally
@@ -6366,15 +6369,24 @@ async function startServer() {
     res.json({ success: true, message: "Master data mata pelajaran berhasil direset ke standar Kurikulum Merdeka di database MySQL.", subjects: curriculumSubjects });
   });
 
-  // --- KONTROL RILIS RAPOR KURIKULUM MERDEKA KE AKUN SISWA ---
-  app.get("/api/curriculum/report-status", (req, res) => {
+  // --- KONTROL RILIS RAPOR KURIKULUM MERDEKA KE AKUN SISWA (PERSISTEN MYSQL) ---
+  app.get("/api/curriculum/report-status", async (req, res) => {
+    try {
+      const mysqlCfg = await getConfigFromMysql("reportReleaseConfig");
+      if (mysqlCfg && typeof mysqlCfg === 'object') {
+        Object.assign(reportReleaseConfig, mysqlCfg);
+      }
+    } catch (err: any) {
+      console.warn("[MySQL Report Status Fetch Warning]:", err?.message || err);
+    }
+
     res.json({
       success: true,
       config: reportReleaseConfig
     });
   });
 
-  app.post("/api/curriculum/report-release", (req, res) => {
+  app.post("/api/curriculum/report-release", async (req, res) => {
     const { type, released, releasedBy, classes, semester, academicYear } = req.body;
     const now = new Date().toISOString();
     
@@ -6397,11 +6409,22 @@ async function startServer() {
     if (semester) reportReleaseConfig.activeSemester = semester;
     if (academicYear) reportReleaseConfig.activeAcademicYear = academicYear;
 
+    // 1. Simpan langsung seketika ke database MySQL tabel app_configs
+    let mysqlSaved = false;
+    try {
+      mysqlSaved = await saveConfigToMysql("reportReleaseConfig", reportReleaseConfig);
+      console.log(`[MySQL Report Release] Status rilis rapor (${type}: ${released ? 'RILIS' : 'KUNCI'}) berhasil disimpan langsung ke MySQL app_configs.`);
+    } catch (err: any) {
+      console.warn("[MySQL Report Release Warning]: Gagal menyimpan langsung ke MySQL:", err?.message || err);
+    }
+
+    // 2. Simpan juga ke local backup cache
     saveState();
 
     res.json({
       success: true,
-      message: `Status rilis ${type === 'midterm' ? 'Rapor Tengah Semester' : 'Rapor Akhir Semester'} berhasil ${released ? 'DIRILIS ke Akun Siswa' : 'DITARIK / DISEMBUNYIKAN dari Akun Siswa'}.`,
+      message: `Status rilis ${type === 'midterm' ? 'Rapor Tengah Semester' : 'Rapor Akhir Semester'} berhasil ${released ? 'DIRILIS ke Akun Siswa & disimpan ke MySQL' : 'DITARIK / DISEMBUNYIKAN dari Akun Siswa & disimpan ke MySQL'}.`,
+      mysqlSaved,
       config: reportReleaseConfig
     });
   });

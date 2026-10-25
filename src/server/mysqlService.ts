@@ -224,6 +224,26 @@ CREATE TABLE IF NOT EXISTS \`app_configs\` (
   }
 }
 
+// Retrieve an individual configuration from the app_configs MySQL table
+export async function getConfigFromMysql<T = any>(configId: string, overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<T | null> {
+  const pool = getSharedPool(overrideConfig);
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query("SELECT `data` FROM `app_configs` WHERE `id` = ?", [configId]);
+    if (rows && rows.length > 0 && rows[0].data) {
+      const raw = rows[0].data;
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    }
+    return null;
+  } catch (err: any) {
+    console.warn(`[MySQL Config Fetch] Gagal mengambil config "${configId}" dari MySQL:`, err.message || err);
+    return null;
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 // Save or update multiple configurations into the app_configs MySQL table in a SINGLE query
 export async function saveConfigsBatchToMysql(configs: { id: string; data: any }[], overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<boolean> {
   if (!Array.isArray(configs) || configs.length === 0) return true;
@@ -1411,7 +1431,7 @@ ${COMPLETE_TABLES_SQL.trim()}
   const configKeys = [
     'schoolIdentity', 'sppRates', 'salaryConfig', 'midtransConfig',
     'whatsappConfig', 'treasurerConfig', 'principalConfig', 'sarprasConfig',
-    'bkConfig', 'curriculumConfig', 'adminConfig', 'spmbConfig'
+    'bkConfig', 'curriculumConfig', 'adminConfig', 'spmbConfig', 'reportReleaseConfig'
   ];
 
   out += `\n-- Data Konfigurasi Master & Pengaturan Aplikasi\n`;
@@ -1463,7 +1483,7 @@ export async function syncDataToMysql(appState: any): Promise<MysqlSyncResult> {
     const configKeys = [
       'schoolIdentity', 'sppRates', 'salaryConfig', 'midtransConfig',
       'whatsappConfig', 'treasurerConfig', 'principalConfig', 'sarprasConfig',
-      'bkConfig', 'curriculumConfig', 'adminConfig', 'spmbConfig', 'backupConfig'
+      'bkConfig', 'curriculumConfig', 'adminConfig', 'spmbConfig', 'backupConfig', 'reportReleaseConfig'
     ];
     const configsSynced = configKeys.filter(k => appState[k] !== undefined).length;
     const totalRows = studentsSynced + transactionsSynced + sppSynced + salariesSynced + savingsSynced + miscSynced + configsSynced;

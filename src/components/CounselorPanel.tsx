@@ -45,6 +45,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student, ClassSchedule, SubjectTeacher, HomeroomTeacher } from "../types";
 import BukuIndukManagement from "./BukuIndukManagement";
 import ScheduleView from "./ScheduleView";
+import { Pagination } from "./Pagination";
 
 interface CounselorPanelProps {
   schoolIdentity?: SchoolIdentity;
@@ -55,11 +56,22 @@ interface CounselorPanelProps {
   subjectTeachers?: SubjectTeacher[];
   homerooms?: HomeroomTeacher[];
   students?: Student[];
+  attendanceLogs?: AttendanceLog[];
 }
 
-export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, onUpdateStudent, classSchedules = [], subjectTeachers = [], homerooms = [], students = [] }: CounselorPanelProps) {
+export default function CounselorPanel({ 
+  schoolIdentity, 
+  onLogout, 
+  onRefresh, 
+  onUpdateStudent, 
+  classSchedules = [], 
+  subjectTeachers = [], 
+  homerooms = [], 
+  students = [],
+  attendanceLogs = []
+}: CounselorPanelProps) {
   const [logs, setLogs] = useState<StudentCounselingLog[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceLog[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceLog[]>(() => (attendanceLogs && attendanceLogs.length > 0) ? attendanceLogs : []);
   const [infractions, setInfractions] = useState<StudentInfractionLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -130,7 +142,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const [selectedStudentForPrint, setSelectedStudentForPrint] = useState("");
 
   // Point Reduction State
-  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>(() => (students && students.length > 0) ? students : []);
   const [reductionStudentId, setReductionStudentId] = useState("");
   const [reductionStudentSearch, setReductionStudentSearch] = useState("");
   const [draftStudentSearch, setDraftStudentSearch] = useState("");
@@ -143,43 +155,84 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   });
   const [submittingReduction, setSubmittingReduction] = useState(false);
 
-  // Load all integrated databases
+  // Pagination states for high-volume tabs to eliminate DOM overload & browser freezing
+  const [attendanceAggregatePage, setAttendanceAggregatePage] = useState(1);
+  const [attendanceAggregatePageSize, setAttendanceAggregatePageSize] = useState(25);
+
+  const [attendanceDiaryPage, setAttendanceDiaryPage] = useState(1);
+  const [attendanceDiaryPageSize, setAttendanceDiaryPageSize] = useState(25);
+
+  const [journalsPage, setJournalsPage] = useState(1);
+  const [journalsPageSize, setJournalsPageSize] = useState(15);
+
+  const [infractionPage, setInfractionPage] = useState(1);
+  const [infractionPageSize, setInfractionPageSize] = useState(25);
+
+  const [counselingPage, setCounselingPage] = useState(1);
+  const [counselingPageSize, setCounselingPageSize] = useState(15);
+
+  // Reset pagination to page 1 on filter or search updates
+  useEffect(() => {
+    setCounselingPage(1);
+    setAttendanceAggregatePage(1);
+    setAttendanceDiaryPage(1);
+    setJournalsPage(1);
+    setInfractionPage(1);
+  }, [searchQuery, classFilter, statusFilter, attendanceStatusFilter, journalTeacherTypeFilter, selectedSubjectTeacherFilter, selectedHomeroomTeacherFilter, attendanceStartDate, attendanceEndDate, infractionStartDate, infractionEndDate]);
+
+  // Sync state if props become available after mounting
+  useEffect(() => {
+    if (students && students.length > 0 && allStudents.length === 0) {
+      setAllStudents(students);
+    }
+  }, [students]);
+
+  useEffect(() => {
+    if (attendanceLogs && attendanceLogs.length > 0 && attendance.length === 0) {
+      setAttendance(attendanceLogs);
+    }
+  }, [attendanceLogs]);
+
+  // Load all integrated databases efficiently
   const fetchAllData = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [resCouns, resAtt, resInf, resStud, resRules, resJournals] = await Promise.all([
+      const [resCouns, resAtt, resInf, resRules, resJournals] = await Promise.all([
         fetch("/api/student-counseling-logs"),
         fetch("/api/attendance"),
         fetch("/api/student-infraction-logs"),
-        fetch("/api/students"),
         fetch("/api/infraction-rules"),
         fetch("/api/teaching-journals")
       ]);
 
       if (resCouns.ok) {
         const data = await resCouns.json();
-        setLogs(data);
+        setLogs(Array.isArray(data) ? data : []);
       }
       if (resAtt.ok) {
         const data = await resAtt.json();
-        setAttendance(data);
+        setAttendance(Array.isArray(data) ? data : []);
       }
       if (resInf.ok) {
         const data = await resInf.json();
-        setInfractions(data);
-      }
-      if (resStud.ok) {
-        const data = await resStud.json();
-        setAllStudents(data);
+        setInfractions(Array.isArray(data) ? data : []);
       }
       if (resRules.ok) {
         const data = await resRules.json();
-        setInfractionRules(data);
+        setInfractionRules(Array.isArray(data) ? data : []);
       }
       if (resJournals.ok) {
         const data = await resJournals.json();
         setTeachingJournals(Array.isArray(data) ? data : []);
+      }
+
+      // If students prop is empty or missing, fetch students in background
+      if (!students || students.length === 0) {
+        fetch("/api/students")
+          .then(res => res.ok ? res.json() : [])
+          .then(data => { if (Array.isArray(data) && data.length > 0) setAllStudents(data); })
+          .catch(() => {});
       }
     } catch (err) {
       console.error(err);
@@ -895,117 +948,136 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     printWindow.document.close();
   };
 
-  // Helper function to resolve student name and class from allStudents, teachingJournals, logs, or infractions
+  // High-performance precomputed index maps for O(1) instant student lookups
+  const studentLookup = useMemo(() => {
+    const byId = new Map<string, { name: string; className: string }>();
+    const byName = new Map<string, { name: string; className: string }>();
+
+    // 1. Seed with master students
+    const masterList = allStudents.length > 0 ? allStudents : students;
+    masterList.forEach(st => {
+      if (!st) return;
+      const info = { name: st.name?.trim() || 'Siswa', className: st.class || '7-A' };
+      if (st.id) {
+        byId.set(st.id, info);
+        byId.set(String(st.id).toLowerCase().trim(), info);
+      }
+      if (st.nis) {
+        byId.set(String(st.nis).trim(), info);
+        byId.set(String(st.nis).toLowerCase().trim(), info);
+      }
+      if (st.nisn) {
+        byId.set(String(st.nisn).trim(), info);
+        byId.set(String(st.nisn).toLowerCase().trim(), info);
+      }
+      if (st.name) {
+        byName.set(st.name.trim().toLowerCase(), info);
+      }
+    });
+
+    // 2. Also map non-standard student names from teaching journals without linear search
+    teachingJournals.forEach(j => {
+      if (Array.isArray(j.attendance)) {
+        j.attendance.forEach((att: any) => {
+          if (att?.studentName && !att.studentName.startsWith("Siswa (std-")) {
+            const lower = att.studentName.trim().toLowerCase();
+            if (!byName.has(lower)) {
+              const info = { name: att.studentName.trim(), className: j.className || "7-A" };
+              byName.set(lower, info);
+              if (att.studentId) byId.set(att.studentId, info);
+            }
+          }
+        });
+      }
+    });
+
+    // 3. Map any counseling or infraction entries
+    logs.forEach(l => {
+      if (l.studentName && !l.studentName.startsWith("Siswa (std-")) {
+        const lower = l.studentName.trim().toLowerCase();
+        if (!byName.has(lower)) {
+          const info = { name: l.studentName.trim(), className: l.className || "7-A" };
+          byName.set(lower, info);
+          if (l.studentId) byId.set(l.studentId, info);
+        }
+      }
+    });
+
+    infractions.forEach(i => {
+      if (i.studentName && !i.studentName.startsWith("Siswa (std-")) {
+        const lower = i.studentName.trim().toLowerCase();
+        if (!byName.has(lower)) {
+          const info = { name: i.studentName.trim(), className: i.className || "7-A" };
+          byName.set(lower, info);
+          if (i.studentId) byId.set(i.studentId, info);
+        }
+      }
+    });
+
+    return { byId, byName };
+  }, [allStudents, students, teachingJournals, logs, infractions]);
+
+  // Instant O(1) resolution of student name and class
   const getStudentInfo = (studentId: string, fallbackName?: string) => {
     if (!studentId && !fallbackName) return { name: "Siswa Tidak Dikenal", className: "-" };
 
     const cleanId = String(studentId || "").trim();
-    const lowerId = cleanId.toLowerCase();
     const cleanFallback = String(fallbackName || "").trim();
-    const lowerFallback = cleanFallback.toLowerCase();
 
-    // 1. Check allStudents by id, nis, nisn, or name
-    const s = allStudents.find(st => 
-      (cleanId && (st.id === cleanId || String(st.id).trim().toLowerCase() === lowerId || String(st.nis || "").trim().toLowerCase() === lowerId || String(st.nisn || "").trim().toLowerCase() === lowerId)) ||
-      (lowerFallback && st.name && st.name.trim().toLowerCase() === lowerFallback)
-    );
-    if (s && s.name && s.name.trim() && !s.name.startsWith("Siswa (std-")) {
-      return { name: s.name.trim(), className: s.class || "7-A" };
+    if (cleanId) {
+      const found = studentLookup.byId.get(cleanId) || studentLookup.byId.get(cleanId.toLowerCase());
+      if (found) return found;
+    }
+    if (cleanFallback) {
+      const found = studentLookup.byName.get(cleanFallback.toLowerCase());
+      if (found) return found;
     }
 
-    // 1b. Check by student index if cleanId contains index (std-TIMESTAMP-INDEX-SUFFIX)
-    const idParts = cleanId.split("-");
-    if (idParts.length >= 3) {
-      const idxStr = idParts[2];
-      if (/^\d+$/.test(idxStr)) {
-        const indexMatch = allStudents.find(st => {
-          const stParts = (st.id || "").split("-");
-          return stParts.length >= 3 && stParts[2] === idxStr && st.name && !st.name.startsWith("Siswa (std-");
-        });
-        if (indexMatch && indexMatch.name) {
-          return { name: indexMatch.name.trim(), className: indexMatch.class || "7-A" };
-        }
-      }
-    }
-
-    // 2. If cleanFallback is valid, return cleanFallback
-    if (cleanFallback && !cleanFallback.startsWith("Siswa (std-")) {
-      return { name: cleanFallback, className: "7-A" };
-    }
-
-    // 3. Check teachingJournals attendance array
-    for (const j of teachingJournals) {
-      if (Array.isArray(j.attendance)) {
-        const foundAtt = j.attendance.find((att: any) => 
-          (cleanId && (att.studentId === cleanId || String(att.studentId).trim().toLowerCase() === lowerId)) ||
-          (lowerFallback && att.studentName && att.studentName.trim().toLowerCase() === lowerFallback)
-        );
-        if (foundAtt && foundAtt.studentName && foundAtt.studentName.trim() && !foundAtt.studentName.startsWith("Siswa (std-")) {
-          return { name: foundAtt.studentName.trim(), className: j.className || "7-A" };
-        }
-      }
-    }
-
-    // 4. Check attendance array itself if entry has studentName
-    const foundA = attendance.find((a: any) => 
-      ((cleanId && (a.studentId === cleanId || String(a.studentId).trim().toLowerCase() === lowerId)) ||
-       (lowerFallback && a.studentName && a.studentName.trim().toLowerCase() === lowerFallback)) &&
-      (a as any).studentName && (a as any).studentName.trim() && !(a as any).studentName.startsWith("Siswa (std-")
-    );
-    if (foundA && (foundA as any).studentName) {
-      return { name: (foundA as any).studentName.trim(), className: (foundA as any).className || "7-A" };
-    }
-
-    // 5. Check counseling logs (logs)
-    const foundC = logs.find(l => 
-      (cleanId && (l.studentId === cleanId || String(l.studentId).trim().toLowerCase() === lowerId)) ||
-      (lowerFallback && l.studentName && l.studentName.trim().toLowerCase() === lowerFallback)
-    );
-    if (foundC && foundC.studentName && foundC.studentName.trim() && !foundC.studentName.startsWith("Siswa (std-")) {
-      return { name: foundC.studentName.trim(), className: foundC.className || "7-A" };
-    }
-
-    // 6. Check infraction logs (infractions)
-    const foundI = infractions.find(i => 
-      (cleanId && (i.studentId === cleanId || String(i.studentId).trim().toLowerCase() === lowerId)) ||
-      (lowerFallback && i.studentName && i.studentName.trim().toLowerCase() === lowerFallback)
-    );
-    if (foundI && foundI.studentName && foundI.studentName.trim() && !foundI.studentName.startsWith("Siswa (std-")) {
-      return { name: foundI.studentName.trim(), className: foundI.className || "7-A" };
-    }
-
-    return { name: cleanFallback || `Siswa (${studentId})`, className: "7-A" };
+    return {
+      name: (cleanFallback && !cleanFallback.startsWith("Siswa (std-")) ? cleanFallback : (cleanFallback || `Siswa (${studentId})`),
+      className: "7-A"
+    };
   };
 
-  // Unified attendance list combining /api/attendance and teachingJournals attendance
+  // Unified attendance list combining /api/attendance and teachingJournals attendance (O(1) deduping via Set)
   const allAttendance = useMemo(() => {
     const list: AttendanceLog[] = [...attendance];
+    const seenStudentDate = new Set<string>();
+
+    list.forEach(a => {
+      if (a.studentId && a.date) seenStudentDate.add(`${a.studentId}_${a.date}`);
+      if (a.studentName && a.date) seenStudentDate.add(`${a.studentName.toLowerCase().trim()}_${a.date}`);
+    });
+
     const existingIds = new Set(list.map(a => a.id));
 
     teachingJournals.forEach(j => {
       if (Array.isArray(j.attendance)) {
         j.attendance.forEach((att: any, idx: number) => {
           const generatedId = att.id || `tj-att-${j.id}-${att.studentId || idx}`;
-          if (!existingIds.has(generatedId)) {
-            const duplicate = list.find(a => 
-              ((att.studentId && a.studentId === att.studentId) || 
-               (a.studentName && att.studentName && a.studentName.toLowerCase().trim() === att.studentName.toLowerCase().trim())) && 
-              a.date === j.date
-            );
-            if (!duplicate) {
-              list.push({
-                id: generatedId,
-                studentId: att.studentId || "",
-                studentName: att.studentName || "",
-                className: j.className || "",
-                date: j.date || "",
-                status: att.status || "Hadir",
-                notes: att.notes || (j.subject ? `Jurnal Mapel: ${j.subject}` : ""),
-                subjectNotes: []
-              });
-              existingIds.add(generatedId);
-            }
+          if (existingIds.has(generatedId)) return;
+
+          const idKey = att.studentId && j.date ? `${att.studentId}_${j.date}` : null;
+          const nameKey = att.studentName && j.date ? `${att.studentName.toLowerCase().trim()}_${j.date}` : null;
+
+          if ((idKey && seenStudentDate.has(idKey)) || (nameKey && seenStudentDate.has(nameKey))) {
+            return;
           }
+
+          if (idKey) seenStudentDate.add(idKey);
+          if (nameKey) seenStudentDate.add(nameKey);
+          existingIds.add(generatedId);
+
+          list.push({
+            id: generatedId,
+            studentId: att.studentId || "",
+            studentName: att.studentName || "",
+            className: j.className || "",
+            date: j.date || "",
+            status: att.status || "Hadir",
+            notes: att.notes || (j.subject ? `Jurnal Mapel: ${j.subject}` : ""),
+            subjectNotes: []
+          });
         });
       }
     });
@@ -1016,7 +1088,8 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   // Get distinct classes from available logs for filters
   const uniqueClasses = useMemo(() => {
     const list = new Set<string>();
-    allStudents.forEach(s => {
+    const masterList = allStudents.length > 0 ? allStudents : students;
+    masterList.forEach(s => {
       const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
       const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
       if (!isMut && !isLulus && s.class) list.add(s.class);
@@ -1025,8 +1098,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       if (l.className) list.add(l.className);
     });
     allAttendance.forEach(a => {
-      const info = getStudentInfo(a.studentId, a.studentName);
-      if (info.className && info.className !== "-") list.add(info.className);
+      if (a.className && a.className !== "-") list.add(a.className);
     });
     infractions.forEach(i => {
       if (i.className) list.add(i.className);
@@ -1035,7 +1107,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       if (j.className) list.add(j.className);
     });
     return Array.from(list).sort((a, b) => a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' }));
-  }, [allStudents, logs, allAttendance, infractions, teachingJournals]);
+  }, [allStudents, students, logs, allAttendance, infractions, teachingJournals]);
 
   // Extract unique subject teachers for BK Journal Monitoring
   const uniqueSubjectTeacherNames = useMemo(() => {
@@ -1109,12 +1181,13 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     journalEndDate
   ]);
 
-  // Aggregate Attendance states grouping per student
+  // Aggregate Attendance states grouping per student (Optimized O(1) Map matching)
   const aggregatedAttendance = useMemo(() => {
     const studentMap: { [key: string]: { id: string; name: string; className: string; hadir: number; sakit: number; izin: number; alpa: number; terlambat: number; total: number } } = {};
 
     // 1. Seed with all active master students
-    allStudents.forEach(st => {
+    const masterList = allStudents.length > 0 ? allStudents : students;
+    masterList.forEach(st => {
       const isMut = !!st.mutationDate || (st.class && (st.class.toLowerCase() === 'mutasi' || st.class.toLowerCase() === 'mutasi keluar'));
       const isLulus = st.class && (st.class.toLowerCase() === 'lulus' || st.class.toLowerCase() === 'lulusan');
       if (isMut || isLulus) return;
@@ -1132,9 +1205,8 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       };
     });
 
-    // 2. Process all attendance records
+    // 2. Process all attendance records via O(1) studentLookup
     allAttendance.forEach(log => {
-      // Filter by date range if provided
       if (attendanceStartDate || attendanceEndDate) {
         const d = log.date ? log.date.substring(0, 10) : "";
         if (attendanceStartDate && d < attendanceStartDate) return;
@@ -1143,27 +1215,34 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
       let key = log.studentId;
       if (!key || !studentMap[key]) {
-        const match = allStudents.find(s => 
-          log.studentName && s.name && s.name.trim().toLowerCase() === log.studentName.trim().toLowerCase()
-        );
-        if (match) {
-          key = match.id;
+        if (log.studentName) {
+          const match = studentLookup.byName.get(log.studentName.trim().toLowerCase());
+          if (match) {
+            const stId = (masterList.find(s => s.name?.trim().toLowerCase() === log.studentName?.trim().toLowerCase()))?.id;
+            if (stId && studentMap[stId]) {
+              key = stId;
+            }
+          }
         }
       }
 
-      if (!studentMap[key]) {
+      if (!key || !studentMap[key]) {
         const info = getStudentInfo(log.studentId, log.studentName);
-        studentMap[key] = {
-          id: log.studentId || key || `std-unmapped-${Math.random()}`,
-          name: info.name,
-          className: info.className,
-          hadir: 0,
-          sakit: 0,
-          izin: 0,
-          alpa: 0,
-          terlambat: 0,
-          total: 0
-        };
+        const fallbackKey = log.studentId || (log.studentName ? `name-${log.studentName.trim().toLowerCase()}` : `std-unmapped-${Math.random()}`);
+        if (!studentMap[fallbackKey]) {
+          studentMap[fallbackKey] = {
+            id: log.studentId || fallbackKey,
+            name: info.name,
+            className: info.className,
+            hadir: 0,
+            sakit: 0,
+            izin: 0,
+            alpa: 0,
+            terlambat: 0,
+            total: 0
+          };
+        }
+        key = fallbackKey;
       }
 
       const status = log.status;
@@ -1177,14 +1256,13 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     });
 
     return Object.values(studentMap);
-  }, [allStudents, allAttendance, attendanceStartDate, attendanceEndDate]);
+  }, [allStudents, students, allAttendance, attendanceStartDate, attendanceEndDate, studentLookup]);
 
   // Aggregate Infractions (Leaderboard points)
   const aggregatedInfractions = useMemo(() => {
     const map: { [key: string]: { id: string; name: string; className: string; points: number; count: number; list: StudentInfractionLog[] } } = {};
 
     infractions.forEach(log => {
-      // Filter by date range if provided
       if (infractionStartDate || infractionEndDate) {
         const d = log.date ? log.date.substring(0, 10) : "";
         if (infractionStartDate && d < infractionStartDate) return;
@@ -1211,9 +1289,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   }, [infractions, infractionStartDate, infractionEndDate]);
 
   // Warn Interventions: Students with high infractions (>10 pts) or High Alpa (>= 2 alpa)
-  // Smart Radar Filtering:
-  // - Automatically hidden from Radar once BK creates a counseling log or initiates a session (moved to Jurnal Bimbingan).
-  // - Re-enters Radar if student accumulates 2 or more NEW Alpas after the latest counseling session date.
+  // Smart Radar Filtering: Optimized with pre-indexed Map lookups
   const interventionStudents = useMemo(() => {
     const candidateMap: { [key: string]: { id: string; name: string; className: string; alpaCount: number; infractionPoints: number; reason: string } } = {};
 
@@ -1251,44 +1327,56 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     });
 
     const candidates = Object.values(candidateMap);
+    if (candidates.length === 0) return [];
+
+    // Pre-index latest counseling date by student (O(N))
+    const latestCounselingByStudent = new Map<string, string>();
+    logs.forEach(l => {
+      const dateStr = (l.date || l.createdAt || "").substring(0, 10);
+      if (!dateStr) return;
+      if (l.studentId) {
+        const cur = latestCounselingByStudent.get(l.studentId);
+        if (!cur || dateStr > cur) latestCounselingByStudent.set(l.studentId, dateStr);
+      }
+      if (l.studentName) {
+        const lower = l.studentName.trim().toLowerCase();
+        const cur = latestCounselingByStudent.get(lower);
+        if (!cur || dateStr > cur) latestCounselingByStudent.set(lower, dateStr);
+      }
+    });
+
+    // Pre-index Alpa attendance dates by student (O(N))
+    const alpasByStudent = new Map<string, string[]>();
+    allAttendance.forEach(att => {
+      if (att.status !== 'Alpa') return;
+      const d = (att.date || "").substring(0, 10);
+      if (!d) return;
+      if (att.studentId) {
+        let arr = alpasByStudent.get(att.studentId);
+        if (!arr) { arr = []; alpasByStudent.set(att.studentId, arr); }
+        arr.push(d);
+      }
+      if (att.studentName) {
+        const lower = att.studentName.trim().toLowerCase();
+        let arr = alpasByStudent.get(lower);
+        if (!arr) { arr = []; alpasByStudent.set(lower, arr); }
+        arr.push(d);
+      }
+    });
+
     const resultList: typeof candidates = [];
 
     candidates.forEach(st => {
       const sId = st.id;
       const sName = st.name;
+      const sLowerName = sName ? sName.trim().toLowerCase() : '';
 
-      // Find counseling logs for this student in logs (Jurnal Bimbingan)
-      const studentCounselingLogs = logs.filter(l => {
-        if (!l) return false;
-        const matchId = l.studentId && l.studentId === sId;
-        const matchName = l.studentName && sName && l.studentName.trim().toLowerCase() === sName.trim().toLowerCase();
-        return matchId || matchName;
-      });
+      const latestCounselingDate = (sId && latestCounselingByStudent.get(sId)) || (sLowerName && latestCounselingByStudent.get(sLowerName));
 
-      if (studentCounselingLogs.length > 0) {
-        // Find date of the latest counseling log
-        const sortedLogs = [...studentCounselingLogs].sort((a, b) => {
-          const dA = a.date || a.createdAt || "";
-          const dB = b.date || b.createdAt || "";
-          return dB.localeCompare(dA);
-        });
+      if (latestCounselingDate) {
+        const studentAlpas = (sId && alpasByStudent.get(sId)) || (sLowerName && alpasByStudent.get(sLowerName)) || [];
+        const newAlpaCount = studentAlpas.filter(d => d > latestCounselingDate).length;
 
-        const latestCounselingDate = (sortedLogs[0].date || sortedLogs[0].createdAt || "").substring(0, 10);
-
-        // Count new Alpa attendance records strictly after latestCounselingDate
-        const newAlpasAfterCounseling = allAttendance.filter(attLog => {
-          if (attLog.status !== 'Alpa') return false;
-          const matchId = attLog.studentId && attLog.studentId === sId;
-          const matchName = attLog.studentName && sName && attLog.studentName.trim().toLowerCase() === sName.trim().toLowerCase();
-          if (!matchId && !matchName) return false;
-
-          const attDate = (attLog.date || "").substring(0, 10);
-          return attDate > latestCounselingDate;
-        });
-
-        const newAlpaCount = newAlpasAfterCounseling.length;
-
-        // If student gets >= 2 new Alpas after counseling date, show on Radar again
         if (newAlpaCount >= 2) {
           resultList.push({
             ...st,
@@ -1296,9 +1384,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
             reason: `⚠️ Siswa kembali ALPA ${newAlpaCount} kali setelah Sesi Bimbingan BK terakhir (${latestCounselingDate}). Urgen dilakukan bimbingan ulang!`
           });
         }
-        // Otherwise (< 2 new Alpa): Hidden from Radar because already handled in Jurnal Bimbingan!
       } else {
-        // No counseling log yet. Check if BK initiated counseling in this active session
         const isInitiated = initiatedStudentIds.includes(sId) || (sName && initiatedStudentIds.includes(sName));
         if (!isInitiated) {
           resultList.push(st);
@@ -1447,6 +1533,32 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       return searchMatch && classMatch;
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [aggregatedInfractions, searchQuery, classFilter]);
+
+  // Paginated slices to keep browser rendering lightweight and instantaneous
+  const paginatedAttendanceAggregate = useMemo(() => {
+    const start = (attendanceAggregatePage - 1) * attendanceAggregatePageSize;
+    return filteredAttendanceAggregate.slice(start, start + attendanceAggregatePageSize);
+  }, [filteredAttendanceAggregate, attendanceAggregatePage, attendanceAggregatePageSize]);
+
+  const paginatedAttendanceDiary = useMemo(() => {
+    const start = (attendanceDiaryPage - 1) * attendanceDiaryPageSize;
+    return filteredAttendanceDiary.slice(start, start + attendanceDiaryPageSize);
+  }, [filteredAttendanceDiary, attendanceDiaryPage, attendanceDiaryPageSize]);
+
+  const paginatedTeachingJournals = useMemo(() => {
+    const start = (journalsPage - 1) * journalsPageSize;
+    return filteredTeachingJournals.slice(start, start + journalsPageSize);
+  }, [filteredTeachingJournals, journalsPage, journalsPageSize]);
+
+  const paginatedInfractionsList = useMemo(() => {
+    const start = (infractionPage - 1) * infractionPageSize;
+    return filteredInfractionsList.slice(start, start + infractionPageSize);
+  }, [filteredInfractionsList, infractionPage, infractionPageSize]);
+
+  const paginatedLogs = useMemo(() => {
+    const start = (counselingPage - 1) * counselingPageSize;
+    return filteredLogs.slice(start, start + counselingPageSize);
+  }, [filteredLogs, counselingPage, counselingPageSize]);
 
   // Trigger quick counseling creation (to draft and save a new counseling log)
   const handleInitiateCounseling = (studentName: string, className: string, problemReason: string) => {
@@ -2680,8 +2792,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   <span className="text-[11px] text-slate-400 mt-1 block">Silakan coba sesuaikan pencarian atau pilih filter status bimbingan lainnya.</span>
                 </div>
               ) : (
-                <div className="flex flex-col gap-5">
-                  {filteredLogs.map((log) => {
+                <>
+                  <div className="flex flex-col gap-5">
+                  {paginatedLogs.map((log) => {
                     const isSelected = selectedLogId === log.id;
                     return (
                       <div 
@@ -2876,6 +2989,18 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     );
                   })}
                 </div>
+                {filteredLogs.length > 0 && (
+                  <Pagination
+                    currentPage={counselingPage}
+                    totalItems={filteredLogs.length}
+                    pageSize={counselingPageSize}
+                    onPageChange={setCounselingPage}
+                    onPageSizeChange={(size) => { setCounselingPageSize(size); setCounselingPage(1); }}
+                    pageSizeOptions={[10, 15, 25, 50]}
+                    className="mt-4 rounded-2xl border"
+                  />
+                )}
+              </>
               )}
             </motion.div>
           )}
@@ -3315,7 +3440,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                      {filteredAttendanceAggregate.map((st, i) => {
+                      {paginatedAttendanceAggregate.map((st, i) => {
                         const hasAlpaProblem = st.alpa >= 2;
                         return (
                           <tr key={i} className={`hover:bg-slate-50 bg-white ${hasAlpaProblem ? 'bg-rose-50/20' : ''}`}>
@@ -3361,6 +3486,14 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       )}
                     </tbody>
                   </table>
+                  <Pagination
+                    currentPage={attendanceAggregatePage}
+                    totalItems={filteredAttendanceAggregate.length}
+                    pageSize={attendanceAggregatePageSize}
+                    onPageChange={setAttendanceAggregatePage}
+                    onPageSizeChange={(size) => { setAttendanceAggregatePageSize(size); setAttendanceAggregatePage(1); }}
+                    pageSizeOptions={[20, 25, 50, 100]}
+                  />
                 </div>
               ) : (
                 <div className="border border-slate-150 rounded-2xl overflow-x-auto">
@@ -3376,7 +3509,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                      {filteredAttendanceDiary.map((a, i) => {
+                      {paginatedAttendanceDiary.map((a, i) => {
                         const info = getStudentInfo(a.studentId, a.studentName);
                         const name = info.name;
                         const cName = info.className || a.className || "7-A";
@@ -3418,6 +3551,14 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       )}
                     </tbody>
                   </table>
+                  <Pagination
+                    currentPage={attendanceDiaryPage}
+                    totalItems={filteredAttendanceDiary.length}
+                    pageSize={attendanceDiaryPageSize}
+                    onPageChange={setAttendanceDiaryPage}
+                    onPageSizeChange={(size) => { setAttendanceDiaryPageSize(size); setAttendanceDiaryPage(1); }}
+                    pageSizeOptions={[20, 25, 50, 100]}
+                  />
                 </div>
               )}
             </motion.div>
@@ -3932,7 +4073,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {filteredInfractionsList.map((log) => (
+                  {paginatedInfractionsList.map((log) => (
                     <div key={log.id} className="p-4 bg-slate-50 border border-slate-220 rounded-2xl flex flex-col gap-2 relative">
                       <div className="flex justify-between items-start gap-2">
                         <div>
@@ -3984,6 +4125,17 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   ))}
                   {filteredInfractionsList.length === 0 && (
                     <span className="text-slate-400 text-xs font-medium py-8 text-center bg-slate-50 border border-dashed rounded-2xl block">Tidak ada kasus melanggar terdaftar.</span>
+                  )}
+                  {filteredInfractionsList.length > 0 && (
+                    <Pagination
+                      currentPage={infractionPage}
+                      totalItems={filteredInfractionsList.length}
+                      pageSize={infractionPageSize}
+                      onPageChange={setInfractionPage}
+                      onPageSizeChange={(size) => { setInfractionPageSize(size); setInfractionPage(1); }}
+                      pageSizeOptions={[10, 25, 50]}
+                      className="mt-2 rounded-2xl border"
+                    />
                   )}
                 </div>
               )}
@@ -4186,8 +4338,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     : "Tidak ada jurnal mengajar yang sesuai dengan kriteria pencarian/filter."}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-4">
-                  {filteredTeachingJournals.map((j) => {
+                <>
+                  <div className="grid grid-cols-1 gap-4">
+                  {paginatedTeachingJournals.map((j) => {
                     const isHomeroom = j.teacherType === 'homeroom';
                     const attendanceList = Array.isArray(j.attendance) ? j.attendance : [];
                     const totalC = attendanceList.length;
@@ -4354,6 +4507,18 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     );
                   })}
                 </div>
+                {filteredTeachingJournals.length > 0 && (
+                  <Pagination
+                    currentPage={journalsPage}
+                    totalItems={filteredTeachingJournals.length}
+                    pageSize={journalsPageSize}
+                    onPageChange={setJournalsPage}
+                    onPageSizeChange={(size) => { setJournalsPageSize(size); setJournalsPage(1); }}
+                    pageSizeOptions={[10, 15, 25, 50]}
+                    className="mt-4 rounded-2xl border"
+                  />
+                )}
+              </>
               )}
             </motion.div>
           )}

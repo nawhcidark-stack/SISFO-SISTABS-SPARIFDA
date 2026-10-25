@@ -2835,6 +2835,7 @@ export default function App() {
             subjectTeachers={subjectTeachersList}
             homerooms={homeroomsList}
             students={studentsList}
+            attendanceLogs={attendanceList}
           />
         ) : role === 'waka_kurikulum' ? (
           <WakaKurikulumPanel

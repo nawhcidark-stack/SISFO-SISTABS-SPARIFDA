@@ -5575,7 +5575,7 @@ async function startServer() {
     res.json(studentInfractionLogs);
   });
 
-  app.post("/api/student-infraction-logs", (req, res) => {
+  app.post("/api/student-infraction-logs", async (req, res) => {
     const { studentId, studentName, className, date, time, location, infractionType, actionTaken, resolutionStatus, points } = req.body;
     if (!studentId || !studentName || !className || !date || !time || !location || !infractionType || !actionTaken || !resolutionStatus) {
       return res.status(400).json({ error: "Data Pelanggaran tidak lengkap." });
@@ -5597,30 +5597,51 @@ async function startServer() {
     } as any;
 
     studentInfractionLogs.unshift(newLog);
+
+    // Langsung simpan ke tabel student_infraction_logs di MySQL
+    let mysqlSaved = false;
+    let mysqlMessage = "";
+    try {
+      const mysqlRes = await directSaveEntityToMysql('student_infraction_logs', newLog);
+      mysqlSaved = mysqlRes?.success ?? false;
+      mysqlMessage = mysqlRes?.message || "";
+    } catch (mysqlErr: any) {
+      console.error("[MySQL Direct Save Infraction Error]:", mysqlErr?.message || mysqlErr);
+      mysqlMessage = mysqlErr?.message || String(mysqlErr);
+    }
+
     saveState();
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
       id: `notif-sil-${newLog.id}`,
       studentId: studentId,
-      title: `Laporan Pelanggaran: Kelas ${className}`,
-      message: `Pencatatan pelanggaran baru untuk ${studentName} (${infractionType}) dengan status: ${resolutionStatus}.`,
+      title: `Poin Pelanggaran: ${studentName} (${className})`,
+      message: `Pemberian ${newLog.points} poin (${infractionType}) oleh Guru BK. Status: ${resolutionStatus}.`,
       type: "warning",
       category: "bk",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notification);
 
-    res.json({ success: true, studentInfractionLogs, newLog });
+    res.json({ success: true, studentInfractionLogs, newLog, mysqlSaved, mysqlMessage });
   });
 
-  app.delete("/api/student-infraction-logs/:id", (req, res) => {
+  app.delete("/api/student-infraction-logs/:id", async (req, res) => {
     const { id } = req.params;
     const index = studentInfractionLogs.findIndex(l => l.id === id);
     if (index === -1) {
       return res.status(404).json({ error: "Pencatatan pelanggaran tidak ditemukan." });
     }
     studentInfractionLogs.splice(index, 1);
+
+    // Langsung hapus dari database MySQL
+    try {
+      await directDeleteEntityFromMysql('student_infraction_logs', id);
+    } catch (err: any) {
+      console.error("[MySQL Direct Delete Infraction Error]:", err?.message || err);
+    }
+
     saveState();
     res.json({ success: true, studentInfractionLogs });
   });
@@ -5630,7 +5651,7 @@ async function startServer() {
     res.json(infractionRules);
   });
 
-  app.post("/api/infraction-rules", (req, res) => {
+  app.post("/api/infraction-rules", async (req, res) => {
     const { name, points, category } = req.body;
     if (!name || points === undefined || !category) {
       return res.status(400).json({ error: "Nama, poin dan tingkatan pelanggaran wajib diisi." });
@@ -5642,11 +5663,16 @@ async function startServer() {
       category
     };
     infractionRules.unshift(newRule);
+    try {
+      await directSaveEntityToMysql('infraction_rules', newRule);
+    } catch (err: any) {
+      console.error("[MySQL Direct Save Rule Error]:", err?.message || err);
+    }
     saveState();
     res.json({ success: true, infractionRules, newRule });
   });
 
-  app.put("/api/infraction-rules/:id", (req, res) => {
+  app.put("/api/infraction-rules/:id", async (req, res) => {
     const { id } = req.params;
     const { name, points, category } = req.body;
     const rule = infractionRules.find(r => r.id === id);
@@ -5656,17 +5682,31 @@ async function startServer() {
     if (name !== undefined) rule.name = name;
     if (points !== undefined) rule.points = Number(points) || 0;
     if (category !== undefined) rule.category = category;
+
+    try {
+      await directSaveEntityToMysql('infraction_rules', rule);
+    } catch (err: any) {
+      console.error("[MySQL Direct Update Rule Error]:", err?.message || err);
+    }
+
     saveState();
     res.json({ success: true, infractionRules, updatedRule: rule });
   });
 
-  app.delete("/api/infraction-rules/:id", (req, res) => {
+  app.delete("/api/infraction-rules/:id", async (req, res) => {
     const { id } = req.params;
     const idx = infractionRules.findIndex(r => r.id === id);
     if (idx === -1) {
       return res.status(404).json({ error: "Aturan pelanggaran tidak ditemukan." });
     }
     infractionRules.splice(idx, 1);
+
+    try {
+      await directDeleteEntityFromMysql('infraction_rules', id);
+    } catch (err: any) {
+      console.error("[MySQL Direct Delete Rule Error]:", err?.message || err);
+    }
+
     saveState();
     res.json({ success: true, infractionRules });
   });

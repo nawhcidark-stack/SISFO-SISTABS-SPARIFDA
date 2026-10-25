@@ -2729,6 +2729,11 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
       }
     } catch (_) {}
 
+    // Auto-migration: Ensure student_infraction_logs column resolution_status is VARCHAR(64)
+    try {
+      await connection.query("ALTER TABLE `student_infraction_logs` MODIFY COLUMN `resolution_status` VARCHAR(64) NOT NULL DEFAULT 'Belum Selesai'");
+    } catch (_) {}
+
     // Pastikan tabel curriculum_subjects dan curriculum_tp_levels selalu terbuat
     try {
       await connection.query(`
@@ -3618,6 +3623,94 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         ON DUPLICATE KEY UPDATE \`data\`=VALUES(\`data\`)
       `, [configId, jsonStr]);
       return { success: true, message: `Konfigurasi "${configId}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 16. Student Infraction Logs (Poin Pelanggaran Siswa - Langsung ke MySQL)
+    else if (typeKey === 'student_infraction_log' || typeKey === 'student_infraction_logs' || typeKey === 'studentinfractionlogs') {
+      const inf = data;
+      const infId = inf.id || `sil-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+      const sId = inf.studentId || (inf as any).student_id || '';
+      const sName = inf.studentName || (inf as any).student_name || '';
+      const cName = inf.className || (inf as any).class_name || '';
+      const dDate = inf.date || new Date().toISOString().split('T')[0];
+      const dTime = inf.time || '08:00';
+      const loc = inf.location || 'Lingkungan Sekolah';
+      const infType = inf.infractionType || (inf as any).infraction_type || 'Pelanggaran Disiplin';
+      const act = inf.actionTaken || (inf as any).action_taken || 'Pembinaan BK';
+      const resStatus = inf.resolutionStatus || (inf as any).resolution_status || 'Dalam Proses';
+      const pts = Number(inf.points !== undefined ? inf.points : 0);
+      const cAt = inf.createdAt || (inf as any).created_at || new Date().toISOString();
+
+      await connection.query(`
+        INSERT INTO \`student_infraction_logs\` (
+          \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`time\`, \`location\`,
+          \`infraction_type\`, \`action_taken\`, \`resolution_status\`, \`points\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`student_id\`=VALUES(\`student_id\`),
+          \`student_name\`=VALUES(\`student_name\`),
+          \`class_name\`=VALUES(\`class_name\`),
+          \`date\`=VALUES(\`date\`),
+          \`time\`=VALUES(\`time\`),
+          \`location\`=VALUES(\`location\`),
+          \`infraction_type\`=VALUES(\`infraction_type\`),
+          \`action_taken\`=VALUES(\`action_taken\`),
+          \`resolution_status\`=VALUES(\`resolution_status\`),
+          \`points\`=VALUES(\`points\`)
+      `, [
+        infId, sId, sName, cName, dDate, dTime, loc,
+        infType, act, resStatus, pts, cAt
+      ]);
+      return { success: true, message: `Data pelanggaran siswa "${sName}" (${pts} poin) berhasil disimpan langsung ke MySQL.` };
+    }
+
+    // 17. Infraction Rules (Master Rubrik Sanksi & Poin Pelanggaran)
+    else if (typeKey === 'infraction_rule' || typeKey === 'infraction_rules' || typeKey === 'infractionrules') {
+      const r = data;
+      const rId = r.id || `ir-${Date.now()}`;
+      await connection.query(`
+        INSERT INTO \`infraction_rules\` (\`id\`, \`name\`, \`points\`, \`category\`)
+        VALUES (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`name\`=VALUES(\`name\`),
+          \`points\`=VALUES(\`points\`),
+          \`category\`=VALUES(\`category\`)
+      `, [rId, r.name || '', Number(r.points) || 0, r.category || 'Ringan']);
+      return { success: true, message: `Acuan aturan sanksi "${r.name}" berhasil disimpan langsung ke MySQL.` };
+    }
+
+    // 18. Student Counseling Logs (Jurnal Bimbingan & Konseling)
+    else if (typeKey === 'student_counseling_log' || typeKey === 'student_counseling_logs' || typeKey === 'studentcounselinglogs') {
+      const cl = data;
+      const clId = cl.id || `scl-${Date.now()}`;
+      await connection.query(`
+        INSERT INTO \`student_counseling_logs\` (
+          \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`topic\`, \`action_plan\`, \`follow_up\`, \`status\`, \`created_at\`, \`bk_feedback\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`topic\`=VALUES(\`topic\`),
+          \`action_plan\`=VALUES(\`action_plan\`),
+          \`follow_up\`=VALUES(\`follow_up\`),
+          \`status\`=VALUES(\`status\`),
+          \`bk_feedback\`=VALUES(\`bk_feedback\`)
+      `, [
+        clId, cl.studentId || '', cl.studentName || '', cl.className || '', cl.date || '',
+        cl.topic || '', cl.actionPlan || '', cl.followUp || '', cl.status || 'Dalam Proses',
+        cl.createdAt || new Date().toISOString(), cl.bkFeedback || null
+      ]);
+      return { success: true, message: `Jurnal konseling siswa "${cl.studentName}" berhasil disimpan langsung ke MySQL.` };
+    }
+
+    // 19. Student Development Logs
+    else if (typeKey === 'student_development_log' || typeKey === 'student_development_logs' || typeKey === 'studentdevelopmentlogs') {
+      const dl = data;
+      const dlId = dl.id || `sdl-${Date.now()}`;
+      await connection.query(`
+        INSERT INTO \`student_development_logs\` (\`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`category\`, \`notes\`, \`created_at\`)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE \`notes\`=VALUES(\`notes\`), \`category\`=VALUES(\`category\`)
+      `, [dlId, dl.studentId || '', dl.studentName || '', dl.className || '', dl.date || '', dl.category || 'Catatan Khusus', dl.notes || '', dl.createdAt || new Date().toISOString()]);
+      return { success: true, message: `Catatan perkembangan siswa "${dl.studentName}" berhasil disimpan langsung ke MySQL.` };
     }
 
     // Generic fallback into app_configs

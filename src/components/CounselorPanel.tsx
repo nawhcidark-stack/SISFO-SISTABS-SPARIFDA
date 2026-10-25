@@ -105,7 +105,7 @@ export default function CounselorPanel({
 
   // Secondary sub-tab states for custom list or aggregates
   const [attendanceSubTab, setAttendanceSubTab] = useState<'diary' | 'aggregate'>('aggregate');
-  const [infractionSubTab, setInfractionSubTab] = useState<'list' | 'points' | 'reduction' | 'rubric'>('points');
+  const [infractionSubTab, setInfractionSubTab] = useState<'list' | 'points' | 'add' | 'reduction' | 'rubric'>('points');
 
   // Infraction rules rubric configuration inside Counselor Panel
   const [infractionRules, setInfractionRules] = useState<any[]>([]);
@@ -154,6 +154,22 @@ export default function CounselorPanel({
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   });
   const [submittingReduction, setSubmittingReduction] = useState(false);
+
+  // Direct Infraction Point Giving State (Guru BK -> Langsung ke MySQL)
+  const [newInfractionStudentId, setNewInfractionStudentId] = useState("");
+  const [newInfractionStudentSearch, setNewInfractionStudentSearch] = useState("");
+  const [newInfractionRuleId, setNewInfractionRuleId] = useState("");
+  const [newInfractionType, setNewInfractionType] = useState("");
+  const [newInfractionPoints, setNewInfractionPoints] = useState<number>(5);
+  const [newInfractionLocation, setNewInfractionLocation] = useState("Lingkungan Sekolah");
+  const [newInfractionActionTaken, setNewInfractionActionTaken] = useState("Pembinaan disiplin dan konseling oleh Guru BK");
+  const [newInfractionResolutionStatus, setNewInfractionResolutionStatus] = useState<'Dalam Proses' | 'Belum Selesai' | 'Selesai' | 'Butuh Mediasi'>('Dalam Proses');
+  const [newInfractionDate, setNewInfractionDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [newInfractionTime, setNewInfractionTime] = useState(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  });
+  const [submittingInfraction, setSubmittingInfraction] = useState(false);
 
   // Pagination states for high-volume tabs to eliminate DOM overload & browser freezing
   const [attendanceAggregatePage, setAttendanceAggregatePage] = useState(1);
@@ -293,6 +309,66 @@ export default function CounselorPanel({
       alert("Gagal terhubung ke server.");
     } finally {
       setSubmittingReduction(false);
+    }
+  };
+
+  const handleSubmitNewInfraction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newInfractionStudentId || !newInfractionPoints || !newInfractionType.trim()) {
+      alert("Mohon lengkapi data siswa, jenis pelanggaran, dan bobot poin pelanggaran.");
+      return;
+    }
+
+    const student = allStudents.find(s => s.id === newInfractionStudentId);
+    if (!student) {
+      alert("Siswa tidak ditemukan.");
+      return;
+    }
+
+    setSubmittingInfraction(true);
+    try {
+      const res = await fetch('/api/student-infraction-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: student.id,
+          studentName: student.name,
+          className: student.class,
+          date: newInfractionDate,
+          time: newInfractionTime,
+          location: newInfractionLocation.trim() || "Lingkungan Sekolah",
+          infractionType: newInfractionType.trim(),
+          actionTaken: newInfractionActionTaken.trim() || "Pembinaan disiplin dan konseling oleh Guru BK",
+          resolutionStatus: newInfractionResolutionStatus,
+          points: Math.abs(Number(newInfractionPoints)) || 5
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const mysqlStatus = data.mysqlSaved ? " (Tersimpan langsung ke database MySQL)" : "";
+        setSuccessMsg(`Berhasil memberikan ${newInfractionPoints} poin pelanggaran untuk ${student.name}${mysqlStatus}.`);
+        setNewInfractionType("");
+        setNewInfractionPoints(5);
+        setNewInfractionStudentId("");
+        setNewInfractionRuleId("");
+        setNewInfractionLocation("Lingkungan Sekolah");
+        setNewInfractionActionTaken("Pembinaan disiplin dan konseling oleh Guru BK");
+        fetchAllData();
+        onRefresh();
+        setInfractionSubTab('points');
+
+        // Auto dismiss success toast message after 4s
+        setTimeout(() => setSuccessMsg(null), 4000);
+      } else {
+        const errorData = await res.json();
+        alert(errorData.error || "Gagal memberikan poin pelanggaran.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Gagal terhubung ke server.");
+    } finally {
+      setSubmittingInfraction(false);
     }
   };
 
@@ -3588,7 +3664,7 @@ export default function CounselorPanel({
                 </button>
               </div>
 
-              {/* TRIPLE SELECTOR SUBTABS DIRECT ON SCREEN */}
+              {/* SELECTOR SUBTABS DIRECT ON SCREEN */}
               <div className="flex gap-2 border-b border-slate-100 pb-3 flex-wrap">
                 <button
                   type="button"
@@ -3607,6 +3683,15 @@ export default function CounselorPanel({
                   }`}
                 >
                   Daftar Kejadian Kasus Masuk 🚨
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInfractionSubTab('add')}
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${
+                    infractionSubTab === 'add' ? 'bg-rose-600 text-white shadow-xs' : 'text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100'
+                  }`}
+                >
+                  ➕ Beri Poin Pelanggaran (BK)
                 </button>
                 <button
                   type="button"
@@ -3629,7 +3714,7 @@ export default function CounselorPanel({
               </div>
 
               {/* FILTERS PANEL */}
-              {infractionSubTab !== 'reduction' && infractionSubTab !== 'rubric' && (
+              {infractionSubTab !== 'reduction' && infractionSubTab !== 'rubric' && infractionSubTab !== 'add' && (
                 <div className="flex flex-col gap-3 pb-2">
                   <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
                     <div className="relative flex-1">
@@ -3750,6 +3835,16 @@ export default function CounselorPanel({
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    setNewInfractionStudentId(st.id);
+                                    setInfractionSubTab('add');
+                                  }}
+                                  className="px-2.5 py-1 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-800 text-[10.5px] uppercase font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <span>🚨 Beri Poin</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
                                     setReductionStudentId(st.id);
                                     setInfractionSubTab('reduction');
                                   }}
@@ -3769,6 +3864,263 @@ export default function CounselorPanel({
                       )}
                     </tbody>
                   </table>
+                </div>
+              ) : infractionSubTab === 'add' ? (
+                <div className="bg-rose-50/40 border border-rose-200 rounded-2xl p-6 shadow-xxs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-5 border-b border-rose-200 gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-base shadow-sm">
+                        🚨
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-extrabold text-sm text-slate-900">Form Pemberian Poin Pelanggaran Siswa (Guru BK)</h3>
+                          <span className="text-[9.5px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-250 px-2 py-0.5 rounded-full">
+                            💾 Langsung Simpan ke MySQL
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-medium leading-tight mt-0.5">
+                          Pemberian poin sanksi ini langsung disimpan ke basis data MySQL sekolah secara realtime tanpa melalui penyimpanan lokal sementara, dan langsung diakumulasikan ke rekaman tata tertib siswa.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInfractionSubTab('points')}
+                      className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors self-start sm:self-auto cursor-pointer"
+                    >
+                      ← Kembali ke Kumulatif
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSubmitNewInfraction} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Pilih Siswa */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                          👤 Pilih Siswa Terkait <span className="text-rose-500">*</span>
+                        </label>
+                        {newInfractionStudentSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setNewInfractionStudentSearch('')}
+                            className="text-[9px] text-rose-500 hover:underline font-bold cursor-pointer"
+                          >
+                            Reset Cari
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="🔍 Tulis nama murid atau NIS untuk memfilter pilihan..."
+                        value={newInfractionStudentSearch}
+                        onChange={(e) => setNewInfractionStudentSearch(e.target.value)}
+                        className="p-2 border border-slate-200 bg-white rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-rose-500 mb-1"
+                      />
+                      <select
+                        value={newInfractionStudentId}
+                        onChange={(e) => setNewInfractionStudentId(e.target.value)}
+                        className="p-2.5 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 pointer-events-auto cursor-pointer focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        required
+                      >
+                        <option value="">
+                          {newInfractionStudentSearch
+                            ? `-- Hasil Pencarian (${allStudents.filter(s => {
+                                const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                                const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                                if (isMut || isLulus) return false;
+                                return s.name.toLowerCase().includes(newInfractionStudentSearch.toLowerCase()) || (s.nis && s.nis.toLowerCase().includes(newInfractionStudentSearch.toLowerCase()));
+                              }).length} siswa ditemukan) --`
+                            : "-- Pilih Siswa Terdaftar --"}
+                        </option>
+                        {allStudents
+                          .filter(s => {
+                            const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                            const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                            if (isMut || isLulus) return false;
+                            if (!newInfractionStudentSearch) return true;
+                            const term = newInfractionStudentSearch.toLowerCase();
+                            return s.name.toLowerCase().includes(term) || (s.nis && s.nis.toLowerCase().includes(term));
+                          })
+                          .map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} (Kelas {s.class}) - NIS: {s.nis}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    {/* Acuan Rubrik Sanksi (Opsional Otomatis) */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        📋 Pilih Cepat dari Master Rubrik Sanksi (Opsional)
+                      </label>
+                      <select
+                        value={newInfractionRuleId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewInfractionRuleId(val);
+                          const matched = infractionRules.find(r => r.id === val);
+                          if (matched) {
+                            setNewInfractionType(matched.name);
+                            setNewInfractionPoints(matched.points || 5);
+                          }
+                        }}
+                        className="p-2 border border-slate-200 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer"
+                      >
+                        <option value="">-- Pilih Jenis Pelanggaran dari Rubrik / Input Manual --</option>
+                        {infractionRules.map(r => (
+                          <option key={r.id} value={r.id}>
+                            [{r.category || 'Aturan'}] {r.name} (+{r.points} Poin Sanksi)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Deskripsi Jenis Pelanggaran */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        ⚠️ Jenis / Uraian Pelanggaran <span className="text-rose-500">*</span>
+                      </label>
+                      <textarea
+                        value={newInfractionType}
+                        onChange={(e) => setNewInfractionType(e.target.value)}
+                        placeholder="Contoh: Terlambat masuk sekolah lebih dari 30 menit, atribut seragam tidak lengkap, meninggalkan jam KBM tanpa izin..."
+                        rows={2}
+                        className="p-2.5 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 placeholder-slate-400"
+                        required
+                      />
+                    </div>
+
+                    {/* Besaran Poin Pelanggaran */}
+                    <div className="flex flex-col gap-1.5 text-left">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        🔢 Besaran Poin Pelanggaran (Positif) <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max="200"
+                          value={newInfractionPoints}
+                          onChange={(e) => setNewInfractionPoints(Number(e.target.value))}
+                          className="flex-1 p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 font-mono"
+                          required
+                        />
+                        <div className="flex gap-1">
+                          {[5, 10, 15, 20, 25].map(pt => (
+                            <button
+                              key={pt}
+                              type="button"
+                              onClick={() => setNewInfractionPoints(pt)}
+                              className={`px-2 py-1 text-[10px] font-black rounded-lg border cursor-pointer ${
+                                newInfractionPoints === pt ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              +{pt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status Penanganan */}
+                    <div className="flex flex-col gap-1.5 text-left">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        📌 Status Penanganan / Mediasi
+                      </label>
+                      <select
+                        value={newInfractionResolutionStatus}
+                        onChange={(e) => setNewInfractionResolutionStatus(e.target.value as any)}
+                        className="p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer"
+                      >
+                        <option value="Dalam Proses">Dalam Proses (Dipantau BK)</option>
+                        <option value="Belum Selesai">Belum Selesai</option>
+                        <option value="Butuh Mediasi">Butuh Mediasi (Panggilan Walas/Ortu)</option>
+                        <option value="Selesai">Selesai (Sudah Diberi Tindakan/Sanksi)</option>
+                      </select>
+                    </div>
+
+                    {/* Tanggal & Jam */}
+                    <div className="flex flex-col gap-1.5 text-left">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        📅 Tanggal Kejadian
+                      </label>
+                      <input
+                        type="date"
+                        value={newInfractionDate}
+                        onChange={(e) => setNewInfractionDate(e.target.value)}
+                        className="p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 text-left">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        ⏱️ Waktu Kejadian (WIB)
+                      </label>
+                      <input
+                        type="time"
+                        value={newInfractionTime}
+                        onChange={(e) => setNewInfractionTime(e.target.value)}
+                        className="p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        required
+                      />
+                    </div>
+
+                    {/* Lokasi */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        📍 Lokasi Kejadian
+                      </label>
+                      <input
+                        type="text"
+                        value={newInfractionLocation}
+                        onChange={(e) => setNewInfractionLocation(e.target.value)}
+                        placeholder="Contoh: Gerbang Masuk Sekolah, Ruang Kelas 8-B, Kantin, Lapangan..."
+                        className="p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                      />
+                    </div>
+
+                    {/* Tindakan / Sanksi Pembinaan */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        ⚖️ Tindakan / Sanksi Pembinaan yang Diberikan Guru BK
+                      </label>
+                      <textarea
+                        value={newInfractionActionTaken}
+                        onChange={(e) => setNewInfractionActionTaken(e.target.value)}
+                        placeholder="Contoh: Peringatan lisan, pembuatan surat pernyataan komitmen disiplin, dan penjadwalan bimbingan konseling individual..."
+                        rows={2}
+                        className="p-2.5 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        required
+                      />
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex justify-end gap-2 md:col-span-2 border-t border-rose-200 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInfractionSubTab('points');
+                          setNewInfractionType("");
+                          setNewInfractionStudentId("");
+                          setNewInfractionRuleId("");
+                        }}
+                        className="px-4 py-2 bg-white border border-slate-250 hover:bg-slate-100 text-slate-700 font-extrabold rounded-xl text-xs cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submittingInfraction}
+                        className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        {submittingInfraction ? <Loader2 size={12} className="animate-spin" /> : null}
+                        <span>Simpan Poin Langsung ke MySQL 🚀</span>
+                      </button>
+                    </div>
+                  </form>
                 </div>
               ) : infractionSubTab === 'reduction' ? (
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-xxs">

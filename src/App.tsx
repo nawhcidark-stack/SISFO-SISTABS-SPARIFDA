@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal, MiscBill, MerdekaAssessment, ClassSchedule } from './types';
 import Login from './components/Login';
@@ -22,6 +22,14 @@ import SppPaymentReviewModal from './components/SppPaymentReviewModal';
 import PWAInstallButton from './components/PWAInstallButton';
 import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar, BookOpen, ShieldAlert, Megaphone, Loader2 } from 'lucide-react';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from './utils/notificationUtils';
+import AcademicYearDropdown from './components/AcademicYearDropdown';
+import {
+  getAcademicYearFromMiscBill,
+  getStudentClassForYear,
+  getAvailableAcademicYears,
+  isBillInAcademicYear,
+  isTransactionInAcademicYear
+} from './utils/academicYearUtils';
 
 // Helper utility to make fetch requests that strictly bypass any browser, webview or device caching layers
 export async function fetchNoCache(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -173,6 +181,89 @@ export default function App() {
     logo2: "",
     letterhead: ""
   });
+
+  // Academic Year State & Switcher
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(() => {
+    try {
+      return localStorage.getItem('smp_selected_academic_year') || '2026/2027';
+    } catch {
+      return '2026/2027';
+    }
+  });
+
+  const handleSelectAcademicYear = (year: string) => {
+    setSelectedAcademicYear(year);
+    try {
+      localStorage.setItem('smp_selected_academic_year', year);
+    } catch (e) {
+      console.error("Failed to save selected academic year to localStorage", e);
+    }
+  };
+
+  // Keep selected year synchronized if school identity has activeAcademicYear and no preference was saved yet
+  useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear && !localStorage.getItem('smp_selected_academic_year')) {
+      setSelectedAcademicYear(schoolIdentity.activeAcademicYear);
+    }
+  }, [schoolIdentity?.activeAcademicYear]);
+
+  const availableAcademicYears = useMemo(() => {
+    return getAvailableAcademicYears(
+      studentBills,
+      merdekaAssessmentsList,
+      schedulesList,
+      schoolIdentity.activeAcademicYear || '2026/2027'
+    );
+  }, [studentBills, merdekaAssessmentsList, schedulesList, schoolIdentity.activeAcademicYear]);
+
+  // Periodic Students (each student's displayed class matches their class in selectedAcademicYear)
+  const periodicStudentsList = useMemo(() => {
+    return studentsList.map(s => {
+      const historicalClass = getStudentClassForYear(s, selectedAcademicYear, schoolIdentity.activeAcademicYear || '2026/2027');
+      return {
+        ...s,
+        class: historicalClass || s.class
+      };
+    });
+  }, [studentsList, selectedAcademicYear, schoolIdentity.activeAcademicYear]);
+
+  // Periodic SPP Bills (filtered to selected academic year)
+  const periodicBills = useMemo(() => {
+    return studentBills.filter(b => isBillInAcademicYear(b, selectedAcademicYear));
+  }, [studentBills, selectedAcademicYear]);
+
+  // Periodic Misc Bills
+  const periodicMiscBills = useMemo(() => {
+    return miscBillsList.filter(m => {
+      const mAy = getAcademicYearFromMiscBill(m);
+      return mAy === selectedAcademicYear;
+    });
+  }, [miscBillsList, selectedAcademicYear]);
+
+  // Periodic Savings Transactions (filtered to selected academic year)
+  const periodicTransactions = useMemo(() => {
+    return studentTransactions.filter(t => isTransactionInAcademicYear(t, selectedAcademicYear));
+  }, [studentTransactions, selectedAcademicYear]);
+
+  // Periodic Assessments
+  const periodicAssessments = useMemo(() => {
+    return merdekaAssessmentsList.filter(a => a.academicYear === selectedAcademicYear);
+  }, [merdekaAssessmentsList, selectedAcademicYear]);
+
+  // Periodic Homerooms
+  const periodicHomerooms = useMemo(() => {
+    return homeroomsList.map(h => {
+      const assignment = h.assignments?.find(a => a.academicYear === selectedAcademicYear);
+      return assignment ? { ...h, className: assignment.className } : h;
+    });
+  }, [homeroomsList, selectedAcademicYear]);
+
+  // Periodic Schedules
+  const periodicSchedules = useMemo(() => {
+    return schedulesList.filter(s => !s.academicYear || s.academicYear === selectedAcademicYear);
+  }, [schedulesList, selectedAcademicYear]);
+
+  const isHistoricalView = selectedAcademicYear !== (schoolIdentity.activeAcademicYear || '2026/2027');
   
   // Midtrans Payment Handler states
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
@@ -2627,10 +2718,12 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3.5 font-sans">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-800 border border-indigo-100 rounded-lg text-[11px] font-bold shadow-3xs">
-                <Calendar size={12} className="text-indigo-650" />
-                <span>Tahun Ajaran: <span className="font-extrabold">{schoolIdentity.activeAcademicYear || '2026/2027'}</span></span>
-              </div>
+              <AcademicYearDropdown
+                selectedYear={selectedAcademicYear}
+                activeYear={schoolIdentity.activeAcademicYear || '2026/2027'}
+                availableYears={availableAcademicYears}
+                onSelectYear={handleSelectAcademicYear}
+              />
 
               <div className="w-px h-4 bg-slate-200" />
 
@@ -2685,6 +2778,24 @@ export default function App() {
         </div>
       )}
 
+      {/* Historical Archive Banner */}
+      {isLoggedIn && isHistoricalView && (
+        <div className="bg-amber-500/10 border-b border-amber-300/60 text-amber-950 px-4 sm:px-6 py-2.5 text-xs font-semibold flex flex-wrap items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+            <span>
+              <strong>Mode Arsip / Histori:</strong> Menampilkan data periodik Tahun Ajaran <strong>{selectedAcademicYear}</strong>. Anggota kelas, wali kelas, tagihan pembayaran &amp; tabungan difilter sesuai periode tahun tersebut.
+            </span>
+          </div>
+          <button
+            onClick={() => handleSelectAcademicYear(schoolIdentity.activeAcademicYear || '2026/2027')}
+            className="px-3 py-1 bg-amber-200 hover:bg-amber-300 text-amber-950 font-extrabold rounded-lg text-[11px] transition-all cursor-pointer shadow-3xs shrink-0 flex items-center gap-1.5"
+          >
+            <span>Kembali ke Tahun Aktif ({schoolIdentity.activeAcademicYear || '2026/2027'})</span>
+          </button>
+        </div>
+      )}
+
       {/* Core Stage Frame */}
       <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Suspense fallback={
@@ -2709,10 +2820,10 @@ export default function App() {
           />
         ) : role === 'student' ? (
           <StudentPanel
-            students={studentsList}
-            currentStudent={currentStudent}
-            bills={studentBills}
-            transactions={studentTransactions}
+            students={periodicStudentsList}
+            currentStudent={periodicStudentsList.find(s => s.id === currentStudent?.id) || currentStudent}
+            bills={periodicBills}
+            transactions={periodicTransactions}
             isLoading={isLoading}
             onSelectStudent={(id) => fetchStudentFullData(id)}
             onPaySpp={handlePaySpp}
@@ -2727,21 +2838,23 @@ export default function App() {
             notifications={globalNotifications}
             onLogout={handleLogout}
             midtransStatus={sysStatus}
-            miscBills={miscBillsList}
+            miscBills={periodicMiscBills}
             onPayMiscSnap={handlePayMiscSnap}
             onPayCartSnap={handlePayCartSnap}
-            classSchedules={schedulesList}
+            classSchedules={periodicSchedules}
             subjectTeachers={subjectTeachersList}
-            homerooms={homeroomsList}
-            merdekaAssessments={merdekaAssessmentsList}
+            homerooms={periodicHomerooms}
+            merdekaAssessments={periodicAssessments}
+            globalAcademicYear={selectedAcademicYear}
+            onSelectAcademicYear={handleSelectAcademicYear}
           />
         ) : role === 'homeroom' ? (
-          (homeroomsList.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom) ? (
+          (periodicHomerooms.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom) ? (
             <HomeroomPanel
-              currentTeacher={homeroomsList.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom!}
-              students={studentsList}
+              currentTeacher={periodicHomerooms.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom!}
+              students={periodicStudentsList}
               attendanceLogs={attendanceList}
-              bills={studentBills}
+              bills={periodicBills}
               schoolIdentity={schoolIdentity}
               onLogout={handleLogout}
               onSaveBatchAttendance={handleSaveBatchAttendance}
@@ -2750,11 +2863,13 @@ export default function App() {
               onUpdateStudent={handleUpdateStudent}
               scannedStudentNis={scannedStudentNis}
               scannedStudentAt={scannedStudentAt}
-              miscBills={miscBillsList}
-              classSchedules={schedulesList}
+              miscBills={periodicMiscBills}
+              classSchedules={periodicSchedules}
               subjectTeachers={subjectTeachersList}
-              homerooms={homeroomsList}
-              transactions={studentTransactions}
+              homerooms={periodicHomerooms}
+              transactions={periodicTransactions}
+              selectedAcademicYear={selectedAcademicYear}
+              onSelectAcademicYear={handleSelectAcademicYear}
             />
           ) : (
             <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
@@ -2773,15 +2888,15 @@ export default function App() {
           (subjectTeachersList.find(st => st.id === loggedSubjectTeacher?.id) || loggedSubjectTeacher) ? (
             <SubjectTeacherPanel
               currentTeacher={subjectTeachersList.find(st => st.id === loggedSubjectTeacher?.id) || loggedSubjectTeacher!}
-              students={studentsList}
+              students={periodicStudentsList}
               attendanceLogs={attendanceList}
               schoolIdentity={schoolIdentity}
               onLogout={handleLogout}
               onRefresh={handleReload}
               isLoading={isLoading}
-              classSchedules={schedulesList}
+              classSchedules={periodicSchedules}
               subjectTeachers={subjectTeachersList}
-              homerooms={homeroomsList}
+              homerooms={periodicHomerooms}
             />
           ) : (
             <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
@@ -2799,30 +2914,30 @@ export default function App() {
         ) : role === 'treasurer' ? (
           <TreasurerPanel
             schoolIdentity={schoolIdentity}
-            homerooms={homeroomsList}
+            homerooms={periodicHomerooms}
             subjectTeachers={subjectTeachersList}
             onLogout={handleLogout}
             onRefresh={handleReload}
           />
         ) : role === 'principal' ? (
           <PrincipalPanel
-            students={studentsList}
-            bills={studentBills}
+            students={periodicStudentsList}
+            bills={periodicBills}
             attendanceLogs={attendanceList}
-            homerooms={homeroomsList}
+            homerooms={periodicHomerooms}
             subjectTeachers={subjectTeachersList}
             schoolIdentity={schoolIdentity}
             onUpdateSchoolIdentity={handleUpdateSchoolIdentity}
             onLogout={handleLogout}
             onRefresh={handleReload}
             isLoading={isLoading}
-            classSchedules={schedulesList}
+            classSchedules={periodicSchedules}
           />
         ) : role === 'waka_sarpras' ? (
           <WakaSarprasPanel
             schoolIdentity={schoolIdentity}
             onLogout={handleLogout}
-            homerooms={homeroomsList}
+            homerooms={periodicHomerooms}
             subjectTeachers={subjectTeachersList}
           />
         ) : role === 'bk' ? (
@@ -2831,28 +2946,30 @@ export default function App() {
             onLogout={handleLogout}
             onRefresh={handleReload}
             onUpdateStudent={handleUpdateStudent}
-            classSchedules={schedulesList}
+            classSchedules={periodicSchedules}
             subjectTeachers={subjectTeachersList}
-            homerooms={homeroomsList}
-            students={studentsList}
+            homerooms={periodicHomerooms}
+            students={periodicStudentsList}
             attendanceLogs={attendanceList}
           />
         ) : role === 'waka_kurikulum' ? (
           <WakaKurikulumPanel
-            students={studentsList}
+            students={periodicStudentsList}
             subjectTeachers={subjectTeachersList}
-            homerooms={homeroomsList}
-            merdekaAssessments={merdekaAssessmentsList}
-            classSchedules={schedulesList}
+            homerooms={periodicHomerooms}
+            merdekaAssessments={periodicAssessments}
+            classSchedules={periodicSchedules}
             schoolIdentity={schoolIdentity}
             attendanceLogs={attendanceList}
             onRefreshData={handleReload}
+            globalAcademicYear={selectedAcademicYear}
+            onSelectAcademicYear={handleSelectAcademicYear}
           />
         ) : (
           <AdminPanel
-            students={studentsList}
-            bills={studentBills}
-            transactions={studentTransactions}
+            students={periodicStudentsList}
+            bills={periodicBills}
+            transactions={periodicTransactions}
             isLoading={isLoading}
             midtransStatus={sysStatus}
             scannedStudentNis={scannedStudentNis}
@@ -2878,7 +2995,7 @@ export default function App() {
             onImportTeachers={handleImportTeachers}
             schoolIdentity={schoolIdentity}
             onUpdateSchoolIdentity={handleUpdateSchoolIdentity}
-            homerooms={homeroomsList}
+            homerooms={periodicHomerooms}
             onCreateHomeroom={handleCreateHomeroom}
             onUpdateHomeroom={handleUpdateHomeroom}
             onDeleteHomeroom={handleDeleteHomeroom}
@@ -2889,8 +3006,11 @@ export default function App() {
             onAutoGenerateSubjectTeachers={handleAutoGenerateSubjectTeachers}
             onLogout={handleLogout}
             attendanceLogs={attendanceList}
-            miscBills={miscBillsList}
-            classSchedules={schedulesList}
+            miscBills={periodicMiscBills}
+            classSchedules={periodicSchedules}
+            selectedAcademicYear={selectedAcademicYear}
+            onSelectAcademicYear={handleSelectAcademicYear}
+            availableAcademicYears={availableAcademicYears}
           />
         )}
         </Suspense>

@@ -171,6 +171,8 @@ interface WakaKurikulumPanelProps {
   schoolIdentity?: SchoolIdentity;
   attendanceLogs?: AttendanceLog[];
   onRefreshData?: () => void;
+  globalAcademicYear?: string;
+  onSelectAcademicYear?: (year: string) => void;
 }
 
 export default function WakaKurikulumPanel({
@@ -181,7 +183,9 @@ export default function WakaKurikulumPanel({
   classSchedules = [],
   schoolIdentity,
   attendanceLogs = [],
-  onRefreshData
+  onRefreshData,
+  globalAcademicYear,
+  onSelectAcademicYear
 }: WakaKurikulumPanelProps) {
   const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'status_belum_input' | 'rapor' | 'rapor_tengah_semester' | 'password'>('monitoring');
   const [masterMapelSubTab, setMasterMapelSubTab] = useState<'mapel_list' | 'bank_tp'>('mapel_list');
@@ -530,13 +534,15 @@ export default function WakaKurikulumPanel({
 
   // Filter States
   const [selectedSemester, setSelectedSemester] = useState<string>(initialSemester);
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(initialAcademicYear);
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(globalAcademicYear || initialAcademicYear);
 
   React.useEffect(() => {
-    if (schoolIdentity?.activeAcademicYear) {
+    if (globalAcademicYear) {
+      setSelectedAcademicYear(globalAcademicYear);
+    } else if (schoolIdentity?.activeAcademicYear) {
       setSelectedAcademicYear(schoolIdentity.activeAcademicYear);
     }
-  }, [schoolIdentity?.activeAcademicYear]);
+  }, [globalAcademicYear, schoolIdentity?.activeAcademicYear]);
 
   React.useEffect(() => {
     if (schoolIdentity?.activeSemester) {

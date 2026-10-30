@@ -85,6 +85,16 @@ export interface Student {
 
   // Nominal Khusus SPP Siswa (jika ada besaran khusus diluar tarif standar tingkat)
   customSppRate?: number;
+
+  // Rekam Jejak Kelas per Tahun Ajaran (Histori Periodik Anggota Kelas)
+  classHistory?: StudentClassHistoryItem[];
+}
+
+export interface StudentClassHistoryItem {
+  academicYear: string; // e.g. "2024/2025", "2025/2026", "2026/2027", "2027/2028"
+  className: string;    // e.g. "7-A", "8-A", "9-A"
+  status?: string;      // "Aktif" | "Naik Kelas" | "Tinggal Kelas" | "Lulus" | "Mutasi"
+  updatedAt?: string;
 }
 
 export interface SppBill {
@@ -103,6 +113,7 @@ export interface SppBill {
   isVoidedByAdmin?: boolean;
   voidedAt?: string;
   voidReason?: string;
+  academicYear?: string; // e.g., "2026/2027"
 }
 
 export interface SavingsTransaction {
@@ -121,6 +132,7 @@ export interface SavingsTransaction {
   isVoidedByAdmin?: boolean;
   voidedAt?: string;
   voidReason?: string;
+  academicYear?: string; // e.g., "2026/2027"
 }
 
 export interface MiscBill {
@@ -139,6 +151,7 @@ export interface MiscBill {
   isVoidedByAdmin?: boolean;
   voidedAt?: string;
   voidReason?: string;
+  academicYear?: string; // e.g., "2026/2027"
 }
 
 export interface VoidedPaymentRecord {
@@ -269,6 +282,8 @@ export interface HomeroomTeacher {
   subject?: string; // Mata pelajaran yang diampu oleh wali kelas (e.g., "Matematika", "Bahasa Indonesia", etc.)
   subjectId?: string; // ID master mapel terhubung ke master data mapel
   subjects?: string[]; // Daftar multi-mapel bila mengampu lebih dari 1 mapel
+  academicYear?: string; // e.g., "2026/2027"
+  assignments?: Array<{ academicYear: string; className: string }>;
 }
 
 export interface SubjectTeacher {

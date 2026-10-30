@@ -1881,6 +1881,88 @@ function debouncedSyncConfigsToMysql() {
   }, 3000);
 }
 
+function seedStudentClassHistories() {
+  try {
+    const activeAy = (schoolIdentity as any).activeAcademicYear || "2026/2027";
+    const startYear = parseInt(activeAy.split("/")[0], 10) || 2026;
+
+    let studentUpdates = 0;
+    students.forEach(s => {
+      if (!s.classHistory || s.classHistory.length === 0) {
+        s.classHistory = [];
+        const cls = (s.class || "").trim();
+        const match = cls.match(/^([789])(.*)$/);
+        if (match) {
+          const grade = parseInt(match[1], 10);
+          const suffix = match[2];
+          // For current active year:
+          s.classHistory.push({
+            academicYear: `${startYear}/${startYear + 1}`,
+            className: cls,
+            status: "Aktif"
+          });
+          // For grade 8, seed grade 7 in previous year
+          if (grade === 8) {
+            s.classHistory.push({
+              academicYear: `${startYear - 1}/${startYear}`,
+              className: `7${suffix}`,
+              status: "Naik Kelas"
+            });
+          }
+          // For grade 9, seed grade 8 and grade 7
+          if (grade === 9) {
+            s.classHistory.push({
+              academicYear: `${startYear - 1}/${startYear}`,
+              className: `8${suffix}`,
+              status: "Naik Kelas"
+            });
+            s.classHistory.push({
+              academicYear: `${startYear - 2}/${startYear - 1}`,
+              className: `7${suffix}`,
+              status: "Naik Kelas"
+            });
+          }
+          studentUpdates++;
+        } else if (cls.toLowerCase() === "lulus" || (s.status || "").toLowerCase() === "lulus") {
+          s.classHistory.push({
+            academicYear: `${startYear - 1}/${startYear}`,
+            className: "9-A",
+            status: "Lulus"
+          });
+          s.classHistory.push({
+            academicYear: `${startYear - 2}/${startYear - 1}`,
+            className: "8-A",
+            status: "Naik Kelas"
+          });
+          studentUpdates++;
+        }
+      }
+    });
+
+    // Also ensure sppBills have academicYear populated
+    let billUpdates = 0;
+    sppBills.forEach(b => {
+      if (!b.academicYear) {
+        const isFirstHalf = ["Juli", "Agustus", "September", "Oktober", "November", "Desember"].includes(b.month);
+        const bStartYear = isFirstHalf ? b.year : b.year - 1;
+        b.academicYear = `${bStartYear}/${bStartYear + 1}`;
+        billUpdates++;
+      }
+    });
+
+    if (studentUpdates > 0 || billUpdates > 0) {
+      console.log(`[ACADEMIC YEAR] Populated class history for ${studentUpdates} students and ${billUpdates} bills.`);
+      saveState();
+      persistEntities('students', students).catch(err => console.warn('[MySQL Save Student History Error]:', err));
+      if (billUpdates > 0) {
+        persistEntities('sppBills', sppBills).catch(err => console.warn('[MySQL Save Bill AY Error]:', err));
+      }
+    }
+  } catch (e) {
+    console.warn("Notice seeding student class histories:", e);
+  }
+}
+
 function loadState() {
   try {
     if (fs.existsSync(DATA_FILE)) {
@@ -2194,6 +2276,9 @@ function loadState() {
           sharedLearningObjectives.push(gtp);
         }
       });
+      // Sinkronkan dan lengkapi rekam jejak histori kelas siswa per tahun ajaran
+      seedStudentClassHistories();
+
       console.log(`State loaded successfully from database (${sharedLearningObjectives.length} shared TPs ready)`);
       return true;
     }
@@ -11163,11 +11248,24 @@ async function startServer() {
     const nextStartYear = currentMaxStartYear + 1;
 
     const { clearPreviousBills, generateNewBills } = req.body || {};
+    const currentAy = (schoolIdentity as any).activeAcademicYear || `${currentMaxStartYear}/${currentMaxStartYear + 1}`;
+    const nextAy = `${nextStartYear}/${nextStartYear + 1}`;
 
     students.forEach(student => {
       const cls = (student.class || "").trim();
       if (cls.toLowerCase() === "lulus" || cls.toLowerCase() === "lulusan" || cls.toLowerCase() === "mutasi" || cls.toLowerCase() === "mutasi keluar") {
         return;
+      }
+
+      // Pastikan classHistory tercatat untuk tahun ajaran aktif sebelumnya
+      if (!student.classHistory) student.classHistory = [];
+      if (!student.classHistory.some(h => h.academicYear === currentAy)) {
+        student.classHistory.push({
+          academicYear: currentAy,
+          className: student.class,
+          status: "Aktif",
+          updatedAt: new Date().toISOString()
+        });
       }
 
       const previousClass = student.class;
@@ -11179,8 +11277,17 @@ async function startServer() {
         promotedCount++;
       } else if (cls.startsWith("9")) {
         student.class = "Lulus";
+        student.status = "Lulus";
         graduatedCount++;
       }
+
+      // Catat kelas baru untuk tahun ajaran berikutnya ke dalam classHistory
+      student.classHistory.push({
+        academicYear: nextAy,
+        className: student.class,
+        status: student.class === "Lulus" ? "Lulus" : "Naik Kelas",
+        updatedAt: new Date().toISOString()
+      });
 
       // If class changed, update their unpaid bills to the rate of the new class
       if (previousClass !== student.class) {
@@ -11255,7 +11362,8 @@ async function startServer() {
               month: m.name,
               year: billYear,
               amount: getSppAmountForStudent(student),
-              status: "unpaid"
+              status: "unpaid",
+              academicYear: `${nextStartYear}/${nextStartYear + 1}`
             });
             autoBillsGenerated++;
           }
@@ -11383,13 +11491,26 @@ async function startServer() {
               status: isPaid ? "paid" : "unpaid",
               paidAt: isPaid ? new Date().toISOString() : undefined,
               paymentMethod: isPaid ? "Lunas Pendaftaran" : undefined,
-              orderId: isPaid ? `ORD-REGISTRATION-${student.id}-${billYear}` : undefined
+              orderId: isPaid ? `ORD-REGISTRATION-${student.id}-${billYear}` : undefined,
+              academicYear: `${yearNum}/${yearNum + 1}`
             });
             billsGenerated++;
           } else {
             skippedBillsCount++;
           }
         });
+
+        // Ensure student has classHistory entry for this academic year
+        if (!student.classHistory) student.classHistory = [];
+        const ayTag = `${yearNum}/${yearNum + 1}`;
+        if (!student.classHistory.some(h => h.academicYear === ayTag)) {
+          student.classHistory.push({
+            academicYear: ayTag,
+            className: student.class,
+            status: "Aktif",
+            updatedAt: new Date().toISOString()
+          });
+        }
       });
     }
 
@@ -11428,6 +11549,67 @@ async function startServer() {
       billsGenerated,
       skippedBillsCount,
       deletedBillsCount
+    });
+  });
+
+  // 3c. Get all available Academic Years & Active Configuration
+  app.get("/api/academic-years", (req, res) => {
+    const activeYear = (schoolIdentity as any).activeAcademicYear || "2026/2027";
+    const yearsSet = new Set<string>(["2024/2025", "2025/2026", "2026/2027", "2027/2028", "2028/2029"]);
+    yearsSet.add(activeYear);
+    sppBills.forEach(b => {
+      if (b.academicYear && b.academicYear.includes("/")) {
+        yearsSet.add(b.academicYear.trim());
+      } else {
+        const isFirstHalf = ["Juli", "Agustus", "September", "Oktober", "November", "Desember"].includes(b.month);
+        const bStartYear = isFirstHalf ? b.year : b.year - 1;
+        yearsSet.add(`${bStartYear}/${bStartYear + 1}`);
+      }
+    });
+    merdekaAssessments.forEach(a => {
+      if (a.academicYear && a.academicYear.includes("/")) {
+        yearsSet.add(a.academicYear.trim());
+      }
+    });
+    const years = Array.from(yearsSet).sort((a, b) => {
+      const sa = parseInt(a.split("/")[0], 10) || 0;
+      const sb = parseInt(b.split("/")[0], 10) || 0;
+      return sa - sb;
+    });
+    res.json({
+      activeAcademicYear: activeYear,
+      activeSemester: (schoolIdentity as any).activeSemester || "Ganjil",
+      academicYears: years
+    });
+  });
+
+  // 3d. Switch or Update Active Academic Year
+  app.post("/api/academic-years/switch-active", (req, res) => {
+    const { academicYear, semester } = req.body || {};
+    if (!academicYear || !academicYear.includes("/")) {
+      return res.status(400).json({ error: "Format tahun ajaran tidak valid (contoh: 2026/2027)" });
+    }
+    const cleanAy = academicYear.trim();
+    (schoolIdentity as any).activeAcademicYear = cleanAy;
+    if (semester) {
+      (schoolIdentity as any).activeSemester = semester;
+    }
+    saveState();
+    persistEntity("schoolIdentity", schoolIdentity).catch(err => console.error("Error persisting schoolIdentity:", err));
+    saveConfigToMysql("schoolIdentity", schoolIdentity).catch(err => console.error("Error saving schoolIdentity config:", err));
+
+    broadcastNotification({
+      id: `notif-switch-ay-${Date.now()}`,
+      title: "Tahun Ajaran Aktif Diperbarui",
+      message: `Tahun Ajaran aktif sekolah kini dialihkan ke ${cleanAy}${semester ? ` (Semester ${semester})` : ''}.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      activeAcademicYear: cleanAy,
+      activeSemester: (schoolIdentity as any).activeSemester || "Ganjil"
     });
   });
 

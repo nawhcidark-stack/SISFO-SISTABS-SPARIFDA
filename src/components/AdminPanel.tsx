@@ -334,6 +334,9 @@ interface AdminPanelProps {
   scannedStudentAt?: number | null;
   miscBills?: MiscBill[];
   classSchedules?: ClassSchedule[];
+  selectedAcademicYear?: string;
+  onSelectAcademicYear?: (year: string) => void;
+  availableAcademicYears?: string[];
 }
 
 export default function AdminPanel({
@@ -378,7 +381,10 @@ export default function AdminPanel({
   scannedStudentNis,
   scannedStudentAt,
   miscBills = [],
-  classSchedules = []
+  classSchedules = [],
+  selectedAcademicYear,
+  onSelectAcademicYear,
+  availableAcademicYears = []
 }: AdminPanelProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [passbookModalStudent, setPassbookModalStudent] = useState<Student | null>(null);
@@ -10540,6 +10546,43 @@ export default function AdminPanel({
                     Atur kenaikan kelas siswa dan konfigurasi penagihan SPP Anda
                     saat berpindah semester atau tahun ajaran baru.
                   </p>
+                </div>
+
+                {/* Banner Status & Switcher Tahun Ajaran */}
+                <div className="p-4 bg-indigo-50/70 border border-indigo-200/80 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-indigo-600 text-white rounded-lg">
+                      <Calendar size={18} />
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase font-black text-indigo-700 tracking-wider">Tahun Ajaran Aktif Sekolah</div>
+                      <div className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
+                        <span>{schoolIdentity?.activeAcademicYear || '2026/2027'}</span>
+                        {selectedAcademicYear && selectedAcademicYear !== (schoolIdentity?.activeAcademicYear || '2026/2027') && (
+                          <span className="text-xs font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-md">
+                            (Sedang melihat arsip: {selectedAcademicYear})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {onSelectAcademicYear && availableAcademicYears && availableAcademicYears.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-bold text-slate-600">Beralih Tampilan Periodik:</label>
+                      <select
+                        value={selectedAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'}
+                        onChange={(e) => onSelectAcademicYear(e.target.value)}
+                        className="px-3 py-1.5 bg-white border border-indigo-300 rounded-lg font-bold text-indigo-900 text-xs shadow-2xs focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      >
+                        {availableAcademicYears.map(yr => (
+                          <option key={yr} value={yr}>
+                            T.A {yr} {yr === (schoolIdentity?.activeAcademicYear || '2026/2027') ? '(Aktif)' : '(Arsip/Histori)'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 {/* Persiapan Data Awal & Perilaku Tagihan Form */}

@@ -749,6 +749,8 @@ interface HomeroomPanelProps {
   subjectTeachers?: SubjectTeacher[];
   homerooms?: HomeroomTeacher[];
   transactions?: SavingsTransaction[];
+  selectedAcademicYear?: string;
+  onSelectAcademicYear?: (year: string) => void;
 }
 
 export default function HomeroomPanel({
@@ -768,7 +770,9 @@ export default function HomeroomPanel({
   classSchedules = [],
   subjectTeachers = [],
   homerooms = [],
-  transactions = []
+  transactions = [],
+  selectedAcademicYear,
+  onSelectAcademicYear
 }: HomeroomPanelProps) {
   const todayStr = getWIBDateStr();
 
@@ -788,15 +792,21 @@ export default function HomeroomPanel({
 
   // Kokurikuler & Full Merdeka Assessment states for Wali Kelas
   const [kokurikulerSemester, setKokurikulerSemester] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
-  const [kokurikulerYear, setKokurikulerYear] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
+  const [kokurikulerYear, setKokurikulerYear] = useState<string>(selectedAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027');
   const [kokurikulerScores, setKokurikulerScores] = useState<Record<string, string>>({});
   const [isSavingKokurikuler, setIsSavingKokurikuler] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (selectedAcademicYear) {
+      setKokurikulerYear(selectedAcademicYear);
+    }
+  }, [selectedAcademicYear]);
 
   // Selected class for grading & rapor (defaults to homeroom class but can be changed to any class)
   const [selectedGradingClass, setSelectedGradingClass] = useState<string>(currentTeacher?.className || '');
 
   useEffect(() => {
-    if (currentTeacher?.className && !selectedGradingClass) {
+    if (currentTeacher?.className) {
       setSelectedGradingClass(currentTeacher.className);
     }
   }, [currentTeacher?.className]);

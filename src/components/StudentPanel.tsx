@@ -93,6 +93,8 @@ interface StudentPanelProps {
   subjectTeachers?: SubjectTeacher[];
   homerooms?: HomeroomTeacher[];
   merdekaAssessments?: MerdekaAssessment[];
+  globalAcademicYear?: string;
+  onSelectAcademicYear?: (year: string) => void;
 }
 
 export default function StudentPanel({
@@ -120,7 +122,9 @@ export default function StudentPanel({
   classSchedules = [],
   subjectTeachers = [],
   homerooms = [],
-  merdekaAssessments = []
+  merdekaAssessments = [],
+  globalAcademicYear,
+  onSelectAcademicYear
 }: StudentPanelProps) {
   const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'jadwal' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk' | 'rapor'>('spp');
   const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
@@ -249,7 +253,7 @@ export default function StudentPanel({
   const studentAssessmentsForRapor = useMemo(() => {
     if (!currentStudent) return [];
     const activeSem = reportReleaseConfig.activeSemester || 'Ganjil';
-    const activeYear = reportReleaseConfig.activeAcademicYear || '2024/2025';
+    const activeYear = selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027';
 
     const matched = liveAssessments.filter(a =>
       (a.studentId === currentStudent.id || a.studentId === currentStudent.nis || (a.studentName && a.studentName.trim().toLowerCase() === currentStudent.name.trim().toLowerCase())) &&
@@ -442,7 +446,7 @@ export default function StudentPanel({
     const principalName = schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd";
     const isAkhir = reportType === 'akhir_semester';
     const activeSem = reportReleaseConfig.activeSemester || 'Ganjil';
-    const activeYear = reportReleaseConfig.activeAcademicYear || '2024/2025';
+    const activeYear = selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027';
 
     const officialKopHtml = schoolIdentity?.letterhead
       ? `<div style="width: 100%; margin: 0 0 8px 0; padding: 0;">
@@ -1567,16 +1571,25 @@ export default function StudentPanel({
   }, [bills]);
 
   // Track selected academic year
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('');
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(globalAcademicYear || '');
 
-  // Auto-select latest year
+  // Sync with global academic year when changed in header
+  useEffect(() => {
+    if (globalAcademicYear) {
+      setSelectedAcademicYear(globalAcademicYear);
+    }
+  }, [globalAcademicYear]);
+
+  // Auto-select latest year if empty
   useEffect(() => {
     if (academicYears.length > 0) {
       if (!selectedAcademicYear || !academicYears.includes(selectedAcademicYear)) {
-        setSelectedAcademicYear(academicYears[0]);
+        if (!globalAcademicYear) {
+          setSelectedAcademicYear(academicYears[0]);
+        }
       }
     }
-  }, [academicYears, selectedAcademicYear]);
+  }, [academicYears, selectedAcademicYear, globalAcademicYear]);
 
   // Sort months in school calendar standard index: Juli = 0, ... Juni = 11
   const monthOrder = useMemo(() => [
@@ -4845,7 +4858,7 @@ export default function StudentPanel({
                                     <tbody>
                                       <tr>
                                         <td className="font-semibold py-0.5 whitespace-nowrap pr-2">Tahun Ajaran</td>
-                                        <td className="py-0.5 whitespace-nowrap text-left">: {reportReleaseConfig.activeAcademicYear || '2024/2025'}</td>
+                                        <td className="py-0.5 whitespace-nowrap text-left">: {selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'}</td>
                                       </tr>
                                       <tr>
                                         <td className="font-semibold py-0.5 whitespace-nowrap pr-2">Kelas / Fase</td>
@@ -5137,7 +5150,7 @@ export default function StudentPanel({
                                     <tbody>
                                       <tr>
                                         <td className="font-semibold py-0.5 whitespace-nowrap pr-2">Tahun Ajaran</td>
-                                        <td className="py-0.5 whitespace-nowrap text-left">: {reportReleaseConfig.activeAcademicYear || '2024/2025'}</td>
+                                        <td className="py-0.5 whitespace-nowrap text-left">: {selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'}</td>
                                       </tr>
                                       <tr>
                                         <td className="font-semibold py-0.5 whitespace-nowrap pr-2">Kelas / Fase</td>

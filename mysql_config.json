@@ -13,8 +13,8 @@
   "autoSyncEnabled": true,
   "autoSyncDirection": "push",
   "status": "connected",
-  "lastConnectedAt": "2026-10-30T00:36:47.099Z",
-  "lastSyncAt": "2026-10-30T00:36:55.037Z",
+  "lastConnectedAt": "2026-10-30T01:06:17.269Z",
+  "lastSyncAt": "2026-10-30T01:06:25.532Z",
   "lastAutoSyncStatus": "error",
   "lastAutoSyncMessage": "Column 'nik' cannot be null"
 }

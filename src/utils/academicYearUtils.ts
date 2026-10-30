@@ -1,4 +1,4 @@
-import { Student, SppBill, SavingsTransaction, HomeroomTeacher, MerdekaAssessment, ClassSchedule, MiscBill } from "../types";
+import { Student, SppBill, SavingsTransaction, HomeroomTeacher, SubjectTeacher, TeacherAssignment, MerdekaAssessment, ClassSchedule, MiscBill } from "../types";
 
 export const FIRST_SEMESTER_MONTHS = ["Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 export const SECOND_SEMESTER_MONTHS = ["Januari", "Februari", "Maret", "April", "Mei", "Juni"];
@@ -188,32 +188,101 @@ export function getStudentClassForYear(
 }
 
 /**
+ * Resolves the full list of active homeroom teachers for a specific academic year,
+ * taking into account role transitions (Homeroom <-> Subject Teacher) and custom class assignments.
+ */
+export function getPeriodicHomerooms(
+  homerooms: HomeroomTeacher[] = [],
+  subjectTeachers: SubjectTeacher[] = [],
+  targetAy: string,
+  activeAy: string = "2026/2027"
+): HomeroomTeacher[] {
+  const cleanTargetAy = (targetAy || activeAy || "2026/2027").trim();
+  const cleanActiveAy = (activeAy || "2026/2027").trim();
+
+  // Combine both teacher lists, deduplicated by username or id
+  const teacherMap = new Map<string, HomeroomTeacher>();
+
+  // 1. Add all homerooms
+  (homerooms || []).forEach(h => {
+    if (!h) return;
+    const key = (h.username || h.id || "").toLowerCase();
+    if (key) {
+      teacherMap.set(key, { ...h });
+    }
+  });
+
+  // 2. Check subjectTeachers to see if any have an assignment as homeroom in targetAy
+  (subjectTeachers || []).forEach(st => {
+    if (!st) return;
+    const key = (st.username || st.id || "").toLowerCase();
+    if (!key) return;
+
+    const existing = teacherMap.get(key);
+    if (!existing) {
+      const asg = st.assignments?.find(a => a.academicYear && a.academicYear.trim() === cleanTargetAy);
+      if (asg && asg.role === 'homeroom' && asg.className) {
+        teacherMap.set(key, {
+          id: `ht-sync-${st.id}`,
+          username: st.username,
+          name: st.name,
+          className: asg.className,
+          password: st.password || "wali123",
+          subject: st.subject,
+          subjectId: st.subjectId,
+          academicYear: cleanTargetAy,
+          assignments: st.assignments
+        });
+      }
+    }
+  });
+
+  // 3. Resolve effective class for cleanTargetAy
+  const result: HomeroomTeacher[] = [];
+
+  teacherMap.forEach(t => {
+    // Check explicit assignment for targetAy
+    const asg = t.assignments?.find(a => a.academicYear && a.academicYear.trim() === cleanTargetAy);
+    if (asg) {
+      if (asg.role === 'homeroom' && asg.className && asg.className.trim().length > 0) {
+        result.push({
+          ...t,
+          className: asg.className.trim(),
+          academicYear: cleanTargetAy
+        });
+      }
+      // If asg.role === 'subject_teacher' or asg.className is empty, this teacher is NOT a homeroom teacher in targetAy!
+      return;
+    }
+
+    // If no explicit assignment for targetAy:
+    // Fall back to default className if teacher has one
+    if (t.className && t.className.trim().length > 0) {
+      result.push({
+        ...t,
+        className: t.className.trim(),
+        academicYear: cleanTargetAy
+      });
+    }
+  });
+
+  return result;
+}
+
+/**
  * Resolves the assigned homeroom teacher for a class in a specific academic year.
  */
 export function getHomeroomForClassAndYear(
   homerooms: HomeroomTeacher[],
   className: string,
   targetAy: string,
-  activeAy: string = "2026/2027"
+  activeAy: string = "2026/2027",
+  subjectTeachers: SubjectTeacher[] = []
 ): HomeroomTeacher | undefined {
-  if (!className || !Array.isArray(homerooms)) return undefined;
+  if (!className) return undefined;
   const cleanClass = className.trim().toUpperCase();
-  const cleanTargetAy = targetAy.trim();
-
-  // 1. Check if any homeroom has explicit assignment for this targetAy and className
-  const assigned = homerooms.find(h => 
-    h.assignments?.some(a => a.academicYear === cleanTargetAy && a.className.toUpperCase() === cleanClass)
-  );
-  if (assigned) return assigned;
-
-  // 2. Check if homeroom has matching academicYear field
-  const byYearAndClass = homerooms.find(h => 
-    h.academicYear === cleanTargetAy && h.className.toUpperCase() === cleanClass
-  );
-  if (byYearAndClass) return byYearAndClass;
-
-  // 3. Fallback: match by default className
-  return homerooms.find(h => h.className.toUpperCase() === cleanClass);
+  const effectiveHomerooms = getPeriodicHomerooms(homerooms, subjectTeachers, targetAy, activeAy);
+  return effectiveHomerooms.find(h => h.className.trim().toUpperCase() === cleanClass);
 }
 
 /**

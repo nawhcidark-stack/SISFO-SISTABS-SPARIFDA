@@ -30,12 +30,14 @@ import {
 import { MidtransBulkReportModal } from "./MidtransBulkReportModal";
 import { SingleMidtransReconcileModal } from "./SingleMidtransReconcileModal";
 import MidtransPayModal from "./MidtransPayModal";
+import TeacherRoleTransitionModal from "./TeacherRoleTransitionModal";
 import { notifyFinancialUpdateLocally } from "../utils/syncEvents";
 import { compressAndResizeImage } from "../utils/imageCompressor";
 import {
   ShieldAlert,
   BookOpen,
   Users,
+  ArrowLeftRight,
   Banknote,
   BellRing,
   Settings,
@@ -388,6 +390,7 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [passbookModalStudent, setPassbookModalStudent] = useState<Student | null>(null);
+  const [isTeacherTransitionModalOpen, setIsTeacherTransitionModalOpen] = useState<boolean>(false);
   const [adminTab, setAdminTab] = useState<
     | "roster"
     | "broadcast"
@@ -10585,6 +10588,34 @@ export default function AdminPanel({
                   )}
                 </div>
 
+                {/* Feature: Peralihan Peran Guru (Wali Kelas <-> Guru Mapel) */}
+                <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-300/80 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-2xs">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-xs shrink-0 mt-0.5">
+                      <ArrowLeftRight size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-black text-slate-850 text-xs">Peralihan Peran Guru (Wali Kelas ⇄ Guru Mapel)</span>
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[9.5px] font-extrabold uppercase rounded-full border border-emerald-300">
+                          T.A. Baru & Multi-Tahun
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-slate-600 mt-0.5 leading-relaxed max-w-xl">
+                        Atur mutasi atau pembebasan tugas guru: antisipasi guru yang asalnya Wali Kelas tidak lagi menjadi Wali Kelas (menjadi Guru Mapel murni), atau Guru Mapel yang ditugaskan memegang kelas baru. Riwayat tahun sebelumnya tetap aman dan tidak terhapus.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsTeacherTransitionModalOpen(true)}
+                    className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                  >
+                    <ArrowLeftRight size={14} />
+                    <span>Kelola Peralihan Peran Guru</span>
+                  </button>
+                </div>
+
                 {/* Persiapan Data Awal & Perilaku Tagihan Form */}
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-3">
                   <span className="font-bold text-slate-700 text-xs flex items-center gap-1.5 hover:text-indigo-600 transition-colors">
@@ -13885,6 +13916,15 @@ export default function AdminPanel({
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
+                  onClick={() => setIsTeacherTransitionModalOpen(true)}
+                  className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-xs font-bold hover:shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  title="Atur penugasan Wali Kelas <-> Guru Mapel per Tahun Ajaran"
+                >
+                  <ArrowLeftRight size={13} />
+                  <span>Peralihan Peran (Wali Kelas ⇄ Mapel)</span>
+                </button>
+                <button
+                  type="button"
                   onClick={async () => {
                     setIsActionLoading(true);
                     setMgmtError(null);
@@ -14420,7 +14460,16 @@ export default function AdminPanel({
                   untuk mengisi Jurnal Pembelajaran dan absensi Mapel.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setIsTeacherTransitionModalOpen(true)}
+                  className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-xs font-bold hover:shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  title="Atur penugasan Guru Mapel <-> Wali Kelas per Tahun Ajaran"
+                >
+                  <ArrowLeftRight size={13} />
+                  <span>Peralihan Peran (Guru Mapel ⇄ Wali Kelas)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleExportTeachers("subject")}
@@ -21932,6 +21981,17 @@ export default function AdminPanel({
         student={passbookModalStudent}
         transactions={transactions}
         schoolIdentity={schoolIdentity}
+      />
+      <TeacherRoleTransitionModal
+        isOpen={isTeacherTransitionModalOpen}
+        onClose={() => setIsTeacherTransitionModalOpen(false)}
+        activeAcademicYear={schoolIdentity?.activeAcademicYear || '2026/2027'}
+        availableAcademicYears={availableAcademicYears}
+        homerooms={homerooms}
+        subjectTeachers={subjectTeachers}
+        onRefreshData={() => {
+          if (onRefresh) onRefresh();
+        }}
       />
     </div>
   );

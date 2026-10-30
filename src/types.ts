@@ -271,6 +271,16 @@ export interface AttendanceLog {
   }[];
 }
 
+export interface TeacherAssignment {
+  academicYear: string; // e.g. "2024/2025", "2025/2026", "2026/2027", "2027/2028"
+  role: 'homeroom' | 'subject_teacher';
+  className?: string; // e.g., "7-A", "7-B", "8-A", "9-C" (if homeroom)
+  subject?: string;
+  subjectId?: string;
+  notes?: string;
+  updatedAt?: string;
+}
+
 export interface HomeroomTeacher {
   id: string;
   username: string;
@@ -283,7 +293,7 @@ export interface HomeroomTeacher {
   subjectId?: string; // ID master mapel terhubung ke master data mapel
   subjects?: string[]; // Daftar multi-mapel bila mengampu lebih dari 1 mapel
   academicYear?: string; // e.g., "2026/2027"
-  assignments?: Array<{ academicYear: string; className: string }>;
+  assignments?: TeacherAssignment[];
 }
 
 export interface SubjectTeacher {
@@ -296,6 +306,8 @@ export interface SubjectTeacher {
   className?: string; // e.g., "7-A" or "SEMUA KELAS"
   password?: string;
   skUrl?: string;
+  academicYear?: string;
+  assignments?: TeacherAssignment[];
 }
 
 export interface CurriculumSubject {

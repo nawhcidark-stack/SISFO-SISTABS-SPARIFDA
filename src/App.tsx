@@ -28,7 +28,8 @@ import {
   getStudentClassForYear,
   getAvailableAcademicYears,
   isBillInAcademicYear,
-  isTransactionInAcademicYear
+  isTransactionInAcademicYear,
+  getPeriodicHomerooms
 } from './utils/academicYearUtils';
 
 // Helper utility to make fetch requests that strictly bypass any browser, webview or device caching layers
@@ -252,11 +253,13 @@ export default function App() {
 
   // Periodic Homerooms
   const periodicHomerooms = useMemo(() => {
-    return homeroomsList.map(h => {
-      const assignment = h.assignments?.find(a => a.academicYear === selectedAcademicYear);
-      return assignment ? { ...h, className: assignment.className } : h;
-    });
-  }, [homeroomsList, selectedAcademicYear]);
+    return getPeriodicHomerooms(
+      homeroomsList,
+      subjectTeachersList,
+      selectedAcademicYear,
+      schoolIdentity.activeAcademicYear || '2026/2027'
+    );
+  }, [homeroomsList, subjectTeachersList, selectedAcademicYear, schoolIdentity.activeAcademicYear]);
 
   // Periodic Schedules
   const periodicSchedules = useMemo(() => {

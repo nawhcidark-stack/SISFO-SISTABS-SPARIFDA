@@ -233,6 +233,8 @@ export default function Login({ students, onLoginSuccess, schoolIdentity, onOpen
           cleanPass.toLowerCase() === cleanUser;
 
         if (isPassValid) {
+          const hasActiveHomeroom = Boolean(matchHomeroom.className && matchHomeroom.className.trim().length > 0);
+
           // Link assigned subject profile if available
           let matchedSubject = subjectTeachers.find(t => t.username.toLowerCase() === cleanUser || t.name.toLowerCase() === matchHomeroom.name.toLowerCase()) || null;
           if (!matchedSubject && matchHomeroom.subject) {
@@ -249,11 +251,15 @@ export default function Login({ students, onLoginSuccess, schoolIdentity, onOpen
 
           setTimeout(() => {
             setIsValidating(false);
-            onLoginSuccess('homeroom', null, matchHomeroom, matchedSubject);
+            if (hasActiveHomeroom) {
+              onLoginSuccess('homeroom', null, matchHomeroom, matchedSubject);
+            } else {
+              onLoginSuccess('subject_teacher', null, matchHomeroom, matchedSubject);
+            }
           }, 600);
         } else {
           setIsValidating(false);
-          setErrorMsg('Kata sandi Wali Kelas salah. Sandi bawaan sistem: "wali123" atau "123456". Hubungi Admin jika Anda lupa kata sandi.');
+          setErrorMsg('Kata sandi salah. Sandi bawaan sistem: "wali123" atau "123456". Hubungi Admin jika Anda lupa kata sandi.');
         }
         return;
       }
@@ -271,11 +277,17 @@ export default function Login({ students, onLoginSuccess, schoolIdentity, onOpen
           cleanPass.toLowerCase() === cleanUser;
 
         if (isPassValid) {
-          // Check if also registered as homeroom teacher
+          // Check if also registered as homeroom teacher with active class
           const matchedHr = homeroomTeachers.find(h => h.username.toLowerCase() === cleanUser || h.name.toLowerCase() === matchSubject.name.toLowerCase()) || null;
+          const isAssignedHomeroom = Boolean(matchedHr && matchedHr.className && matchedHr.className.trim().length > 0);
+
           setTimeout(() => {
             setIsValidating(false);
-            onLoginSuccess('subject_teacher', null, matchedHr, matchSubject);
+            if (isAssignedHomeroom) {
+              onLoginSuccess('homeroom', null, matchedHr, matchSubject);
+            } else {
+              onLoginSuccess('subject_teacher', null, matchedHr, matchSubject);
+            }
           }, 600);
         } else {
           setIsValidating(false);

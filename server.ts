@@ -9,7 +9,7 @@ import compression from "compression";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription, SharedLearningObjective } from "./src/types";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeacherAssignment, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription, SharedLearningObjective } from "./src/types";
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
@@ -2035,6 +2035,9 @@ function loadState() {
             ht.subjects = [authMap.subject];
           }
           if (!ht.password) ht.password = "wali123";
+          if (ht.id.startsWith("ht-promoted-") && !ht.assignments?.some(a => a.academicYear === "2026/2027")) {
+            ht.className = "";
+          }
           homeroomTeachers.push(ht);
         });
       }
@@ -5306,6 +5309,283 @@ async function startServer() {
 
     saveState();
     res.json({ success: true, subjectTeachers, addedCount });
+  });
+
+  // --- TEACHER ROLE TRANSITION (WALI KELAS <-> GURU MAPEL) ---
+  app.get("/api/admin/teacher-roles", (req, res) => {
+    const activeAy = (schoolIdentity as any).activeAcademicYear || "2026/2027";
+    const targetAy = ((req.query.academicYear as string) || activeAy).trim();
+
+    // Collect all teachers across homeroomTeachers and subjectTeachers
+    const map = new Map<string, any>();
+
+    // 1. Add from homeroomTeachers
+    homeroomTeachers.forEach(ht => {
+      const uname = (ht.username || "").toLowerCase().trim();
+      const asg = ht.assignments?.find(a => a.academicYear && a.academicYear.trim() === targetAy);
+      let roleInYear: 'homeroom' | 'subject_teacher' = (ht.className && ht.className.trim()) ? 'homeroom' : 'subject_teacher';
+      let classInYear = ht.className || '';
+
+      if (asg) {
+        roleInYear = asg.role || (asg.className ? 'homeroom' : 'subject_teacher');
+        classInYear = roleInYear === 'homeroom' ? (asg.className || '') : '';
+      } else {
+        const isPromotedOnly = ht.id.startsWith('ht-promoted-') && !ht.assignments?.some(a => a.academicYear === targetAy);
+        if (isPromotedOnly || !ht.className || ht.className.trim().length === 0) {
+          roleInYear = 'subject_teacher';
+          classInYear = '';
+        }
+      }
+
+      map.set(uname, {
+        id: ht.id,
+        username: ht.username,
+        name: ht.name,
+        defaultRole: ht.className ? 'homeroom' : 'subject_teacher',
+        defaultClass: ht.className || '',
+        subject: ht.subject || 'Umum',
+        subjectId: ht.subjectId,
+        password: ht.password || 'wali123',
+        targetAcademicYear: targetAy,
+        roleInYear,
+        classInYear: roleInYear === 'homeroom' ? classInYear : '',
+        assignments: ht.assignments || []
+      });
+    });
+
+    // 2. Merge from subjectTeachers
+    subjectTeachers.forEach(st => {
+      const uname = (st.username || "").toLowerCase().trim();
+      const existing = map.get(uname);
+      const asg = st.assignments?.find(a => a.academicYear && a.academicYear.trim() === targetAy);
+
+      if (existing) {
+        if (!existing.subject || existing.subject === 'Umum') {
+          existing.subject = st.subject;
+          existing.subjectId = st.subjectId;
+        }
+        if (asg) {
+          existing.roleInYear = asg.role || (asg.className ? 'homeroom' : 'subject_teacher');
+          existing.classInYear = asg.role === 'homeroom' ? (asg.className || '') : '';
+        }
+      } else {
+        let roleInYear: 'homeroom' | 'subject_teacher' = 'subject_teacher';
+        let classInYear = '';
+
+        if (asg) {
+          roleInYear = asg.role || (asg.className ? 'homeroom' : 'subject_teacher');
+          classInYear = asg.role === 'homeroom' ? (asg.className || '') : '';
+        }
+
+        map.set(uname, {
+          id: st.id,
+          username: st.username,
+          name: st.name,
+          defaultRole: 'subject_teacher',
+          defaultClass: st.className || '',
+          subject: st.subject || 'Umum',
+          subjectId: st.subjectId,
+          password: st.password || 'mapel123',
+          targetAcademicYear: targetAy,
+          roleInYear,
+          classInYear,
+          assignments: st.assignments || []
+        });
+      }
+    });
+
+    const teacherList = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({
+      academicYear: targetAy,
+      activeAcademicYear: activeAy,
+      teachers: teacherList
+    });
+  });
+
+  app.post("/api/admin/teacher-roles/transition", (req, res) => {
+    const { teacherId, username, academicYear, newRole, targetClass, subject, subjectId } = req.body || {};
+    const activeAy = (schoolIdentity as any).activeAcademicYear || "2026/2027";
+    const targetAy = (academicYear || activeAy).trim();
+
+    if (!newRole || (newRole !== 'homeroom' && newRole !== 'subject_teacher')) {
+      return res.status(400).json({ error: "Peran baru tidak valid. Pilih 'homeroom' atau 'subject_teacher'." });
+    }
+
+    if (newRole === 'homeroom' && (!targetClass || !String(targetClass).trim())) {
+      return res.status(400).json({ error: "Harap pilih kelas binaan bagi Wali Kelas (misal 7-A, 8-B)." });
+    }
+
+    const cleanClass = newRole === 'homeroom' ? String(targetClass).trim() : '';
+
+    const cleanUser = (username || '').toLowerCase().trim();
+    const cleanId = (teacherId || '').trim();
+
+    let ht = homeroomTeachers.find(h => (cleanId && h.id === cleanId) || (cleanUser && h.username.toLowerCase() === cleanUser));
+    let st = subjectTeachers.find(s => (cleanId && s.id === cleanId) || (cleanUser && s.username.toLowerCase() === cleanUser));
+
+    if (!ht && !st) {
+      return res.status(404).json({ error: "Data guru tidak ditemukan." });
+    }
+
+    const teacherName = (ht?.name || st?.name || '').trim();
+    const teacherUser = (ht?.username || st?.username || '').trim();
+    const teacherPassword = ht?.password || st?.password || '123456';
+    const teacherSubject = subject || ht?.subject || st?.subject || 'Umum';
+    const teacherSubjectId = subjectId || ht?.subjectId || st?.subjectId;
+
+    const assignment: TeacherAssignment = {
+      academicYear: targetAy,
+      role: newRole,
+      className: cleanClass || undefined,
+      subject: teacherSubject,
+      subjectId: teacherSubjectId,
+      updatedAt: new Date().toISOString()
+    };
+
+    // Update in homeroomTeachers
+    if (ht) {
+      if (!ht.assignments) ht.assignments = [];
+      const asgIdx = ht.assignments.findIndex(a => a.academicYear && a.academicYear.trim() === targetAy);
+      if (asgIdx !== -1) {
+        ht.assignments[asgIdx] = assignment;
+      } else {
+        ht.assignments.push(assignment);
+      }
+      if (teacherSubject) ht.subject = teacherSubject;
+      if (teacherSubjectId) ht.subjectId = teacherSubjectId;
+
+      if (targetAy === activeAy) {
+        ht.className = cleanClass;
+      }
+    } else if (newRole === 'homeroom') {
+      ht = {
+        id: `ht-promoted-${st?.id || Date.now()}`,
+        username: teacherUser,
+        name: teacherName,
+        className: targetAy === activeAy ? cleanClass : '',
+        password: teacherPassword,
+        subject: teacherSubject,
+        subjectId: teacherSubjectId,
+        academicYear: targetAy,
+        assignments: [assignment]
+      };
+      homeroomTeachers.push(ht);
+    }
+
+    // Update in subjectTeachers
+    if (st) {
+      if (!st.assignments) st.assignments = [];
+      const asgIdx = st.assignments.findIndex(a => a.academicYear && a.academicYear.trim() === targetAy);
+      if (asgIdx !== -1) {
+        st.assignments[asgIdx] = assignment;
+      } else {
+        st.assignments.push(assignment);
+      }
+      if (teacherSubject) st.subject = teacherSubject;
+      if (teacherSubjectId) st.subjectId = teacherSubjectId;
+      if (cleanClass) st.className = cleanClass;
+    } else {
+      st = {
+        id: `st-sync-${ht?.id || Date.now()}`,
+        username: teacherUser,
+        name: teacherName,
+        subject: teacherSubject,
+        subjectId: teacherSubjectId,
+        className: cleanClass,
+        password: teacherPassword,
+        assignments: [assignment]
+      };
+      subjectTeachers.push(st);
+    }
+
+    saveState();
+    if (ht) directSaveEntityToMysql('homeroomTeachers', ht).catch(() => {});
+    if (st) directSaveEntityToMysql('subject_teacher', st).catch(() => {});
+
+    const actionDesc = newRole === 'homeroom'
+      ? `ditugaskan menjadi Wali Kelas ${cleanClass}`
+      : `dialihkan menjadi Guru Mata Pelajaran murni (${teacherSubject})`;
+    
+    broadcastNotification({
+      id: `notif-trans-${Date.now()}`,
+      title: "Peralihan Peran Guru",
+      message: `Bapak/Ibu ${teacherName} telah ${actionDesc} untuk Tahun Ajaran ${targetAy}.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      message: `Berhasil mengubah peran ${teacherName} menjadi ${newRole === 'homeroom' ? `Wali Kelas ${cleanClass}` : 'Guru Mapel Murni'} pada Tahun Ajaran ${targetAy}.`,
+      teacher: {
+        id: ht?.id || st?.id,
+        username: teacherUser,
+        name: teacherName,
+        roleInYear: newRole,
+        classInYear: cleanClass,
+        academicYear: targetAy
+      },
+      homeroomTeachers,
+      subjectTeachers
+    });
+  });
+
+  app.post("/api/admin/teacher-roles/copy-from-previous-year", (req, res) => {
+    const { sourceAcademicYear, targetAcademicYear } = req.body || {};
+    const activeAy = (schoolIdentity as any).activeAcademicYear || "2026/2027";
+    const srcAy = (sourceAcademicYear || activeAy).trim();
+    const dstAy = (targetAcademicYear || "").trim();
+
+    if (!dstAy) {
+      return res.status(400).json({ error: "Tahun ajaran target harus diisi." });
+    }
+    if (srcAy === dstAy) {
+      return res.status(400).json({ error: "Tahun ajaran sumber dan target tidak boleh sama." });
+    }
+
+    let copiedCount = 0;
+    homeroomTeachers.forEach(ht => {
+      const srcAsg = ht.assignments?.find(a => a.academicYear && a.academicYear.trim() === srcAy);
+      const effectiveRole = srcAsg ? srcAsg.role : 'homeroom';
+      const effectiveClass = srcAsg ? (srcAsg.className || '') : (ht.className || '');
+
+      if (!ht.assignments) ht.assignments = [];
+      const dstIdx = ht.assignments.findIndex(a => a.academicYear && a.academicYear.trim() === dstAy);
+      const newAsg: TeacherAssignment = {
+        academicYear: dstAy,
+        role: effectiveRole,
+        className: effectiveClass || undefined,
+        subject: ht.subject,
+        subjectId: ht.subjectId,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (dstIdx !== -1) {
+        ht.assignments[dstIdx] = newAsg;
+      } else {
+        ht.assignments.push(newAsg);
+      }
+      copiedCount++;
+    });
+
+    saveState();
+    persistEntities('homeroomTeachers', homeroomTeachers).catch(() => {});
+
+    broadcastNotification({
+      id: `notif-copy-asg-${Date.now()}`,
+      title: "Penugasan Wali Kelas Disalin",
+      message: `Plotting penugasan Wali Kelas berhasil disalin dari T.A ${srcAy} ke T.A ${dstAy} untuk ${copiedCount} guru.`,
+      type: "success",
+      createdAt: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      copiedCount,
+      sourceAcademicYear: srcAy,
+      targetAcademicYear: dstAy,
+      homeroomTeachers
+    });
   });
 
   app.post("/api/subject-teachers/change-password", (req, res) => {

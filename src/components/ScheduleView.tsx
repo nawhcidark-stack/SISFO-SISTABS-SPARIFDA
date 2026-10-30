@@ -26,7 +26,8 @@ import {
   AlertCircle,
   CheckCircle,
   Info,
-  CheckSquare
+  CheckSquare,
+  Copy
 } from 'lucide-react';
 
 interface ScheduleViewProps {
@@ -40,6 +41,7 @@ interface ScheduleViewProps {
   userClass?: string;
   userTeacherId?: string;
   userTeacherName?: string;
+  academicYear?: string;
 }
 
 const DAYS = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'] as const;
@@ -75,9 +77,38 @@ export default function ScheduleView({
   curriculumSubjects = [],
   userClass,
   userTeacherId,
-  userTeacherName
+  userTeacherName,
+  academicYear = '2026/2027'
 }: ScheduleViewProps) {
   const isEditable = role === 'waka_kurikulum';
+
+  const [isCopyingYear, setIsCopyingYear] = useState(false);
+
+  const handleCopyFromPreviousYear = async () => {
+    if (!confirm(`Konfirmasi Tindakan:\n\nSalin seluruh jadwal dari Tahun Ajaran 2025/2026 ke Tahun Ajaran ${academicYear}?\nJadwal akan siap digunakan langsung untuk T.A ${academicYear}.`)) {
+      return;
+    }
+    setIsCopyingYear(true);
+    try {
+      const res = await fetch('/api/curriculum/schedules/copy-year', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromYear: '2025/2026',
+          toYear: academicYear,
+          mode: 'replace'
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal menyalin jadwal');
+      alert(`Sukses: ${data.message || 'Jadwal berhasil disalin ke Tahun Ajaran aktif!'}`);
+      onRefreshSchedule();
+    } catch (err: any) {
+      alert(`Gagal: ${err.message}`);
+    } finally {
+      setIsCopyingYear(false);
+    }
+  };
 
   // Master Data Mata Pelajaran state inside ScheduleView
   const [internalSubjects, setInternalSubjects] = useState<CurriculumSubject[]>(curriculumSubjects);
@@ -768,6 +799,7 @@ export default function ScheduleView({
             startTime: startVal,
             endTime: endVal,
             alokasiWaktu: alokasiVal,
+            academicYear: academicYear || '2026/2027',
             isValid,
             validationMsg: isValid ? 'Valid' : 'Hari, Kelas, Mapel, atau Guru/ID Guru wajib diisi'
           });
@@ -797,10 +829,15 @@ export default function ScheduleView({
     setImportError(null);
 
     try {
+      const targetAy = academicYear || '2026/2027';
       const res = await fetch('/api/curriculum/schedules/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: validRows, mode: importMode })
+        body: JSON.stringify({ 
+          items: validRows.map(r => ({ ...r, academicYear: r.academicYear || targetAy })), 
+          academicYear: targetAy,
+          mode: importMode 
+        })
       });
 
       const resData = await res.json();
@@ -1009,6 +1046,7 @@ export default function ScheduleView({
       startTime: formStartTime,
       endTime: formEndTime,
       alokasiWaktu: formAlokasi,
+      academicYear: academicYear || '2026/2027',
       force: forceSave
     };
 
@@ -1057,29 +1095,45 @@ export default function ScheduleView({
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 font-extrabold text-[10px] uppercase tracking-wider mb-2">
-              <Calendar size={12} className="text-indigo-400" />
-              Sistem Jadwal Mengajar & Beban Mengajar Terintegrasi
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 font-extrabold text-[10px] uppercase tracking-wider">
+                <Calendar size={12} className="text-indigo-400" />
+                Sistem Jadwal Mengajar & Beban Mengajar Terintegrasi
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 font-extrabold text-[10px] tracking-wider">
+                <span>T.A {academicYear}</span>
+              </div>
             </div>
             <h2 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
               <span>Jadwal Pelajaran & Alokasi Mengajar Guru</span>
             </h2>
             <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-              Deteksi otomatis benturan jadwal, sinkronisasi pengisian Jurnal KBM, dan pemantauan jumlah jam mengajar (JP/minggu) secara komprehensif.
+              Deteksi otomatis benturan jadwal, sinkronisasi pengisian Jurnal KBM, dan pemantauan jumlah jam mengajar (JP/minggu) secara komprehensif untuk Tahun Ajaran {academicYear}.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             {role === 'waka_kurikulum' && (
-              <button
-                onClick={handleSyncAbsentTeachers}
-                disabled={isSyncingAbsent}
-                className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
-                title="Sinkronkan status guru tidak hadir dan pulihkan absensi siswa ke MySQL"
-              >
-                <RefreshCw size={14} className={isSyncingAbsent ? 'animate-spin' : ''} />
-                <span>{isSyncingAbsent ? 'Menyinkronkan...' : 'Sinkronkan Guru Tidak Hadir'}</span>
-              </button>
+              <>
+                <button
+                  onClick={handleCopyFromPreviousYear}
+                  disabled={isCopyingYear}
+                  className="px-3.5 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
+                  title="Salin seluruh jadwal dari Tahun Ajaran 2025/2026 ke Tahun Ajaran aktif ini"
+                >
+                  <Copy size={14} className={isCopyingYear ? 'animate-spin' : ''} />
+                  <span>{isCopyingYear ? 'Menyalin...' : 'Salin dari 2025/2026'}</span>
+                </button>
+                <button
+                  onClick={handleSyncAbsentTeachers}
+                  disabled={isSyncingAbsent}
+                  className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
+                  title="Sinkronkan status guru tidak hadir dan pulihkan absensi siswa ke MySQL"
+                >
+                  <RefreshCw size={14} className={isSyncingAbsent ? 'animate-spin' : ''} />
+                  <span>{isSyncingAbsent ? 'Menyinkronkan...' : 'Sinkronkan Guru Tidak Hadir'}</span>
+                </button>
+              </>
             )}
 
             <button

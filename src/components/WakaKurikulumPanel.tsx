@@ -3050,6 +3050,7 @@ export default function WakaKurikulumPanel({
           availableClasses={availableClasses}
           subjectTeachers={subjectTeachers}
           homerooms={homerooms}
+          academicYear={selectedAcademicYear || globalAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'}
         />
       )}
 

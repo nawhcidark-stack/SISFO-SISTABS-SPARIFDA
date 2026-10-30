@@ -194,8 +194,8 @@ function parseCsvSchedules(csvStr: string): ClassSchedule[] {
         startTime: cols[6],
         endTime: cols[7],
         alokasiWaktu: cols[8] || '1 JP',
-        academicYear: '2025/2026',
-        semester: 'Genap'
+        academicYear: '2026/2027',
+        semester: 'Ganjil'
       });
     }
   }
@@ -2576,10 +2576,34 @@ function applyDataFromMysql(pulledData: any) {
     // Persist locally
     saveState(true);
     console.log("[MySQL Sync] Data dari database MySQL berhasil dimuat ke memori dan disimpan ke local cache.");
+    ensureSchedulesAcademicYear();
     return true;
   } catch (err) {
     console.error("Gagal menerapkan data dari MySQL:", err);
     return false;
+  }
+}
+
+function ensureSchedulesAcademicYear() {
+  try {
+    const activeAy = (schoolIdentity as any)?.activeAcademicYear || '2026/2027';
+    if (classSchedules.length > 0) {
+      const hasActive = classSchedules.some(s => s.academicYear === activeAy);
+      if (!hasActive) {
+        console.log(`[SCHEDULES] Populating active academic year ${activeAy} from baseline schedules (${classSchedules.length} items)`);
+        const clonedActive = classSchedules.map((s, idx) => ({
+          ...s,
+          id: `sch-active-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+          academicYear: activeAy,
+          createdAt: new Date().toISOString()
+        }));
+        classSchedules.push(...clonedActive);
+        saveState();
+        directSaveEntitiesBatchToMysql("schedule", clonedActive).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn("Notice in ensureSchedulesAcademicYear:", err);
   }
 }
 
@@ -2590,6 +2614,7 @@ const hasMysqlConfigured = Boolean(
   (mysqlActiveCfg && mysqlActiveCfg.host && mysqlActiveCfg.database)
 );
 const isLoaded = loadState();
+ensureSchedulesAcademicYear();
 
 if (isLoaded) {
   // Baseline cache loaded; Primary hydration occurs directly from MySQL on server startup
@@ -7824,6 +7849,11 @@ async function startServer() {
       return res.status(400).json({ error: "Data jadwal tidak lengkap. Mohon isi Hari, Kelas, Mapel, Guru, dan Jam Ke." });
     }
 
+    const activeAy = (schoolIdentity as any)?.activeAcademicYear || '2026/2027';
+    const activeSem = (schoolIdentity as any)?.activeSemester || 'Ganjil';
+    const resolvedAcademicYear = (academicYear || activeAy).trim();
+    const resolvedSemester = (semester || activeSem).trim();
+
     const newSchedule: ClassSchedule = {
       id: `sch-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       day,
@@ -7836,8 +7866,8 @@ async function startServer() {
       startTime: startTime || '',
       endTime: endTime || '',
       alokasiWaktu: alokasiWaktu || '2 JP',
-      academicYear: academicYear || '2025/2026',
-      semester: semester || 'Genap',
+      academicYear: resolvedAcademicYear,
+      semester: resolvedSemester,
       createdAt: new Date().toISOString()
     };
 
@@ -7862,6 +7892,8 @@ async function startServer() {
     }
 
     const { day, className, subject, subjectId, teacherId, teacherName, jamKe, startTime, endTime, alokasiWaktu, academicYear, semester, force } = req.body;
+    const activeAy = (schoolIdentity as any)?.activeAcademicYear || '2026/2027';
+    const activeSem = (schoolIdentity as any)?.activeSemester || 'Ganjil';
     
     const updatedSchedule: ClassSchedule = {
       ...classSchedules[index],
@@ -7875,8 +7907,8 @@ async function startServer() {
       startTime: startTime !== undefined ? startTime : classSchedules[index].startTime,
       endTime: endTime !== undefined ? endTime : classSchedules[index].endTime,
       alokasiWaktu: alokasiWaktu || classSchedules[index].alokasiWaktu,
-      academicYear: academicYear || classSchedules[index].academicYear,
-      semester: semester || classSchedules[index].semester,
+      academicYear: (academicYear || classSchedules[index].academicYear || activeAy).trim(),
+      semester: (semester || classSchedules[index].semester || activeSem).trim(),
     };
 
     if (!force) {
@@ -7893,10 +7925,15 @@ async function startServer() {
   });
 
   app.post("/api/curriculum/schedules/bulk", (req, res) => {
-    const { items, mode } = req.body;
+    const { items, mode, academicYear, semester } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Daftar jadwal yang diimport kosong atau tidak valid." });
     }
+
+    const activeAy = (schoolIdentity as any)?.activeAcademicYear || '2026/2027';
+    const activeSem = (schoolIdentity as any)?.activeSemester || 'Ganjil';
+    const targetAcademicYear = (academicYear || activeAy).trim();
+    const targetSemester = (semester || activeSem).trim();
 
     const formattedSchedules: ClassSchedule[] = items.map((item: any, idx: number) => {
       let resolvedTeacherId = (item.teacherId || item.teacherUsername || '').toString().trim();
@@ -7936,8 +7973,8 @@ async function startServer() {
         startTime: item.startTime || '',
         endTime: item.endTime || '',
         alokasiWaktu: item.alokasiWaktu || '2 JP',
-        academicYear: item.academicYear || '2025/2026',
-        semester: item.semester || 'Genap',
+        academicYear: (item.academicYear || targetAcademicYear).trim(),
+        semester: (item.semester || targetSemester).trim(),
         createdAt: new Date().toISOString()
       };
     });
@@ -7968,11 +8005,13 @@ async function startServer() {
         const normClass = newItem.className.trim().toUpperCase();
         const normJam = newItem.jamKe.trim().toLowerCase().replace(/\s+/g, "");
 
-        // Remove ALL existing entries that match this slot to guarantee no duplicate
+        // Remove ALL existing entries that match this slot in the same academic year to guarantee no duplicate
         const matchingIndices: number[] = [];
         for (let i = classSchedules.length - 1; i >= 0; i--) {
           const s = classSchedules[i];
+          const sYear = (s.academicYear || targetAcademicYear).trim();
           if (
+            sYear === newItem.academicYear &&
             s.day.trim().toLowerCase() === normDay &&
             s.className.trim().toUpperCase() === normClass &&
             s.jamKe.trim().toLowerCase().replace(/\s+/g, "") === normJam
@@ -8013,6 +8052,42 @@ async function startServer() {
       count: formattedSchedules.length,
       updatedCount,
       addedCount,
+      classSchedules
+    });
+  });
+
+  app.post("/api/curriculum/schedules/copy-year", async (req, res) => {
+    const { fromYear, toYear, mode } = req.body;
+    const activeAy = (schoolIdentity as any)?.activeAcademicYear || '2026/2027';
+    const sourceYear = (fromYear || '2025/2026').trim();
+    const targetYear = (toYear || activeAy).trim();
+
+    const sourceSchedules = classSchedules.filter(s => (s.academicYear || '2025/2026').trim() === sourceYear);
+    if (sourceSchedules.length === 0) {
+      return res.status(400).json({ error: `Tidak ditemukan jadwal pada tahun ajaran sumber ${sourceYear}.` });
+    }
+
+    if (mode === 'replace') {
+      const remaining = classSchedules.filter(s => (s.academicYear || activeAy).trim() !== targetYear);
+      classSchedules.length = 0;
+      classSchedules.push(...remaining);
+    }
+
+    const copiedSchedules: ClassSchedule[] = sourceSchedules.map((s, idx) => ({
+      ...s,
+      id: `sch-copied-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      academicYear: targetYear,
+      createdAt: new Date().toISOString()
+    }));
+
+    classSchedules.push(...copiedSchedules);
+    saveState();
+    directSaveEntitiesBatchToMysql("schedule", copiedSchedules).catch(err => console.error("MySQL copy schedules error:", err));
+
+    res.json({
+      success: true,
+      message: `Berhasil menyalin ${copiedSchedules.length} jadwal dari T.A ${sourceYear} ke T.A ${targetYear}.`,
+      copiedCount: copiedSchedules.length,
       classSchedules
     });
   });

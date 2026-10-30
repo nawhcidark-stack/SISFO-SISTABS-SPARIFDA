@@ -126,6 +126,17 @@ export default function StudentPanel({
   globalAcademicYear,
   onSelectAcademicYear
 }: StudentPanelProps) {
+  // Track selected academic year at the very top to prevent TDZ ReferenceError in memos
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(
+    globalAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'
+  );
+
+  useEffect(() => {
+    if (globalAcademicYear) {
+      setSelectedAcademicYear(globalAcademicYear);
+    }
+  }, [globalAcademicYear]);
+
   const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'jadwal' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk' | 'rapor'>('spp');
   const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
   const [reportReleaseConfig, setReportReleaseConfig] = useState<{
@@ -1570,17 +1581,7 @@ export default function StudentPanel({
     return years.sort((a, b) => b.localeCompare(a)); // Sort latest first
   }, [bills]);
 
-  // Track selected academic year
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(globalAcademicYear || '');
-
-  // Sync with global academic year when changed in header
-  useEffect(() => {
-    if (globalAcademicYear) {
-      setSelectedAcademicYear(globalAcademicYear);
-    }
-  }, [globalAcademicYear]);
-
-  // Auto-select latest year if empty
+  // Auto-select latest year if empty and none selected
   useEffect(() => {
     if (academicYears.length > 0) {
       if (!selectedAcademicYear || !academicYears.includes(selectedAcademicYear)) {
@@ -3514,6 +3515,7 @@ export default function StudentPanel({
                     availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
                     subjectTeachers={subjectTeachers}
                     homerooms={homerooms}
+                    academicYear={selectedAcademicYear || globalAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'}
                   />
                 </div>
               )}

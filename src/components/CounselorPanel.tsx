@@ -4889,6 +4889,7 @@ export default function CounselorPanel({
                 availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
                 subjectTeachers={subjectTeachers}
                 homerooms={homerooms}
+                academicYear={schoolIdentity?.activeAcademicYear || '2026/2027'}
               />
             </motion.div>
           )}

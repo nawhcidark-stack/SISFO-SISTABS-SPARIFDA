@@ -263,8 +263,15 @@ export default function App() {
 
   // Periodic Schedules
   const periodicSchedules = useMemo(() => {
-    return schedulesList.filter(s => !s.academicYear || s.academicYear === selectedAcademicYear);
-  }, [schedulesList, selectedAcademicYear]);
+    const activeAy = schoolIdentity.activeAcademicYear || '2026/2027';
+    const targetAy = selectedAcademicYear || activeAy;
+    const directMatches = schedulesList.filter(s => !s.academicYear || s.academicYear === targetAy);
+    if (directMatches.length > 0) {
+      return directMatches;
+    }
+    // Resilient fallback: if no explicit schedule tagged for targetAy, show base schedules so classes never see blank schedule
+    return schedulesList;
+  }, [schedulesList, selectedAcademicYear, schoolIdentity.activeAcademicYear]);
 
   const isHistoricalView = selectedAcademicYear !== (schoolIdentity.activeAcademicYear || '2026/2027');
   
@@ -860,6 +867,7 @@ export default function App() {
     if (userRole === 'student' && student) {
       setLoggedStudentId(student.id);
       localStorage.setItem('smp_maarif_student_id', student.id);
+      setCurrentStudent(student);
       fetchStudentFullData(student.id, false);
       setLoggedHomeroom(null);
       localStorage.removeItem('smp_maarif_logged_homeroom');

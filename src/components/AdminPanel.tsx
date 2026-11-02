@@ -466,6 +466,69 @@ export default function AdminPanel({
   const [isSingleMidtransReconcileModalOpen, setIsSingleMidtransReconcileModalOpen] = useState(false);
   const [singleReconcileInitialId, setSingleReconcileInitialId] = useState("");
 
+  // State for Admin Single Bill Reconciliation Check
+  const [reconcilingBillId, setReconcilingBillId] = useState<string | null>(null);
+  const [reconcileFeedback, setReconcileFeedback] = useState<{ billId: string; type: "success" | "info" | "error"; message: string } | null>(null);
+
+  const handleAdminReconcileBill = async (bill: any, billType: "spp" | "misc") => {
+    setReconcilingBillId(bill.id);
+    setReconcileFeedback(null);
+    try {
+      const res = await fetch("/api/admin/reconcile-bill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          billId: bill.id,
+          billType,
+          studentId: bill.studentId
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal melakukan pemeriksaan rekonsiliasi");
+      }
+
+      if (data.settled) {
+        setReconcileFeedback({
+          billId: bill.id,
+          type: "success",
+          message: data.message || "Pembayaran tagihan terverifikasi LUNAS!"
+        });
+        if (onBroadcastNotification) {
+          onBroadcastNotification({
+            id: `recon-${Date.now()}`,
+            title: "Rekonsiliasi Pembayaran Berhasil",
+            message: data.message || "Tagihan berhasil diselaraskan menjadi LUNAS.",
+            type: "payment",
+            timestamp: new Date().toISOString()
+          });
+        }
+        onRefresh();
+      } else {
+        setReconcileFeedback({
+          billId: bill.id,
+          type: "info",
+          message: data.message || "Status transaksi masih pending di Midtrans."
+        });
+        if (data.status === "unpaid" || data.status === "pending") {
+          onRefresh();
+        }
+      }
+    } catch (err: any) {
+      console.error("Error admin reconcile bill:", err);
+      setReconcileFeedback({
+        billId: bill.id,
+        type: "error",
+        message: err.message || "Gagal menghubungi server rekonsiliasi."
+      });
+    } finally {
+      setReconcilingBillId(null);
+      setTimeout(() => {
+        setReconcileFeedback(prev => prev?.billId === bill.id ? null : prev);
+      }, 6000);
+    }
+  };
+
   // Helper to extract grade level
   const getGradeLevel = (className: string): string => {
     if (!className) return "";
@@ -5799,8 +5862,8 @@ export default function AdminPanel({
                                                     : "🏆 BEBAS PRESTASI"}
                                                 </span>
                                               ) : b.status === "pending" ? (
-                                                <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">
-                                                  PENDING
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200 uppercase animate-pulse">
+                                                  <Clock size={8} /> PENDING
                                                 </span>
                                               ) : !checkIsBillActive(
                                                   b,
@@ -5868,6 +5931,66 @@ export default function AdminPanel({
                                                     title="Batalkan pembebasan SPP ini untuk kembali berstatus unpaid"
                                                   >
                                                     Batal 🔄
+                                                  </button>
+                                                </div>
+                                              ) : b.status === "pending" ? (
+                                                <div className="flex gap-1 justify-end items-center">
+                                                  <button
+                                                    type="button"
+                                                    disabled={reconcilingBillId === b.id}
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleAdminReconcileBill(b, "spp");
+                                                    }}
+                                                    className="px-2 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-extrabold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all shadow-xs"
+                                                    title="Cek status pembayaran Midtrans dan rekonsiliasikan tagihan pending ini"
+                                                  >
+                                                    <RefreshCw
+                                                      size={9}
+                                                      className={reconcilingBillId === b.id ? "animate-spin" : ""}
+                                                    />
+                                                    <span>{reconcilingBillId === b.id ? "Mengecek..." : "Cek"}</span>
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    disabled={
+                                                      processingBillId !== null || reconcilingBillId !== null
+                                                    }
+                                                    onClick={async (e) => {
+                                                      e.stopPropagation();
+                                                      setProcessingBillId(b.id);
+                                                      const resBill =
+                                                        await onPaySppManual(
+                                                          b.id,
+                                                        );
+                                                      setProcessingBillId(null);
+                                                      if (resBill) {
+                                                        onRefresh();
+                                                        setReceiptToPrint({
+                                                          type: "spp",
+                                                          detail: {
+                                                            ...b,
+                                                            status: "paid",
+                                                            paidAt:
+                                                              new Date().toISOString(),
+                                                            paymentMethod:
+                                                              "Manual Teller (Sekolah)",
+                                                            orderId:
+                                                              resBill.orderId ||
+                                                              `ORD-MANUAL-${Date.now()}`,
+                                                          },
+                                                          student:
+                                                            selectedStudent,
+                                                        });
+                                                        setPrintId(
+                                                          "print-receipt-section",
+                                                        );
+                                                      }
+                                                    }}
+                                                    className="px-1.5 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-300 disabled:bg-slate-50 text-slate-600 font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center cursor-pointer transition-colors"
+                                                    title="Bayar Manual Tunai langsung"
+                                                  >
+                                                    Manual
                                                   </button>
                                                 </div>
                                               ) : !checkIsBillActive(
@@ -6546,39 +6669,19 @@ export default function AdminPanel({
                                                     <span className="inline-flex items-center gap-0.5 text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded text-[9px] border border-emerald-100">
                                                       <CheckCircle size={9} /> Lunas
                                                     </span>
+                                                  ) : bill.status === "pending" ? (
+                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200 uppercase animate-pulse">
+                                                      <Clock size={9} /> PENDING
+                                                    </span>
                                                   ) : (
-                                                    <span className="inline-flex items-center gap-0.5 text-orange-700 font-bold bg-orange-50 px-1.5 py-0.5 rounded text-[9px] border border-orange-100">
-                                                      <Clock size={9} /> Belum Lunas
+                                                    <span className="inline-flex items-center gap-0.5 text-slate-600 font-bold bg-slate-100 px-1.5 py-0.5 rounded text-[9px] border border-slate-200">
+                                                      Belum Lunas
                                                     </span>
                                                   )}
                                                 </td>
                                                 <td className="py-3 text-right">
                                                   <div className="flex items-center justify-end gap-1.5">
-                                                    {bill.status !== "paid" ? (
-                                                      <>
-                                                        <button
-                                                          type="button"
-                                                          onClick={() => addToCartMisc(bill, selectedStudent)}
-                                                          disabled={isInCart}
-                                                          className={`px-2 py-1 font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
-                                                            isInCart
-                                                              ? "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed"
-                                                              : "bg-amber-500 hover:bg-amber-600 border border-amber-600 text-white shadow-xs"
-                                                          }`}
-                                                        >
-                                                          <ShoppingCart size={9} />
-                                                          {isInCart ? "Di Keranjang" : "+ Keranjang"}
-                                                        </button>
-                                                        <button
-                                                          type="button"
-                                                          onClick={() => handlePayMiscManualLocal(bill.id)}
-                                                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-750 text-white font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shadow-xs"
-                                                        >
-                                                          <CheckCircle size={9} />
-                                                          Bayar Tunai
-                                                        </button>
-                                                      </>
-                                                    ) : (
+                                                    {bill.status === "paid" ? (
                                                       <>
                                                         <button
                                                           type="button"
@@ -6601,6 +6704,57 @@ export default function AdminPanel({
                                                           className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold border border-rose-200 rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer"
                                                         >
                                                           Batal ↩
+                                                        </button>
+                                                      </>
+                                                    ) : bill.status === "pending" ? (
+                                                      <>
+                                                        <button
+                                                          type="button"
+                                                          disabled={reconcilingBillId === bill.id}
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleAdminReconcileBill(bill, "misc");
+                                                          }}
+                                                          className="px-2 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-extrabold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all shadow-xs"
+                                                          title="Cek status pembayaran Midtrans dan rekonsiliasikan tagihan pending ini"
+                                                        >
+                                                          <RefreshCw
+                                                            size={9}
+                                                            className={reconcilingBillId === bill.id ? "animate-spin" : ""}
+                                                          />
+                                                          <span>{reconcilingBillId === bill.id ? "Mengecek..." : "Cek"}</span>
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => handlePayMiscManualLocal(bill.id)}
+                                                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-750 text-white font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                                                        >
+                                                          <CheckCircle size={9} />
+                                                          Bayar Tunai
+                                                        </button>
+                                                      </>
+                                                    ) : (
+                                                      <>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => addToCartMisc(bill, selectedStudent)}
+                                                          disabled={isInCart}
+                                                          className={`px-2 py-1 font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+                                                            isInCart
+                                                              ? "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed"
+                                                              : "bg-amber-500 hover:bg-amber-600 border border-amber-600 text-white shadow-xs"
+                                                          }`}
+                                                        >
+                                                          <ShoppingCart size={9} />
+                                                          {isInCart ? "Di Keranjang" : "+ Keranjang"}
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => handlePayMiscManualLocal(bill.id)}
+                                                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-750 text-white font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                                                        >
+                                                          <CheckCircle size={9} />
+                                                          Bayar Tunai
                                                         </button>
                                                       </>
                                                     )}
@@ -8211,9 +8365,13 @@ export default function AdminPanel({
                                       </span>
                                     )}
                                   </>
+                                ) : bill.status === "pending" ? (
+                                  <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-md font-extrabold text-[9px] uppercase tracking-wider flex items-center gap-1 animate-pulse">
+                                    <Clock size={10} /> PENDING
+                                  </span>
                                 ) : (
-                                  <span className="px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-150 rounded-md font-bold text-[9px] uppercase tracking-wider flex items-center gap-1">
-                                    <Clock size={10} /> {bill.status === "pending" ? "Belum Lunas (Pending)" : "Belum Lunas"}
+                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded-md font-bold text-[9px] uppercase tracking-wider flex items-center gap-1">
+                                    Belum Lunas
                                   </span>
                                 )}
                               </div>
@@ -8222,6 +8380,24 @@ export default function AdminPanel({
                               <div className="flex justify-end gap-1.5">
                                 {bill.status === "unpaid" || bill.status === "pending" ? (
                                   <>
+                                    {bill.status === "pending" && (
+                                      <button
+                                        type="button"
+                                        disabled={reconcilingBillId === bill.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleAdminReconcileBill(bill, "misc");
+                                        }}
+                                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-extrabold rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                                        title="Cek status pembayaran Midtrans dan rekonsiliasikan tagihan pending ini"
+                                      >
+                                        <RefreshCw
+                                          size={10}
+                                          className={reconcilingBillId === bill.id ? "animate-spin" : ""}
+                                        />
+                                        <span>{reconcilingBillId === bill.id ? "Mengecek..." : "Cek"}</span>
+                                      </button>
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() => handlePayMiscManualLocal(bill.id)}
@@ -21994,6 +22170,59 @@ export default function AdminPanel({
           if (onRefresh) onRefresh();
         }}
       />
+
+      {/* Toast Feedback Rekonsiliasi Tagihan Admin */}
+      <AnimatePresence>
+        {reconcileFeedback && (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className={`fixed bottom-6 right-6 z-[130] max-w-sm p-4 rounded-xl shadow-2xl border flex items-start gap-3 backdrop-blur-md ${
+              reconcileFeedback.type === "success"
+                ? "bg-slate-900/95 text-white border-emerald-500/50"
+                : reconcileFeedback.type === "info"
+                ? "bg-slate-900/95 text-white border-amber-500/50"
+                : "bg-slate-900/95 text-white border-rose-500/50"
+            }`}
+          >
+            <div className="shrink-0 mt-0.5">
+              {reconcileFeedback.type === "success" ? (
+                <div className="p-1 rounded-full bg-emerald-500/20 text-emerald-400">
+                  <CheckCircle size={16} />
+                </div>
+              ) : reconcileFeedback.type === "info" ? (
+                <div className="p-1 rounded-full bg-amber-500/20 text-amber-400">
+                  <Clock size={16} />
+                </div>
+              ) : (
+                <div className="p-1 rounded-full bg-rose-500/20 text-rose-400">
+                  <AlertCircle size={16} />
+                </div>
+              )}
+            </div>
+            <div className="flex-1 text-xs">
+              <div className="font-extrabold uppercase tracking-wider text-[10px] text-slate-300">
+                {reconcileFeedback.type === "success"
+                  ? "Rekonsiliasi Berhasil"
+                  : reconcileFeedback.type === "info"
+                  ? "Status Pembayaran"
+                  : "Perhatian"}
+              </div>
+              <div className="mt-0.5 font-medium text-slate-100 leading-snug">
+                {reconcileFeedback.message}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReconcileFeedback(null)}
+              className="text-slate-400 hover:text-white cursor-pointer ml-1 text-base leading-none font-bold"
+            >
+              &times;
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

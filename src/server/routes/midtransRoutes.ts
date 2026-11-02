@@ -1055,7 +1055,19 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
     let statusData = customMidtransStatus || await getMidtransStatus(cleanOrderId);
     if (!statusData) {
-      return { status: "not_found", actionTaken: false, detailMessage: `Order ID ${cleanOrderId} tidak ditemukan di Gateway Midtrans`, midtransStatus: null };
+      const existingRecord = midtransTransactions.find(t => t.orderId === cleanOrderId || (t.transactionId && t.transactionId === cleanOrderId));
+      if (existingRecord && (existingRecord.transactionStatus === "settlement" || existingRecord.transactionStatus === "capture")) {
+        statusData = {
+          order_id: existingRecord.orderId,
+          transaction_id: existingRecord.transactionId || cleanOrderId,
+          transaction_status: existingRecord.transactionStatus,
+          payment_type: existingRecord.paymentType || "Midtrans Snap",
+          settlement_time: existingRecord.settlementTime || existingRecord.updatedAt || new Date().toISOString(),
+          gross_amount: existingRecord.grossAmount
+        };
+      } else {
+        return { status: "not_found", actionTaken: false, detailMessage: `Order ID ${cleanOrderId} tidak ditemukan di Gateway Midtrans`, midtransStatus: null };
+      }
     }
 
     const ts = statusData.transaction_status || "";
@@ -1978,6 +1990,213 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
   });
 
   // 9. Verify pending orders for a specific student or system-wide
+  interface StudentRetryState {
+    studentId: string;
+    currentOrderId?: string;
+    attempts: number;
+    maxAttempts: number;
+    lastAttemptAt: string;
+    pendingOrderIds: string[];
+    resolvedOrderIds: string[];
+    isExhausted: boolean;
+    status: "idle" | "retrying" | "settled" | "pending";
+    lastMessage: string;
+  }
+
+  const studentRetryMap = new Map<string, StudentRetryState>();
+
+  function getStudentPendingMidtransOrders(studentId: string, specificOrderId?: string): string[] {
+    const orderIds = new Set<string>();
+    if (specificOrderId && typeof specificOrderId === "string" && specificOrderId.trim()) {
+      orderIds.add(specificOrderId.trim());
+    }
+
+    sppBills.filter(b => b.studentId === studentId && (b.status === "pending" || b.status === "unpaid") && b.orderId)
+      .forEach(b => orderIds.add(b.orderId!));
+
+    miscBills.filter(b => b.studentId === studentId && b.status !== "paid" && b.orderId)
+      .forEach(b => orderIds.add(b.orderId!));
+
+    savingsTransactions.filter(t => t.studentId === studentId && t.status === "pending" && t.orderId)
+      .forEach(t => orderIds.add(t.orderId!));
+
+    return Array.from(orderIds);
+  }
+
+  async function executeStudentAutoReconcileRetry(studentId: string, specificOrderId?: string) {
+    const pendingOrders = getStudentPendingMidtransOrders(studentId, specificOrderId);
+
+    let state = studentRetryMap.get(studentId);
+    if (!state || (specificOrderId && state.currentOrderId && specificOrderId !== state.currentOrderId)) {
+      state = {
+        studentId,
+        currentOrderId: specificOrderId,
+        attempts: 0,
+        maxAttempts: 3,
+        lastAttemptAt: new Date().toISOString(),
+        pendingOrderIds: pendingOrders,
+        resolvedOrderIds: [],
+        isExhausted: false,
+        status: "idle",
+        lastMessage: ""
+      };
+      studentRetryMap.set(studentId, state);
+    }
+
+    if (pendingOrders.length === 0) {
+      state.status = "settled";
+      state.pendingOrderIds = [];
+      state.lastMessage = "Semua tagihan dan setoran tabungan siswa telah lunas / masuk saldo.";
+      return {
+        success: true,
+        reconciled: true,
+        attempt: state.attempts,
+        maxAttempts: 3,
+        resolvedCount: state.resolvedOrderIds.length,
+        newlyResolvedCount: 0,
+        pendingOrders: [],
+        resolvedOrders: state.resolvedOrderIds,
+        isExhausted: state.isExhausted,
+        message: state.lastMessage
+      };
+    }
+
+    // STRICT 3x POLICY:
+    // Jika jatah 3x percobaan rekonsiliasi habis maka tidak ada percobaan lagi.
+    // Percobaan berikutnya baru aktif jika ada transaksi baru.
+    if (state.attempts >= 3 || state.isExhausted) {
+      state.isExhausted = true;
+      state.status = "pending";
+      state.lastMessage = "Jatah 3x percobaan rekonsiliasi habis. Percobaan selanjutnya pada transaksi berikutnya.";
+      return {
+        success: true,
+        reconciled: false,
+        attempt: state.attempts,
+        maxAttempts: 3,
+        resolvedCount: state.resolvedOrderIds.length,
+        newlyResolvedCount: 0,
+        pendingOrders,
+        resolvedOrders: state.resolvedOrderIds,
+        isExhausted: true,
+        message: state.lastMessage
+      };
+    }
+
+    state.attempts += 1;
+    state.lastAttemptAt = new Date().toISOString();
+    state.status = "retrying";
+
+    let newlyResolvedCount = 0;
+    for (const ordId of pendingOrders) {
+      try {
+        const result = await processMidtransOrderStatus(ordId);
+        if (result.actionTaken || result.status === "settled") {
+          newlyResolvedCount++;
+          if (!state.resolvedOrderIds.includes(ordId)) {
+            state.resolvedOrderIds.push(ordId);
+          }
+        }
+      } catch (err) {
+        console.error(`[Auto-Reconcile Order ${ordId}]:`, err);
+      }
+    }
+
+    const remainingPending = getStudentPendingMidtransOrders(studentId);
+    state.pendingOrderIds = remainingPending;
+
+    if (remainingPending.length === 0) {
+      state.status = "settled";
+      state.isExhausted = false;
+      state.lastMessage = `Rekonsiliasi otomatis latar belakang berhasil pada percobaan ke-${state.attempts}/3. Transaksi lunas / saldo masuk.`;
+      saveState();
+
+      broadcastNotification({
+        id: `auto-recon-${Date.now()}`,
+        title: "Pembayaran Terverifikasi Lunas ✅",
+        message: `Status transaksi Midtrans siswa berhasil diverifikasi otomatis di latar belakang.`,
+        type: "success",
+        createdAt: new Date().toISOString()
+      });
+    } else if (state.attempts >= 3) {
+      state.status = "pending";
+      state.isExhausted = true;
+      state.lastMessage = `Jatah 3x percobaan rekonsiliasi otomatis habis. Percobaan selanjutnya pada transaksi berikutnya.`;
+    } else {
+      state.status = "retrying";
+      state.isExhausted = false;
+      state.lastMessage = `Percobaan rekonsiliasi latar belakang ke-${state.attempts} dari 3 telah dijalankan.`;
+    }
+
+    studentRetryMap.set(studentId, state);
+
+    return {
+      success: true,
+      reconciled: remainingPending.length === 0,
+      attempt: state.attempts,
+      maxAttempts: 3,
+      resolvedCount: state.resolvedOrderIds.length,
+      newlyResolvedCount,
+      pendingOrders: remainingPending,
+      resolvedOrders: state.resolvedOrderIds,
+      isExhausted: state.isExhausted,
+      message: state.lastMessage
+    };
+  }
+
+  function scheduleStudentAutoReconcileQueue(studentId: string, orderId: string) {
+    if (!studentId || !orderId) return;
+
+    // Reset attempt counter ONLY upon creating a new transaction (orderId)
+    studentRetryMap.set(studentId, {
+      studentId,
+      currentOrderId: orderId,
+      attempts: 0,
+      maxAttempts: 3,
+      lastAttemptAt: new Date().toISOString(),
+      pendingOrderIds: [orderId],
+      resolvedOrderIds: [],
+      isExhausted: false,
+      status: "retrying",
+      lastMessage: `Memulai rekonsiliasi otomatis latar belakang untuk order ${orderId}...`
+    });
+
+    // Attempt 1: ~4s
+    setTimeout(async () => {
+      try {
+        const st = studentRetryMap.get(studentId);
+        if (st && !st.isExhausted && st.currentOrderId === orderId && st.attempts < 1) {
+          await executeStudentAutoReconcileRetry(studentId, orderId);
+        }
+      } catch (e) {
+        console.error(`[STUDENT AUTO-RETRY BACKGROUND] Error Percobaan 1 ${studentId}:`, e);
+      }
+    }, 4000);
+
+    // Attempt 2: ~12s
+    setTimeout(async () => {
+      try {
+        const st = studentRetryMap.get(studentId);
+        if (st && !st.isExhausted && st.currentOrderId === orderId && st.attempts < 2) {
+          await executeStudentAutoReconcileRetry(studentId, orderId);
+        }
+      } catch (e) {
+        console.error(`[STUDENT AUTO-RETRY BACKGROUND] Error Percobaan 2 ${studentId}:`, e);
+      }
+    }, 12000);
+
+    // Attempt 3: ~24s
+    setTimeout(async () => {
+      try {
+        const st = studentRetryMap.get(studentId);
+        if (st && !st.isExhausted && st.currentOrderId === orderId && st.attempts < 3) {
+          await executeStudentAutoReconcileRetry(studentId, orderId);
+        }
+      } catch (e) {
+        console.error(`[STUDENT AUTO-RETRY BACKGROUND] Error Percobaan 3 ${studentId}:`, e);
+      }
+    }, 24000);
+  }
+
   router.post("/verify-midtrans-pending", async (req, res) => {
     try {
       const { studentId } = req.body;
@@ -1999,6 +2218,45 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       }
 
       res.json({ success: true, updatedCount });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e?.message || String(e) });
+    }
+  });
+
+  // Dedicated Student Automatic Reconcile Retry Endpoint (Strict 3x background retry policy)
+  router.post("/student/auto-reconcile-retry", async (req, res) => {
+    try {
+      const { studentId, orderId } = req.body;
+      if (!studentId) {
+        return res.status(400).json({ error: "studentId is required" });
+      }
+
+      const result = await executeStudentAutoReconcileRetry(studentId, orderId);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e?.message || String(e) });
+    }
+  });
+
+  // Get current student reconciliation status (internal status)
+  router.get("/student/reconciliation-status/:studentId", (req, res) => {
+    try {
+      const { studentId } = req.params;
+      const pendingOrders = getStudentPendingMidtransOrders(studentId);
+      const state = studentRetryMap.get(studentId);
+
+      res.json({
+        success: true,
+        studentId,
+        hasPending: pendingOrders.length > 0,
+        pendingOrders,
+        attempt: state?.attempts || 0,
+        maxAttempts: 3,
+        isExhausted: state?.isExhausted || false,
+        status: pendingOrders.length === 0 ? "settled" : (state?.status || "pending"),
+        lastAttemptAt: state?.lastAttemptAt || null,
+        lastMessage: state?.lastMessage || (pendingOrders.length === 0 ? "Tidak ada transaksi pending" : "Menunggu verifikasi")
+      });
     } catch (e: any) {
       res.status(500).json({ success: false, error: e?.message || String(e) });
     }
@@ -2042,6 +2300,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     bill.orderId = orderId;
     bill.status = "pending";
     saveState();
+    scheduleStudentAutoReconcileQueue(student.id, orderId);
 
     const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
     if (!hasMidtrans) {
@@ -2220,6 +2479,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     });
 
     saveState();
+    if (student && student.id) {
+      scheduleStudentAutoReconcileQueue(student.id, orderId);
+    }
 
     const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
     if (!hasMidtrans) {
@@ -2331,6 +2593,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     bill.orderId = orderId;
     bill.status = "pending";
     saveState();
+    scheduleStudentAutoReconcileQueue(student.id, orderId);
 
     const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
     if (!hasMidtrans) {
@@ -2426,6 +2689,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     };
     savingsTransactions.unshift(trans);
     saveState();
+    scheduleStudentAutoReconcileQueue(studentId, orderId);
 
     const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
     if (!hasMidtrans) {
@@ -5093,6 +5357,147 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       });
 
     res.json({ students: matched });
+  });
+
+  // 20. Admin Single Bill Reconcile Endpoint
+  router.post("/admin/reconcile-bill", async (req, res) => {
+    try {
+      const { billId, billType = "spp", studentId } = req.body;
+      if (!billId) {
+        return res.status(400).json({ error: "billId wajib disertakan." });
+      }
+
+      let sppBill = sppBills.find(b => b.id === billId);
+      let miscBill = miscBills.find(m => m.id === billId);
+
+      const targetBill = (billType === "misc" && miscBill) ? miscBill : (sppBill || miscBill);
+      if (!targetBill) {
+        return res.status(404).json({ error: "Tagihan tidak ditemukan dalam database." });
+      }
+
+      const effectiveBillType: "spp" | "misc" = targetBill === miscBill ? "misc" : "spp";
+      const targetStudent = students.find(s => 
+        s.id === targetBill.studentId || 
+        (targetBill.studentId && s.nis === targetBill.studentId) ||
+        (studentId && (s.id === studentId || s.nis === studentId))
+      );
+
+      // If already paid
+      if (targetBill.status === "paid") {
+        return res.json({
+          success: true,
+          settled: true,
+          alreadyPaid: true,
+          status: "paid",
+          message: `Tagihan ${effectiveBillType === 'spp' ? `SPP ${(targetBill as SppBill).month} ${(targetBill as SppBill).year}` : (targetBill as MiscBill).title} sudah LUNAS di database sekolah.`,
+          bill: targetBill
+        });
+      }
+
+      // Resolve orderId
+      let orderId = targetBill.orderId;
+      if (!orderId && targetStudent) {
+        const candTx = midtransTransactions.find(t => 
+          (t.studentNis && String(t.studentNis).trim() === String(targetStudent.nis).trim()) &&
+          (t.transactionStatus === "pending" || t.transactionStatus === "settlement") &&
+          (effectiveBillType === "spp" && sppBill ? (t.description && t.description.toLowerCase().includes(sppBill.month.toLowerCase())) : true)
+        );
+        if (candTx) {
+          orderId = candTx.orderId;
+          targetBill.orderId = orderId;
+        }
+      }
+
+      if (!orderId) {
+        return res.json({
+          success: true,
+          settled: false,
+          status: targetBill.status || "unpaid",
+          message: `Tagihan ${effectiveBillType === 'spp' ? `SPP ${(targetBill as SppBill).month} ${(targetBill as SppBill).year}` : (targetBill as MiscBill).title} belum memiliki referensi transaksi online Midtrans.`,
+          bill: targetBill
+        });
+      }
+
+      // Query Midtrans Gateway status
+      const midtransStatus = await getMidtransStatus(orderId);
+      let rawStatus = midtransStatus?.transaction_status ? String(midtransStatus.transaction_status).toLowerCase() : null;
+
+      if (!rawStatus) {
+        const localRec = midtransTransactions.find(t => t.orderId === orderId);
+        if (localRec) rawStatus = String(localRec.transactionStatus).toLowerCase();
+      }
+
+      if (!rawStatus) {
+        return res.json({
+          success: true,
+          settled: false,
+          status: targetBill.status,
+          orderId,
+          message: `Order ID ${orderId} belum tercatat di Gateway Midtrans.`,
+          bill: targetBill
+        });
+      }
+
+      const isSettled = rawStatus === "settlement" || rawStatus === "capture" || rawStatus === "success";
+      const isPending = rawStatus === "pending" || rawStatus === "challenge";
+      const isExpired = rawStatus === "expire" || rawStatus === "cancel" || rawStatus === "deny" || rawStatus === "failure";
+
+      if (isSettled) {
+        const reconResult = await processMidtransOrderStatus(orderId, midtransStatus);
+        const updatedBill = effectiveBillType === "spp" ? sppBills.find(b => b.id === targetBill.id) : miscBills.find(m => m.id === targetBill.id);
+
+        return res.json({
+          success: true,
+          settled: true,
+          actionTaken: reconResult.actionTaken,
+          status: "paid",
+          orderId,
+          message: reconResult.actionTaken
+            ? `BERHASIL! Pembayaran tagihan terverifikasi LUNAS di Midtrans dan telah direkonsiliasikan ke database.`
+            : (reconResult.detailMessage || "Status pembayaran terverifikasi Lunas di Midtrans."),
+          bill: updatedBill || targetBill,
+          reconResult
+        });
+      }
+
+      if (isPending) {
+        targetBill.status = "pending";
+        saveState();
+        return res.json({
+          success: true,
+          settled: false,
+          status: "pending",
+          orderId,
+          message: `Status pembayaran di Midtrans: PENDING (Menunggu pembayaran diselesaikan oleh siswa/wali murid).`,
+          bill: targetBill
+        });
+      }
+
+      if (isExpired) {
+        targetBill.status = "unpaid";
+        saveState();
+        return res.json({
+          success: true,
+          settled: false,
+          status: "unpaid",
+          orderId,
+          message: `Status pembayaran di Midtrans: ${rawStatus.toUpperCase()} (Kadaluarsa/Dibatalkan). Tagihan telah dikembalikan ke status BELUM LUNAS.`,
+          bill: targetBill
+        });
+      }
+
+      return res.json({
+        success: true,
+        settled: false,
+        status: targetBill.status,
+        orderId,
+        message: `Status transaksi di Midtrans: ${rawStatus.toUpperCase()}.`,
+        bill: targetBill
+      });
+    } catch (err: any) {
+      console.error("Admin reconcile bill error:", err);
+      res.status(500).json({ error: "Gagal memproses pemeriksaan rekonsiliasi tagihan: " + (err.message || String(err)) });
+    }
   });
 
   return router;

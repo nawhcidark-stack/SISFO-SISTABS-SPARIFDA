@@ -1851,8 +1851,14 @@ export default function App() {
     // Trigger success checklist screen & countdown
     setShowPaymentSuccessScreen(true);
 
-    // Refresh student records
+    // Refresh student records & trigger auto-reconciliation retry in background
     if (currentStudent) {
+      const targetOrderId = payOrderId;
+      fetch('/api/student/auto-reconcile-retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId: currentStudent.id, orderId: targetOrderId || undefined })
+      }).catch(console.error);
       fetchStudentFullData(currentStudent.id);
     }
     initSystemData();
@@ -2328,9 +2334,18 @@ export default function App() {
         onSuccess={handlePaymentSuccess}
         onClose={() => {
           setIsPayModalOpen(false);
+          const closedOrderId = payOrderId;
+          const targetStudentId = currentStudent?.id;
           setPayToken(null);
           setPayOrderId(null);
-          if (currentStudent) fetchStudentFullData(currentStudent.id);
+          if (targetStudentId) {
+            fetch('/api/student/auto-reconcile-retry', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ studentId: targetStudentId, orderId: closedOrderId || undefined })
+            }).catch(console.error);
+            fetchStudentFullData(targetStudentId);
+          }
         }}
       />
 

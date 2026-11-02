@@ -833,6 +833,40 @@ export default function StudentPanel({
     }
   };
 
+  // -------------------------------------------------------------
+  // FITUR RETRY REKONSILIASI OTOMATIS MIDTRANS (3X PERCOBAAN PER SISWA)
+  // -------------------------------------------------------------
+  const pendingOrders = useMemo(() => {
+    const list: { type: 'spp' | 'misc' | 'savings'; id: string; orderId: string; title: string; amount: number }[] = [];
+    bills.filter(b => (b.status === 'pending' || b.status === 'unpaid') && b.orderId)
+      .forEach(b => list.push({ type: 'spp', id: b.id, orderId: b.orderId!, title: `SPP ${b.month} ${b.year}`, amount: b.amount }));
+    (miscBills || []).filter(m => m.status !== 'paid' && m.orderId)
+      .forEach(m => list.push({ type: 'misc', id: m.id, orderId: m.orderId!, title: m.title, amount: m.amount }));
+    transactions.filter(t => t.status === 'pending' && t.orderId)
+      .forEach(t => list.push({ type: 'savings', id: t.id, orderId: t.orderId!, title: 'Setoran Tabungan', amount: t.amount }));
+    return list;
+  }, [bills, miscBills, transactions]);
+
+  // Silent background status sync (runs strictly in background, no UI display)
+  const hasTriggeredSilentReconcile = React.useRef<boolean>(false);
+  useEffect(() => {
+    if (currentStudent && pendingOrders.length > 0 && !hasTriggeredSilentReconcile.current) {
+      hasTriggeredSilentReconcile.current = true;
+      fetch('/api/student/auto-reconcile-retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId: currentStudent.id })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.reconciled && onRefresh) {
+            onRefresh();
+          }
+        })
+        .catch(() => {});
+    }
+  }, [pendingOrders.length, currentStudent?.id]);
+
   // Buku Induk Editor states
   const [isEditingBukuInduk, setIsEditingBukuInduk] = useState<boolean>(false);
   const [bukuIndukForm, setBukuIndukForm] = useState<Partial<Student>>({});
@@ -2262,6 +2296,7 @@ export default function StudentPanel({
                       </div>
                     </div>
                   )}
+
                   <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <h4 className="font-bold text-slate-800 text-sm">Tagihan SPP Bulanan Siswa</h4>

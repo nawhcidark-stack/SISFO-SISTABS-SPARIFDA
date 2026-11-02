@@ -211,6 +211,18 @@ export interface MidtransTransactionRecord {
   rawResponse?: any;
 }
 
+export interface StudentReconcileRetryStatus {
+  studentId: string;
+  attempts: number;
+  maxAttempts: number;
+  lastAttemptAt?: string;
+  pendingOrderIds: string[];
+  resolvedOrderIds: string[];
+  isExhausted: boolean;
+  status: 'idle' | 'retrying' | 'settled' | 'pending';
+  lastMessage: string;
+}
+
 export interface SchoolIdentity {
   name: string;
   subheading: string;

@@ -3,7 +3,7 @@ import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, Re
 import { isSameSubject } from '../utils/subjectMatcher';
 import { DEFAULT_REPORT_SUBJECTS, OFFICIAL_REPORT_ORDER } from './WakaKurikulumPanel';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, Award, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone } from 'lucide-react';
+import { GraduationCap, Award, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone, LogOut } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 import ScheduleView from './ScheduleView';
@@ -2063,8 +2063,271 @@ export default function StudentPanel({
             animate={{ opacity: 1, x: 0 }}
             className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm flex flex-col h-full"
           >
-            {/* Folder Header Tabs */}
-            <div className="bg-slate-50 border-b border-slate-200 px-4 md:px-6 py-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+            {/* Mobile 4x2 Menu Grid (Khusus Mobile: 4 Horizontal x 2 Vertikal = 8 Menu, Kartu QR dipindah ke Menu Lainnya) */}
+            <div className="block md:hidden p-3.5 bg-gradient-to-b from-slate-50/90 to-white border-b border-slate-200">
+              <div className="flex items-center justify-between mb-3 px-1">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-800">
+                    Menu Siswa
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={onRefresh}
+                    disabled={isLoading}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 bg-white transition-colors cursor-pointer"
+                    title="Refresh Data"
+                  >
+                    <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const confirmReset = window.confirm("Bersihkan cache lokal & muat ulang paksa aplikasi untuk menarik data terbaru?");
+                      if (!confirmReset) return;
+                      try {
+                        if ('caches' in window) {
+                          const cacheNames = await caches.keys();
+                          await Promise.all(cacheNames.map(name => caches.delete(name)));
+                        }
+                        sessionStorage.clear();
+                        window.location.href = window.location.pathname + '?_bust=' + Date.now() + window.location.hash;
+                      } catch (e) {
+                        window.location.reload();
+                      }
+                    }}
+                    className="px-2 py-1 text-[9.5px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg border border-amber-200/70 flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Hapus Cache"
+                  >
+                    <Smartphone size={10} className="text-amber-600 animate-pulse" />
+                    <span>Cache</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 4 Horizontal x 2 Vertikal (Tepat 8 Menu Beranda) */}
+              <div className="grid grid-cols-4 gap-y-3.5 gap-x-2">
+                {/* 1. Tagihan SPP */}
+                <button
+                  id="mobile-menu-spp"
+                  type="button"
+                  onClick={() => setActiveTab('spp')}
+                  className="flex flex-col items-center justify-start text-center group cursor-pointer focus:outline-none transition-all active:scale-95"
+                >
+                  <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xs ${
+                    activeTab === 'spp'
+                      ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white ring-2 ring-indigo-600 ring-offset-2 scale-105 shadow-md shadow-indigo-500/25'
+                      : 'bg-indigo-50 text-indigo-600 border border-indigo-100/80 group-hover:bg-indigo-100/70'
+                  }`}>
+                    <CreditCard className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <span className={`text-[10px] leading-tight text-center mt-1.5 transition-colors line-clamp-1 max-w-[76px] ${
+                    activeTab === 'spp' ? 'font-extrabold text-indigo-700' : 'font-semibold text-slate-700'
+                  }`}>
+                    Tagihan SPP
+                  </span>
+                  {activeTab === 'spp' && (
+                    <span className="w-3.5 h-0.5 bg-indigo-600 rounded-full mt-0.5 animate-fade-in" />
+                  )}
+                </button>
+
+                {/* 2. Tabungan */}
+                <button
+                  id="mobile-menu-tabungan"
+                  type="button"
+                  onClick={() => setActiveTab('tabungan')}
+                  className="flex flex-col items-center justify-start text-center group cursor-pointer focus:outline-none transition-all active:scale-95"
+                >
+                  <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xs ${
+                    activeTab === 'tabungan'
+                      ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white ring-2 ring-emerald-600 ring-offset-2 scale-105 shadow-md shadow-emerald-500/25'
+                      : 'bg-emerald-50 text-emerald-600 border border-emerald-100/80 group-hover:bg-emerald-100/70'
+                  }`}>
+                    <Wallet className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <span className={`text-[10px] leading-tight text-center mt-1.5 transition-colors line-clamp-1 max-w-[76px] ${
+                    activeTab === 'tabungan' ? 'font-extrabold text-emerald-700' : 'font-semibold text-slate-700'
+                  }`}>
+                    Tabungan
+                  </span>
+                  {activeTab === 'tabungan' && (
+                    <span className="w-3.5 h-0.5 bg-emerald-600 rounded-full mt-0.5 animate-fade-in" />
+                  )}
+                </button>
+
+                {/* 3. Tagihan Lain */}
+                <button
+                  id="mobile-menu-pembayaran-lain"
+                  type="button"
+                  onClick={() => setActiveTab('pembayaran_lain')}
+                  className="flex flex-col items-center justify-start text-center group cursor-pointer focus:outline-none transition-all active:scale-95"
+                >
+                  <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xs ${
+                    activeTab === 'pembayaran_lain'
+                      ? 'bg-gradient-to-br from-blue-500 to-cyan-600 text-white ring-2 ring-blue-600 ring-offset-2 scale-105 shadow-md shadow-blue-500/25'
+                      : 'bg-blue-50 text-blue-600 border border-blue-100/80 group-hover:bg-blue-100/70'
+                  }`}>
+                    <Banknote className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <span className={`text-[10px] leading-tight text-center mt-1.5 transition-colors line-clamp-1 max-w-[76px] ${
+                    activeTab === 'pembayaran_lain' ? 'font-extrabold text-blue-700' : 'font-semibold text-slate-700'
+                  }`}>
+                    Tagihan Lain
+                  </span>
+                  {activeTab === 'pembayaran_lain' && (
+                    <span className="w-3.5 h-0.5 bg-blue-600 rounded-full mt-0.5 animate-fade-in" />
+                  )}
+                </button>
+
+                {/* 4. Rapor Nilai */}
+                <button
+                  id="mobile-menu-rapor"
+                  type="button"
+                  onClick={() => setActiveTab('rapor')}
+                  className="flex flex-col items-center justify-start text-center group cursor-pointer focus:outline-none transition-all active:scale-95"
+                >
+                  <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xs ${
+                    activeTab === 'rapor'
+                      ? 'bg-gradient-to-br from-purple-500 to-indigo-600 text-white ring-2 ring-purple-600 ring-offset-2 scale-105 shadow-md shadow-purple-500/25'
+                      : 'bg-purple-50 text-purple-600 border border-purple-100/80 group-hover:bg-purple-100/70'
+                  }`}>
+                    <GraduationCap className="w-5 h-5 stroke-[2.2]" />
+                    {(reportReleaseConfig.midtermReleased || reportReleaseConfig.finalReleased) && (
+                      <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-emerald-400 border-2 border-white animate-pulse" />
+                    )}
+                  </div>
+                  <span className={`text-[10px] leading-tight text-center mt-1.5 transition-colors line-clamp-1 max-w-[76px] ${
+                    activeTab === 'rapor' ? 'font-extrabold text-purple-700' : 'font-semibold text-slate-700'
+                  }`}>
+                    Rapor Nilai
+                  </span>
+                  {activeTab === 'rapor' && (
+                    <span className="w-3.5 h-0.5 bg-purple-600 rounded-full mt-0.5 animate-fade-in" />
+                  )}
+                </button>
+
+                {/* 5. Jadwal Pelajaran */}
+                <button
+                  id="mobile-menu-jadwal"
+                  type="button"
+                  onClick={() => setActiveTab('jadwal')}
+                  className="flex flex-col items-center justify-start text-center group cursor-pointer focus:outline-none transition-all active:scale-95"
+                >
+                  <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xs ${
+                    activeTab === 'jadwal'
+                      ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white ring-2 ring-amber-600 ring-offset-2 scale-105 shadow-md shadow-amber-500/25'
+                      : 'bg-amber-50 text-amber-600 border border-amber-100/80 group-hover:bg-amber-100/70'
+                  }`}>
+                    <Calendar className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <span className={`text-[10px] leading-tight text-center mt-1.5 transition-colors line-clamp-1 max-w-[76px] ${
+                    activeTab === 'jadwal' ? 'font-extrabold text-amber-700' : 'font-semibold text-slate-700'
+                  }`}>
+                    Jadwal
+                  </span>
+                  {activeTab === 'jadwal' && (
+                    <span className="w-3.5 h-0.5 bg-amber-600 rounded-full mt-0.5 animate-fade-in" />
+                  )}
+                </button>
+
+                {/* 6. Presensi / Kehadiran */}
+                <button
+                  id="mobile-menu-absensi"
+                  type="button"
+                  onClick={() => setActiveTab('absensi')}
+                  className="flex flex-col items-center justify-start text-center group cursor-pointer focus:outline-none transition-all active:scale-95"
+                >
+                  <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xs ${
+                    activeTab === 'absensi'
+                      ? 'bg-gradient-to-br from-rose-500 to-pink-600 text-white ring-2 ring-rose-600 ring-offset-2 scale-105 shadow-md shadow-rose-500/25'
+                      : 'bg-rose-50 text-rose-600 border border-rose-100/80 group-hover:bg-rose-100/70'
+                  }`}>
+                    <CalendarRange className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <span className={`text-[10px] leading-tight text-center mt-1.5 transition-colors line-clamp-1 max-w-[76px] ${
+                    activeTab === 'absensi' ? 'font-extrabold text-rose-700' : 'font-semibold text-slate-700'
+                  }`}>
+                    Presensi
+                  </span>
+                  {activeTab === 'absensi' && (
+                    <span className="w-3.5 h-0.5 bg-rose-600 rounded-full mt-0.5 animate-fade-in" />
+                  )}
+                </button>
+
+                {/* 7. Catatan Siswa */}
+                <button
+                  id="mobile-menu-jurnal-catatan"
+                  type="button"
+                  onClick={() => setActiveTab('jurnal_catatan')}
+                  className="flex flex-col items-center justify-start text-center group cursor-pointer focus:outline-none transition-all active:scale-95"
+                >
+                  <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xs ${
+                    activeTab === 'jurnal_catatan'
+                      ? 'bg-gradient-to-br from-teal-500 to-emerald-600 text-white ring-2 ring-teal-600 ring-offset-2 scale-105 shadow-md shadow-teal-500/25'
+                      : 'bg-teal-50 text-teal-600 border border-teal-100/80 group-hover:bg-teal-100/70'
+                  }`}>
+                    <ClipboardList className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <span className={`text-[10px] leading-tight text-center mt-1.5 transition-colors line-clamp-1 max-w-[76px] ${
+                    activeTab === 'jurnal_catatan' ? 'font-extrabold text-teal-700' : 'font-semibold text-slate-700'
+                  }`}>
+                    Catatan Siswa
+                  </span>
+                  {activeTab === 'jurnal_catatan' && (
+                    <span className="w-3.5 h-0.5 bg-teal-600 rounded-full mt-0.5 animate-fade-in" />
+                  )}
+                </button>
+
+                {/* 8. Buku Induk */}
+                <button
+                  id="mobile-menu-buku-induk"
+                  type="button"
+                  onClick={() => setActiveTab('buku_induk')}
+                  className="flex flex-col items-center justify-start text-center group cursor-pointer focus:outline-none transition-all active:scale-95"
+                >
+                  <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xs ${
+                    activeTab === 'buku_induk'
+                      ? 'bg-gradient-to-br from-slate-700 to-slate-900 text-white ring-2 ring-slate-800 ring-offset-2 scale-105 shadow-md shadow-slate-800/25'
+                      : 'bg-slate-100 text-slate-600 border border-slate-200/80 group-hover:bg-slate-200/70'
+                  }`}>
+                    <BookOpen className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <span className={`text-[10px] leading-tight text-center mt-1.5 transition-colors line-clamp-1 max-w-[76px] ${
+                    activeTab === 'buku_induk' ? 'font-extrabold text-slate-800' : 'font-semibold text-slate-700'
+                  }`}>
+                    Buku Induk
+                  </span>
+                  {activeTab === 'buku_induk' && (
+                    <span className="w-3.5 h-0.5 bg-slate-800 rounded-full mt-0.5 animate-fade-in" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Banner Khusus jika Kartu QR dibuka dari Menu Lainnya */}
+            {activeTab === 'kartu_qr' && (
+              <div className="md:hidden mx-4 mt-3 p-3 bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200 rounded-2xl flex items-center justify-between shadow-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-cyan-600 text-white flex items-center justify-center shadow-xs">
+                    <QrCode size={18} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 leading-tight">Sistem Kartu QR Siswa</p>
+                    <p className="text-[10px] text-cyan-700">Dibuka dari Menu Lainnya</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('spp')}
+                  className="text-[10px] font-bold px-2.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:text-indigo-600 rounded-xl shadow-3xs cursor-pointer"
+                >
+                  Ke Tagihan SPP
+                </button>
+              </div>
+            )}
+
+            {/* Desktop Folder Header Tabs */}
+            <div className="hidden md:flex bg-slate-50 border-b border-slate-200 px-4 md:px-6 py-2 flex-col sm:flex-row items-center justify-between gap-3">
               <div className="flex gap-5 md:gap-4 items-center overflow-x-auto scrollbar-thin pb-1.5 -mb-1.5 w-full sm:w-auto flex-nowrap justify-start select-none touch-pan-x">
                 <button
                   id="tab-spp"
@@ -5977,186 +6240,140 @@ export default function StudentPanel({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10 shadow-[0_-5px_20px_rgba(0,0,0,0.1)]"
+              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-5 shadow-2xl text-left flex flex-col gap-2 max-h-[85vh] overflow-y-auto pb-8 shadow-[0_-5px_20px_rgba(0,0,0,0.1)]"
             >
-              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Akses Cepat Siswa</span>
-                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Menu Tambahan Siswa / Wali</h4>
+              {/* Android Top Drag Handle */}
+              <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0" />
+
+              {/* Minimal Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-600" />
+                  <h4 className="text-slate-900 font-bold text-sm tracking-tight">
+                    Menu Lainnya
+                  </h4>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowMoreMenu(false)}
-                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-xs cursor-pointer transition-colors"
                 >
-                  Tutup
+                  ✕
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+              {/* 3 Horizontal Columns Android App Drawer Grid */}
+              <div className="grid grid-cols-3 gap-y-4 gap-x-2 py-2">
+                {/* 1. Sistem Kartu QR (Dipindahkan dari Menu Utama Beranda) */}
                 <button
                   type="button"
                   onClick={() => {
                     setMobileTab('beranda');
-                    setActiveTab('rapor');
+                    setActiveTab('kartu_qr');
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-purple-200 bg-purple-50/50 hover:bg-purple-100/50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-purple-100 rounded-xl text-purple-700 text-lg">🎓</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-purple-950 flex items-center gap-1.5">
-                      <span>Rapor Nilai Siswa</span>
-                      {(reportReleaseConfig.midtermReleased || reportReleaseConfig.finalReleased) && (
-                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                      )}
-                    </h5>
-                    <p className="text-[10px] text-purple-700/80 mt-0.5 leading-tight">Lihat lembar rapor tengah & akhir semester Kurikulum Merdeka</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-md shadow-cyan-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <QrCode className="w-7 h-7 text-white stroke-[2.2]" />
                   </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileTab('beranda');
-                    setActiveTab('jadwal');
-                    setShowMoreMenu(false);
-                  }}
-                  className="p-4 border border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
-                >
-                  <span className="p-2 w-fit bg-indigo-100 rounded-xl text-indigo-700 text-lg">🗓️</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-indigo-950">Jadwal Pelajaran</h5>
-                    <p className="text-[10px] text-indigo-700/80 mt-0.5 leading-tight">Lihat matriks jadwal pelajaran resmi kelas Anda</p>
-                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Sistem Kartu QR
+                  </span>
                 </button>
 
+                {/* 2. Cetak Kartu Fisik */}
                 <button
                   type="button"
                   onClick={() => {
                     setPrintQrCard(true);
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">📇</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Kartu Pembayaran</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Cetak kartu ID pembayaran digital dengan kode QR unik Anda</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Printer className="w-7 h-7 text-white stroke-[2.2]" />
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Cetak Kartu
+                  </span>
                 </button>
 
+                {/* 3. Ubah Kata Sandi */}
                 <button
                   type="button"
                   onClick={() => {
-                    setMobileTab('beranda');
-                    setActiveTab('spp');
+                    setMobileTab('orang');
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">💰</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800 font-sans">Tagihan SPP</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Cek status cicilan iuran bulanan dan pelunasan SPP online</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md shadow-amber-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Key className="w-7 h-7 text-white stroke-[2.2]" />
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Ubah Sandi
+                  </span>
                 </button>
 
+                {/* 4. Unduh APK */}
                 <button
                   type="button"
                   onClick={() => {
-                    setMobileTab('beranda');
-                    setActiveTab('tabungan');
+                    if (schoolIdentity?.apkUrl) {
+                      window.open(schoolIdentity.apkUrl, "_blank");
+                    } else {
+                      alert("Link unduhan Android belum diatur oleh Administrator.");
+                    }
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🏦</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Setor &amp; Tarik</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ajukan setor tunai mandiri maupun penarikan dana tabungan</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 shadow-md shadow-emerald-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Smartphone className="w-7 h-7 text-white stroke-[2.2]" />
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Unduh APK
+                  </span>
                 </button>
 
+                {/* 5. Unduh iOS */}
                 <button
                   type="button"
                   onClick={() => {
-                    setMobileTab('beranda');
-                    setActiveTab('absensi');
+                    if (schoolIdentity?.iosUrl) {
+                      window.open(schoolIdentity.iosUrl, "_blank");
+                    } else {
+                      alert("Link unduhan iOS belum diatur oleh Administrator.");
+                    }
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg">📅</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Kehadiran Kelas</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Rekapitulasi log harian dan absen mata pelajaran siswa</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-900 shadow-md shadow-slate-700/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Apple className="w-7 h-7 text-white stroke-[2.2]" />
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Aplikasi iOS
+                  </span>
                 </button>
 
+                {/* 6. Keluar Sesi */}
                 <button
                   type="button"
                   onClick={() => {
                     onLogout && onLogout();
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-rose-800">Keluar Sesi</h5>
-                    <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Keluar dengan aman serta akhiri pengalihan akses siswa</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-red-600 shadow-md shadow-rose-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <LogOut className="w-7 h-7 text-white stroke-[2.2]" />
                   </div>
+                  <span className="text-[11px] font-semibold text-rose-600 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Keluar Sesi
+                  </span>
                 </button>
-              </div>
-
-              {/* Quick access to download Mobile Apps in the bottom sheet menu */}
-              <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                  📲 Unduh Aplikasi Mobile Resmi
-                </span>
-                <p className="text-[10px] text-slate-500 leading-normal">
-                  Gunakan aplikasi mobile resmi untuk kemudahan akses monitor laporan tagihan SPP, presensi kelas, &amp; dana tabungan langsung lewat HP.
-                </p>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  <a
-                    href={schoolIdentity?.apkUrl || "#"}
-                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!schoolIdentity?.apkUrl) {
-                        e.preventDefault();
-                        alert("Link unduhan Android belum diatur oleh Administrator.");
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
-                      schoolIdentity?.apkUrl 
-                        ? "bg-emerald-50 hover:bg-emerald-105 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
-                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <Smartphone size={13} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
-                    <span className="text-[10px]">Android APK</span>
-                  </a>
-
-                  <a
-                    href={schoolIdentity?.iosUrl || "#"}
-                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!schoolIdentity?.iosUrl) {
-                        e.preventDefault();
-                        alert("Link unduhan iOS belum diatur oleh Administrator.");
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
-                      schoolIdentity?.iosUrl 
-                        ? "bg-sky-50 hover:bg-sky-105 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
-                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <Apple size={13} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
-                    <span className="text-[10px]">iOS Apple</span>
-                  </a>
-                </div>
               </div>
             </motion.div>
           </>

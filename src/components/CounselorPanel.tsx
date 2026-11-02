@@ -5005,133 +5005,188 @@ export default function CounselorPanel({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-16 left-0 right-0 z-45 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10"
+              className="fixed bottom-16 left-0 right-0 z-45 bg-white border-t border-slate-200 rounded-t-3xl p-5 shadow-2xl text-left flex flex-col gap-2 max-h-[85vh] overflow-y-auto pb-8"
             >
-              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Lainnya</span>
-                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5 font-bold">Portal Administrasi BK</h4>
+              {/* Android Top Drag Handle */}
+              <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0" />
+
+              {/* Minimal Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-600" />
+                  <h4 className="text-slate-900 font-bold text-sm tracking-tight">
+                    Menu Lainnya
+                  </h4>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowMoreMenu(false)}
-                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-xs cursor-pointer transition-colors"
                 >
-                  Tutup
+                  ✕
                 </button>
               </div>
 
-              <div className="flex flex-col gap-2">
+              {/* 3 Horizontal Columns Android App Drawer Grid */}
+              <div className="grid grid-cols-3 gap-y-4 gap-x-2 py-2">
+                {/* 1. Jadwal */}
                 <button
+                  type="button"
                   onClick={() => {
                     setActiveTab('jadwal');
                     setShowPasswordTab(false);
                     setShowMoreMenu(false);
                   }}
-                  className="w-full text-left py-3 px-4 rounded-xl border border-indigo-100 bg-indigo-50/60 hover:bg-indigo-100/60 flex items-center gap-3 text-indigo-950 font-extrabold text-xs"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <Calendar size={16} className="text-indigo-600 shrink-0" />
-                  <span>🗓️ Matriks Jadwal Pelajaran</span>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-md shadow-indigo-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🗓️
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Jadwal Pelajaran
+                  </span>
                 </button>
+
+                {/* 2. Jurnal */}
                 <button
+                  type="button"
                   onClick={() => {
                     setActiveTab('journals');
                     setShowPasswordTab(false);
                     setShowMoreMenu(false);
                   }}
-                  className="w-full text-left py-3 px-4 rounded-xl border border-teal-100 bg-teal-50/60 hover:bg-teal-100/60 flex items-center gap-3 text-teal-950 font-extrabold text-xs"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <BookOpen size={16} className="text-teal-600 shrink-0" />
-                  <span>📚 Monitoring Jurnal Walas & KBM</span>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md shadow-teal-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📚
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Jurnal KBM
+                  </span>
                 </button>
 
+                {/* 3. Buku Induk */}
                 <button
+                  type="button"
                   onClick={() => {
                     setActiveTab('buku_induk');
                     setShowPasswordTab(false);
                     setShowMoreMenu(false);
                   }}
-                  className="w-full text-left py-3 px-4 rounded-xl border border-indigo-100 bg-indigo-50/50 hover:bg-indigo-100/50 flex items-center gap-3 text-indigo-900 font-extrabold text-xs"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <FileText size={16} className="text-indigo-600 shrink-0" />
-                  <span>📗 Buku Induk Siswa (Master Ledger)</span>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-600 to-green-700 shadow-md shadow-emerald-600/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📗
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Buku Induk
+                  </span>
                 </button>
 
+                {/* 4. Password */}
                 <button
+                  type="button"
                   onClick={() => {
                     setShowPasswordTab(true);
                     setShowMoreMenu(false);
                   }}
-                  className="w-full text-left py-3 px-4 rounded-xl border border-slate-150 hover:bg-slate-50 flex items-center gap-3 text-slate-705 font-bold text-xs"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <Key size={16} className="text-amber-500 shrink-0 text-slate-500 hover:text-slate-800" />
-                  <span>Atur Password Akun Guru BK</span>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md shadow-amber-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🔑
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Atur Password
+                  </span>
                 </button>
 
-                <div className="mt-2 py-1 px-1">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">📑 Ekspor Laporan Excel (.xls)</span>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <button
-                      onClick={() => { downloadExcelCounseling(); setShowMoreMenu(false); }}
-                      className="py-2.5 px-3 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[10.5px] font-extrabold text-center transition-all flex items-center justify-center gap-1"
-                    >
-                      <FileSpreadsheet size={12} />
-                      <span>Excel Bimbingan 🧠</span>
-                    </button>
-                    <button
-                      onClick={() => { downloadExcelAttendance(); setShowMoreMenu(false); }}
-                      className="py-2.5 px-3 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10.5px] font-extrabold text-center transition-all flex items-center justify-center gap-1"
-                    >
-                      <Calendar size={12} />
-                      <span>Excel Absensi 📊</span>
-                    </button>
-                    <button
-                      onClick={() => { downloadExcelInfractions(); setShowMoreMenu(false); }}
-                      className="py-2.5 px-3 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-800 text-[10.5px] font-extrabold text-center transition-all flex items-center justify-center gap-1"
-                    >
-                      <AlertTriangle size={12} />
-                      <span>Excel Disiplin 🚨</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Mobile app install links */}
-                <div className="mt-4 border-t border-slate-100 pt-4 flex flex-col gap-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">📲 Download Aplikasi Mobile Sekolah</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    <a
-                      href={schoolIdentity?.apkUrl || "#"}
-                      target={schoolIdentity?.apkUrl ? "_blank" : undefined}
-                      onClick={(e) => {
-                        if (!schoolIdentity?.apkUrl) { e.preventDefault(); alert("Unduhan Android belum disiapkan admin sekolah."); }
-                      }}
-                      className="py-2.5 px-3 rounded-lg border border-slate-150 text-slate-700 bg-slate-50 font-bold text-[10.5px] text-center transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <Smartphone size={12} className="text-emerald-600" />
-                      <span>Download APK Android</span>
-                    </a>
-                    <a
-                      href={schoolIdentity?.iosUrl || "#"}
-                      target={schoolIdentity?.iosUrl ? "_blank" : undefined}
-                      onClick={(e) => {
-                        if (!schoolIdentity?.iosUrl) { e.preventDefault(); alert("Unduhan App Store iOS belum disiapkan admin sekolah."); }
-                      }}
-                      className="py-2.5 px-3 rounded-lg border border-slate-150 text-slate-700 bg-slate-50 font-bold text-[10.5px] text-center transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <Apple size={12} className="text-sky-600" />
-                      <span>Download iOS App</span>
-                    </a>
-                  </div>
-                </div>
-
+                {/* 5. Excel Bimbingan */}
                 <button
+                  type="button"
+                  onClick={() => {
+                    downloadExcelCounseling();
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 shadow-md shadow-purple-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🧠
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Excel BK
+                  </span>
+                </button>
+
+                {/* 6. Excel Absensi */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    downloadExcelAttendance();
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-600 shadow-md shadow-blue-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📊
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Excel Absensi
+                  </span>
+                </button>
+
+                {/* 7. Excel Disiplin */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    downloadExcelInfractions();
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500 to-red-500 shadow-md shadow-orange-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🚨
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Excel Disiplin
+                  </span>
+                </button>
+
+                {/* 8. Unduh APK */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (schoolIdentity?.apkUrl) {
+                      window.open(schoolIdentity.apkUrl, "_blank");
+                    } else {
+                      alert("Link unduhan Android belum disiapkan admin sekolah.");
+                    }
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Smartphone className="w-7 h-7 text-white stroke-[2.2]" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Unduh APK
+                  </span>
+                </button>
+
+                {/* 9. Keluar */}
+                <button
+                  type="button"
                   onClick={() => {
                     onLogout();
                     setShowMoreMenu(false);
                   }}
-                  className="w-full text-center py-3 px-4 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100/90 text-rose-700 font-extrabold text-xs transition-colors flex items-center justify-center gap-2 mt-4 cursor-pointer"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <LogOut size={14} />
-                  <span>Log Out Keluar Akun</span>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-red-600 shadow-md shadow-rose-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🚪
+                  </div>
+                  <span className="text-[11px] font-semibold text-rose-600 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Keluar Sesi
+                  </span>
                 </button>
               </div>
             </motion.div>

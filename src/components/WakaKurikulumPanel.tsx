@@ -6972,119 +6972,118 @@ export default function WakaKurikulumPanel({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10 no-print md:hidden"
+              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-5 shadow-2xl text-left flex flex-col gap-2 max-h-[85vh] overflow-y-auto pb-8 no-print md:hidden"
             >
-              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Pendukung</span>
-                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Akses Tambahan Waka Kurikulum</h4>
+              {/* Android Top Drag Handle */}
+              <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0" />
+
+              {/* Minimal Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-600" />
+                  <h4 className="text-slate-900 font-bold text-sm tracking-tight">
+                    Menu Lainnya
+                  </h4>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowMoreMenu(false)}
-                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-xs cursor-pointer transition-colors"
                 >
-                  Tutup
+                  ✕
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3.5">
+              {/* 3 Horizontal Columns Android App Drawer Grid */}
+              <div className="grid grid-cols-3 gap-y-4 gap-x-2 py-2">
+                {/* 1. Status Belum Input */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('status_belum_input');
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeTab === 'status_belum_input'
-                      ? 'border-rose-600 bg-rose-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="p-2 w-fit bg-rose-50 rounded-xl text-rose-600 text-lg">⚠️</span>
+                  <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-red-600 shadow-md shadow-rose-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    ⚠️
                     {unfilledGradesAnalysis.totalIncompleteTeachers > 0 && (
-                      <span className="px-2 py-0.5 rounded-full font-black text-[9px] bg-rose-100 text-rose-700 animate-pulse">
-                        {unfilledGradesAnalysis.totalIncompleteTeachers} Guru
+                      <span className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full font-black text-[9px] bg-rose-600 text-white border-2 border-white">
+                        {unfilledGradesAnalysis.totalIncompleteTeachers}
                       </span>
                     )}
                   </div>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-rose-950">Status Belum Input</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Detail guru &amp; nilai belum tuntas</p>
-                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Belum Input
+                  </span>
                 </button>
 
+                {/* 2. Detail Nilai */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('detail_nilai');
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeTab === 'detail_nilai'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">📋</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Detail Nilai Guru & Wali</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Inspeksi butir TP & Kokurikuler</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-md shadow-indigo-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📋
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Detail Nilai
+                  </span>
                 </button>
 
+                {/* 3. Rapor PTS */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('rapor_tengah_semester');
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeTab === 'rapor_tengah_semester'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🎓</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Rapor Tengah Semester</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Cetak Rapor PTS/STS Kurikulum Merdeka</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 shadow-md shadow-purple-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🎓
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Rapor PTS
+                  </span>
                 </button>
 
+                {/* 4. Keamanan Sandi */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('password');
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeTab === 'password'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🔑</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Keamanan Sandi</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ubah kata sandi akun Kurikulum</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md shadow-amber-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🔑
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Atur Sandi
+                  </span>
                 </button>
 
+                {/* 5. Muat Ulang Data */}
                 <button
                   type="button"
                   onClick={() => {
                     if (onRefreshData) onRefreshData();
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🔄</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Muat Ulang Data</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Sinkronkan ulang data dari server</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md shadow-teal-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🔄
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Muat Ulang
+                  </span>
                 </button>
               </div>
             </motion.div>

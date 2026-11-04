@@ -16,7 +16,7 @@ import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
 import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, getConfigFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
-import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
+import { createMidtransRouter, formatMidtransPaymentMethod } from "./src/server/routes/midtransRoutes";
 
 
 // Setup serverport
@@ -1963,6 +1963,103 @@ function seedStudentClassHistories() {
   }
 }
 
+function sanitizeMidtransAndAuditBills(): boolean {
+  const fakeSimulatedBillIds = new Set([
+    "bill-std-1784166464666-3-jklj-2026-4", // NIS 13154 Nov 2026
+    "bill-std-1784166464666-3-jklj-2026-5", // NIS 13154 Des 2026
+    "bill-std-1784166464665-2-wz05-2026-3", // NIS 13153 Okt 2026
+    "bill-std-1780505669278-242-5n5m-Oktober-2026-unpaid" // NIS 12774 Okt 2026
+  ]);
+  const fakeOrderIds = new Set([
+    "SPP-13154-Nov26-0712",
+    "CART-13154-1793761707578",
+    "CART-13153-1790662372857",
+    "SPP-12774-Okt26-6198"
+  ]);
+
+  let changed = false;
+
+  sppBills.forEach(b => {
+    const isFake = fakeSimulatedBillIds.has(b.id) ||
+      (b.orderId && fakeOrderIds.has(b.orderId)) ||
+      (b.transactionId && b.transactionId.startsWith("sim-"));
+    if (isFake) {
+      if (b.status !== "unpaid" || b.paidAt || b.paymentMethod || b.transactionId) {
+        b.status = "unpaid";
+        delete b.paidAt;
+        delete b.paymentMethod;
+        delete b.transactionId;
+        delete b.orderId;
+        changed = true;
+      }
+    } else if (b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans")) {
+      const formatted = formatMidtransPaymentMethod(b.paymentMethod);
+      if (b.paymentMethod !== formatted) {
+        b.paymentMethod = formatted;
+        changed = true;
+      }
+    }
+  });
+
+  miscBills.forEach(b => {
+    const isFake = (b.transactionId && b.transactionId.startsWith("sim-")) || (b.orderId && fakeOrderIds.has(b.orderId));
+    if (isFake) {
+      if (b.status !== "unpaid" || b.paidAt || b.paymentMethod || b.transactionId) {
+        b.status = "unpaid";
+        delete b.paidAt;
+        delete b.paymentMethod;
+        delete b.transactionId;
+        delete b.orderId;
+        changed = true;
+      }
+    } else if (b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans")) {
+      const formatted = formatMidtransPaymentMethod(b.paymentMethod);
+      if (b.paymentMethod !== formatted) {
+        b.paymentMethod = formatted;
+        changed = true;
+      }
+    }
+  });
+
+  savingsTransactions.forEach(t => {
+    if (t.orderId === "SAV-13154-1793761860522") {
+      if (t.transactionId !== "b1e250d9-3a07-4c06-873e-49379e20fa45" || t.paymentMethod !== "Midtrans (QRIS)") {
+        t.transactionId = "b1e250d9-3a07-4c06-873e-49379e20fa45";
+        t.paymentMethod = "Midtrans (QRIS)";
+        changed = true;
+      }
+    } else if (t.paymentMethod && t.paymentMethod.toLowerCase().includes("midtrans")) {
+      const formatted = formatMidtransPaymentMethod(t.paymentMethod);
+      if (t.paymentMethod !== formatted) {
+        t.paymentMethod = formatted;
+        changed = true;
+      }
+    }
+  });
+
+  for (let i = midtransTransactions.length - 1; i >= 0; i--) {
+    const mt = midtransTransactions[i];
+    if ((mt.transactionId && mt.transactionId.startsWith("sim-")) || (mt.orderId && fakeOrderIds.has(mt.orderId))) {
+      midtransTransactions.splice(i, 1);
+      changed = true;
+    } else {
+      if (mt.paymentType) {
+        const formatted = formatMidtransPaymentMethod(mt.paymentType);
+        if (mt.paymentType !== formatted) {
+          mt.paymentType = formatted;
+          changed = true;
+        }
+      }
+      if (mt.description && (mt.description.includes("(Midtrans QRIS)") || mt.description.includes("(qris)"))) {
+        mt.description = mt.description.replace(/\(Midtrans QRIS\)/g, "(QRIS)").replace(/\(qris\)/g, "(QRIS)");
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
+
 function loadState() {
   try {
     if (fs.existsSync(DATA_FILE)) {
@@ -2015,6 +2112,7 @@ function loadState() {
         midtransTransactions.length = 0;
         midtransTransactions.push(...data.midtransTransactions);
       }
+      sanitizeMidtransAndAuditBills();
       // Apply authoritative savings balances for all loaded students
       applyAuthoritativeSavingsBalances(students);
       if (Array.isArray(data.notifications)) {
@@ -2375,6 +2473,7 @@ function applyDataFromMysql(pulledData: any) {
       midtransTransactions.length = 0;
       midtransTransactions.push(...pulledData.midtransTransactions);
     }
+    sanitizeMidtransAndAuditBills();
 
     if (Array.isArray(pulledData.notifications) && pulledData.notifications.length > 0) {
       notifications.length = 0;
@@ -2614,6 +2713,8 @@ const hasMysqlConfigured = Boolean(
   (mysqlActiveCfg && mysqlActiveCfg.host && mysqlActiveCfg.database)
 );
 const isLoaded = loadState();
+sanitizeMidtransAndAuditBills();
+saveState();
 ensureSchedulesAcademicYear();
 
 if (isLoaded) {
@@ -12601,7 +12702,7 @@ async function startServer() {
     const isSettled = ts === "settlement" || ts === "capture";
     const isExpired = ts === "expire" || ts === "cancel" || ts === "deny";
     const paymentType = statusData.payment_type || "Online Gateway";
-    const actualPaymentType = `Midtrans (${paymentType})`;
+    const actualPaymentType = formatMidtransPaymentMethod(paymentType);
     const midtransTime = statusData.settlement_time || statusData.transaction_time || "";
     const resolvedPaidAt = midtransTime ? parseMidtransTime(midtransTime) : new Date().toISOString();
 

@@ -169,11 +169,11 @@ export default function MidtransPayModal({
     setIsSubmittingMock(true);
     try {
       const methodLabels: Record<string, string> = {
-        qris: 'Midtrans QRIS',
-        bca_va: 'Midtrans BCA VA',
-        mandiri_va: 'Midtrans Mandiri VA',
-        bri_va: 'Midtrans BRI VA',
-        gopay: 'Midtrans GoPay'
+        qris: 'QRIS',
+        bca_va: 'BCA VA',
+        mandiri_va: 'Mandiri VA',
+        bri_va: 'BRI VA',
+        gopay: 'GoPay'
       };
       const res = await fetch('/api/simulate-payment-success', {
         method: 'POST',

@@ -213,7 +213,7 @@ export default function StudentPanel({
   const [curriculumSubjectsList, setCurriculumSubjectsList] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch(`/api/curriculum/subjects?_t=${Date.now()}`)
+    fetch('/api/curriculum-subjects')
       .then(res => res.json())
       .then(data => {
         if (data && Array.isArray(data.subjects) && data.subjects.length > 0) {
@@ -273,16 +273,9 @@ export default function StudentPanel({
     );
 
     // Source master subjects from curriculumSubjectsList, with fallback to DEFAULT_REPORT_SUBJECTS
-    const rawSubjects = (curriculumSubjectsList && curriculumSubjectsList.length > 0)
+    const baseSubjects = (curriculumSubjectsList && curriculumSubjectsList.length > 0)
       ? [...curriculumSubjectsList]
       : [...DEFAULT_REPORT_SUBJECTS];
-
-    // Filter out legacy or excluded subjects (Bahasa Arab & Aswaja)
-    const baseSubjects = rawSubjects.filter(s => {
-      const c = (s.code || '').toUpperCase();
-      const n = (s.name || '').toLowerCase();
-      return c !== 'BARAB' && c !== 'ASWAJA' && !n.includes('bahasa arab') && !n.includes('aswaja') && !n.includes('ke-nu-an');
-    });
 
     // Strictly sort subjects: Official 11 order first, then remaining master subjects by orderNum
     baseSubjects.sort((a, b) => {
@@ -355,10 +348,8 @@ export default function StudentPanel({
       };
     });
 
-    // Append any extra subjects that were assessed but not present in baseSubjects (excluding deprecated subjects)
+    // Append any extra subjects that were assessed but not present in baseSubjects
     matched.forEach(a => {
-      const subLower = (a.subject || '').toLowerCase();
-      if (subLower.includes('bahasa arab') || subLower.includes('aswaja') || subLower.includes('ke-nu-an')) return;
       const exists = reportRows.some(r => isSameSubject(r.subject, a.subject) || isSameSubject(r.code, a.subject));
       if (!exists) {
         const avgTp = a.nilaiRataTp !== undefined && a.nilaiRataTp !== null ? Number(a.nilaiRataTp) : 0;
@@ -2013,8 +2004,8 @@ export default function StudentPanel({
           </div>
         )}
 
-        {/* Unduh Aplikasi Mobile Block (Khusus Desktop, di mobile cukup di Menu Lainnya) */}
-        <div className="hidden md:flex bg-white p-5 rounded-xl border border-slate-200 shadow-sm text-xs flex-col gap-2.5 text-left select-none">
+        {/* Unduh Aplikasi Mobile Block */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm text-xs flex flex-col gap-2.5 text-left select-none">
           <h4 className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
             <Smartphone size={14} className="text-emerald-700" /> Aplikasi Mobile Sekolah
           </h4>
@@ -6089,6 +6080,58 @@ export default function StudentPanel({
                     {changingPassword ? 'Sedang Memproses...' : 'Ubah Sandi Baru Anda 🔐'}
                   </button>
                 </form>
+              </div>
+
+              {/* Mobile app download on Mobile Profile Tab */}
+              <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl flex flex-col gap-3 text-left">
+                <div className="flex items-center gap-1.5">
+                  <Smartphone size={15} className="text-emerald-700" />
+                  <span className="font-extrabold text-[11px] uppercase tracking-wider text-slate-800">Unduh Aplikasi Mobile Resmi</span>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-normal">
+                  Siswa &amp; wali murid disarankan menggunakan aplikasi Android (.apk) atau iOS (.ipa/App Store) resmi untuk kemudahan akses monitoring langsung tanpa browser.
+                </p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <a
+                    href={schoolIdentity?.apkUrl || "#"}
+                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.apkUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan Android belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2.5 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.apkUrl 
+                        ? "bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Smartphone size={14} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10.5px]">Android APK</span>
+                  </a>
+
+                  <a
+                    href={schoolIdentity?.iosUrl || "#"}
+                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.iosUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan iOS belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2.5 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.iosUrl 
+                        ? "bg-sky-50 hover:bg-sky-100 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Apple size={14} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10.5px]">iOS Apple</span>
+                  </a>
+                </div>
               </div>
             </div>
           )}

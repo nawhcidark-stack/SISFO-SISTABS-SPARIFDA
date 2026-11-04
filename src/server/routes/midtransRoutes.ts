@@ -34,36 +34,6 @@ export interface MidtransRouterDeps {
 
 // ---------------- Helper Functions ----------------
 
-export function formatMidtransPaymentMethod(raw?: string): string {
-  if (!raw) return "Midtrans (QRIS)";
-  let s = String(raw).trim();
-  if (!s) return "Midtrans (QRIS)";
-  
-  // Recursively unwrap any duplicate or nested "Midtrans (...)", "Midtrans ...", etc.
-  while (/^midtrans\s*\(?/i.test(s)) {
-    s = s.replace(/^midtrans\s*\(?/i, "").replace(/\)$/, "").trim();
-  }
-  s = s.replace(/^\((.*)\)$/, "$1").trim();
-
-  const lower = s.toLowerCase();
-  if (!s || !lower) return "Midtrans (QRIS)";
-  if (lower === "qris" || lower === "midtrans qris") return "Midtrans (QRIS)";
-  if (lower === "gopay" || lower === "go-pay") return "Midtrans (GoPay)";
-  if (lower === "shopeepay") return "Midtrans (ShopeePay)";
-  if (lower === "bank_transfer") return "Midtrans (Bank Transfer)";
-  if (lower.includes("bca")) return "Midtrans (BCA VA)";
-  if (lower.includes("mandiri") || lower === "echannel") return "Midtrans (Mandiri VA)";
-  if (lower.includes("bri")) return "Midtrans (BRI VA)";
-  if (lower.includes("bni")) return "Midtrans (BNI VA)";
-  if (lower.includes("permata")) return "Midtrans (Permata VA)";
-  if (lower.includes("cimb")) return "Midtrans (CIMB VA)";
-  if (lower === "credit_card") return "Midtrans (Kartu Kredit)";
-  if (lower === "snap" || lower === "online") return "Midtrans (QRIS)";
-  if (lower === "reconciled" || lower === "manual reconciled") return "Midtrans (Rekonsiliasi)";
-  
-  return `Midtrans (${s.toUpperCase()})`;
-}
-
 export const INDONESIAN_MONTHS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
   "Juli", "Agustus", "September", "Oktober", "November", "Desember"
@@ -1104,7 +1074,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     const isSettled = ts === "settlement" || ts === "capture";
     const isExpired = ts === "expire" || ts === "cancel" || ts === "deny";
     const paymentType = statusData.payment_type || "Online Gateway";
-    const actualPaymentType = formatMidtransPaymentMethod(paymentType);
+    const actualPaymentType = `Midtrans (${paymentType})`;
     const midtransTime = statusData.settlement_time || statusData.transaction_time || "";
     const resolvedPaidAt = parseMidtransTime(midtransTime);
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanOrderId);
@@ -2877,22 +2847,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
     const realOrderId = midtransStatus?.order_id || cleanOrderId;
     const realTxId = transactionId || midtransStatus?.transaction_id || `sim-${Date.now()}`;
-    const actualPaymentType = formatMidtransPaymentMethod(paymentType || midtransStatus?.payment_type);
-
-    // In production mode, NEVER allow simulation to mark bills settled if transaction doesn't exist in Midtrans
-    if (midtransConfig?.isProduction) {
-      if (!midtransStatus || midtransStatus.status_code === '404' || !midtransStatus.transaction_status) {
-        return res.status(400).json({
-          error: `Mode produksi aktif: Order ${cleanOrderId} tidak ditemukan di Gateway Midtrans dan tidak boleh disimulasikan lunas tanpa konfirmasi pembayaran riil dari wali murid.`
-        });
-      }
-      if (midtransStatus.transaction_status !== 'settlement' && midtransStatus.transaction_status !== 'capture') {
-        return res.status(400).json({
-          error: `Status transaksi ${cleanOrderId} di Midtrans adalah ${midtransStatus.transaction_status || 'PENDING'} (belum diselesaikan oleh wali murid).`
-        });
-      }
-    }
-
+    const actualPaymentType = paymentType || midtransStatus?.payment_type || "Midtrans Snap";
     // Jika ada status riil dari gateway Midtrans, gunakan status sebenarnya (jangan paksa settlement jika pending/expired)
     const effectiveStatus = (midtransStatus && midtransStatus.transaction_status)
       ? String(midtransStatus.transaction_status).toLowerCase()
@@ -2946,7 +2901,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         billType: String(order_id).startsWith("SPMB-") ? "spmb_token" : "other",
         grossAmount: Number(gross_amount) || 0,
         transactionStatus: transaction_status,
-        paymentType: formatMidtransPaymentMethod(payment_type),
+        paymentType: `Midtrans (${payment_type || 'Online'})`,
         settlementTime: webhookData.settlement_time || webhookData.transaction_time || new Date().toISOString(),
         description: `Callback Midtrans [${order_id}] - Status: ${transaction_status}`
       });
@@ -2970,7 +2925,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             candidate.tokenPaid = true;
             candidate.tokenPaymentStatus = "paid";
             candidate.tokenPaidAt = webhookData.settlement_time || webhookData.transaction_time || new Date().toISOString();
-            candidate.tokenPaymentMethod = formatMidtransPaymentMethod(payment_type);
+            candidate.tokenPaymentMethod = `Midtrans (${payment_type || 'Online'})`;
             candidate.status = "registered";
             candidate.updatedAt = new Date().toISOString();
             saveState();
@@ -2982,7 +2937,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             if (webhookData.expiry_time) candidate.tokenExpiryTime = webhookData.expiry_time;
             if (webhookData.va_numbers) candidate.tokenVaNumbers = webhookData.va_numbers;
             if (payment_type) candidate.tokenPaymentType = payment_type;
-            candidate.tokenPaymentMethod = formatMidtransPaymentMethod(payment_type);
+            candidate.tokenPaymentMethod = `Midtrans (${payment_type || 'Online'})`;
             candidate.updatedAt = new Date().toISOString();
             saveState();
             if (persistEntity) persistEntity("spmbCandidates", candidate).catch(() => {});

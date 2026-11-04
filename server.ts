@@ -2657,10 +2657,41 @@ function applyDataFromMysql(pulledData: any) {
 
     // Apply application configs if present
     if (pulledData.configs) {
-      if (pulledData.configs.sppRates) Object.assign(sppRates, pulledData.configs.sppRates);
+      if (pulledData.configs.sppRates) {
+        // Only adopt if valid non-zero rates
+        const pRates = pulledData.configs.sppRates;
+        if (pRates.grade7 && pRates.grade8 && pRates.grade9) {
+          Object.assign(sppRates, pRates);
+        }
+      }
       if (pulledData.configs.salaryConfig) Object.assign(salaryConfig, pulledData.configs.salaryConfig);
-      if (pulledData.configs.schoolIdentity) Object.assign(schoolIdentity, pulledData.configs.schoolIdentity);
-      if (pulledData.configs.midtransConfig) Object.assign(midtransConfig, pulledData.configs.midtransConfig);
+      if (pulledData.configs.schoolIdentity) {
+        const pulled = pulledData.configs.schoolIdentity;
+        const safeMerged = { ...schoolIdentity, ...pulled };
+        // Never wipe authentic image assets with empty strings
+        if (!pulled.logo && schoolIdentity.logo) safeMerged.logo = schoolIdentity.logo;
+        if (!pulled.logo2 && (schoolIdentity as any).logo2) (safeMerged as any).logo2 = (schoolIdentity as any).logo2;
+        if (!pulled.letterhead && schoolIdentity.letterhead) safeMerged.letterhead = schoolIdentity.letterhead;
+        if (!pulled.schoolStamp && (schoolIdentity as any).schoolStamp) (safeMerged as any).schoolStamp = (schoolIdentity as any).schoolStamp;
+        if (!pulled.treasurerSignature && (schoolIdentity as any).treasurerSignature) (safeMerged as any).treasurerSignature = (schoolIdentity as any).treasurerSignature;
+        if (!pulled.principalSignature && (schoolIdentity as any).principalSignature) (safeMerged as any).principalSignature = (schoolIdentity as any).principalSignature;
+        if (pulled.principal === "H. Ahmad Fuad, S.Pd, M.PdI" && schoolIdentity.principal) {
+          safeMerged.principal = schoolIdentity.principal;
+        }
+        if (pulled.treasurer === "Bendahara Sekolah NU" && schoolIdentity.treasurer) {
+          safeMerged.treasurer = schoolIdentity.treasurer;
+        }
+        Object.assign(schoolIdentity, safeMerged);
+      }
+      if (pulledData.configs.midtransConfig) {
+        const pMid = pulledData.configs.midtransConfig;
+        const safeMid = { ...midtransConfig, ...pMid };
+        if (!pMid.serverKey && midtransConfig.serverKey) safeMid.serverKey = midtransConfig.serverKey;
+        if (!pMid.clientKey && midtransConfig.clientKey) safeMid.clientKey = midtransConfig.clientKey;
+        if (!pMid.merchantId && midtransConfig.merchantId) safeMid.merchantId = midtransConfig.merchantId;
+        if (midtransConfig.pin && !pMid.pin) safeMid.pin = midtransConfig.pin;
+        Object.assign(midtransConfig, safeMid);
+      }
       if (pulledData.configs.whatsappConfig) Object.assign(whatsappConfig, pulledData.configs.whatsappConfig);
       if (pulledData.configs.treasurerConfig) Object.assign(treasurerConfig, pulledData.configs.treasurerConfig);
       if (pulledData.configs.principalConfig) Object.assign(principalConfig, pulledData.configs.principalConfig);

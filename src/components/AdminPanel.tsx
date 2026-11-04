@@ -2539,9 +2539,7 @@ export default function AdminPanel({
     { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional' },
     { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional' },
     { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional' },
-    { id: 'mapel-bjawa', code: 'BJAWA', name: 'Bahasa Jawa', category: 'Muatan Lokal' },
-    { id: 'mapel-barab', code: 'BARAB', name: 'Bahasa Arab', category: 'Muatan Lokal' },
-    { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal' }
+    { id: 'mapel-bjawa', code: 'BJAWA', name: 'Bahasa Jawa', category: 'Muatan Lokal' }
   ]);
   const [formUsername, setFormUsername] = useState("");
   const [formPassword, setFormPassword] = useState("");

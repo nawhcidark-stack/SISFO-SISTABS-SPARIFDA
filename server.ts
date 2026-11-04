@@ -109,9 +109,7 @@ export const DEFAULT_CURRICULUM_SUBJECTS: CurriculumSubject[] = [
   { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 8 },
   { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 9 },
   { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 10 },
-  { id: 'mapel-bjawa', code: 'MULOK', name: 'Muatan Lokal: Bahasa Daerah', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 11 },
-  { id: 'mapel-barab', code: 'BARAB', name: 'Bahasa Arab', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 12 },
-  { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 13 }
+  { id: 'mapel-bjawa', code: 'MULOK', name: 'Muatan Lokal: Bahasa Daerah', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 11 }
 ];
 
 const curriculumSubjects: CurriculumSubject[] = [];
@@ -6665,7 +6663,7 @@ async function startServer() {
   });
 
   // --- MASTER DATA MATA PELAJARAN (WAKA KURIKULUM) ---
-  app.get("/api/curriculum/subjects", async (req, res) => {
+  app.get(["/api/curriculum/subjects", "/api/curriculum-subjects", "/api/admin/curriculum-subjects"], async (req, res) => {
     // Selalu sinkronkan dengan database MySQL sebagai Primary Authoritative Engine
     try {
       const mysqlSubjects = await getAllCurriculumSubjectsFromMysql();
@@ -6676,7 +6674,12 @@ async function startServer() {
     } catch (dbErr: any) {
       console.warn("[Subjects API] Gagal memuat langsung dari MySQL, menggunakan cache memori:", dbErr?.message || dbErr);
     }
-    const sorted = [...curriculumSubjects].sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
+    const cleanList = curriculumSubjects.filter(s => {
+      const code = (s.code || '').toUpperCase();
+      const name = (s.name || '').toLowerCase();
+      return code !== 'BARAB' && code !== 'ASWAJA' && !name.includes('bahasa arab') && !name.includes('aswaja') && !name.includes('ke-nu-an');
+    });
+    const sorted = [...cleanList].sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
     res.json({ success: true, subjects: sorted });
   });
 

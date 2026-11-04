@@ -2839,9 +2839,7 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
             { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 8 },
             { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 9 },
             { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 10 },
-            { id: 'mapel-bjawa', code: 'MULOK', name: 'Muatan Lokal: Bahasa Daerah', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 11 },
-            { id: 'mapel-barab', code: 'BARAB', name: 'Bahasa Arab', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 12 },
-            { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 13 }
+            { id: 'mapel-bjawa', code: 'MULOK', name: 'Muatan Lokal: Bahasa Daerah', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 11 }
           ];
           for (const s of defaultSubjects) {
             await connection.query(

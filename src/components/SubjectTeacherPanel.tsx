@@ -263,26 +263,37 @@ export default function SubjectTeacherPanel({
   }, [currentTeacher?.subject, masterCurriculumSubjects]);
 
   const subjectOptions = useMemo(() => {
+    if (masterCurriculumSubjects && masterCurriculumSubjects.length > 0) {
+      const names = masterCurriculumSubjects
+        .map(s => s.name)
+        .filter(n => {
+          const l = n.toLowerCase();
+          return !l.includes('bahasa arab') && !l.includes('aswaja') && !l.includes('ke-nu-an');
+        });
+      if (currentTeacher?.subject) {
+        const teacherSub = toMasterSubjectName(currentTeacher.subject);
+        if (teacherSub && !names.includes(teacherSub)) {
+          names.unshift(teacherSub);
+        }
+      }
+      return Array.from(new Set(names));
+    }
     const list = [
       currentTeacher?.subject ? toMasterSubjectName(currentTeacher.subject) : null,
-      'Matematika',
-      'Bahasa Indonesia',
-      'Bahasa Inggris',
-      'Ilmu Pengetahuan Alam (IPA)',
-      'Ilmu Pengetahuan Sosial (IPS)',
       'Pendidikan Agama Islam',
       'Pendidikan Pancasila',
-      'Pendidikan Jasmani, Olahraga, dan Kesehatan',
+      'Bahasa Indonesia',
+      'Matematika',
+      'Ilmu Pengetahuan Alam (IPA)',
+      'Ilmu Pengetahuan Sosial (IPS)',
+      'Bahasa Inggris',
       'Seni Budaya',
+      'Pendidikan Jasmani, Olahraga, dan Kesehatan',
       'Informatika',
-      'Prakarya',
-      'Muatan Lokal: Bahasa Daerah',
-      'Bahasa Arab',
-      'Ke-NU-an / Aswaja',
-      'Bimbingan Konseling'
+      'Muatan Lokal: Bahasa Daerah'
     ].filter(Boolean) as string[];
     return Array.from(new Set(list));
-  }, [currentTeacher?.subject]);
+  }, [currentTeacher?.subject, masterCurriculumSubjects]);
 
   useEffect(() => {
     if (schoolIdentity?.activeAcademicYear) {

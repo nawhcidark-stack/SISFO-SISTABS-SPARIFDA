@@ -1,12 +1,40 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification } from '../types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification, ClassSchedule, HomeroomTeacher, SharedLearningObjective } from '../types';
+import { isSameSubject, normClass, isSameClass, toMasterSubjectName, normalizeSubject } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
+import ScheduleView from './ScheduleView';
+import { TpJournalSelector } from './TpJournalSelector';
+import { SharedTpBankView } from './SharedTpBankView';
+import { SharedTpQuickSelector } from './SharedTpQuickSelector';
 import { 
-  Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
+  Calendar, Check, AlertCircle, AlertTriangle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
-  Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer,
-  User, Bell, LayoutGrid, Home, Smartphone, Apple, Download
+  Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer, Lock, Unlock,
+  User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2, ShieldAlert, Megaphone, CreditCard, Award
 } from 'lucide-react';
+import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from '../utils/notificationUtils';
+
+const getWIBDateStr = (date: Date = new Date()): string => {
+  const wibTime = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  return wibTime.toISOString().substring(0, 10);
+};
+
+const getSemesterFromDate = (dateStr?: string): 'Ganjil' | 'Genap' => {
+  if (!dateStr) {
+    const now = new Date();
+    const month = now.getMonth();
+    return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+  }
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) {
+    const now = new Date();
+    const month = now.getMonth();
+    return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+  }
+  const month = d.getMonth(); // 0 = Jan, 11 = Dec
+  return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+};
 
 interface SubjectTeacherPanelProps {
   currentTeacher: SubjectTeacher;
@@ -16,6 +44,9 @@ interface SubjectTeacherPanelProps {
   onLogout: () => void;
   onRefresh: () => void;
   isLoading?: boolean;
+  classSchedules?: ClassSchedule[];
+  subjectTeachers?: SubjectTeacher[];
+  homerooms?: HomeroomTeacher[];
 }
 
 export default function SubjectTeacherPanel({
@@ -25,28 +56,49 @@ export default function SubjectTeacherPanel({
   schoolIdentity,
   onLogout,
   onRefresh,
-  isLoading = false
+  isLoading = false,
+  classSchedules = [],
+  subjectTeachers = [],
+  homerooms = []
 }: SubjectTeacherPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'create' | 'history' | 'notifications' | 'profile' | 'penilaian' | 'pkg'>('create');
+  const [activeSubTab, setActiveSubTab] = useState<'create' | 'history' | 'notifications' | 'profile' | 'penilaian' | 'pkg' | 'jadwal'>('create');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(getWIBDateStr());
   const [topic, setTopic] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [fase, setFase] = useState<string>('D');
-  const [semester, setSemester] = useState<string>('Genap');
-  const [alokasiWaktu, setAlokasiWaktu] = useState<string>('2 JP');
-  const [jamKe, setJamKe] = useState<string>('1 - 2');
+  const [semester, setSemester] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
+  const [alokasiWaktu, setAlokasiWaktu] = useState<string>('2');
+  const [jamKe, setJamKe] = useState<string>('1');
   const [pertemuanKe, setPertemuanKe] = useState<string>('');
   const [tujuanPembelajaran, setTujuanPembelajaran] = useState<string>('');
   const [pencapaianKktp, setPencapaianKktp] = useState<string>('Tercapai');
   const [journals, setJournals] = useState<TeachingJournal[]>([]);
+  const [allJournals, setAllJournals] = useState<TeachingJournal[]>([]);
   const [loadingJournals, setLoadingJournals] = useState<boolean>(false);
+
+  // Edit journal states for Subject Teacher panel
+  const [editingJournal, setEditingJournal] = useState<any | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
+  const [editTopic, setEditTopic] = useState<string>('');
+  const [editNotes, setEditNotes] = useState<string>('');
+  const [editDate, setEditDate] = useState<string>('');
+  const [editFase, setEditFase] = useState<string>('D');
+  const [editSemester, setEditSemester] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
+  const [editAlokasiWaktu, setEditAlokasiWaktu] = useState<string>('2');
+  const [editJamKe, setEditJamKe] = useState<string>('');
+  const [editPertemuanKe, setEditPertemuanKe] = useState<string>('');
+  const [editTujuanPembelajaran, setEditTujuanPembelajaran] = useState<string>('');
+  const [editPencapaianKktp, setEditPencapaianKktp] = useState<string>('Tercapai');
+  const [editDailyStatusMap, setEditDailyStatusMap] = useState<Record<string, { status: string; notes: string }>>({});
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
   
   // Realtime notification lists for Teacher panel view
   const [systemNotifications, setSystemNotifications] = useState<RealtimeNotification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState<boolean>(false);
   const [notifSearch, setNotifSearch] = useState<string>('');
+  const [activeNotifCategory, setActiveNotifCategory] = useState<NotifTabCategory>('semua');
 
   // Principal Work Programs state
   const [workPrograms, setWorkPrograms] = useState<any[]>([]);
@@ -60,7 +112,10 @@ export default function SubjectTeacherPanel({
       const res = await fetch('/api/principal/teacher-evaluations');
       if (res.ok) {
         const data = await res.json();
-        const filtered = data.filter((e: any) => e.teacherId === currentTeacher.id);
+        const filtered = data.filter((e: any) => 
+          e.teacherId === currentTeacher?.id ||
+          (currentTeacher?.name && e.teacherName && e.teacherName.trim().toLowerCase() === currentTeacher.name.trim().toLowerCase())
+        );
         setEvaluations(filtered);
       }
     } catch (err) {
@@ -101,10 +156,16 @@ export default function SubjectTeacherPanel({
           </style>
         </head>
         <body>
-          <div class="head-school">
-            ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}<br/>
-            <span style="font-size:10px; font-weight:normal;">Address: ${schoolIdentity?.address || ""} | Phone: ${schoolIdentity?.phone || ""}</span>
-          </div>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <div class="head-school">
+              ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}<br/>
+              <span style="font-size:10px; font-weight:normal;">Address: ${schoolIdentity?.address || ""} | Phone: ${schoolIdentity?.phone || ""}</span>
+            </div>
+          `}
           
           <h3 style="text-align:center; text-transform:uppercase; text-decoration:underline;">LEMBAR HASIL PENILAIAN KINERJA GURU (PKG)</h3>
           <p style="text-align:center; font-weight:bold; font-size:10px; margin-top:-10px;">TAHUN AJARAN / AKADEMIK: ${ev.academicYear}</p>
@@ -167,6 +228,8 @@ export default function SubjectTeacherPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showSuccessCheck, setShowSuccessCheck] = useState(false);
+  const [showGradeSuccessModal, setShowGradeSuccessModal] = useState(false);
+  const [gradeSuccessSummary, setGradeSuccessSummary] = useState<{ className: string; subject: string; count: number } | null>(null);
   const [historyDetailJournal, setHistoryDetailJournal] = useState<TeachingJournal | null>(null);
   const [selectedJournalToPrint, setSelectedJournalToPrint] = useState<TeachingJournal | null>(null);
   const [startDate, setStartDate] = useState<string>('');
@@ -176,79 +239,457 @@ export default function SubjectTeacherPanel({
   // --- Kurikulum Merdeka State Settings ---
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
+  const [masterCurriculumSubjects, setMasterCurriculumSubjects] = useState<Array<{ name: string; code?: string }>>([]);
+  const [selectedSubject, setSelectedSubject] = useState<string>(() => toMasterSubjectName(currentTeacher?.subject || 'Matematika'));
   const [selectedGradeClass, setSelectedGradeClass] = useState<string>('');
-  const [selectedSemesterGrading, setSelectedSemesterGrading] = useState<string>('Genap');
-  const [selectedYearGrading, setSelectedYearGrading] = useState<string>('2025/2026');
+  const [selectedSemesterGrading, setSelectedSemesterGrading] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
+  const [selectedYearGrading, setSelectedYearGrading] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
+
+  useEffect(() => {
+    fetch('/api/curriculum/subjects')
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.subjects)) {
+          setMasterCurriculumSubjects(data.subjects);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (currentTeacher?.subject) {
+      setSelectedSubject(toMasterSubjectName(currentTeacher.subject, masterCurriculumSubjects));
+    }
+  }, [currentTeacher?.subject, masterCurriculumSubjects]);
+
+  const subjectOptions = useMemo(() => {
+    if (masterCurriculumSubjects && masterCurriculumSubjects.length > 0) {
+      const names = masterCurriculumSubjects
+        .map(s => s.name)
+        .filter(n => {
+          const l = n.toLowerCase();
+          return !l.includes('bahasa arab') && !l.includes('aswaja') && !l.includes('ke-nu-an');
+        });
+      if (currentTeacher?.subject) {
+        const teacherSub = toMasterSubjectName(currentTeacher.subject);
+        if (teacherSub && !names.includes(teacherSub)) {
+          names.unshift(teacherSub);
+        }
+      }
+      return Array.from(new Set(names));
+    }
+    const list = [
+      currentTeacher?.subject ? toMasterSubjectName(currentTeacher.subject) : null,
+      'Pendidikan Agama Islam',
+      'Pendidikan Pancasila',
+      'Bahasa Indonesia',
+      'Matematika',
+      'Ilmu Pengetahuan Alam (IPA)',
+      'Ilmu Pengetahuan Sosial (IPS)',
+      'Bahasa Inggris',
+      'Seni Budaya',
+      'Pendidikan Jasmani, Olahraga, dan Kesehatan',
+      'Informatika',
+      'Muatan Lokal: Bahasa Daerah'
+    ].filter(Boolean) as string[];
+    return Array.from(new Set(list));
+  }, [currentTeacher?.subject, masterCurriculumSubjects]);
+
+  useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear) {
+      setSelectedYearGrading(schoolIdentity.activeAcademicYear);
+    }
+  }, [schoolIdentity?.activeAcademicYear]);
   
   // High quality default TPs based on popular subjects
   const defaultTpsMap: Record<string, string[]> = {
     'Matematika': [
       'Memahami konsep & penyelesaian masalah relasi harian',
       'Menerapkan analisis logis persamaan nilai kompetensi',
-      'Menyajikan representasi grafis hasil observasi'
+      'Menyajikan representasi grafis hasil observasi',
+      'Mengevaluasi hasil pemecahan masalah matematis kontekstual'
     ],
     'Bahasa Inggris': [
       'Identify main ideas in descriptive and narrative English texts',
       'Compose short conversations about expressing opinion and advice',
-      'Use proper greeting, warning, and simple structures'
+      'Use proper greeting, warning, and simple structures',
+      'Construct simple reflective essays on daily topics'
     ],
     'Ilmu Pengetahuan Alam': [
       'Menjelaskan klasifikasi makhluk hidup dan ekosistem lokal',
       'Menganalisis konsep suhu, kalor, pemuaian, dan wujud benda',
-      'Melakukan penyelidikan ilmiah tentang sifat zat kompleks'
+      'Melakukan penyelidikan ilmiah tentang sifat zat kompleks',
+      'Menyusun laporan hasil eksperimen sains secara sistematis'
     ],
     'Ilmu Pengetahuan Sosial': [
       'Menilai kontribusi interaksi sosial terhadap ruang geografis',
       'Mengidentifikasi kegiatan ekonomi masyarakat dan kebutuhan',
-      'Menceritakan sejarah pembentukan budaya di wilayah Nusantara'
+      'Menceritakan sejarah pembentukan budaya di wilayah Nusantara',
+      'Menganalisis dampak perubahan sosial terhadap kearifan lokal'
     ],
     'Bahasa Indonesia': [
       'Menulis teks deskripsi deskriptif dari objek observasi',
       'Menelaah unsur buku fiksi dan non-fiksi secara obyektif',
-      'Menyajikan teks prosedur dengan susunan kalimat efektif'
+      'Menyajikan teks prosedur dengan susunan kalimat efektif',
+      'Menyusun naskah ulasan sastra dengan argumentasi kritis'
     ],
     'Pendidikan Agama Islam': [
       'Membaca dan melafalkan ayat Al-Quran mengenai adab',
       'Mendemonstrasikan rukun shalat fardhu dan khusyuk berniat',
-      'Mengimplementasikan akhlakul karimah kepada guru dan teman'
+      'Mengimplementasikan akhlakul karimah kepada guru dan teman',
+      'Memahami nilai-nilai sejarah perjuangan dakwah Islamiah'
     ],
     'Pendidikan Jasmani & OR': [
       'Melakukan teknik dasar olahraga bersahabat koordinatif',
       'Menjaga kebugaran jasmani melalui senam ketangkasan terlatih',
-      'Mengetahui pola makan seimbang pencegah penyakit menular'
+      'Mengetahui pola makan seimbang pencegah penyakit menular',
+      'Menerapkan pola hidup sehat dan kebiasaan berolahraga teratur'
     ]
   };
 
   const currentSubjectDefaultTps = useMemo(() => {
-    return defaultTpsMap[currentTeacher.subject] || [
+    return defaultTpsMap[selectedSubject] || [
       'Mengidentifikasi elemen kompetensi dasar materi pembelajaran',
       'Menyelesaikan tugas analisis praktis secara mandiri berfikir',
-      'Menyajikan hasil evaluasi materi dalam bentuk simpulan logis'
+      'Menyajikan hasil evaluasi materi dalam bentuk simpulan logis',
+      'Merefleksikan hasil pencapaian belajar demi perbaikan berkelanjutan'
     ];
-  }, [currentTeacher.subject]);
+  }, [selectedSubject]);
 
   const [tp1InputName, setTp1InputName] = useState<string>('');
   const [tp2InputName, setTp2InputName] = useState<string>('');
   const [tp3InputName, setTp3InputName] = useState<string>('');
+  const [tp4InputName, setTp4InputName] = useState<string>('');
+  const [tp1Id, setTp1Id] = useState<string>('');
+  const [tp2Id, setTp2Id] = useState<string>('');
+  const [tp3Id, setTp3Id] = useState<string>('');
+  const [tp4Id, setTp4Id] = useState<string>('');
+  const [penilaianSubTab, setPenilaianSubTab] = useState<'input_nilai' | 'bank_tp'>('input_nilai');
+  const activeGradingGrade = useMemo(() => {
+    const m = String(selectedGradeClass || '').match(/\d+/);
+    return m ? m[0] : '7';
+  }, [selectedGradeClass]);
+  const [showAddSharedTpModal, setShowAddSharedTpModal] = useState<boolean>(false);
+  const [tpFilledBy, setTpFilledBy] = useState<string>('');
+  const [tpFilledAt, setTpFilledAt] = useState<string>('');
+  const [tpEditedBy, setTpEditedBy] = useState<string>('');
+  const [tpEditedAt, setTpEditedAt] = useState<string>('');
+  const [tpEditedByRole, setTpEditedByRole] = useState<string>('');
+  const [savedTpDescriptions, setSavedTpDescriptions] = useState<Record<string, { tp1Name?: string; tp2Name?: string; tp3Name?: string; tp4Name?: string; isLocked?: boolean; filledBy?: string; filledAt?: string; editedBy?: string; editedAt?: string; editedByRole?: string }>>({});
+  const [isSavingTp, setIsSavingTp] = useState<boolean>(false);
+
+  // Handle selecting a TP from Bank TP Bersama (one shared source, sets relation ID & title)
+  const handleSelectSharedTp = (tp: SharedLearningObjective, slot: 1 | 2 | 3 | 4) => {
+    if (slot === 1) {
+      setTp1InputName(tp.title);
+      setTp1Id(tp.id);
+    } else if (slot === 2) {
+      setTp2InputName(tp.title);
+      setTp2Id(tp.id);
+    } else if (slot === 3) {
+      setTp3InputName(tp.title);
+      setTp3Id(tp.id);
+    } else if (slot === 4) {
+      setTp4InputName(tp.title);
+      setTp4Id(tp.id);
+    }
+    setFeedback({
+      type: 'success',
+      text: `🎉 Tujuan Pembelajaran ${slot} berhasil dihubungkan ke Bank TP [${tp.code}]!`
+    });
+  };
+
+  const handleAutoFillAllTpsFromJournals = () => {
+    const norm = (s?: string) => (s || '').toLowerCase().trim();
+    const sourceJournals = allJournals.length > 0 ? allJournals : journals;
+    let relevant = sourceJournals.filter(j => {
+      const matchSubj = selectedSubject ? norm(j.subject) === norm(selectedSubject) : true;
+      const matchClass = selectedGradeClass ? norm(j.className) === norm(selectedGradeClass) : true;
+      return matchSubj && matchClass;
+    });
+
+    if (relevant.length === 0) {
+      relevant = sourceJournals.filter(j => {
+        return selectedSubject ? norm(j.subject) === norm(selectedSubject) : true;
+      });
+    }
+
+    // Sort chronological: oldest to newest meeting
+    const sorted = [...relevant].sort((a, b) => {
+      const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return (Number(a.pertemuanKe) || 0) - (Number(b.pertemuanKe) || 0);
+    });
+
+    if (sorted.length === 0) {
+      setFeedback({
+        type: 'error',
+        text: `Belum ada Jurnal Pembelajaran yang diisi untuk Mata Pelajaran ${selectedSubject}. Anda dapat mengisi judul TP secara manual atau memilih lewat tombol "Link Jurnal" di tiap kolom TP.`
+      });
+      return;
+    }
+
+    let filledCount = 0;
+    if (sorted[0]) {
+      setTp1InputName(sorted[0].tujuanPembelajaran || sorted[0].topic || tp1InputName);
+      filledCount++;
+    }
+    if (sorted[1]) {
+      setTp2InputName(sorted[1].tujuanPembelajaran || sorted[1].topic || '');
+      filledCount++;
+    }
+    if (sorted[2]) {
+      setTp3InputName(sorted[2].tujuanPembelajaran || sorted[2].topic || '');
+      filledCount++;
+    }
+    if (sorted[3]) {
+      setTp4InputName(sorted[3].tujuanPembelajaran || sorted[3].topic || '');
+      filledCount++;
+    }
+
+    setFeedback({
+      type: 'success',
+      text: `🎉 Berhasil mengambil ${filledCount} Tujuan Pembelajaran (TP) secara otomatis dari Jurnal Pembelajaran ${selectedSubject}!`
+    });
+  };
+
+  // Fungsi pengambilan data deskripsi TP dari server (terhubung antar kelas 1 tingkat)
+  const fetchTpDescriptions = async () => {
+    try {
+      const res = await fetch('/api/tp-descriptions');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.descriptions) {
+          setSavedTpDescriptions(data.descriptions);
+        }
+      }
+    } catch (e) {
+      console.warn("Gagal mengambil deskripsi TP:", e);
+    }
+  };
 
   useEffect(() => {
-    if (currentSubjectDefaultTps) {
-      setTp1InputName(currentSubjectDefaultTps[0] || '');
-      setTp2InputName(currentSubjectDefaultTps[1] || '');
-      setTp3InputName(currentSubjectDefaultTps[2] || '');
+    fetchTpDescriptions();
+  }, []);
+
+  // Simpan deskripsi TP secara mandiri untuk mapel yang aktif & KUNCI serumpun tingkat
+  const handleSaveTpDescriptions = async () => {
+    if (!selectedSubject) {
+      setFeedback({ type: 'error', text: 'Pilih mata pelajaran terlebih dahulu.' });
+      return;
     }
-  }, [currentSubjectDefaultTps]);
+    setIsSavingTp(true);
+    try {
+      // Ekstrak tingkat kelas (misal "7-A" -> "7")
+      const m = String(selectedGradeClass || '').match(/\d+/);
+      const gradeLevel = m ? m[0] : '7';
+      const teacherName = currentTeacher?.name || 'Guru Mata Pelajaran';
+
+      const res = await fetch('/api/tp-descriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: selectedSubject,
+          className: selectedGradeClass,
+          gradeLevel,
+          semester: selectedSemesterGrading,
+          academicYear: selectedYearGrading,
+          tp1Name: tp1InputName,
+          tp2Name: tp2InputName,
+          tp3Name: tp3InputName,
+          tp4Name: tp4InputName,
+          isLocked: false,
+          filledBy: tpFilledBy || teacherName,
+          filledByRole: `Guru ${selectedSubject}`,
+          editedBy: teacherName,
+          editedByRole: `Guru ${selectedSubject}`
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const subKey = (selectedSubject || '').trim().toLowerCase();
+        const classKey = (selectedGradeClass || '').trim().toLowerCase();
+        const semKey = (selectedSemesterGrading || 'ganjil').trim().toLowerCase();
+        const yearKey = (selectedYearGrading || '2026/2027').trim().toLowerCase();
+        const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
+        const levelKey = `tingkat_${gradeLevel}_${subKey}`;
+        const nowIso = new Date().toISOString();
+        
+        const updated = {
+          tp1Name: tp1InputName,
+          tp2Name: tp2InputName,
+          tp3Name: tp3InputName,
+          tp4Name: tp4InputName,
+          isLocked: false,
+          filledBy: tpFilledBy || teacherName,
+          filledAt: tpFilledAt || nowIso,
+          editedBy: teacherName,
+          editedAt: nowIso,
+          editedByRole: `Guru ${selectedSubject}`
+        };
+
+        setSavedTpDescriptions(prev => ({
+          ...prev,
+          [fullKey]: updated,
+          [subKey]: updated,
+          [levelKey]: updated
+        }));
+
+        if (!tpFilledBy) setTpFilledBy(teacherName);
+        if (!tpFilledAt) setTpFilledAt(nowIso);
+        setTpEditedBy(teacherName);
+        setTpEditedAt(nowIso);
+        setTpEditedByRole(`Guru ${selectedSubject}`);
+
+        setFeedback({
+          type: 'success',
+          text: `Deskripsi TP untuk mapel ${selectedSubject} tingkat ${gradeLevel} berhasil disimpan dan otomatis terhubung ke seluruh kelas tingkat ${gradeLevel}!`
+        });
+        fetchAssessments();
+        fetchTpDescriptions();
+      } else {
+        setFeedback({ type: 'error', text: 'Gagal menyimpan deskripsi TP ke server.' });
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Terjadi kesalahan sistem saat menyimpan TP.' });
+    } finally {
+      setIsSavingTp(false);
+    }
+  };
+
+  // Saat berpindah mata pelajaran / kelas:
+  // TP otomatis berganti sesuai yang tersimpan untuk mapel tersebut (atau kosong jika belum diisi),
+  // dan jika kembali ke mapel yang sudah disimpan, otomatis terisi kembali sesuai simpanan awal.
+  useEffect(() => {
+    if (!selectedSubject) {
+      setTp1InputName('');
+      setTp2InputName('');
+      setTp3InputName('');
+      setTp4InputName('');
+      return;
+    }
+
+    const subKey = (selectedSubject || '').trim().toLowerCase();
+    const classKey = (selectedGradeClass || '').trim().toLowerCase();
+    const semKey = (selectedSemesterGrading || 'ganjil').trim().toLowerCase();
+    const yearKey = (selectedYearGrading || '2026/2027').trim().toLowerCase();
+    const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
+
+    // Ekstrak tingkat kelas untuk pencocokan serumpun tingkat (misal "7-A" -> "7")
+    const m = String(selectedGradeClass || '').match(/\d+/);
+    const gradeLevel = m ? m[0] : '7';
+    const levelKey = `tingkat_${gradeLevel}_${subKey}`;
+
+    // 1. Cek dari savedTpDescriptions (tingkat kelas serumpun, spesifik kelas, atau umum mapel)
+    const savedDesc = savedTpDescriptions[levelKey] || savedTpDescriptions[fullKey] || savedTpDescriptions[subKey];
+    if (savedDesc && (savedDesc.tp1Name || savedDesc.tp2Name || savedDesc.tp3Name || savedDesc.tp4Name)) {
+      setTp1InputName(savedDesc.tp1Name || '');
+      setTp2InputName(savedDesc.tp2Name || '');
+      setTp3InputName(savedDesc.tp3Name || '');
+      setTp4InputName(savedDesc.tp4Name || '');
+      setTpFilledBy(savedDesc.filledBy || '');
+      setTpFilledAt(savedDesc.filledAt || '');
+      setTpEditedBy(savedDesc.editedBy || '');
+      setTpEditedAt(savedDesc.editedAt || '');
+      setTpEditedByRole(savedDesc.editedByRole || '');
+      return;
+    }
+
+    // 2. Cek dari merdekaAssessments yang sudah tersimpan di database pada tingkat yang sama
+    const matchedAssGrade = merdekaAssessments.find(a => 
+      matchSubject(a.subject, selectedSubject) &&
+      (a.className || '').includes(gradeLevel) &&
+      (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
+    );
+
+    const matchedAss = matchedAssGrade || merdekaAssessments.find(a => 
+      matchSubject(a.subject, selectedSubject) &&
+      (!selectedGradeClass || (a.className || '').trim().toLowerCase() === classKey) &&
+      (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
+    ) || merdekaAssessments.find(a => 
+      matchSubject(a.subject, selectedSubject) &&
+      (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
+    );
+
+    if (matchedAss && (matchedAss.tp1Name || matchedAss.tp2Name || matchedAss.tp3Name || matchedAss.tp4Name)) {
+      setTp1InputName(matchedAss.tp1Name || '');
+      setTp2InputName(matchedAss.tp2Name || '');
+      setTp3InputName(matchedAss.tp3Name || '');
+      setTp4InputName(matchedAss.tp4Name || '');
+      setTp1Id(matchedAss.tp1Id || '');
+      setTp2Id(matchedAss.tp2Id || '');
+      setTp3Id(matchedAss.tp3Id || '');
+      setTp4Id(matchedAss.tp4Id || '');
+      setTpFilledBy(matchedAss.teacherName || 'Guru Mata Pelajaran');
+      setTpEditedBy('');
+      setTpEditedAt('');
+      setTpEditedByRole('');
+      return;
+    }
+
+    // 3. Jika belum pernah disimpan untuk mapel ini, otomatis kosongkan agar guru dapat mengisinya
+    setTp1InputName('');
+    setTp2InputName('');
+    setTp3InputName('');
+    setTp4InputName('');
+    setTp1Id('');
+    setTp2Id('');
+    setTp3Id('');
+    setTp4Id('');
+    setTpFilledBy('');
+    setTpFilledAt('');
+    setTpEditedBy('');
+    setTpEditedAt('');
+    setTpEditedByRole('');
+  }, [selectedSubject, selectedGradeClass, selectedSemesterGrading, selectedYearGrading, savedTpDescriptions, merdekaAssessments]);
 
   const [gradeInputMap, setGradeInputMap] = useState<Record<string, {
-    tp1Grade: string;
-    tp2Grade: string;
-    tp3Grade: string;
-    nilaiSumatifLM: string;
-    nilaiSAS: string;
-    deskripsiCapaian: string;
+    tp1Tugas1: string;
+    tp1Uh: string;
+
+    tp2Tugas1: string;
+    tp2Uh: string;
+
+    tp3Tugas1: string;
+    tp3Uh: string;
+
+    tp4Tugas1: string;
+    tp4Uh: string;
+
+    // legacy / computed
+    tp1Grade?: string;
+    tp2Grade?: string;
+    tp3Grade?: string;
+    tp4Grade?: string;
+    nilaiSumatifLM?: string;
+    nilaiSAS?: string;
+    kokurikuler?: string;
+    pts?: string;
+    pas?: string;
+    deskripsiCapaian?: string;
   }>>({});
 
+  // Anti-Wipe Protection & Unsaved Manual Grade Tracking
+  const dirtyStudentsRef = useRef<Set<string>>(new Set());
+  const lastGradingScopeRef = useRef<string>('');
+  const [hasUnsavedGrades, setHasUnsavedGrades] = useState<boolean>(false);
+  const [unsavedCount, setUnsavedCount] = useState<number>(0);
+
+  // Warn teacher before closing/leaving page if there are unsaved grades
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedGrades) {
+        e.preventDefault();
+        e.returnValue = 'Ada nilai siswa yang belum disimpan ke server. Yakin ingin meninggalkan halaman?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedGrades]);
+
   const [showExcelModal, setShowExcelModal] = useState<boolean>(false);
+  const [showPrintGradePdfModal, setShowPrintGradePdfModal] = useState<boolean>(false);
   const [excelPasteContent, setExcelPasteContent] = useState<string>('');
   const [excelParseError, setExcelParseError] = useState<string | null>(null);
   const [excelParsedPreview, setExcelParsedPreview] = useState<any[]>([]);
@@ -257,9 +698,13 @@ export default function SubjectTeacherPanel({
   const availableClasses = useMemo(() => {
     const classesSet = new Set<string>();
     students.forEach(s => {
-      if (s.class) classesSet.add(s.class.trim().toUpperCase());
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      if (!isMut && !isLulus && s.class) {
+        classesSet.add(s.class.trim().toUpperCase());
+      }
     });
-    return Array.from(classesSet).sort();
+    return Array.from(classesSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [students]);
 
   useEffect(() => {
@@ -270,21 +715,158 @@ export default function SubjectTeacherPanel({
 
   // If no class is selected yet, default to the first available class
   useEffect(() => {
-    if (!selectedClass && availableClasses.length > 0) {
+    if (!selectedClass && availableClasses.length > 0 && teacherSchedules.length === 0) {
       setSelectedClass(availableClasses[0]);
     }
   }, [availableClasses, selectedClass]);
 
+  // Filter class schedules created in Waka Kurikulum for this current teacher
+  const teacherSchedules = useMemo(() => {
+    if (!classSchedules || classSchedules.length === 0) return [];
+    const cId = currentTeacher?.id ? String(currentTeacher.id).trim().toLowerCase() : '';
+    const cName = currentTeacher?.name ? currentTeacher.name.trim().toLowerCase() : '';
+    return classSchedules.filter(s => {
+      const tId = s.teacherId ? String(s.teacherId).trim().toLowerCase() : '';
+      const tName = s.teacherName ? s.teacherName.trim().toLowerCase() : '';
+      return (cId && tId === cId) || (cName && tName === cName);
+    });
+  }, [classSchedules, currentTeacher]);
+
+  // Modul Penilaian: Hanya tampilkan mapel yang diampu dan kelas yang diajar saja sesuai jadwal pelajaran / monitoring jam mengajar
+  const allowedSubjects = useMemo(() => {
+    const set = new Set<string>();
+    const seenNormalized = new Set<string>();
+
+    const addSubject = (rawSubj?: string) => {
+      if (!rawSubj || !rawSubj.trim()) return;
+      const sub = rawSubj.trim();
+      const lower = sub.toLowerCase();
+      if (lower.includes('bimbingan wali') || lower.includes('upacara') || lower.includes('senam') || lower.includes('apel')) {
+        return;
+      }
+      const canonical = toMasterSubjectName(sub, masterCurriculumSubjects);
+      const normKey = normalizeSubject(canonical).toLowerCase();
+      if (!seenNormalized.has(normKey)) {
+        seenNormalized.add(normKey);
+        set.add(canonical);
+      }
+    };
+
+    teacherSchedules.forEach(s => {
+      addSubject(s.subject);
+    });
+
+    if (currentTeacher?.subject) {
+      addSubject(currentTeacher.subject);
+    }
+
+    if ((currentTeacher as any)?.subjects && Array.isArray((currentTeacher as any).subjects)) {
+      (currentTeacher as any).subjects.forEach((s: string) => {
+        addSubject(s);
+      });
+    }
+
+    const arr = Array.from(set);
+    if (arr.length > 0) return arr.sort((a, b) => a.localeCompare(b));
+    return currentTeacher?.subject ? [toMasterSubjectName(currentTeacher.subject, masterCurriculumSubjects)] : ['Matematika'];
+  }, [teacherSchedules, currentTeacher, masterCurriculumSubjects]);
+
+  const allowedClasses = useMemo(() => {
+    const set = new Set<string>();
+    teacherSchedules.forEach(s => {
+      if (s.className && s.className.trim()) {
+        if (!selectedSubject || isSameSubject(s.subject, selectedSubject)) {
+          set.add(s.className.trim());
+        }
+      }
+    });
+    if (set.size === 0) {
+      teacherSchedules.forEach(s => {
+        if (s.className && s.className.trim()) set.add(s.className.trim());
+      });
+    }
+    const arr = Array.from(set);
+    if (arr.length > 0) {
+      return arr.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    }
+    return availableClasses;
+  }, [teacherSchedules, selectedSubject, availableClasses]);
+
+  // Otomatis sinkronisasi selectedSubject & selectedGradeClass jika di luar jadwal yang diampu
+  useEffect(() => {
+    if (allowedSubjects.length > 0 && !allowedSubjects.some(s => isSameSubject(s, selectedSubject))) {
+      setSelectedSubject(allowedSubjects[0]);
+    }
+  }, [allowedSubjects, selectedSubject]);
+
+  useEffect(() => {
+    if (allowedClasses.length > 0 && !allowedClasses.includes(selectedGradeClass)) {
+      setSelectedGradeClass(allowedClasses[0]);
+    }
+  }, [allowedClasses, selectedGradeClass]);
+
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string>('');
+
+  const getIndonesianDay = (dateStr: string) => {
+    if (!dateStr) return 'Senin';
+    const d = new Date(dateStr);
+    const days: Array<'Minggu' | 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu'> = [
+      'Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'
+    ];
+    return days[d.getDay()] || 'Senin';
+  };
+
+  // Sync class, jamKe, and alokasiWaktu automatically based on schedule from Waka Kurikulum
+  useEffect(() => {
+    if (teacherSchedules.length > 0) {
+      const dayOfWeek = getIndonesianDay(selectedDate);
+      const match = teacherSchedules.find(s => s.day === dayOfWeek) || teacherSchedules[0];
+      if (match) {
+        setSelectedScheduleId(match.id);
+        setSelectedClass(match.className);
+        setJamKe(match.jamKe || '1 - 2');
+        setAlokasiWaktu(match.alokasiWaktu ? match.alokasiWaktu.replace(/[^0-9]/g, '') || '2' : '2');
+      }
+    }
+  }, [teacherSchedules, selectedDate]);
+
+  // Auto calculate Pertemuan Ke based on existing journals count for this teacher & selected class
+  useEffect(() => {
+    if (selectedClass) {
+      const prevJournals = journals.filter(j => 
+        j.className?.trim().toUpperCase() === selectedClass.trim().toUpperCase() &&
+        (j.teacherId === currentTeacher?.id || (j.teacherName && j.teacherName === currentTeacher?.name))
+      );
+      setPertemuanKe(String(prevJournals.length + 1));
+    } else {
+      setPertemuanKe('1');
+    }
+  }, [selectedClass, journals, currentTeacher]);
+
+  const handleScheduleSelect = (schedId: string) => {
+    setSelectedScheduleId(schedId);
+    const found = teacherSchedules.find(s => s.id === schedId);
+    if (found) {
+      setSelectedClass(found.className);
+      setJamKe(found.jamKe || '1 - 2');
+      setAlokasiWaktu(found.alokasiWaktu ? found.alokasiWaktu.replace(/[^0-9]/g, '') || '2' : '2');
+    }
+  };
+
   const filteredJournals = useMemo(() => {
-    let list = journals;
+    let list = Array.isArray(journals) ? journals : [];
     if (startDate) {
-      list = list.filter(journal => journal.date >= startDate);
+      list = list.filter(journal => journal.date && journal.date >= startDate);
     }
     if (endDate) {
-      list = list.filter(journal => journal.date <= endDate);
+      list = list.filter(journal => journal.date && journal.date <= endDate);
     }
-    // Sort chronological (oldest to newest) for school logs printable order
-    return [...list].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // Sort chronological (oldest to newest) for school logs printable order (No. 1 is earliest date)
+    return [...list].sort((a, b) => {
+      const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+      const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+      return (isNaN(timeA) ? 0 : timeA) - (isNaN(timeB) ? 0 : timeB);
+    });
   }, [journals, startDate, endDate]);
 
   // Load journals history
@@ -293,15 +875,147 @@ export default function SubjectTeacherPanel({
     try {
       const res = await fetch('/api/teaching-journals');
       if (res.ok) {
-        const data: TeachingJournal[] = await res.json();
-        // Filter journals belonging to current teacher
-        const filtered = data.filter(j => j.teacherId === currentTeacher.id);
+        const rawData = await res.json();
+        const data: TeachingJournal[] = Array.isArray(rawData) ? rawData : [];
+        const normalized = data.map((j: any) => ({
+          ...j,
+          attendance: Array.isArray(j.attendance)
+            ? j.attendance
+            : Array.isArray(j.attendanceData)
+              ? j.attendanceData
+              : []
+        }));
+        setAllJournals(normalized);
+        // Filter journals belonging to current teacher (by teacherId, teacherName, or username)
+        const cName = currentTeacher?.name ? currentTeacher.name.trim().toLowerCase() : '';
+        const cUser = (currentTeacher as any)?.username ? (currentTeacher as any).username.trim().toLowerCase() : '';
+        const cId = currentTeacher?.id;
+        const filtered = normalized.filter(j => {
+          if (cId && j.teacherId === cId) return true;
+          if (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName) return true;
+          if (cUser && (j as any).username && (j as any).username.trim().toLowerCase() === cUser) return true;
+          return false;
+        });
         setJournals(filtered);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Gagal mengambil data riwayat jurnal:", err);
     } finally {
       setLoadingJournals(false);
+    }
+  };
+
+  const handleOpenEditModal = (journal: any) => {
+    setEditingJournal(journal);
+    setEditTopic(journal.topic || '');
+    setEditNotes(journal.notes || '');
+    setEditDate(journal.date || '');
+    setEditFase(journal.fase || 'D');
+    setEditSemester(journal.semester || getSemesterFromDate(journal.date));
+
+    const cleanPertemuan = journal.pertemuanKe ? String(journal.pertemuanKe).replace(/\D/g, '') : '';
+    const cleanJam = journal.jamKe ? String(journal.jamKe) : '';
+    const cleanAlokasi = journal.alokasiWaktu ? String(journal.alokasiWaktu).replace(/\D/g, '') : '2';
+
+    setEditPertemuanKe(cleanPertemuan);
+    setEditJamKe(cleanJam);
+    setEditAlokasiWaktu(cleanAlokasi);
+
+    setEditTujuanPembelajaran(journal.tujuanPembelajaran || '');
+    setEditPencapaianKktp(journal.pencapaianKktp || 'Tercapai');
+
+    const statusMap: Record<string, { status: string; notes: string }> = {};
+    const attList = Array.isArray(journal.attendance) 
+      ? journal.attendance 
+      : Array.isArray(journal.attendanceData) 
+        ? journal.attendanceData 
+        : [];
+    attList.forEach((att: any) => {
+      statusMap[att.studentId] = {
+        status: att.status || 'Hadir',
+        notes: att.notes || ''
+      };
+    });
+    setEditDailyStatusMap(statusMap);
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateJournal = async () => {
+    if (!editingJournal) return;
+    if (!editTopic.trim()) {
+      alert("Materi KBM / Topik Pembelajaran harus diisi.");
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const journalClassStudents = students
+        .filter(s => s.class && s.class.toLowerCase() === editingJournal.className.toLowerCase())
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const attendanceList = journalClassStudents.map(student => {
+        const studentRecord = editDailyStatusMap[student.id] || { status: 'Hadir', notes: '' };
+        return {
+          studentId: student.id,
+          studentName: student.name,
+          status: studentRecord.status,
+          notes: studentRecord.notes
+        };
+      });
+
+      const response = await fetch(`/api/teaching-journals/${editingJournal.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: editTopic.trim(),
+          notes: editNotes.trim(),
+          date: editDate,
+          fase: editFase,
+          semester: editSemester,
+          alokasiWaktu: editAlokasiWaktu,
+          jamKe: editJamKe,
+          pertemuanKe: editPertemuanKe,
+          tujuanPembelajaran: editTujuanPembelajaran,
+          pencapaianKktp: editPencapaianKktp,
+          attendance: attendanceList
+        })
+      });
+
+      if (response.ok) {
+        setIsEditModalOpen(false);
+        setEditingJournal(null);
+        fetchJournals();
+        if (onRefresh) onRefresh();
+        alert("Jurnal KBM berhasil diperbarui!");
+      } else {
+        const errData = await response.json();
+        alert(errData.error || "Gagal memperbarui Jurnal Pembelajaran.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Gagal terhubung dengan server.");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleDeleteJournalSubject = async (journalId: string) => {
+    if (!window.confirm("Apakah Anda yakin ingin menghapus jurnal pembelajaran ini beserta seluruh catatan absensi terkait?")) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/teaching-journals/${journalId}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchJournals();
+        if (onRefresh) onRefresh();
+        alert("Jurnal pembelajaran berhasil dihapus.");
+      } else {
+        alert("Gagal menghapus jurnal.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Gagal terhubung dengan server.");
     }
   };
 
@@ -341,45 +1055,56 @@ export default function SubjectTeacherPanel({
     fetchAssessments();
     fetchPrincipalWorkPrograms();
     fetchEvaluations();
-  }, [currentTeacher]);
+  }, [currentTeacher?.id]);
 
   const gradingClassStudents = useMemo(() => {
     if (!selectedGradeClass) return [];
-    return students.filter(s => s.class.trim().toUpperCase() === selectedGradeClass.trim().toUpperCase())
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return students.filter(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      return !isMut && !isLulus && s.class && s.class.trim().toUpperCase() === selectedGradeClass.trim().toUpperCase();
+    }).sort((a, b) => a.name.localeCompare(b.name));
   }, [students, selectedGradeClass]);
 
   useEffect(() => {
-    const newMap: Record<string, {
-      tp1Grade: string;
-      tp2Grade: string;
-      tp3Grade: string;
-      nilaiSumatifLM: string;
-      nilaiSAS: string;
-      deskripsiCapaian: string;
-    }> = {};
+    const newMap: Record<string, any> = {};
 
     gradingClassStudents.forEach(s => {
       const match = merdekaAssessments.find(a => 
         a.studentId === s.id && 
-        matchSubject(a.subject, currentTeacher.subject) && 
-        a.semester === selectedSemesterGrading && 
-        a.academicYear === selectedYearGrading
+        isSameSubject(a.subject, selectedSubject) && 
+        (a.semester || '').toLowerCase() === selectedSemesterGrading.toLowerCase() && 
+        (a.academicYear || '').toLowerCase() === selectedYearGrading.toLowerCase()
       );
       if (match) {
         newMap[s.id] = {
-          tp1Grade: String(match.tp1Grade ?? ''),
-          tp2Grade: match.tp2Grade !== undefined && match.tp2Grade !== null ? String(match.tp2Grade) : '',
-          tp3Grade: match.tp3Grade !== undefined && match.tp3Grade !== null ? String(match.tp3Grade) : '',
+          tp1Tugas1: match.tp1Tugas1 !== undefined && match.tp1Tugas1 !== null ? String(match.tp1Tugas1) : (match.tp1Grade !== undefined ? String(match.tp1Grade) : ''),
+          tp1Uh: match.tp1Uh !== undefined && match.tp1Uh !== null ? String(match.tp1Uh) : '',
+
+          tp2Tugas1: match.tp2Tugas1 !== undefined && match.tp2Tugas1 !== null ? String(match.tp2Tugas1) : (match.tp2Grade !== undefined ? String(match.tp2Grade) : ''),
+          tp2Uh: match.tp2Uh !== undefined && match.tp2Uh !== null ? String(match.tp2Uh) : '',
+
+          tp3Tugas1: match.tp3Tugas1 !== undefined && match.tp3Tugas1 !== null ? String(match.tp3Tugas1) : (match.tp3Grade !== undefined ? String(match.tp3Grade) : ''),
+          tp3Uh: match.tp3Uh !== undefined && match.tp3Uh !== null ? String(match.tp3Uh) : '',
+
+          tp4Tugas1: match.tp4Tugas1 !== undefined && match.tp4Tugas1 !== null ? String(match.tp4Tugas1) : (match.tp4Grade !== undefined ? String(match.tp4Grade) : ''),
+          tp4Uh: match.tp4Uh !== undefined && match.tp4Uh !== null ? String(match.tp4Uh) : '',
+
+          pts: match.nilaiPts !== undefined && match.nilaiPts !== null && Number(match.nilaiPts) > 0 ? String(match.nilaiPts) : '',
+          pas: match.nilaiPas !== undefined && match.nilaiPas !== null && Number(match.nilaiPas) > 0 ? String(match.nilaiPas) : '',
+          kokurikuler: match.nilaiKokurikuler !== undefined && match.nilaiKokurikuler !== null && Number(match.nilaiKokurikuler) > 0 ? String(match.nilaiKokurikuler) : '',
+
           nilaiSumatifLM: String(match.nilaiSumatifLM ?? ''),
           nilaiSAS: String(match.nilaiSAS ?? ''),
           deskripsiCapaian: match.deskripsiCapaian ?? ''
         };
       } else {
         newMap[s.id] = {
-          tp1Grade: '',
-          tp2Grade: '',
-          tp3Grade: '',
+          tp1Tugas1: '', tp1Uh: '',
+          tp2Tugas1: '', tp2Uh: '',
+          tp3Tugas1: '', tp3Uh: '',
+          tp4Tugas1: '', tp4Uh: '',
+          pts: '', pas: '', kokurikuler: '',
           nilaiSumatifLM: '',
           nilaiSAS: '',
           deskripsiCapaian: ''
@@ -387,12 +1112,383 @@ export default function SubjectTeacherPanel({
       }
     });
 
-    setGradeInputMap(newMap);
-  }, [gradingClassStudents, merdekaAssessments, selectedSemesterGrading, selectedYearGrading, currentTeacher.subject]);
+    const currentScopeKey = `${currentTeacher?.id || 'guru'}_${selectedGradeClass}_${selectedSubject}_${selectedSemesterGrading}_${selectedYearGrading}`;
+    const isScopeChange = lastGradingScopeRef.current !== currentScopeKey;
+
+    if (isScopeChange) {
+      lastGradingScopeRef.current = currentScopeKey;
+      let restoredFromDraft = false;
+      try {
+        const rawDraft = localStorage.getItem(`draft_grades_subject_${currentScopeKey}`);
+        if (rawDraft) {
+          const draftObj = JSON.parse(rawDraft);
+          if (draftObj && typeof draftObj === 'object') {
+            gradingClassStudents.forEach(s => {
+              if (draftObj[s.id]) {
+                newMap[s.id] = { ...newMap[s.id], ...draftObj[s.id] };
+                dirtyStudentsRef.current.add(s.id);
+              }
+            });
+            restoredFromDraft = dirtyStudentsRef.current.size > 0;
+          }
+        }
+      } catch (e) {
+        console.warn("Gagal membaca draft lokal guru:", e);
+      }
+
+      if (!restoredFromDraft) {
+        dirtyStudentsRef.current.clear();
+        setHasUnsavedGrades(false);
+        setUnsavedCount(0);
+      } else {
+        setHasUnsavedGrades(true);
+        setUnsavedCount(dirtyStudentsRef.current.size);
+      }
+      setGradeInputMap(newMap);
+    } else {
+      // Background sync, SSE, student array update, or background polling:
+      // CRITICAL: Protect dirty inputs from being wiped out!
+      setGradeInputMap(prev => {
+        const merged: Record<string, any> = { ...newMap };
+        Object.keys(prev).forEach(studId => {
+          if (dirtyStudentsRef.current.has(studId) && prev[studId]) {
+            merged[studId] = { ...newMap[studId], ...prev[studId] };
+          }
+        });
+        return merged;
+      });
+    }
+  }, [gradingClassStudents, merdekaAssessments, selectedSemesterGrading, selectedYearGrading, selectedSubject, currentTeacher?.id]);
 
   function matchSubject(sub1: string, sub2: string): boolean {
-    return (sub1 || '').trim().toLowerCase() === (sub2 || '').trim().toLowerCase();
+    return isSameSubject(sub1, sub2);
   }
+
+  // Download Template Excel Penilaian Format Terbaru (.xlsx & .csv)
+  const handleDownloadExcelTemplate = () => {
+    try {
+      const headers = [
+        "No", "NIS", "Nama Siswa",
+        "TP1_Tugas", "TP1_UH",
+        "TP2_Tugas", "TP2_UH",
+        "TP3_Tugas", "TP3_UH",
+        "TP4_Tugas", "TP4_UH",
+        "Kokurikuler", "PTS", "PAS"
+      ];
+
+      const dataRows = gradingClassStudents.map((st, idx) => [
+        idx + 1,
+        st.nis || st.id || "",
+        st.name || "",
+        "", "",
+        "", "",
+        "", "",
+        "", "",
+        "", "", ""
+      ]);
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+      ws['!cols'] = [
+        { wch: 6 },  // No
+        { wch: 16 }, // NIS
+        { wch: 32 }, // Nama Siswa
+        { wch: 12 }, // TP1_Tugas
+        { wch: 12 }, // TP1_UH
+        { wch: 12 }, // TP2_Tugas
+        { wch: 12 }, // TP2_UH
+        { wch: 12 }, // TP3_Tugas
+        { wch: 12 }, // TP3_UH
+        { wch: 12 }, // TP4_Tugas
+        { wch: 12 }, // TP4_UH
+        { wch: 14 }, // Kokurikuler
+        { wch: 10 }, // PTS
+        { wch: 10 }  // PAS
+      ];
+
+      // Format NIS column as text
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+      for (let R = 1; R <= range.e.r; ++R) {
+        const nisAddr = XLSX.utils.encode_cell({ r: R, c: 1 });
+        if (ws[nisAddr]) {
+          ws[nisAddr].t = 's';
+          ws[nisAddr].z = '@';
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Template Penilaian");
+
+      const safeClass = (selectedGradeClass || 'Kelas').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSubj = (selectedSubject || 'Mapel').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `Template_Penilaian_${safeClass}_${safeSubj}.xlsx`;
+
+      XLSX.writeFile(wb, filename);
+      setFeedback({ type: 'success', text: `📥 Berhasil mengunduh template Excel (.xlsx) resmi untuk Kelas ${selectedGradeClass}!` });
+    } catch (err: any) {
+      console.warn("Fallback to CSV template download:", err);
+      // Fallback CSV download if XLSX writer encounters environment issue
+      const headers = [
+        "No", "NIS", "Nama Siswa",
+        "TP1_Tugas", "TP1_UH",
+        "TP2_Tugas", "TP2_UH",
+        "TP3_Tugas", "TP3_UH",
+        "TP4_Tugas", "TP4_UH",
+        "Kokurikuler", "PTS", "PAS"
+      ];
+      const rows = gradingClassStudents.map((st, idx) => [
+        idx + 1,
+        `"${st.nis || st.id}"`,
+        `"${st.name.replace(/"/g, '""')}"`,
+        "", "", "", "", "", "", "", "", "", "", ""
+      ]);
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Template_Penilaian_${selectedGradeClass}_${(selectedSubject || 'Mapel').replace(/\s+/g, '_')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setFeedback({ type: 'success', text: "Template Excel format CSV berhasil diunduh!" });
+    }
+  };
+
+  // Export Excel Rapi Penilaian Format Terbaru
+  const handleExportExcelRapi = () => {
+    const headers = [
+      "No", "NIS", "Nama Siswa",
+      "TP1_Tugas", "TP1_UH",
+      "TP2_Tugas", "TP2_UH",
+      "TP3_Tugas", "TP3_UH",
+      "TP4_Tugas", "TP4_UH",
+      "Rata_TP", "Kokurikuler", "PTS", "PAS", "Nilai_Akhir_Mapel"
+    ];
+
+    const rows = gradingClassStudents.map((st, idx) => {
+      const inputState = gradeInputMap[st.id] || {
+        tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+        tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+        tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+        tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
+      };
+
+      const calcTp = (t: any, uh: any) => {
+        const n1 = t !== '' && !isNaN(Number(t)) ? Number(t) : null;
+        const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
+        if (n1 === null && n3 === null) return null;
+        if (n1 !== null && n3 !== null) return Math.round((n1 * 0.7) + (n3 * 0.3));
+        if (n1 !== null) return Math.round(n1);
+        if (n3 !== null) return Math.round(n3);
+        return null;
+      };
+
+      const tp1 = calcTp(inputState.tp1Tugas1, inputState.tp1Uh);
+      const tp2 = calcTp(inputState.tp2Tugas1, inputState.tp2Uh);
+      const tp3 = calcTp(inputState.tp3Tugas1, inputState.tp3Uh);
+      const tp4 = calcTp(inputState.tp4Tugas1, inputState.tp4Uh);
+
+      const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
+      const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
+
+      const matchedAssessment = merdekaAssessments.find(a =>
+        a.studentId === st.id &&
+        isSameSubject(a.subject, selectedSubject) &&
+        a.semester === selectedSemesterGrading &&
+        a.academicYear === selectedYearGrading
+      );
+
+      const kokuVal = (inputState as any).kokurikuler ? Number((inputState as any).kokurikuler) : (matchedAssessment?.nilaiKokurikuler ?? 0);
+      const ptsVal = (inputState as any).pts ? Number((inputState as any).pts) : (matchedAssessment?.nilaiPts ?? 0);
+      const pasVal = (inputState as any).pas ? Number((inputState as any).pas) : (matchedAssessment?.nilaiPas ?? 0);
+
+      const finalMapel = avgTp !== null
+        ? Math.round(((avgTp * 3) + kokuVal + ptsVal + pasVal) / 6)
+        : null;
+
+      return [
+        idx + 1,
+        `"${st.nis || st.id}"`,
+        `"${st.name.replace(/"/g, '""')}"`,
+        inputState.tp1Tugas1 || "", inputState.tp1Uh || "",
+        inputState.tp2Tugas1 || "", inputState.tp2Uh || "",
+        inputState.tp3Tugas1 || "", inputState.tp3Uh || "",
+        inputState.tp4Tugas1 || "", inputState.tp4Uh || "",
+        avgTp ?? "",
+        kokuVal || "",
+        ptsVal || "",
+        pasVal || "",
+        finalMapel ?? ""
+      ];
+    });
+
+    const titleRow = [`"REKAP NILAI PENILAIAN KURIKULUM MERDEKA TERBARU"`];
+    const metaRows = [
+      [`"Mata Pelajaran: ${selectedSubject}"`],
+      [`"Kelas: ${selectedGradeClass}"`],
+      [`"Semester: ${selectedSemesterGrading}"`],
+      [`"Tahun Ajaran: ${selectedYearGrading}"`],
+      []
+    ];
+
+    const csvContent = "\uFEFF" + [
+      ...titleRow,
+      ...metaRows.map(r => r.join(",")),
+      headers.join(","),
+      ...rows.map(r => r.join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Export_Nilai_Rapi_${selectedGradeClass}_${(selectedSubject || 'Mapel').replace(/\s+/g, '_')}_${selectedSemesterGrading}_${selectedYearGrading.replace('/', '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setFeedback({ type: 'success', text: "Data nilai berhasil diexport ke Excel dengan rapi!" });
+  };
+
+  const processSubjectExcelMatrix = (matrix: any[][]) => {
+    if (!matrix || matrix.length === 0) {
+      setExcelParseError("Tidak ada data dalam berkas atau teks yang diinput.");
+      setExcelParsedPreview([]);
+      return;
+    }
+
+    // 1. Detect header row by scanning for keywords: nis, no, nama, tp
+    let headerIndex = -1;
+    for (let r = 0; r < Math.min(matrix.length, 10); r++) {
+      const rowStr = matrix[r].map(c => String(c ?? '').toLowerCase()).join(" ");
+      if ((rowStr.includes("nis") || rowStr.includes("nama")) && (rowStr.includes("tp") || rowStr.includes("nilai") || rowStr.includes("pts") || rowStr.includes("no"))) {
+        headerIndex = r;
+        break;
+      }
+    }
+
+    const rowsToProcess = headerIndex !== -1 ? matrix.slice(headerIndex + 1) : matrix;
+    const parsedData: any[] = [];
+
+    rowsToProcess.forEach((rawRow) => {
+      const cells = rawRow.map(c => String(c ?? '').trim().replace(/^["']|["']$/g, ''));
+      if (cells.length < 2 || cells.every(c => c === '')) return;
+
+      // Skip header row if repeated
+      if (
+        cells[0].toLowerCase().includes("nis") || 
+        cells[0].toLowerCase().includes("no") || 
+        cells[1]?.toLowerCase().includes("nama") || 
+        cells[1]?.toLowerCase().includes("nis")
+      ) {
+        return;
+      }
+
+      // Check if first column is sequence No (1, 2, 3...)
+      let shift = 0;
+      if (!isNaN(Number(cells[0])) && Number(cells[0]) < 1000 && (cells[1] || '').length >= 2) {
+        shift = 1;
+      }
+
+      const rawNis = cells[shift] || "";
+      const nameInput = cells[shift + 1] || "";
+
+      if (!rawNis && !nameInput) return;
+
+      // Clean string for matching
+      const cleanRawNis = rawNis.replace(/[^a-zA-Z0-9]/g, '');
+      const cleanNameInput = nameInput.toLowerCase().trim();
+
+      const matched = gradingClassStudents.find(s => {
+        const sNis = String(s.nis || '').replace(/[^a-zA-Z0-9]/g, '');
+        const sId = String(s.id || '').replace(/[^a-zA-Z0-9]/g, '');
+        const sName = (s.name || '').toLowerCase().trim();
+
+        if (cleanRawNis && (sNis === cleanRawNis || sId === cleanRawNis)) return true;
+        if (cleanNameInput && (sName === cleanNameInput || sName.includes(cleanNameInput) || cleanNameInput.includes(sName))) return true;
+        return false;
+      }) || students.find(s => {
+        const sNis = String(s.nis || '').replace(/[^a-zA-Z0-9]/g, '');
+        const sId = String(s.id || '').replace(/[^a-zA-Z0-9]/g, '');
+        const sName = (s.name || '').toLowerCase().trim();
+
+        if (cleanRawNis && (sNis === cleanRawNis || sId === cleanRawNis)) return true;
+        if (cleanNameInput && (sName === cleanNameInput || sName.includes(cleanNameInput) || cleanNameInput.includes(sName))) return true;
+        return false;
+      });
+
+      const gradeCells = cells.slice(shift + 2);
+
+      let tp1T1 = "", tp1Uh = "";
+      let tp2T1 = "", tp2Uh = "";
+      let tp3T1 = "", tp3Uh = "";
+      let tp4T1 = "", tp4Uh = "";
+      let kokurikuler = "";
+      let pts = "";
+      let pas = "";
+
+      if (gradeCells.length >= 13) {
+        // Format with Rata_TP: TP1_T, TP1_UH, TP2_T, TP2_UH, TP3_T, TP3_UH, TP4_T, TP4_UH, Rata_TP, Kokurikuler, PTS, PAS
+        tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+        tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+        tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+        tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+        kokurikuler = gradeCells[9] || "";
+        pts = gradeCells[10] || "";
+        pas = gradeCells[11] || "";
+      } else if (gradeCells.length >= 11) {
+        // Standard template format: TP1_Tugas, TP1_UH, TP2_Tugas, TP2_UH, TP3_Tugas, TP3_UH, TP4_Tugas, TP4_UH, Kokurikuler, PTS, PAS
+        tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+        tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+        tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+        tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+        kokurikuler = gradeCells[8] || "";
+        pts = gradeCells[9] || "";
+        pas = gradeCells[10] || "";
+      } else if (gradeCells.length >= 8) {
+        // 8 columns TP: TP1_T, TP1_UH, TP2_T, TP2_UH, TP3_T, TP3_UH, TP4_T, TP4_UH
+        tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+        tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+        tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+        tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+      } else if (gradeCells.length >= 4) {
+        // Simple 4 TP columns (TP1, TP2, TP3, TP4)
+        tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[0] || "";
+        tp2T1 = gradeCells[1] || ""; tp2Uh = gradeCells[1] || "";
+        tp3T1 = gradeCells[2] || ""; tp3Uh = gradeCells[2] || "";
+        tp4T1 = gradeCells[3] || ""; tp4Uh = gradeCells[3] || "";
+        pts = gradeCells[4] || "";
+        pas = gradeCells[5] || "";
+      } else {
+        tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[0] || "";
+        tp2T1 = gradeCells[1] || ""; tp2Uh = gradeCells[1] || "";
+      }
+
+      parsedData.push({
+        studentId: matched?.id,
+        studentName: matched ? matched.name : (nameInput || "Siswa Tidak Ditemukan"),
+        nis: matched?.nis || rawNis || "-",
+        className: matched?.class || selectedGradeClass || "-",
+        matched: !!matched,
+        tp1Tugas1: tp1T1, tp1Uh,
+        tp2Tugas1: tp2T1, tp2Uh,
+        tp3Tugas1: tp3T1, tp3Uh,
+        tp4Tugas1: tp4T1, tp4Uh,
+        kokurikuler, pts, pas
+      });
+    });
+
+    const verifiedMatches = parsedData.filter(d => d.matched);
+    if (parsedData.length === 0) {
+      setExcelParseError("Tidak ada baris data valid yang terdeteksi.");
+      setExcelParsedPreview([]);
+    } else if (verifiedMatches.length === 0) {
+      setExcelParseError("Gagal mencocokkan data baris dengan siswa terdaftar. Pastikan NIS atau Nama sesuai.");
+      setExcelParsedPreview(parsedData);
+    } else {
+      setExcelParsedPreview(parsedData);
+      setExcelParseError(null);
+    }
+  };
 
   const handleImportExcelData = () => {
     if (!excelPasteContent.trim()) {
@@ -401,71 +1497,9 @@ export default function SubjectTeacherPanel({
     }
 
     try {
-      const rows = excelPasteContent.trim().split("\n");
-      const parsedData: any[] = [];
-      
-      rows.forEach((row, idx) => {
-        const cells = row.split(/\t|,/).map(c => c.trim().replace(/^["']|["']$/g, ''));
-        
-        if (idx === 0 && (
-          cells[0].toLowerCase().includes("nis") || 
-          cells[1].toLowerCase().includes("nama") || 
-          (cells[2] && cells[2].toLowerCase().includes("tp")) ||
-          (cells[2] && cells[2].toLowerCase().includes("nilai"))
-        )) {
-          return;
-        }
-
-        const rawNis = cells[0];
-        const nameInput = cells[1];
-        const tp1Str = cells[2];
-        const tp2Str = cells[3] || "";
-        const tp3Str = cells[4] || "";
-        const slmStr = cells[5] || "";
-        const sasStr = cells[6] || "";
-
-        if (!rawNis && !nameInput) return;
-
-        // Try to match student
-        const matched = students.find(s => 
-          (rawNis && s.nis && String(s.nis).trim() === String(rawNis).trim()) || 
-          (nameInput && s.name.toLowerCase() === nameInput.toLowerCase()) ||
-          (nameInput && s.name.toLowerCase().includes(nameInput.toLowerCase()))
-        );
-
-        if (matched) {
-          parsedData.push({
-            studentId: matched.id,
-            studentName: matched.name,
-            nis: matched.nis,
-            className: matched.class,
-            tp1Grade: Number(tp1Str) || 0,
-            tp2Grade: tp2Str !== "" ? Number(tp2Str) : undefined,
-            tp3Grade: tp3Str !== "" ? Number(tp3Str) : undefined,
-            nilaiSumatifLM: Number(slmStr) || 0,
-            nilaiSAS: Number(sasStr) || 0,
-            matched: true
-          });
-        } else {
-          parsedData.push({
-            nis: rawNis || "-",
-            studentName: nameInput || "Siswa Tidak Ditemukan",
-            matched: false,
-            tp1Grade: Number(tp1Str) || 0,
-            nilaiSumatifLM: Number(slmStr) || 0,
-            nilaiSAS: Number(sasStr) || 0
-          });
-        }
-      });
-
-      const verifiedMatches = parsedData.filter(d => d.matched);
-      if (verifiedMatches.length === 0) {
-        setExcelParseError("Gagal mencocokkan data baris dengan siswa terdaftar. Pastikan NIS atau Nama sesuai.");
-        setExcelParsedPreview([]);
-      } else {
-        setExcelParsedPreview(parsedData);
-        setExcelParseError(null);
-      }
+      const rows = excelPasteContent.trim().split(/\r?\n/).filter(r => r.trim().length > 0);
+      const matrix = rows.map(row => row.split(/\t|,/));
+      processSubjectExcelMatrix(matrix);
     } catch (err: any) {
       setExcelParseError("Kesalahan saat memproses data: " + err.message);
     }
@@ -477,54 +1511,96 @@ export default function SubjectTeacherPanel({
 
     excelParsedPreview.forEach(item => {
       if (item.matched && item.studentId) {
+        dirtyStudentsRef.current.add(item.studentId);
         updatedMap[item.studentId] = {
-          tp1Grade: String(item.tp1Grade),
-          tp2Grade: item.tp2Grade !== undefined ? String(item.tp2Grade) : "",
-          tp3Grade: item.tp3Grade !== undefined ? String(item.tp3Grade) : "",
-          nilaiSumatifLM: String(item.nilaiSumatifLM),
-          nilaiSAS: String(item.nilaiSAS),
-          deskripsiCapaian: ""
+          ...(updatedMap[item.studentId] || {}),
+          tp1Tugas1: item.tp1Tugas1 !== undefined ? String(item.tp1Tugas1) : "",
+          tp1Uh: item.tp1Uh !== undefined ? String(item.tp1Uh) : "",
+
+          tp2Tugas1: item.tp2Tugas1 !== undefined ? String(item.tp2Tugas1) : "",
+          tp2Uh: item.tp2Uh !== undefined ? String(item.tp2Uh) : "",
+
+          tp3Tugas1: item.tp3Tugas1 !== undefined ? String(item.tp3Tugas1) : "",
+          tp3Uh: item.tp3Uh !== undefined ? String(item.tp3Uh) : "",
+
+          tp4Tugas1: item.tp4Tugas1 !== undefined ? String(item.tp4Tugas1) : "",
+          tp4Uh: item.tp4Uh !== undefined ? String(item.tp4Uh) : "",
+
+          kokurikuler: item.kokurikuler !== undefined ? String(item.kokurikuler) : "",
+          pts: item.pts !== undefined ? String(item.pts) : "",
+          pas: item.pas !== undefined ? String(item.pas) : ""
         };
         importCount++;
       }
     });
 
     setGradeInputMap(updatedMap);
+    setHasUnsavedGrades(true);
+    setUnsavedCount(dirtyStudentsRef.current.size);
+    try {
+      localStorage.setItem(`draft_grades_subject_${lastGradingScopeRef.current}`, JSON.stringify(updatedMap));
+    } catch (e) {}
     setShowExcelModal(false);
     setExcelPasteContent('');
     setExcelParsedPreview([]);
     setFeedback({
       type: 'success',
-      text: `Berhasil mencocokkan & memuat nilai untuk ${importCount} siswa dari Excel ke tabel.`
+      text: `🎉 Berhasil memuat data nilai (TP1, TP2, TP3, TP4, PTS, PAS) untuk ${importCount} siswa ke tabel penilaian.`
     });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (text) {
+
+    setExcelParseError(null);
+    try {
+      const fileName = file.name.toLowerCase();
+      let matrix: any[][] = [];
+
+      if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' }) as any[][];
+      } else {
+        const text = await file.text();
         setExcelPasteContent(text);
+        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+        const delimiter = lines[0]?.includes('\t') ? '\t' : (lines[0]?.includes(';') ? ';' : ',');
+        matrix = lines.map(line => line.split(delimiter));
       }
-    };
-    reader.readAsText(file);
+
+      processSubjectExcelMatrix(matrix);
+    } catch (err: any) {
+      console.error("Error reading uploaded file:", err);
+      setExcelParseError("Gagal membaca berkas Excel: " + (err.message || err));
+    } finally {
+      e.target.value = '';
+    }
   };
 
   // Class students roster
   const classStudents = useMemo(() => {
     if (!selectedClass) return [];
-    return students.filter(s => s.class.trim().toUpperCase() === selectedClass.trim().toUpperCase())
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return students.filter(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      return !isMut && !isLulus && s.class && s.class.trim().toUpperCase() === selectedClass.trim().toUpperCase();
+    }).sort((a, b) => a.name.localeCompare(b.name));
   }, [students, selectedClass]);
 
   // Pre-fill attendance statuses when selecting a class or changing date, getting default from wali kelas daily attendance
   useEffect(() => {
     if (classStudents.length > 0) {
       const initialMap: Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }> = {};
+      const normDate = (selectedDate || '').substring(0, 10);
       classStudents.forEach(s => {
-        const matchingLog = attendanceLogs.find(log => log.studentId === s.id && log.date === selectedDate);
+        const matchingLog = attendanceLogs.find(log => 
+          (log.studentId === s.id || (s.nis && log.studentId === s.nis)) &&
+          ((log.date || '').substring(0, 10) === normDate)
+        );
         initialMap[s.id] = { 
           status: matchingLog ? matchingLog.status : 'Hadir', 
           notes: matchingLog && matchingLog.notes ? matchingLog.notes : ''
@@ -661,6 +1737,22 @@ export default function SubjectTeacherPanel({
     );
   }, [classStudents, searchQuery]);
 
+  if (!currentTeacher) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mb-3" />
+        <h3 className="font-extrabold text-sm text-slate-800">Menyinkronkan Profil Guru Mapel...</h3>
+        <p className="text-xs text-slate-500 mt-1 max-w-sm">Mohon tunggu sebentar, profil dan jadwal mengajar Anda sedang dimuat dari server.</p>
+        <button
+          onClick={onLogout}
+          className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+        >
+          Kembali ke Halaman Masuk
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div id="subject-teacher-panel-container" className="flex flex-col gap-6 pb-24 md:pb-0">
       
@@ -761,6 +1853,17 @@ export default function SubjectTeacherPanel({
           <span>Isi Jurnal & Absensi</span>
         </button>
         <button
+          onClick={() => { setActiveSubTab('jadwal'); setFeedback(null); }}
+          className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 ${
+            activeSubTab === 'jadwal'
+              ? 'bg-indigo-600 text-white border border-indigo-600 shadow-sm font-black'
+              : 'text-indigo-600 bg-indigo-50/60 hover:bg-indigo-100/60'
+          }`}
+        >
+          <Calendar size={13} />
+          <span>Jadwal Mengajar</span>
+        </button>
+        <button
           onClick={() => { setActiveSubTab('history'); setFeedback(null); }}
           className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 ${
             activeSubTab === 'history'
@@ -846,109 +1949,163 @@ export default function SubjectTeacherPanel({
           {/* Left Column: Journal form details */}
           <div className="lg:col-span-4 flex flex-col gap-6 text-left">
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-col gap-4">
-              <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-3">
-                <FileText size={16} className="text-indigo-600" />
-                Jurnal Pembelajaran (KBM)
+              <h3 className="font-extrabold text-slate-900 text-sm flex items-center justify-between border-b border-slate-100 pb-3">
+                <span className="flex items-center gap-1.5">
+                  <FileText size={16} className="text-indigo-600" />
+                  <span>Jurnal Pembelajaran (KBM)</span>
+                </span>
+                {teacherSchedules.length > 0 && (
+                  <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Sparkles size={11} className="text-indigo-600" /> Waka Kurikulum
+                  </span>
+                )}
               </h3>
 
+              {/* Sesi Jadwal dari Waka Kurikulum (jika tersedia) */}
+              {teacherSchedules.length > 0 && (
+                <div className="flex flex-col gap-1.5 bg-indigo-50/60 p-3 rounded-2xl border border-indigo-100">
+                  <label className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                    <Calendar size={13} className="text-indigo-600" />
+                    <span>Jadwal Mengajar (Waka Kurikulum)</span>
+                  </label>
+                  <select
+                    value={selectedScheduleId}
+                    onChange={(e) => handleScheduleSelect(e.target.value)}
+                    className="px-3 py-2 border border-indigo-200 rounded-xl font-extrabold text-indigo-950 text-xs bg-white focus:outline-none focus:border-indigo-600 cursor-pointer shadow-2xs"
+                  >
+                    {teacherSchedules.map(s => (
+                      <option key={s.id} value={s.id}>
+                        [{s.day}] Kelas {s.className} - Jam {s.jamKe} ({s.subject})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* 1. KELAS */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-black text-slate-650 flex items-center gap-1">
-                  <span>Pilih Kelas</span>
-                  <span className="text-red-500 font-bold">*</span>
+                <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <span>Kelas</span>
+                    <span className="text-red-500 font-bold">*</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Sparkles size={10} /> Otomatis (Dapat Diubah)
+                  </span>
                 </label>
                 <select
                   value={selectedClass}
                   onChange={(e) => setSelectedClass(e.target.value)}
-                  className="px-3.5 py-2.5 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-slate-800 text-xs bg-white shadow-xs cursor-pointer"
+                  className="px-3.5 py-2.5 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-indigo-600 shadow-2xs cursor-pointer"
                 >
-                  {availableClasses.length === 0 ? (
-                    <option value="">Tidak ada kelas</option>
-                  ) : (
-                    availableClasses.map(c => (
-                      <option key={c} value={c}>Kelas {c}</option>
-                    ))
+                  {availableClasses.map(c => (
+                    <option key={c} value={c}>Kelas {c}</option>
+                  ))}
+                  {!availableClasses.includes(selectedClass) && selectedClass && (
+                    <option value={selectedClass}>Kelas {selectedClass}</option>
                   )}
                 </select>
               </div>
 
+              {/* Tanggal Pembelajaran */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-black text-slate-650 flex items-center gap-1">
-                  <span>Tanggal Pembelajaran</span>
-                  <span className="text-red-500 font-bold">*</span>
+                <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <span>Tanggal Pembelajaran</span>
+                    <span className="text-red-500 font-bold">*</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Sparkles size={10} /> Otomatis (Dapat Diubah)
+                  </span>
                 </label>
                 <input
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="px-3.5 py-2.5 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-slate-800 text-xs bg-white shadow-xs"
+                  className="px-3.5 py-2.5 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-indigo-600 shadow-2xs cursor-pointer"
                 />
               </div>
 
+              {/* Fase & Semester */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-black text-slate-650 flex items-center gap-1">
+                  <label className="text-xs font-black text-slate-650 flex items-center justify-between">
                     <span>Fase</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Otomatis</span>
                   </label>
                   <select
                     value={fase}
                     onChange={(e) => setFase(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800 cursor-pointer"
+                    className="px-3 py-2 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-indigo-600 shadow-2xs cursor-pointer"
                   >
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                    <option value="D">D (SMP)</option>
-                    <option value="E">E</option>
-                    <option value="F">F</option>
+                    <option value="A">Fase A</option>
+                    <option value="B">Fase B</option>
+                    <option value="C">Fase C</option>
+                    <option value="D">Fase D</option>
+                    <option value="E">Fase E</option>
+                    <option value="F">Fase F</option>
                   </select>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-black text-slate-650 flex items-center gap-1">
+                  <label className="text-xs font-black text-slate-650 flex items-center justify-between">
                     <span>Semester</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Otomatis</span>
                   </label>
                   <select
                     value={semester}
                     onChange={(e) => setSemester(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800 cursor-pointer"
+                    className="px-3 py-2 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-indigo-600 shadow-2xs cursor-pointer"
                   >
-                    <option value="Ganjil">Ganjil</option>
-                    <option value="Genap">Genap</option>
+                    <option value="1">Semester 1 (Ganjil)</option>
+                    <option value="2">Semester 2 (Genap)</option>
+                    <option value="Ganjil">Semester Ganjil</option>
+                    <option value="Genap">Semester Genap</option>
                   </select>
                 </div>
               </div>
 
+              {/* 2. PERTEMUAN KE, 3. JAM KE, 4. ALOKASI JP */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="flex flex-col gap-1.5 col-span-1">
-                  <label className="text-[10px] font-black text-slate-650">Pertemuan Ke</label>
+                  <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
+                    <span>Pertemuan</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Otomatis</span>
+                  </label>
                   <input
                     type="text"
-                    placeholder="misal: 1"
                     value={pertemuanKe}
                     onChange={(e) => setPertemuanKe(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800"
+                    placeholder="1"
+                    className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-indigo-600 shadow-2xs"
                   />
                 </div>
 
                 <div className="flex flex-col gap-1.5 col-span-1">
-                  <label className="text-[10px] font-black text-slate-650">Jam Ke</label>
+                  <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
+                    <span>Jam Ke</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Otomatis</span>
+                  </label>
                   <input
                     type="text"
-                    placeholder="misal: 1 - 2"
                     value={jamKe}
                     onChange={(e) => setJamKe(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800"
+                    placeholder="Jam 1 - 2"
+                    className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-indigo-600 shadow-2xs"
                   />
                 </div>
 
                 <div className="flex flex-col gap-1.5 col-span-1">
-                  <label className="text-[10px] font-black text-slate-650">Alokasi (JP)</label>
+                  <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
+                    <span>Alokasi</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Otomatis</span>
+                  </label>
                   <input
                     type="text"
-                    placeholder="misal: 2 JP"
                     value={alokasiWaktu}
                     onChange={(e) => setAlokasiWaktu(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800"
+                    placeholder="2"
+                    className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-indigo-600 shadow-2xs"
                   />
                 </div>
               </div>
@@ -1229,9 +2386,10 @@ export default function SubjectTeacherPanel({
                               return (
                                 <button
                                   key={status}
+                                  translate="no"
                                   onClick={() => handleStatusChange(student.id, status)}
                                   type="button"
-                                  className={`py-2 px-0.5 border text-xs font-black uppercase tracking-wider rounded-md text-center cursor-pointer transition-all ${bgClass}`}
+                                  className={`notranslate py-2 px-0.5 border text-xs font-black uppercase tracking-wider rounded-md text-center cursor-pointer transition-all ${bgClass}`}
                                   title={status}
                                 >
                                   {shortLabel}
@@ -1264,6 +2422,23 @@ export default function SubjectTeacherPanel({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* View: Jadwal Mengajar */}
+      {activeSubTab === 'jadwal' && (
+        <div className="w-full text-left">
+          <ScheduleView
+            role="subject_teacher"
+            userTeacherId={currentTeacher.id}
+            userTeacherName={currentTeacher.name}
+            schedules={classSchedules}
+            onRefreshSchedule={onRefresh}
+            availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
+            subjectTeachers={subjectTeachers}
+            homerooms={homerooms}
+            academicYear={schoolIdentity?.activeAcademicYear || '2026/2027'}
+          />
         </div>
       )}
 
@@ -1347,12 +2522,27 @@ export default function SubjectTeacherPanel({
           ) : (
             <div className="divide-y divide-slate-100">
               {[...filteredJournals].reverse().map((journal) => {
-                const totalSiswa = journal.attendance.length;
-                const hadirCount = journal.attendance.filter(a => a.status === 'Hadir').length;
-                const terlambatCount = journal.attendance.filter(a => a.status === 'Terlambat').length;
-                const sakitCount = journal.attendance.filter(a => a.status === 'Sakit').length;
-                const izinCount = journal.attendance.filter(a => a.status === 'Izin').length;
-                const alpaCount = journal.attendance.filter(a => a.status === 'Alpa').length;
+                const attList = Array.isArray(journal.attendance) 
+                  ? journal.attendance 
+                  : Array.isArray((journal as any).attendanceData) 
+                    ? (journal as any).attendanceData 
+                    : [];
+                const totalSiswa = attList.length;
+                const hadirCount = attList.filter((a: any) => a.status === 'Hadir').length;
+                const terlambatCount = attList.filter((a: any) => a.status === 'Terlambat').length;
+                const sakitCount = attList.filter((a: any) => a.status === 'Sakit').length;
+                const izinCount = attList.filter((a: any) => a.status === 'Izin').length;
+                const alpaCount = attList.filter((a: any) => a.status === 'Alpa').length;
+
+                const formattedDate = (() => {
+                  if (!journal.date) return '-';
+                  try {
+                    const d = new Date(journal.date);
+                    return isNaN(d.getTime()) ? journal.date : d.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+                  } catch {
+                    return journal.date;
+                  }
+                })();
 
                 return (
                   <div key={journal.id} className="p-5 hover:bg-slate-50/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1366,7 +2556,7 @@ export default function SubjectTeacherPanel({
                         </span>
                         <span className="text-xs text-slate-400 font-semibold flex items-center gap-1 font-sans">
                           <Calendar size={12} />
-                          {new Date(journal.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          {formattedDate}
                         </span>
                       </div>
 
@@ -1410,7 +2600,7 @@ export default function SubjectTeacherPanel({
 
                       {/* Display of non-present student names */}
                       {(() => {
-                        const nonPresent = (journal.attendance || []).filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
+                        const nonPresent = attList.filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
                         if (nonPresent.length > 0) {
                           return (
                             <div className="mt-2 text-xs text-slate-700 leading-relaxed bg-rose-50/20 border border-slate-150 rounded-xl p-2.5 max-w-xl">
@@ -1445,6 +2635,20 @@ export default function SubjectTeacherPanel({
                       >
                         <span>Rincian</span>
                         <ChevronRight size={13} strokeWidth={2.5} />
+                      </button>
+                      <button
+                        onClick={() => handleOpenEditModal(journal)}
+                        className="px-3 py-2 bg-amber-55 hover:bg-amber-100 border border-amber-202 text-amber-800 font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                      >
+                        <Edit size={13} className="text-amber-600" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteJournalSubject(journal.id)}
+                        className="p-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl transition-all flex items-center shadow-xs cursor-pointer"
+                        title="Hapus Jurnal"
+                      >
+                        <Trash2 size={13} />
                       </button>
                       <button
                         onClick={() => setSelectedJournalToPrint(journal)}
@@ -1489,6 +2693,36 @@ export default function SubjectTeacherPanel({
             </div>
           </div>
 
+          {/* Category Filter Bar */}
+          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2 overflow-x-auto scrollbar-none select-none">
+            {(() => {
+              const counts = getCategoryCounts(systemNotifications, notifSearch);
+              return CATEGORY_TABS.map((tab) => {
+                const count = counts[tab.id] || 0;
+                const isActive = activeNotifCategory === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveNotifCategory(tab.id)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                      isActive ? tab.activeClass : tab.inactiveClass
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={`px-1.5 py-0.2 text-[10px] rounded-full font-black ${
+                        isActive ? 'bg-white/20 text-white' : tab.badgeBg
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              });
+            })()}
+          </div>
+
           {loadingNotifications ? (
             <div className="py-20 flex flex-col items-center justify-center text-slate-400 font-semibold font-sans">
               <Loader2 className="animate-spin text-slate-500 mb-2" size={24} />
@@ -1501,36 +2735,43 @@ export default function SubjectTeacherPanel({
             </div>
           ) : (
             (() => {
-              const q = notifSearch.toLowerCase().trim();
-              const filtered = systemNotifications.filter(n => 
-                n.title.toLowerCase().includes(q) || 
-                n.message.toLowerCase().includes(q)
-              );
+              const filtered = filterNotificationsByCategory(systemNotifications, activeNotifCategory, notifSearch);
+
               if (filtered.length === 0) {
                 return (
-                  <div className="py-20 text-center text-slate-400 font-semibold text-xs animate-pulse">
-                    Tidak ada pengumuman yang sesuai dengan pencarian Anda.
+                  <div className="py-20 text-center text-slate-400 font-semibold text-xs flex flex-col items-center justify-center gap-2">
+                    <Bell size={24} className="text-slate-300 stroke-[1.5]" />
+                    <span>Tidak ada pengumuman yang sesuai dengan kategori atau pencarian Anda.</span>
                   </div>
                 );
               }
               return (
                 <div className="divide-y divide-slate-150 bg-white leading-relaxed">
                   {filtered.map((notif) => {
-                    let badgeClass = 'bg-slate-50 text-slate-650 border-slate-200';
-                    if (notif.type === 'info') badgeClass = 'bg-sky-50 text-sky-700 border-sky-100';
-                    else if (notif.type === 'success') badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-100';
-                    else if (notif.type === 'warning') badgeClass = 'bg-amber-50 text-amber-700 border-amber-100';
-                    else if (notif.type === 'payment') badgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-100';
+                    const category = getNotificationCategory(notif);
+                    let badgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                    let labelText = 'Admin & Pengumuman';
+
+                    if (category === 'kbm') {
+                      badgeClass = 'bg-sky-100 text-sky-800 border-sky-200';
+                      labelText = 'KBM & Akademik';
+                    } else if (category === 'pembayaran') {
+                      badgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                      labelText = 'Pembayaran & Keuangan';
+                    } else if (category === 'bk') {
+                      badgeClass = 'bg-purple-100 text-purple-800 border-purple-200';
+                      labelText = 'BK & Konseling';
+                    }
 
                     return (
-                      <div key={notif.id} className="p-5 hover:bg-slate-50/20 transition-all flex gap-4">
+                      <div key={notif.id} className="p-5 hover:bg-slate-50/50 transition-all flex gap-4">
                         <div className="h-10 w-10 shrink-0 rounded-xl bg-slate-50 border border-slate-150 flex items-center justify-center text-slate-500 shadow-inner">
-                          <Bell size={18} className="text-slate-605" />
+                          <Bell size={18} className="text-indigo-600" />
                         </div>
                         <div className="flex-grow">
                           <div className="flex items-center gap-2 flex-wrap mb-1.5 select-none">
-                            <span className={`px-2 py-0.5 rounded-md border text-[8.5px] font-black uppercase tracking-wider ${badgeClass}`}>
-                              {notif.type}
+                            <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-wider ${badgeClass}`}>
+                              {labelText}
                             </span>
                             <span className="text-[10px] text-slate-400 font-semibold font-mono">
                               {new Date(notif.createdAt).toLocaleDateString('id-ID', { hour: 'numeric', minute: 'numeric', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
@@ -1834,7 +3075,66 @@ export default function SubjectTeacherPanel({
       {/* View: Penilaian Kurikulum Merdeka */}
       {activeSubTab === 'penilaian' && (
         <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
-          {/* Header & Filter Card */}
+          {/* Sub Navigation Bar: Input Penilaian Siswa vs Bank TP Bersama */}
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setPenilaianSubTab('input_nilai')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                penilaianSubTab === 'input_nilai'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+            >
+              <ClipboardCheck size={15} />
+              <span>Input Penilaian Siswa</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPenilaianSubTab('bank_tp')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                penilaianSubTab === 'bank_tp'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+            >
+              <BookOpen size={15} />
+              <span>Bank TP Bersama (Kurikulum Merdeka)</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                penilaianSubTab === 'bank_tp' ? 'bg-indigo-700 text-indigo-100' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+              }`}>
+                Tersinkron Otomatis
+              </span>
+            </button>
+          </div>
+
+          {/* VIEW 1: BANK TP BERSAMA */}
+          {penilaianSubTab === 'bank_tp' && (
+            <SharedTpBankView
+              isWaka={false}
+              currentUser={{
+                id: currentTeacher.id,
+                name: currentTeacher.name,
+                role: currentTeacher.role || `Guru ${selectedSubject}`
+              }}
+              initialSubject={selectedSubject}
+              initialGradeLevel={activeGradingGrade}
+              initialSemester={selectedSemesterGrading}
+              initialAcademicYear={selectedYearGrading}
+              activeClass={selectedGradeClass}
+              onUseTp={(tp, slot) => {
+                handleSelectSharedTp(tp, slot);
+                setPenilaianSubTab('input_nilai');
+              }}
+              embedded={true}
+            />
+          )}
+
+          {/* VIEW 2: INPUT PENILAIAN SISWA */}
+          {penilaianSubTab === 'input_nilai' && (
+            <div className="flex flex-col gap-6">
+              {/* Header & Filter Card */}
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-500 to-indigo-600" />
             
@@ -1843,7 +3143,7 @@ export default function SubjectTeacherPanel({
                 <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Modul Guru Mata Pelajaran</span>
                 <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
                   <Sparkles size={18} className="text-amber-500" />
-                  Penilaian Rapor Kurikulum Merdeka ({currentTeacher.subject})
+                  Penilaian Rapor Kurikulum Merdeka ({selectedSubject})
                 </h2>
                 <p className="text-slate-500 text-[11px] mt-0.5">
                   Isi kriteria ketercapaian tujuan pembelajaran (KKTP), formatif harian, sumatif materi, dan SAS untuk nilai rapor akhir otomatis.
@@ -1860,31 +3160,74 @@ export default function SubjectTeacherPanel({
                     setExcelParsedPreview([]);
                     setShowExcelModal(true);
                   }}
-                  className="px-3.5 py-2.5 rounded-xl border-2 border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 font-bold text-xs transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
+                  className="px-3 py-2 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <FileText size={14} className="text-emerald-600" />
                   Import dari MS Excel
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadExcelTemplate}
+                  className="px-3 py-2 rounded-xl border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-800 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Download size={14} className="text-teal-600" />
+                  Unduh Template Excel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportExcelRapi}
+                  className="px-3 py-2 rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <FileText size={14} className="text-indigo-600" />
+                  Export Excel Rapi
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPrintGradePdfModal(true)}
+                  className="px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Printer size={14} className="text-amber-600" />
+                  Cetak PDF Rapor
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
                     const updated = { ...gradeInputMap };
                     gradingClassStudents.forEach(s => {
-                      if (!updated[s.id]?.tp1Grade) {
+                      dirtyStudentsRef.current.add(s.id);
+                      if (!updated[s.id]?.tp1Tugas1 && !updated[s.id]?.tp1Uh) {
                         updated[s.id] = {
-                          tp1Grade: String(Math.floor(Math.random() * 16) + 80),
-                          tp2Grade: String(Math.floor(Math.random() * 16) + 78),
-                          tp3Grade: String(Math.floor(Math.random() * 16) + 82),
-                          nilaiSumatifLM: String(Math.floor(Math.random() * 16) + 78),
-                          nilaiSAS: String(Math.floor(Math.random() * 16) + 80),
-                          deskripsiCapaian: ''
+                          tp1Tugas1: String(Math.floor(Math.random() * 11) + 85),
+                          tp1Uh: String(Math.floor(Math.random() * 11) + 84),
+
+                          tp2Tugas1: String(Math.floor(Math.random() * 11) + 80),
+                          tp2Uh: String(Math.floor(Math.random() * 11) + 83),
+
+                          tp3Tugas1: String(Math.floor(Math.random() * 11) + 86),
+                          tp3Uh: String(Math.floor(Math.random() * 11) + 85),
+
+                          tp4Tugas1: String(Math.floor(Math.random() * 11) + 87),
+                          tp4Uh: String(Math.floor(Math.random() * 11) + 88),
+
+                          kokurikuler: String(Math.floor(Math.random() * 11) + 85),
+                          pts: String(Math.floor(Math.random() * 11) + 82),
+                          pas: String(Math.floor(Math.random() * 11) + 86)
                         };
                       }
                     });
                     setGradeInputMap(updated);
-                    setFeedback({ type: 'success', text: "Berhasil mengisi otomatis sampel nilai (80-95) yang kosong untuk demo penilaian!" });
+                    setHasUnsavedGrades(true);
+                    setUnsavedCount(dirtyStudentsRef.current.size);
+                    try {
+                      localStorage.setItem(`draft_grades_subject_${lastGradingScopeRef.current}`, JSON.stringify(updated));
+                    } catch (e) {}
+                    setFeedback({ type: 'success', text: "Berhasil mengisi contoh nilai lengkap (TP1-TP4 Tugas & UH, Kokurikuler, PTS, PAS) untuk demo!" });
                   }}
-                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Sparkles size={13} className="text-slate-500" />
                   Isi Contoh Nilai
@@ -1893,18 +3236,37 @@ export default function SubjectTeacherPanel({
             </div>
 
             {/* Filter Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Pilih Kelas</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-black uppercase text-indigo-600 tracking-wider">Mata Pelajaran</label>
+                  <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">Jadwal Mengajar</span>
+                </div>
+                <select
+                  value={selectedSubject}
+                  onChange={(e) => setSelectedSubject(e.target.value)}
+                  className="w-full bg-indigo-50/50 border border-indigo-200 hover:border-indigo-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-black text-indigo-900 transition-colors cursor-pointer"
+                >
+                  {allowedSubjects.map(subj => (
+                    <option key={subj} value={subj}>{subj}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">Pilih Kelas</label>
+                  <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Kelas Diajar ({allowedClasses.length})</span>
+                </div>
                 <select
                   value={selectedGradeClass}
                   onChange={(e) => setSelectedGradeClass(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-black text-slate-800 transition-colors cursor-pointer"
                 >
-                  {availableClasses.length === 0 ? (
-                    <option value="">Tidak ada kelas terdaftar</option>
+                  {allowedClasses.length === 0 ? (
+                    <option value="">Tidak ada kelas di jadwal</option>
                   ) : (
-                    availableClasses.map(c => (
+                    allowedClasses.map(c => (
                       <option key={c} value={c}>Kelas {c}</option>
                     ))
                   )}
@@ -1930,8 +3292,14 @@ export default function SubjectTeacherPanel({
                   onChange={(e) => setSelectedYearGrading(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
                 >
-                  <option value="2025/2026">2025/2026</option>
-                  <option value="2024/2025">2024/2025</option>
+                  {Array.from(new Set([
+                    ...(schoolIdentity?.activeAcademicYear ? [schoolIdentity.activeAcademicYear] : []),
+                    '2025/2026',
+                    '2024/2025',
+                    '2023/2024'
+                  ])).map(year => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -1939,50 +3307,286 @@ export default function SubjectTeacherPanel({
 
           {/* TP Config / Kriteria Ketercapaian Card */}
           <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 shadow-xs text-left">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="h-2.5 w-2.5 rounded-full bg-indigo-600 animate-pulse" />
-              <h3 className="font-extrabold text-[11px] uppercase tracking-wider text-slate-600">
-                Deskripsi Tujuan Pembelajaran (TP) yang Diujikan
-              </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-indigo-600 animate-pulse" />
+                <div>
+                  <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <span>Deskripsi Tujuan Pembelajaran (TP) yang Diujikan</span>
+                    <span className="text-indigo-600 font-black">({selectedSubject})</span>
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Judul TP terhubung langsung ke Jurnal Pembelajaran yang telah Anda isi. Gunakan dropdown/pencarian atau ketik manual.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                {/* Keterangan Pengedit / Pengisi */}
+                {(tpEditedBy || tpFilledBy) && (
+                  <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200/70 px-3 py-1.5 rounded-xl text-indigo-900 text-[10.5px] font-semibold">
+                    <User size={12} className="text-indigo-600 shrink-0" />
+                    <span>
+                      {tpEditedBy ? (
+                        <>Terakhir diedit oleh <strong className="font-extrabold text-indigo-950">{tpEditedBy}</strong></>
+                      ) : (
+                        <>Diisi oleh <strong className="font-extrabold text-indigo-950">{tpFilledBy}</strong></>
+                      )}
+                    </span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSaveTpDescriptions}
+                  disabled={isSavingTp}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                  title={`Simpan Deskripsi TP untuk seluruh kelas tingkat ini`}
+                >
+                  {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                  <span>Simpan Deskripsi TP ({selectedSubject})</span>
+                </button>
+
+                {/* Quick Auto-fill TP Button from Teaching Journals */}
+                <button
+                  type="button"
+                  onClick={handleAutoFillAllTpsFromJournals}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                  title="Ambil otomatis 4 TP dari jurnal pembelajaran terawal untuk mapel dan kelas ini"
+                >
+                  <Sparkles size={13} className="text-amber-300" />
+                  <span>Link Otomatis dari Jurnal</span>
+                </button>
+              </div>
             </div>
+
+            {/* Quick Auto-matching Shared TP Selector */}
+            <SharedTpQuickSelector
+              selectedSubject={selectedSubject}
+              selectedClass={selectedGradeClass}
+              semester={selectedSemesterGrading}
+              academicYear={selectedYearGrading}
+              tp1Id={tp1Id}
+              tp2Id={tp2Id}
+              tp3Id={tp3Id}
+              tp4Id={tp4Id}
+              tp1Name={tp1InputName}
+              tp2Name={tp2InputName}
+              tp3Name={tp3InputName}
+              tp4Name={tp4InputName}
+              onSelectTp={handleSelectSharedTp}
+              onOpenFullBank={() => setPenilaianSubTab('bank_tp')}
+              onOpenAddTpModal={() => setPenilaianSubTab('bank_tp')}
+            />
             
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 1 (TP-1)</span>
-                <textarea
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <TpJournalSelector
+                  label="Tujuan Pembelajaran 1 (TP-1)"
+                  tpNumber={1}
                   value={tp1InputName}
-                  onChange={(e) => setTp1InputName(e.target.value)}
-                  rows={2}
-                  maxLength={100}
-                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
-                  placeholder="Isi uraian TP-1..."
+                  onChange={setTp1InputName}
+                  journals={allJournals.length > 0 ? allJournals : journals}
+                  selectedSubject={selectedSubject}
+                  selectedClass={selectedGradeClass}
+                  required={true}
+                  placeholder="Uraian TP-1..."
+                  filledBy={tpFilledBy}
+                  filledAt={tpFilledAt}
+                  editedBy={tpEditedBy}
+                  editedAt={tpEditedAt}
+                  editedByRole={tpEditedByRole}
+                  linkedTpId={tp1Id}
                 />
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 2 (TP-2) - Opsional</span>
-                <textarea
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <TpJournalSelector
+                  label="Tujuan Pembelajaran 2 (TP-2) - Opsional"
+                  tpNumber={2}
                   value={tp2InputName}
-                  onChange={(e) => setTp2InputName(e.target.value)}
-                  rows={2}
-                  maxLength={100}
-                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
-                  placeholder="Isi uraian TP-2 (kosongkan jika tidak ada)..."
+                  onChange={setTp2InputName}
+                  journals={allJournals.length > 0 ? allJournals : journals}
+                  selectedSubject={selectedSubject}
+                  selectedClass={selectedGradeClass}
+                  placeholder="Uraian TP-2 (opsional)..."
+                  filledBy={tpFilledBy}
+                  filledAt={tpFilledAt}
+                  editedBy={tpEditedBy}
+                  editedAt={tpEditedAt}
+                  editedByRole={tpEditedByRole}
+                  linkedTpId={tp2Id}
                 />
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 3 (TP-3) - Opsional</span>
-                <textarea
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <TpJournalSelector
+                  label="Tujuan Pembelajaran 3 (TP-3) - Opsional"
+                  tpNumber={3}
                   value={tp3InputName}
-                  onChange={(e) => setTp3InputName(e.target.value)}
-                  rows={2}
-                  maxLength={100}
-                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
-                  placeholder="Isi uraian TP-3 (kosongkan jika tidak ada)..."
+                  onChange={setTp3InputName}
+                  journals={allJournals.length > 0 ? allJournals : journals}
+                  selectedSubject={selectedSubject}
+                  selectedClass={selectedGradeClass}
+                  placeholder="Uraian TP-3 (opsional)..."
+                  filledBy={tpFilledBy}
+                  filledAt={tpFilledAt}
+                  editedBy={tpEditedBy}
+                  editedAt={tpEditedAt}
+                  editedByRole={tpEditedByRole}
+                  linkedTpId={tp3Id}
+                />
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <TpJournalSelector
+                  label="Tujuan Pembelajaran 4 (TP-4) - Opsional"
+                  tpNumber={4}
+                  value={tp4InputName}
+                  onChange={setTp4InputName}
+                  journals={allJournals.length > 0 ? allJournals : journals}
+                  selectedSubject={selectedSubject}
+                  selectedClass={selectedGradeClass}
+                  placeholder="Uraian TP-4 (opsional)..."
+                  filledBy={tpFilledBy}
+                  filledAt={tpFilledAt}
+                  editedBy={tpEditedBy}
+                  editedAt={tpEditedAt}
+                  editedByRole={tpEditedByRole}
+                  linkedTpId={tp4Id}
                 />
               </div>
             </div>
+          </div>
+
+          {/* Anti-Wipe Protection Banner & Unsaved Changes Alert */}
+          <div className="mb-1">
+            {hasUnsavedGrades ? (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 bg-amber-50 border-2 border-amber-300 text-amber-950 rounded-2xl text-xs font-semibold shadow-sm animate-fade-in">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-200/80 flex items-center justify-center shrink-0">
+                    <AlertTriangle size={18} className="text-amber-700" />
+                  </div>
+                  <div>
+                    <div className="font-extrabold text-amber-900 text-xs flex items-center gap-2">
+                      <span>Perhatian: Ada {unsavedCount} Nilai Siswa Sedang Diisi Manual</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-900 uppercase">
+                        Draft Aman Anti-Wipe
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-amber-800 mt-0.5 font-normal">
+                      Nilai tersimpan lokal pada peramban Anda dan dilindungi dari refresh / sinkronisasi otomatis latar belakang. Klik tombol di kanan untuk menyimpan ke database.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsSaving(true);
+                    try {
+                      const batchData = gradingClassStudents.map(s => {
+                        const inputState = gradeInputMap[s.id] || {
+                          tp1Tugas1: '', tp1Uh: '',
+                          tp2Tugas1: '', tp2Uh: '',
+                          tp3Tugas1: '', tp3Uh: '',
+                          tp4Tugas1: '', tp4Uh: ''
+                        };
+
+                        const matched = merdekaAssessments.find(a =>
+                          a.studentId === s.id &&
+                          isSameSubject(a.subject, selectedSubject) &&
+                          (a.semester || '').toLowerCase() === selectedSemesterGrading.toLowerCase() &&
+                          (a.academicYear || '').toLowerCase() === selectedYearGrading.toLowerCase()
+                        );
+
+                        return {
+                          studentId: s.id,
+                          studentName: s.name,
+                          className: s.class || selectedGradeClass,
+                          subject: selectedSubject,
+                          teacherName: currentTeacher.name,
+                          teacherId: currentTeacher.username || currentTeacher.id,
+                          semester: selectedSemesterGrading,
+                          academicYear: selectedYearGrading,
+                          tp1Id: tp1Id || undefined,
+                          tp1Name: tp1InputName,
+                          tp1Tugas1: inputState.tp1Tugas1,
+                          tp1Uh: inputState.tp1Uh,
+
+                          tp2Id: tp2Id || undefined,
+                          tp2Name: tp2InputName || undefined,
+                          tp2Tugas1: inputState.tp2Tugas1,
+                          tp2Uh: inputState.tp2Uh,
+
+                          tp3Id: tp3Id || undefined,
+                          tp3Name: tp3InputName || undefined,
+                          tp3Tugas1: inputState.tp3Tugas1,
+                          tp3Uh: inputState.tp3Uh,
+
+                          tp4Id: tp4Id || undefined,
+                          tp4Name: tp4InputName || undefined,
+                          tp4Tugas1: (inputState as any).tp4Tugas1,
+                          tp4Uh: (inputState as any).tp4Uh,
+
+                          nilaiPts: (inputState as any).pts !== undefined && (inputState as any).pts !== '' ? Number((inputState as any).pts) : (matched?.nilaiPts !== undefined ? Number(matched.nilaiPts) : undefined),
+                          nilaiPas: (inputState as any).pas !== undefined && (inputState as any).pas !== '' ? Number((inputState as any).pas) : (matched?.nilaiPas !== undefined ? Number(matched.nilaiPas) : undefined),
+                          nilaiKokurikuler: (inputState as any).kokurikuler !== undefined && (inputState as any).kokurikuler !== '' ? Number((inputState as any).kokurikuler) : (matched?.nilaiKokurikuler !== undefined ? Number(matched.nilaiKokurikuler) : undefined)
+                        };
+                      });
+
+                      const res = await fetch('/api/merdeka-assessments', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(batchData)
+                      });
+
+                      if (res.ok) {
+                        dirtyStudentsRef.current.clear();
+                        setHasUnsavedGrades(false);
+                        setUnsavedCount(0);
+                        try {
+                          localStorage.removeItem(`draft_grades_subject_${lastGradingScopeRef.current}`);
+                        } catch (e) {}
+
+                        setFeedback({ type: 'success', text: `Seluruh penilaian Kurikulum Merdeka dan deskripsi TP untuk Kelas ${selectedGradeClass} berhasil disimpan langsung ke basis data MySQL!` });
+                        setGradeSuccessSummary({
+                          className: selectedGradeClass,
+                          subject: selectedSubject,
+                          count: batchData.length
+                        });
+                        setShowGradeSuccessModal(true);
+                        fetchAssessments();
+                        handleSaveTpDescriptions();
+                        onRefresh();
+                      } else {
+                        setFeedback({ type: 'error', text: 'Gagal memproses penyimpanan penilaian ke MySQL.' });
+                      }
+                    } catch (err: any) {
+                      setFeedback({ type: 'error', text: err.message || 'Terjadi kesalahan sistem.' });
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving || gradingClassStudents.length === 0}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl transition-all shadow-md shadow-amber-600/20 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0 disabled:opacity-50"
+                >
+                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  <span>Simpan Sekarang ({unsavedCount} Siswa)</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-emerald-900 text-xs font-medium">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                  <span className="text-[11px]">
+                    <strong>Status Penilaian:</strong> Seluruh nilai tersimpan di database. Sistem proteksi background sync aktif melindungi ketikan Anda saat pengisian manual.
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md uppercase">
+                  Anti-Wipe Aktif
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Student Grading Grid Table */}
@@ -1991,52 +3595,87 @@ export default function SubjectTeacherPanel({
               <table className="w-full border-collapse text-xs select-none">
                 <thead>
                   <tr className="bg-slate-900 text-white font-extrabold uppercase tracking-wider text-[10px] text-center">
-                    <th className="py-3 px-3 w-12 text-center rounded-tl-3xl">No</th>
-                    <th className="py-3 px-4 text-left min-w-[160px]">Nama Siswa [NIS]</th>
-                    <th className="py-3 px-2 w-20 text-indigo-300">TP-1</th>
-                    <th className="py-3 px-2 w-20 text-indigo-300">TP-2</th>
-                    <th className="py-3 px-2 w-20 text-indigo-300">TP-3</th>
-                    <th className="py-3 px-2 w-24 bg-indigo-950 text-indigo-300">Avg Formatif</th>
-                    <th className="py-3 px-2 w-24 text-amber-400">Sumatif LM</th>
-                    <th className="py-3 px-2 w-20 text-amber-400">SAS</th>
-                    <th className="py-3 px-2 w-24 bg-slate-950 text-emerald-400 font-black rounded-tr-3xl">Nilai Rapor</th>
+                    <th className="py-3 px-3 w-10 text-center rounded-tl-3xl sticky left-0 z-20 bg-slate-900" rowSpan={2}>No</th>
+                    <th className="py-3 px-3 text-left min-w-[150px] w-48 sticky left-10 z-20 bg-slate-900 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.3)] border-r border-slate-700" rowSpan={2}>Nama Siswa [NIS]</th>
+                    
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={2}>TP 1</th>
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={2}>TP 2</th>
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={2}>TP 3</th>
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={2}>TP 4</th>
+
+                    <th className="py-3 px-2 w-16 bg-blue-900 text-blue-200 font-black" rowSpan={2}>Rata2 TP</th>
+                    <th className="py-3 px-2 w-16 bg-violet-900 text-violet-200 font-black" rowSpan={2}>Kokurikuler</th>
+                    <th className="py-3 px-2 w-16 bg-amber-900 text-amber-200 font-black" rowSpan={2}>PTS</th>
+                    <th className="py-3 px-2 w-16 bg-amber-950 text-amber-200 font-black" rowSpan={2}>PAS</th>
+                    <th className="py-3 px-2 w-24 bg-emerald-950 text-emerald-300 font-black rounded-tr-3xl" rowSpan={2}>Nilai Akhir Mapel</th>
+                  </tr>
+                  <tr className="bg-slate-800 text-slate-300 font-bold text-[9px] uppercase tracking-wider text-center">
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas</th>
+                    <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
+
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas</th>
+                    <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
+
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas</th>
+                    <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
+
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas</th>
+                    <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
                   </tr>
                 </thead>
                 <tbody>
                   {gradingClassStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-20 text-center text-slate-400 font-semibold text-xs">
+                      <td colSpan={15} className="py-20 text-center text-slate-400 font-semibold text-xs">
                         Tidak ada data siswa ditemukan untuk kelas {selectedGradeClass}.
                       </td>
                     </tr>
                   ) : (
                     gradingClassStudents.map((s, idx) => {
                       const inputState = gradeInputMap[s.id] || {
-                        tp1Grade: '',
-                        tp2Grade: '',
-                        tp3Grade: '',
-                        nilaiSumatifLM: '',
-                        nilaiSAS: '',
-                        deskripsiCapaian: ''
+                        tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+                        tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+                        tp3Tugas1: '', tp3Tugas2: '', tp3Uh: ''
                       };
 
-                      // On-the-fly calculations
-                      const tp1G = Number(inputState.tp1Grade) || 0;
-                      const tp2G = inputState.tp2Grade !== '' ? Number(inputState.tp2Grade) : undefined;
-                      const tp3G = inputState.tp3Grade !== '' ? Number(inputState.tp3Grade) : undefined;
+                      // Get matched assessment to display Kokurikuler, PTS, PAS
+                      const matchedAss = merdekaAssessments.find(a =>
+                        a.studentId === s.id &&
+                        isSameSubject(a.subject, selectedSubject) &&
+                        (a.semester || '').toLowerCase() === selectedSemesterGrading.toLowerCase() &&
+                        (a.academicYear || '').toLowerCase() === selectedYearGrading.toLowerCase()
+                      );
 
-                      let tpCount = 0;
-                      let sumTp = 0;
-                      if (inputState.tp1Grade !== '') { tpCount++; sumTp += tp1G; }
-                      if (tp2G !== undefined) { tpCount++; sumTp += tp2G; }
-                      if (tp3G !== undefined) { tpCount++; sumTp += tp3G; }
+                      const parseVal = (v: any) => {
+                        if (v === undefined || v === null || v === "") return null;
+                        const n = Number(v);
+                        return isNaN(n) ? null : n;
+                      };
 
-                      const avgF = tpCount > 0 ? Math.round(sumTp / tpCount) : 0;
-                      const slm = Number(inputState.nilaiSumatifLM) || 0;
-                      const sas = Number(inputState.nilaiSAS) || 0;
+                      const calcTpScore = (tVal: any, uhVal: any) => {
+                        const t = parseVal(tVal);
+                        const u = parseVal(uhVal);
+                        if (t === null && u === null) return null;
+                        if (t !== null && u !== null) return Math.round((t * 0.7) + (u * 0.3));
+                        if (t !== null) return Math.round(t);
+                        if (u !== null) return Math.round(u);
+                        return null;
+                      };
 
-                      // Final assessment weight (avgFormatif + sumatifLM + SAS)/3
-                      const raporScore = tpCount > 0 || slm > 0 || sas > 0 ? Math.round((avgF + slm + sas) / 3) : 0;
+                      const tp1Score = calcTpScore(inputState.tp1Tugas1, inputState.tp1Uh);
+                      const tp2Score = calcTpScore(inputState.tp2Tugas1, inputState.tp2Uh);
+                      const tp3Score = calcTpScore(inputState.tp3Tugas1, inputState.tp3Uh);
+                      const tp4Score = calcTpScore((inputState as any).tp4Tugas1, (inputState as any).tp4Uh);
+
+                      const validTps = [tp1Score, tp2Score, tp3Score, tp4Score].filter((x): x is number => x !== null);
+                      const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : 0;
+
+                      const kokurikulerVal = (inputState as any).kokurikuler !== undefined && (inputState as any).kokurikuler !== '' ? Number((inputState as any).kokurikuler) : (matchedAss?.nilaiKokurikuler ?? 0);
+                      const ptsVal = (inputState as any).pts !== undefined && (inputState as any).pts !== '' ? Number((inputState as any).pts) : (matchedAss?.nilaiPts ?? 0);
+                      const pasVal = (inputState as any).pas !== undefined && (inputState as any).pas !== '' ? Number((inputState as any).pas) : (matchedAss?.nilaiPas ?? 0);
+
+                      // NILAI AKHIR TIAP MAPEL = ((Nilai Rata-rata TP dikali 3) + Nilai Kokurikuler + PTS + PAS) / 6
+                      const finalMapelScore = Math.round(((avgTp * 3) + kokurikulerVal + ptsVal + pasVal) / 6);
 
                       const handleGradeChange = (field: string, val: string) => {
                         let cleanIdx = val;
@@ -2045,97 +3684,124 @@ export default function SubjectTeacherPanel({
                           if (isNaN(numVal)) cleanIdx = '';
                           else cleanIdx = String(Math.min(100, Math.max(0, numVal)));
                         }
-                        setGradeInputMap(prev => ({
-                          ...prev,
-                          [s.id]: {
-                            ...prev[s.id] || {
-                              tp1Grade: '',
-                              tp2Grade: '',
-                              tp3Grade: '',
-                              nilaiSumatifLM: '',
-                              nilaiSAS: '',
-                              deskripsiCapaian: ''
-                            },
+                        dirtyStudentsRef.current.add(s.id);
+                        setHasUnsavedGrades(true);
+                        setUnsavedCount(dirtyStudentsRef.current.size);
+                        setGradeInputMap(prev => {
+                          const updatedStudent = {
+                            ...(prev[s.id] || {
+                              tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+                              tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+                              tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+                              tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
+                            }),
                             [field]: cleanIdx
-                          }
-                        }));
+                          };
+                          const nextMap = {
+                            ...prev,
+                            [s.id]: updatedStudent
+                          };
+                          try {
+                            localStorage.setItem(`draft_grades_subject_${lastGradingScopeRef.current}`, JSON.stringify(nextMap));
+                          } catch (e) {}
+                          return nextMap;
+                        });
                       };
 
                       return (
-                        <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                          <td className="py-3 px-3 text-center text-slate-400 font-bold">{idx + 1}</td>
-                          <td className="py-3 px-4 text-left">
-                            <div className="font-extrabold text-slate-800 text-[12px]">{s.name}</div>
-                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">NIS: {s.nis}</div>
+                        <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-[11px] group">
+                          <td className="py-2.5 px-2 text-center text-slate-400 font-bold sticky left-0 z-10 bg-white group-hover:bg-slate-50">{idx + 1}</td>
+                          <td className="py-2.5 px-3 text-left sticky left-10 z-10 bg-white group-hover:bg-slate-50 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.08)] border-r border-slate-200 min-w-[150px] max-w-[180px]">
+                            <div className="font-extrabold text-slate-800 truncate" title={s.name}>{s.name}</div>
+                            <div className="text-[9px] text-slate-400 font-mono">NIS: {s.nis}</div>
                           </td>
                           
-                          {/* TP Grades Inputs */}
-                          <td className="py-2.5 px-1.5 text-center">
+                          {/* TP 1 Inputs */}
+                          <td className="py-2 px-1 text-center">
                             <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.tp1Grade}
-                              onChange={(e) => handleGradeChange('tp1Grade', e.target.value)}
-                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30"
-                              placeholder="-"
+                              type="text" maxLength={3} value={inputState.tp1Tugas1 || ''}
+                              onChange={(e) => handleGradeChange('tp1Tugas1', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
-                          <td className="py-2.5 px-1.5 text-center">
+                          <td className="py-2 px-1 text-center bg-indigo-50/30">
                             <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.tp2Grade}
-                              onChange={(e) => handleGradeChange('tp2Grade', e.target.value)}
-                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30 disabled:opacity-50"
-                              placeholder="-"
-                              disabled={!tp2InputName.trim()}
-                            />
-                          </td>
-                          <td className="py-2.5 px-1.5 text-center">
-                            <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.tp3Grade}
-                              onChange={(e) => handleGradeChange('tp3Grade', e.target.value)}
-                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30 disabled:opacity-50"
-                              placeholder="-"
-                              disabled={!tp3InputName.trim()}
+                              type="text" maxLength={3} value={inputState.tp1Uh || ''}
+                              onChange={(e) => handleGradeChange('tp1Uh', e.target.value)}
+                              className="w-10 text-center border border-indigo-200 rounded py-0.5 font-black text-indigo-900 bg-indigo-50/50 focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
 
-                          {/* Computed Formative Average */}
-                          <td className="py-2.5 px-2 text-center font-black text-indigo-700 bg-indigo-50/10 text-[12px]">
-                            {avgF || "-"}
-                          </td>
-
-                          {/* Sumatif LM & Final SAS */}
-                          <td className="py-2.5 px-1.5 text-center">
+                          {/* TP 2 Inputs */}
+                          <td className="py-2 px-1 text-center">
                             <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.nilaiSumatifLM}
-                              onChange={(e) => handleGradeChange('nilaiSumatifLM', e.target.value)}
-                              className="w-14 text-center border border-amber-200 focus:border-amber-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-amber-500/5"
-                              placeholder="-"
+                              type="text" maxLength={3} value={inputState.tp2Tugas1 || ''}
+                              onChange={(e) => handleGradeChange('tp2Tugas1', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
-                          <td className="py-2.5 px-1.5 text-center">
+                          <td className="py-2 px-1 text-center bg-indigo-50/30">
                             <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.nilaiSAS}
-                              onChange={(e) => handleGradeChange('nilaiSAS', e.target.value)}
-                              className="w-14 text-center border border-amber-200 focus:border-amber-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-amber-500/5"
-                              placeholder="-"
+                              type="text" maxLength={3} value={inputState.tp2Uh || ''}
+                              onChange={(e) => handleGradeChange('tp2Uh', e.target.value)}
+                              className="w-10 text-center border border-indigo-200 rounded py-0.5 font-black text-indigo-900 bg-indigo-50/50 focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
 
-                          {/* Computed Final Report Score */}
-                          <td className="py-2.5 px-2 text-center font-black text-slate-900 bg-slate-100 text-sm">
-                            <span className={`px-2 py-0.5 rounded-md ${
-                              raporScore >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800 font-extrabold'
-                            }`}>
-                              {raporScore || "-"}
+                          {/* TP 3 Inputs */}
+                          <td className="py-2 px-1 text-center">
+                            <input
+                              type="text" maxLength={3} value={inputState.tp3Tugas1 || ''}
+                              onChange={(e) => handleGradeChange('tp3Tugas1', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+                          <td className="py-2 px-1 text-center bg-indigo-50/30">
+                            <input
+                              type="text" maxLength={3} value={inputState.tp3Uh || ''}
+                              onChange={(e) => handleGradeChange('tp3Uh', e.target.value)}
+                              className="w-10 text-center border border-indigo-200 rounded py-0.5 font-black text-indigo-900 bg-indigo-50/50 focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+
+                          {/* TP 4 Inputs */}
+                          <td className="py-2 px-1 text-center">
+                            <input
+                              type="text" maxLength={3} value={(inputState as any).tp4Tugas1 || ''}
+                              onChange={(e) => handleGradeChange('tp4Tugas1', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+                          <td className="py-2 px-1 text-center bg-indigo-50/30">
+                            <input
+                              type="text" maxLength={3} value={(inputState as any).tp4Uh || ''}
+                              onChange={(e) => handleGradeChange('tp4Uh', e.target.value)}
+                              className="w-10 text-center border border-indigo-200 rounded py-0.5 font-black text-indigo-900 bg-indigo-50/50 focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+
+                          {/* Computed Rata-rata TP */}
+                          <td className="py-2 px-2 text-center font-black text-blue-700 bg-blue-50/30">
+                            {avgTp || "-"}
+                          </td>
+
+                          {/* Kokurikuler (Wali Kelas) */}
+                          <td className="py-2 px-2 text-center font-black text-violet-700 bg-violet-50/30" title="Diinput oleh Wali Kelas">
+                            {kokurikulerVal || "-"}
+                          </td>
+
+                          {/* PTS & PAS (Waka Kurikulum) */}
+                          <td className="py-2 px-2 text-center font-black text-amber-700 bg-amber-50/20" title="Diimport Waka Kurikulum">
+                            {ptsVal || "-"}
+                          </td>
+                          <td className="py-2 px-2 text-center font-black text-amber-800 bg-amber-50/30" title="Diimport Waka Kurikulum">
+                            {pasVal || "-"}
+                          </td>
+
+                          {/* NILAI AKHIR MAPEL */}
+                          <td className="py-2 px-2 text-center font-black text-slate-900 bg-emerald-50 text-sm">
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-extrabold">
+                              {finalMapelScore || "-"}
                             </span>
                           </td>
                         </tr>
@@ -2147,9 +3813,9 @@ export default function SubjectTeacherPanel({
             </div>
 
             {/* Bottom Form Actions */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
               <span className="text-[10px] font-semibold text-slate-500">
-                Nilai akhir rapor Kurikulum Merdeka dihitung dengan bobot seimbang rata formatif, sumatif l/m dan SAS.
+                Formula: Nilai Akhir TP = (Tugas × 70%) + (UH × 30%) | Nilai Akhir Mapel = ((Rata2 TP × 3) + Kokurikuler + PTS + PAS) / 6
               </span>
               <button
                 type="button"
@@ -2158,30 +3824,51 @@ export default function SubjectTeacherPanel({
                   try {
                     const batchData = gradingClassStudents.map(s => {
                       const inputState = gradeInputMap[s.id] || {
-                        tp1Grade: '',
-                        tp2Grade: '',
-                        tp3Grade: '',
-                        nilaiSumatifLM: '',
-                        nilaiSAS: '',
-                        deskripsiCapaian: ''
+                        tp1Tugas1: '', tp1Uh: '',
+                        tp2Tugas1: '', tp2Uh: '',
+                        tp3Tugas1: '', tp3Uh: '',
+                        tp4Tugas1: '', tp4Uh: ''
                       };
+
+                      const matched = merdekaAssessments.find(a =>
+                        a.studentId === s.id &&
+                        isSameSubject(a.subject, selectedSubject) &&
+                        (a.semester || '').toLowerCase() === selectedSemesterGrading.toLowerCase() &&
+                        (a.academicYear || '').toLowerCase() === selectedYearGrading.toLowerCase()
+                      );
 
                       return {
                         studentId: s.id,
                         studentName: s.name,
-                        className: s.class,
-                        subject: currentTeacher.subject,
+                        className: s.class || selectedGradeClass,
+                        subject: selectedSubject,
                         teacherName: currentTeacher.name,
+                        teacherId: currentTeacher.username || currentTeacher.id,
                         semester: selectedSemesterGrading,
                         academicYear: selectedYearGrading,
+                        tp1Id: tp1Id || undefined,
                         tp1Name: tp1InputName,
-                        tp1Grade: inputState.tp1Grade || "0",
+                        tp1Tugas1: inputState.tp1Tugas1,
+                        tp1Uh: inputState.tp1Uh,
+
+                        tp2Id: tp2Id || undefined,
                         tp2Name: tp2InputName || undefined,
-                        tp2Grade: inputState.tp2Grade !== "" ? inputState.tp2Grade : undefined,
+                        tp2Tugas1: inputState.tp2Tugas1,
+                        tp2Uh: inputState.tp2Uh,
+
+                        tp3Id: tp3Id || undefined,
                         tp3Name: tp3InputName || undefined,
-                        tp3Grade: inputState.tp3Grade !== "" ? inputState.tp3Grade : undefined,
-                        nilaiSumatifLM: inputState.nilaiSumatifLM || "0",
-                        nilaiSAS: inputState.nilaiSAS || "0"
+                        tp3Tugas1: inputState.tp3Tugas1,
+                        tp3Uh: inputState.tp3Uh,
+
+                        tp4Id: tp4Id || undefined,
+                        tp4Name: tp4InputName || undefined,
+                        tp4Tugas1: (inputState as any).tp4Tugas1,
+                        tp4Uh: (inputState as any).tp4Uh,
+
+                        nilaiPts: (inputState as any).pts !== undefined && (inputState as any).pts !== '' ? Number((inputState as any).pts) : (matched?.nilaiPts !== undefined ? Number(matched.nilaiPts) : undefined),
+                        nilaiPas: (inputState as any).pas !== undefined && (inputState as any).pas !== '' ? Number((inputState as any).pas) : (matched?.nilaiPas !== undefined ? Number(matched.nilaiPas) : undefined),
+                        nilaiKokurikuler: (inputState as any).kokurikuler !== undefined && (inputState as any).kokurikuler !== '' ? Number((inputState as any).kokurikuler) : (matched?.nilaiKokurikuler !== undefined ? Number(matched.nilaiKokurikuler) : undefined)
                       };
                     });
 
@@ -2192,11 +3879,25 @@ export default function SubjectTeacherPanel({
                     });
 
                     if (res.ok) {
-                      setFeedback({ type: 'success', text: `Seluruh penilaian Kurikulum Merdeka untuk Kelas ${selectedGradeClass} berhasil disimpan ke basis data!` });
+                      dirtyStudentsRef.current.clear();
+                      setHasUnsavedGrades(false);
+                      setUnsavedCount(0);
+                      try {
+                        localStorage.removeItem(`draft_grades_subject_${lastGradingScopeRef.current}`);
+                      } catch (e) {}
+
+                      setFeedback({ type: 'success', text: `Seluruh penilaian Kurikulum Merdeka dan deskripsi TP untuk Kelas ${selectedGradeClass} berhasil disimpan langsung ke basis data MySQL!` });
+                      setGradeSuccessSummary({
+                        className: selectedGradeClass,
+                        subject: selectedSubject,
+                        count: batchData.length
+                      });
+                      setShowGradeSuccessModal(true);
                       fetchAssessments();
+                      handleSaveTpDescriptions();
                       onRefresh();
                     } else {
-                      setFeedback({ type: 'error', text: 'Gagal memproses penyimpanan penilaian.' });
+                      setFeedback({ type: 'error', text: 'Gagal memproses penyimpanan penilaian ke MySQL.' });
                     }
                   } catch (err: any) {
                     setFeedback({ type: 'error', text: err.message || 'Terjadi kesalahan sistem.' });
@@ -2221,6 +3922,8 @@ export default function SubjectTeacherPanel({
               </button>
             </div>
           </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2258,67 +3961,85 @@ export default function SubjectTeacherPanel({
                   {historyDetailJournal.topic}
                 </p>
                 <div className="flex gap-4 items-center text-[11px] font-semibold text-slate-500 mt-3 border-t border-slate-150 pt-3">
-                  <span>Tanggal: <strong className="text-slate-800">{new Date(historyDetailJournal.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></span>
+                  <span>Tanggal: <strong className="text-slate-800">{(() => {
+                    if (!historyDetailJournal.date) return '-';
+                    try {
+                      const d = new Date(historyDetailJournal.date);
+                      return isNaN(d.getTime()) ? historyDetailJournal.date : d.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+                    } catch {
+                      return historyDetailJournal.date;
+                    }
+                  })()}</strong></span>
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                  <span>Total Absensi: <strong className="text-slate-800">{historyDetailJournal.attendance.length} Siswa</strong></span>
+                  <span>Total Absensi: <strong className="text-slate-800">{
+                    (Array.isArray(historyDetailJournal.attendance) 
+                      ? historyDetailJournal.attendance 
+                      : Array.isArray((historyDetailJournal as any).attendanceData) 
+                        ? (historyDetailJournal as any).attendanceData 
+                        : []
+                    ).length
+                  } Siswa</strong></span>
                 </div>
               </div>
 
               {/* Rekap Absensi (Cukup Rekap Saja) */}
               <div className="p-6 bg-slate-50 border-b border-slate-100 flex flex-col gap-4">
                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">REKAPITULASI PRESENSI KBM</span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-3 text-center">
-                    <span className="block text-[10px] font-bold text-emerald-800 uppercase">Hadir</span>
-                    <span className="block text-xl font-extrabold text-emerald-900 mt-1">
-                      {historyDetailJournal.attendance.filter(a => a.status === 'Hadir' || a.status === 'Terlambat').length}
-                    </span>
-                  </div>
-                  <div className="bg-sky-50 border border-sky-150 rounded-2xl p-3 text-center">
-                    <span className="block text-[10px] font-bold text-sky-800 uppercase">Sakit</span>
-                    <span className="block text-xl font-extrabold text-sky-900 mt-1">
-                      {historyDetailJournal.attendance.filter(a => a.status === 'Sakit').length}
-                    </span>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-150 rounded-2xl p-3 text-center">
-                    <span className="block text-[10px] font-bold text-indigo-800 uppercase">Izin</span>
-                    <span className="block text-xl font-extrabold text-indigo-900 mt-1">
-                      {historyDetailJournal.attendance.filter(a => a.status === 'Izin').length}
-                    </span>
-                  </div>
-                  <div className="bg-rose-50 border border-rose-150 rounded-2xl p-3 text-center">
-                    <span className="block text-[10px] font-bold text-rose-800 uppercase">Alpa</span>
-                    <span className="block text-xl font-extrabold text-rose-900 mt-1">
-                      {historyDetailJournal.attendance.filter(a => a.status === 'Alpa').length}
-                    </span>
-                  </div>
-                </div>
-
-                {/* List of non-present students */}
                 {(() => {
-                  const nonPresent = historyDetailJournal.attendance.filter(a => a.status !== 'Hadir' && a.status !== 'Terlambat');
-                  if (nonPresent.length > 0) {
-                    return (
-                      <div className="bg-white border border-slate-150 rounded-xl p-3 text-xs leading-relaxed text-slate-700">
-                        <span className="font-extrabold text-slate-800 block mb-1">Rincian Siswa Tidak Hadir / Keterangan Khusus KBM:</span>
-                        <div className="flex flex-col gap-1">
-                          {nonPresent.map((a, i) => (
-                            <div key={i} className="flex justify-between border-b border-dashed border-slate-100 pb-1">
-                              <span>{a.studentName}</span>
-                              <span className="font-bold uppercase tracking-wider text-[10px]">
-                                {a.status === 'Sakit' ? 'Sakit' : a.status === 'Izin' ? 'Izin' : 'Alpa'}
-                                {a.notes ? ` (${a.notes})` : ''}
-                              </span>
-                            </div>
-                          ))}
+                  const detailAtt = Array.isArray(historyDetailJournal.attendance) 
+                    ? historyDetailJournal.attendance 
+                    : Array.isArray((historyDetailJournal as any).attendanceData) 
+                      ? (historyDetailJournal as any).attendanceData 
+                      : [];
+                  const hadir = detailAtt.filter((a: any) => a.status === 'Hadir' || a.status === 'Terlambat').length;
+                  const sakit = detailAtt.filter((a: any) => a.status === 'Sakit').length;
+                  const izin = detailAtt.filter((a: any) => a.status === 'Izin').length;
+                  const alpa = detailAtt.filter((a: any) => a.status === 'Alpa').length;
+                  const nonPresent = detailAtt.filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-3 text-center">
+                          <span className="block text-[10px] font-bold text-emerald-800 uppercase">Hadir</span>
+                          <span className="block text-xl font-extrabold text-emerald-900 mt-1">{hadir}</span>
+                        </div>
+                        <div className="bg-sky-50 border border-sky-150 rounded-2xl p-3 text-center">
+                          <span className="block text-[10px] font-bold text-sky-800 uppercase">Sakit</span>
+                          <span className="block text-xl font-extrabold text-sky-900 mt-1">{sakit}</span>
+                        </div>
+                        <div className="bg-indigo-50 border border-indigo-150 rounded-2xl p-3 text-center">
+                          <span className="block text-[10px] font-bold text-indigo-800 uppercase">Izin</span>
+                          <span className="block text-xl font-extrabold text-indigo-900 mt-1">{izin}</span>
+                        </div>
+                        <div className="bg-rose-50 border border-rose-150 rounded-2xl p-3 text-center">
+                          <span className="block text-[10px] font-bold text-rose-800 uppercase">Alpa</span>
+                          <span className="block text-xl font-extrabold text-rose-900 mt-1">{alpa}</span>
                         </div>
                       </div>
-                    );
-                  }
-                  return (
-                    <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 text-xs text-center text-emerald-800 font-semibold select-none">
-                      Semua siswa hadir (Nihil Absensi).
-                    </div>
+
+                      {/* List of non-present students */}
+                      {nonPresent.length > 0 ? (
+                        <div className="bg-white border border-slate-150 rounded-xl p-3 text-xs leading-relaxed text-slate-700">
+                          <span className="font-extrabold text-slate-800 block mb-1">Rincian Siswa Tidak Hadir / Keterangan Khusus KBM:</span>
+                          <div className="flex flex-col gap-1">
+                            {nonPresent.map((a: any, i: number) => (
+                              <div key={i} className="flex justify-between border-b border-dashed border-slate-100 pb-1">
+                                <span>{a.studentName}</span>
+                                <span className="font-bold uppercase tracking-wider text-[10px]">
+                                  {a.status === 'Sakit' ? 'Sakit' : a.status === 'Izin' ? 'Izin' : 'Alpa'}
+                                  {a.notes ? ` (${a.notes})` : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 text-xs text-center text-emerald-800 font-semibold select-none">
+                          Semua siswa hadir (Nihil Absensi).
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
 
@@ -2349,6 +4070,345 @@ export default function SubjectTeacherPanel({
                 >
                   Tutup Rincian
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Jurnal KBM & Presensi Modal */}
+      <AnimatePresence>
+        {isEditModalOpen && editingJournal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md no-print p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="bg-slate-50 w-full max-w-6xl rounded-3xl overflow-hidden shadow-2xl flex flex-col my-8 max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between">
+                <div className="text-left animate-fade-in">
+                  <span className="px-2 py-0.5 bg-amber-100 text-amber-850 font-extrabold text-[9px] rounded-full uppercase tracking-wider">
+                    Mode Edit Jurnal KBM Mapel
+                  </span>
+                  <h3 className="font-extrabold text-slate-950 text-base mt-0.5">
+                    Edit Jurnal & Presensi Kelas {editingJournal.className}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditModalOpen(false);
+                    setEditingJournal(null);
+                  }}
+                  className="p-1 px-2.5 text-slate-400 hover:text-slate-800 font-bold transition-all hover:bg-slate-100 rounded-lg cursor-pointer text-xs"
+                >
+                  Batal
+                </button>
+              </div>
+
+              {/* Form Content Scrollable */}
+              <div className="flex-1 overflow-y-auto p-6 flex flex-col lg:grid lg:grid-cols-12 gap-6">
+                
+                {/* Left side: Meta details */}
+                <div className="lg:col-span-4 flex flex-col gap-4 text-left">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3.5 shadow-2xs">
+                    <h4 className="font-bold text-slate-900 text-xs border-b border-slate-100 pb-2 flex items-center gap-1.5 font-sans font-black">
+                      <FileText size={14} className="text-amber-600" />
+                      Detail KBM / Pelajaran
+                    </h4>
+
+                    {/* Subject/Class Info (Readonly) */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Mata Pelajaran & Kelas</label>
+                      <div className="px-3 py-2 bg-slate-50 border border-slate-150 rounded-xl font-extrabold text-xs text-slate-700">
+                        {editingJournal.subject} - Kelas {editingJournal.className}
+                      </div>
+                    </div>
+
+                    {/* Tanggal KBM */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Tanggal KBM</label>
+                      <input
+                        type="date"
+                        value={editDate}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditDate(val);
+                          setEditSemester(getSemesterFromDate(val));
+                        }}
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Fase */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Fase</label>
+                        <select
+                          value={editFase}
+                          onChange={(e) => setEditFase(e.target.value)}
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-850 bg-white cursor-pointer"
+                        >
+                          <option value="A">Fase A (Kls 1-2)</option>
+                          <option value="B">Fase B (Kls 3-4)</option>
+                          <option value="C">Fase C (Kls 5-6)</option>
+                          <option value="D">Fase D (Kls 7-9)</option>
+                          <option value="E">Fase E (Kls 10)</option>
+                          <option value="F">Fase F (Kls 11-12)</option>
+                        </select>
+                      </div>
+
+                      {/* Semester */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Semester</label>
+                        <select
+                          value={editSemester}
+                          onChange={(e) => setEditSemester(e.target.value)}
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-850 bg-white cursor-pointer"
+                        >
+                          <option value="Ganjil">Ganjil</option>
+                          <option value="Genap">Genap</option>
+                        </select>
+                      </div>
+                              <div className="grid grid-cols-3 gap-2">
+                      {/* Jam Ke */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Jam Ke</label>
+                        <input
+                          type="text"
+                          value={editJamKe}
+                          onChange={(e) => setEditJamKe(e.target.value)}
+                          placeholder="e.g. 1"
+                          className="px-2 py-1.5 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 text-center bg-white"
+                        />
+                      </div>
+
+                      {/* Pertemuan Ke */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Pertemuan Ke</label>
+                        <select
+                          value={editPertemuanKe}
+                          onChange={(e) => setEditPertemuanKe(e.target.value)}
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                        >
+                          <option value="">Pilih</option>
+                          {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => (
+                            <option key={num} value={String(num)}>{num}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Alokasi Waktu */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Alokasi Waktu (JP)</label>
+                        <select
+                          value={editAlokasiWaktu}
+                          onChange={(e) => setEditAlokasiWaktu(e.target.value)}
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                        >
+                          <option value="">Pilih</option>
+                          {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => (
+                            <option key={num} value={String(num)}>{num} JP</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>             </div>
+
+                    {/* Materi KBM / Topik Pembelajaran */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Materi KBM / Topik</label>
+                      <input
+                        type="text"
+                        value={editTopic}
+                        onChange={(e) => setEditTopic(e.target.value)}
+                        placeholder="e.g. Aljabar Linier & Matriks"
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-semibold text-xs text-slate-850 bg-white"
+                      />
+                    </div>
+
+                    {/* Tujuan Pembelajaran */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Tujuan Pembelajaran</label>
+                      <textarea
+                        value={editTujuanPembelajaran}
+                        onChange={(e) => setEditTujuanPembelajaran(e.target.value)}
+                        placeholder="Siswa dapat mendeskripsikan dan menyelesaikan..."
+                        rows={2}
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-semibold text-xs text-slate-850 resize-none font-sans bg-white"
+                      />
+                    </div>
+
+                    {/* Pencapaian KKTP */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Pecapaian KKTP</label>
+                      <select
+                        value={editPencapaianKktp}
+                        onChange={(e) => setEditPencapaianKktp(e.target.value)}
+                        className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                      >
+                        <option value="Tercapai">Tercapai</option>
+                        <option value="Sebagian Tercapai">Sebagian Tercapai</option>
+                        <option value="Belum Tercapai">Belum Tercapai</option>
+                      </select>
+                    </div>
+
+                    {/* Catatan KBM Tambahan */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Catatan Tambahan</label>
+                      <textarea
+                        value={editNotes}
+                        onChange={(e) => setEditNotes(e.target.value)}
+                        placeholder="Hambatan, penugasan, atau rekap khusus..."
+                        rows={2}
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-semibold text-xs text-slate-850 resize-none font-sans bg-white"
+                      />
+                    </div>
+
+                    {/* Update Action Button */}
+                    <button
+                      type="button"
+                      onClick={handleUpdateJournal}
+                      disabled={isSavingEdit}
+                      className="w-full mt-2 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md shadow-amber-50 border border-amber-700 flex items-center justify-center gap-1.5"
+                    >
+                      {isSavingEdit ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" />
+                          <span>Menyimpan Perubahan...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save size={13} />
+                          <span>Perbarui Jurnal & Absensi</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right side: Student list for attendance */}
+                <div className="lg:col-span-8 flex flex-col gap-4 text-left">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs flex-1 flex flex-col">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4 select-none flex-wrap gap-2">
+                      <div>
+                        <h4 className="font-extrabold text-slate-950 text-xs flex items-center gap-1.5 font-sans font-black">
+                          <Users size={14} className="text-amber-600" />
+                          Presensi KBM Siswa (Kelas {editingJournal.className})
+                        </h4>
+                        <p className="text-[10px] text-slate-450 mt-0.5 font-medium">Ubah status kehadiran siswa untuk jam pelajaran ini.</p>
+                      </div>
+
+                      {/* Quick Bulk actions */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newMap: Record<string, { status: string; notes: string }> = {};
+                            students
+                              .filter(s => s.class && s.class.toLowerCase() === editingJournal.className.toLowerCase())
+                              .forEach(s => {
+                                newMap[s.id] = { status: 'Hadir', notes: '' };
+                              });
+                            setEditDailyStatusMap(newMap);
+                          }}
+                          className="px-2 py-1 text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 rounded-lg cursor-pointer transition-all animate-fade-in"
+                        >
+                          Hadir Semua
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Scrollable list/table of students */}
+                    <div className="flex-1 overflow-y-auto max-h-[50vh] pr-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {students
+                          .filter(s => s.class && s.class.toLowerCase() === editingJournal.className.toLowerCase())
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((student, idx) => {
+                            const currentRecord = editDailyStatusMap[student.id] || { status: 'Hadir', notes: '' };
+                            return (
+                              <div
+                                key={student.id}
+                                className={`p-3 border rounded-xl transition-all flex flex-col gap-2 bg-slate-50/30 ${
+                                  currentRecord.status === 'Hadir' ? 'border-slate-200 focus-within:border-slate-500' :
+                                  currentRecord.status === 'Terlambat' ? 'border-amber-250 bg-amber-50/10' :
+                                  currentRecord.status === 'Sakit' ? 'border-yellow-250 bg-yellow-50/10' :
+                                  currentRecord.status === 'Izin' ? 'border-blue-250 bg-blue-50/10' :
+                                  'border-rose-250 bg-rose-50/10'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-800 font-extrabold text-[10px] flex items-center justify-center select-none font-mono font-black">
+                                      {idx + 1}
+                                    </span>
+                                    <div className="text-left">
+                                      <p className="font-extrabold text-xs text-slate-900 leading-tight font-black">
+                                        {student.name}
+                                      </p>
+                                      <p className="text-[10px] text-slate-400 font-bold font-mono uppercase font-black">
+                                        NISN: {student.nisn || student.id}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Status Radio Buttons */}
+                                <div className="grid grid-cols-5 gap-1 select-none">
+                                  {(['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Alpa'] as const).map(st => (
+                                    <button
+                                      key={st}
+                                      type="button"
+                                      onClick={() => {
+                                        setEditDailyStatusMap(prev => ({
+                                          ...prev,
+                                          [student.id]: {
+                                            ...prev[student.id],
+                                            status: st
+                                          }
+                                        }));
+                                      }}
+                                      className={`py-1 text-[10px] font-extrabold rounded-lg border transition-all text-center cursor-pointer font-black ${
+                                        currentRecord.status === st
+                                          ? st === 'Hadir' ? 'bg-emerald-600 border-emerald-700 text-white shadow-xs' :
+                                            st === 'Terlambat' ? 'bg-amber-500 border-amber-600 text-white shadow-xs' :
+                                            st === 'Sakit' ? 'bg-yellow-500 border-yellow-600 text-white shadow-xs' :
+                                            st === 'Izin' ? 'bg-blue-600 border-blue-700 text-white shadow-xs' :
+                                            'bg-rose-600 border-rose-700 text-white shadow-xs'
+                                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      {st}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {/* Attendance Notes */}
+                                <input
+                                  type="text"
+                                  placeholder="Keterangan (misal: Surat Sakit, telat 10m)..."
+                                  value={currentRecord.notes || ''}
+                                  onChange={(e) => {
+                                    setEditDailyStatusMap(prev => ({
+                                      ...prev,
+                                      [student.id]: {
+                                        ...prev[student.id],
+                                        notes: e.target.value
+                                      }
+                                    }));
+                                  }}
+                                  className="px-2.5 py-1.5 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-lg text-[10.5px] font-semibold text-slate-700 bg-white"
+                                />
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </motion.div>
           </div>
@@ -2451,6 +4511,101 @@ export default function SubjectTeacherPanel({
         )}
       </AnimatePresence>
 
+      {/* MODAL VISUALISASI KHUSUS SIMPAN NILAI (BERBEDA DARI ABSENSI) */}
+      <AnimatePresence>
+        {showGradeSuccessModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md no-print p-4">
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.85, opacity: 0, y: 15 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 320 }}
+              className="bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-indigo-100 flex flex-col items-center max-w-sm w-full text-center relative overflow-hidden"
+            >
+              {/* Vibrant Indigo-Purple Gradient Bar */}
+              <div className="absolute top-0 inset-x-0 h-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600" />
+              <div className="absolute -right-10 -top-10 w-36 h-36 bg-indigo-100 rounded-full opacity-50 blur-xl pointer-events-none" />
+              <div className="absolute -left-10 -bottom-10 w-36 h-36 bg-violet-100 rounded-full opacity-50 blur-xl pointer-events-none" />
+
+              {/* Distinct Badge & Animated Icon: Indigo Ring with Award/Sparkles */}
+              <div className="relative mb-4 mt-2">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-200 rotate-3">
+                  <motion.div
+                    initial={{ rotate: -25, scale: 0.5 }}
+                    animate={{ rotate: -3, scale: 1 }}
+                    transition={{ type: 'spring', damping: 15, stiffness: 200, delay: 0.1 }}
+                  >
+                    <Award size={40} className="text-white drop-shadow-sm" />
+                  </motion.div>
+                </div>
+                {/* Floating MySQL Live Badge */}
+                <motion.div 
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.35, type: 'spring' }}
+                  className="absolute -bottom-2 -right-2 px-2 py-0.5 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider rounded-full shadow-sm flex items-center gap-1 border border-white"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
+                  MySQL
+                </motion.div>
+              </div>
+
+              {/* Title & Distinct Content */}
+              <h3 className="font-black text-slate-900 text-lg subpixel-antialiased tracking-tight">
+                Nilai Berhasil Tersimpan!
+              </h3>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 border border-indigo-100/80 rounded-full text-[10px] font-bold text-indigo-700 mt-2">
+                <Sparkles size={11} className="text-indigo-600" />
+                <span>Langsung ke Database MySQL</span>
+              </div>
+
+              <p className="text-slate-600 text-xs leading-relaxed mt-2.5 px-1">
+                Data penilaian mata pelajaran <strong className="text-slate-900">{gradeSuccessSummary?.subject || selectedSubject}</strong> untuk <strong className="text-slate-900">Kelas {gradeSuccessSummary?.className || selectedGradeClass}</strong> telah berhasil diperbarui dan dikunci secara permanen.
+              </p>
+
+              {/* Detail Ringkasan Nilai */}
+              <div className="mt-4 w-full bg-gradient-to-b from-slate-50 to-indigo-50/30 border border-slate-200/80 rounded-2xl p-3.5 flex flex-col gap-2 relative z-10 text-xs">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <Users size={13} className="text-indigo-600" />
+                    Murid Ternilai
+                  </span>
+                  <span className="font-black text-slate-900 font-sans">
+                    {gradeSuccessSummary?.count || gradingClassStudents.length} Siswa
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <BookOpen size={13} className="text-violet-600" />
+                    Format Kurikulum
+                  </span>
+                  <span className="font-black text-indigo-700 font-sans">
+                    Kurikulum Merdeka
+                  </span>
+                </div>
+                <div className="border-t border-slate-200/80 my-0.5 pt-1.5 flex justify-between items-center text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  <span>Status Penyimpanan</span>
+                  <span className="font-black text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 size={11} />
+                    MySQL Database OK
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Button with Distinct Violet/Indigo Theme */}
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowGradeSuccessModal(false)}
+                className="mt-5 w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md shadow-indigo-200 flex items-center justify-center gap-2 relative z-10"
+              >
+                <Check size={14} className="stroke-[3px]" />
+                Lanjutkan
+              </motion.button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* MODAL PRINT OUT JURNAL INDIVIDUAL (SUBJECT TEACHER) */}
       <AnimatePresence>
         {selectedJournalToPrint && (
@@ -2494,7 +4649,7 @@ export default function SubjectTeacherPanel({
                     <div className="w-full border-b-4 border-double border-slate-900 pb-2 flex flex-col items-center text-left select-none">
                       <img 
                         src={schoolIdentity.letterhead} 
-                        className="w-full max-h-24 object-contain" 
+                        className="w-full h-auto block" 
                         alt="Kop Surat" 
                         referrerPolicy="no-referrer"
                       />
@@ -2533,7 +4688,7 @@ export default function SubjectTeacherPanel({
                       JURNAL MENGAJAR GURU
                     </h2>
                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 font-mono mt-0.5">
-                      TAHUN PELAJARAN 2025 / 2026
+                      TAHUN PELAJARAN {(schoolIdentity?.activeAcademicYear || '2026/2027').replace('/', ' / ')}
                     </h3>
                   </div>
 
@@ -2548,7 +4703,7 @@ export default function SubjectTeacherPanel({
                       <div className="grid grid-cols-[110px_10px_1fr]">
                         <span className="font-semibold text-slate-500">Kelas/Semester</span>
                         <span>:</span>
-                        <span className="font-black text-slate-1000">Kelas {selectedJournalToPrint.className} / {selectedJournalToPrint.semester || "Genap"}</span>
+                        <span className="font-black text-slate-1000">Kelas {selectedJournalToPrint.className} / {selectedJournalToPrint.semester || getSemesterFromDate(selectedJournalToPrint.date)}</span>
                       </div>
                     </div>
 
@@ -2585,7 +4740,15 @@ export default function SubjectTeacherPanel({
                       <tbody>
                         <tr className="align-top">
                           <td className="border border-slate-900 text-center px-1.5 py-2.5 font-bold" style={{ border: '1px solid #000' }}>
-                            {new Date(selectedJournalToPrint.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
+                            {(() => {
+                              if (!selectedJournalToPrint.date) return '-';
+                              try {
+                                const d = new Date(selectedJournalToPrint.date);
+                                return isNaN(d.getTime()) ? selectedJournalToPrint.date : d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+                              } catch {
+                                return selectedJournalToPrint.date;
+                              }
+                            })()}
                           </td>
                           <td className="border border-slate-900 text-center px-1 py-2.5 font-mono" style={{ border: '1px solid #000' }}>
                             {selectedJournalToPrint.jamKe || "-"}
@@ -2609,11 +4772,16 @@ export default function SubjectTeacherPanel({
                           {/* Absensi sub-table renderer reconstituted as a recap summary */}
                           <td className="border border-slate-900 px-2 py-2.5 text-center font-mono" style={{ border: '1px solid #000' }}>
                             {(() => {
-                              const total = selectedJournalToPrint.attendance.length;
-                              const h = selectedJournalToPrint.attendance.filter(a => a.status === 'Hadir' || a.status === 'Terlambat').length;
-                              const s = selectedJournalToPrint.attendance.filter(a => a.status === 'Sakit').length;
-                              const i = selectedJournalToPrint.attendance.filter(a => a.status === 'Izin').length;
-                              const a = selectedJournalToPrint.attendance.filter(a => a.status === 'Alpa').length;
+                              const printAtt = Array.isArray(selectedJournalToPrint.attendance) 
+                                ? selectedJournalToPrint.attendance 
+                                : Array.isArray((selectedJournalToPrint as any).attendanceData) 
+                                  ? (selectedJournalToPrint as any).attendanceData 
+                                  : [];
+                              const total = printAtt.length;
+                              const h = printAtt.filter((a: any) => a.status === 'Hadir' || a.status === 'Terlambat').length;
+                              const s = printAtt.filter((a: any) => a.status === 'Sakit').length;
+                              const i = printAtt.filter((a: any) => a.status === 'Izin').length;
+                              const a = printAtt.filter((a: any) => a.status === 'Alpa').length;
 
                               return (
                                 <div className="text-[8px] leading-tight flex flex-col items-center">
@@ -2693,17 +4861,31 @@ export default function SubjectTeacherPanel({
               {/* Modal Content */}
               <div className="p-6 overflow-y-auto max-h-[75vh] flex flex-col gap-4">
                 {/* Instructions */}
-                <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-4 text-[11px] leading-relaxed text-emerald-900">
-                  <span className="font-black text-xs block mb-1">Panduan Penggunaan Template Excel:</span>
+                <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-4 text-[11px] leading-relaxed text-emerald-900 flex flex-col gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/60 pb-2">
+                    <div>
+                      <span className="font-black text-xs block">Panduan Penggunaan Template Excel (Format Terbaru):</span>
+                      <p className="text-[10px] text-emerald-700 mt-0.5">Mendukung format terbaru Kurikulum Merdeka (TP1-TP4 Tugas, UH, Kokurikuler, PTS, PAS)</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadExcelTemplate}
+                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
+                    >
+                      <Download size={13} />
+                      <span>Unduh Template Excel Baru</span>
+                    </button>
+                  </div>
+
                   <ol className="list-decimal pl-4 flex flex-col gap-1">
                     <li>Gunakan software <strong>MS Excel</strong> atau <strong>Google Sheets</strong>.</li>
                     <li>
-                      Buatlah tabel dengan kolom yang berurutan dari kiri ke kanan sebagai berikut:
-                      <div className="py-1 px-2 border border-emerald-200 bg-emerald-150/40 rounded-lg font-mono text-[9px] mt-1 text-slate-700">
-                        NIS | Nama Siswa | Nilai TP1 | Nilai TP2 | Nilai TP3 | Nilai Sumatif LM | Nilai SAS
+                      Urutan kolom format terbaru:
+                      <div className="py-1.5 px-2.5 border border-emerald-200 bg-emerald-100/50 rounded-lg font-mono text-[9px] mt-1 text-slate-800 overflow-x-auto">
+                        No | NIS | Nama | TP1_Tugas | TP1_UH | TP2_Tugas | TP2_UH | TP3_Tugas | TP3_UH | TP4_Tugas | TP4_UH | Kokurikuler | PTS | PAS
                       </div>
                     </li>
-                    <li>Sistem akan mendeteksi baris siswa berdasarkan <strong>NIS</strong> (disarankan) atau <strong>Nama Lengkap</strong> yang sesuai di kelas terpilih.</li>
+                    <li>Sistem mendeteksi siswa secara cerdas berdasarkan <strong>NIS</strong> atau <strong>Nama Lengkap</strong> yang sesuai di kelas terpilih.</li>
                     <li>Cukup blok tabel nilai di Excel Anda, tekan <strong>Ctrl+C</strong> (salin), lalu tekan <strong>Ctrl+V</strong> (tempel) di kotak teks di bawah ini.</li>
                   </ol>
                 </div>
@@ -2711,12 +4893,12 @@ export default function SubjectTeacherPanel({
                 {/* Upload or Area Input */}
                 <div className="flex flex-col gap-1.5">
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Metode Tempel Data (Copy-Paste) atau Unggah CSV/TXT</span>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Metode Tempel Data (Copy-Paste) atau Unggah Berkas (.xlsx, .xls, .csv)</span>
                     <label className="text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer">
-                      <span>📁 Unggah Berkas</span>
+                      <span>📁 Unggah Berkas Excel / CSV</span>
                       <input
                         type="file"
-                        accept=".csv,.tsv,.txt"
+                        accept=".xlsx,.xls,.csv,.tsv,.txt"
                         className="hidden"
                         onChange={handleFileUpload}
                       />
@@ -2726,7 +4908,7 @@ export default function SubjectTeacherPanel({
                     rows={8}
                     value={excelPasteContent}
                     onChange={(e) => setExcelPasteContent(e.target.value)}
-                    placeholder="NIS&#9;Nama&#9;Nilai TP1&#9;Nilai TP2&#9;Nilai TP3&#9;Nilai LM&#9;Nilai SAS&#10;24001&#9;Achmad Fauzi&#9;85&#9;80&#9;90&#9;88&#9;82"
+                    placeholder="No&#9;NIS&#9;Nama Siswa&#9;TP1_Tugas&#9;TP1_UH&#9;TP2_Tugas&#9;TP2_UH&#9;TP3_Tugas&#9;TP3_UH&#9;TP4_Tugas&#9;TP4_UH&#9;Kokurikuler&#9;PTS&#9;PAS&#10;1&#9;24001&#9;Achmad Fauzi&#9;85&#9;80&#9;90&#9;85&#9;88&#9;82&#9;90&#9;86&#9;85&#9;80&#9;85"
                     className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-3 font-mono text-xs bg-slate-50/50 leading-relaxed"
                   />
                 </div>
@@ -2745,7 +4927,7 @@ export default function SubjectTeacherPanel({
                     onClick={handleImportExcelData}
                     className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer"
                   >
-                    MOCK & REVIEW DATA COCOK
+                    PROSES & COCOKKAN DATA EXCEL
                   </button>
                 </div>
 
@@ -2761,11 +4943,12 @@ export default function SubjectTeacherPanel({
                           <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                             <th className="py-2 px-3">NIS</th>
                             <th className="py-2 px-3">Nama Input</th>
-                            <th className="py-2 px-2 text-center">TP1</th>
-                            <th className="py-2 px-2 text-center">TP2</th>
-                            <th className="py-2 px-2 text-center">TP3</th>
-                            <th className="py-2 px-2 text-center">Sum LM</th>
-                            <th className="py-2 px-2 text-center">SAS</th>
+                            <th className="py-2 px-2 text-center" title="Tugas / UH">TP1 (T/UH)</th>
+                            <th className="py-2 px-2 text-center" title="Tugas / UH">TP2 (T/UH)</th>
+                            <th className="py-2 px-2 text-center" title="Tugas / UH">TP3 (T/UH)</th>
+                            <th className="py-2 px-2 text-center" title="Tugas / UH">TP4 (T/UH)</th>
+                            <th className="py-2 px-2 text-center">PTS/ASTS</th>
+                            <th className="py-2 px-2 text-center">PAS/SAS</th>
                             <th className="py-2 px-3 text-right">Status Match</th>
                           </tr>
                         </thead>
@@ -2774,11 +4957,20 @@ export default function SubjectTeacherPanel({
                             <tr key={idx} className={`border-b border-slate-100 ${item.matched ? 'bg-emerald-50/30' : 'bg-rose-50/30'}`}>
                               <td className="py-1.5 px-3 font-mono">{item.nis || "-"}</td>
                               <td className="py-1.5 px-3 font-bold text-slate-800">{item.studentName}</td>
-                              <td className="py-1.5 px-2 text-center">{item.tp1Grade}</td>
-                              <td className="py-1.5 px-2 text-center">{item.tp2Grade ?? "-"}</td>
-                              <td className="py-1.5 px-2 text-center">{item.tp3Grade ?? "-"}</td>
-                              <td className="py-1.5 px-2 text-center">{item.nilaiSumatifLM}</td>
-                              <td className="py-1.5 px-2 text-center">{item.nilaiSAS}</td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-indigo-900">
+                                {item.tp1Tugas1 || item.tp1Uh ? `${item.tp1Tugas1 || '-'}/${item.tp1Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-indigo-900">
+                                {item.tp2Tugas1 || item.tp2Uh ? `${item.tp2Tugas1 || '-'}/${item.tp2Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-indigo-900">
+                                {item.tp3Tugas1 || item.tp3Uh ? `${item.tp3Tugas1 || '-'}/${item.tp3Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-indigo-900">
+                                {item.tp4Tugas1 || item.tp4Uh ? `${item.tp4Tugas1 || '-'}/${item.tp4Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-amber-800">{item.pts || "-"}</td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-amber-800">{item.pas || "-"}</td>
                               <td className="py-1.5 px-3 text-right">
                                 {item.matched ? (
                                   <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-black text-[9px] rounded-md uppercase">Terdaftar</span>
@@ -2862,7 +5054,7 @@ export default function SubjectTeacherPanel({
                     <div className="w-full border-b-4 border-double border-slate-900 pb-2 flex flex-col items-center text-left select-none">
                       <img 
                         src={schoolIdentity.letterhead} 
-                        className="w-full max-h-24 object-contain" 
+                        className="w-full h-auto block" 
                         alt="Kop Surat" 
                         referrerPolicy="no-referrer"
                       />
@@ -2901,7 +5093,7 @@ export default function SubjectTeacherPanel({
                       JURNAL MENGAJAR GURU
                     </h2>
                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 font-mono mt-0.5">
-                      TAHUN PELAJARAN 2025 / 2026
+                      TAHUN PELAJARAN {(schoolIdentity?.activeAcademicYear || '2026/2027').replace('/', ' / ')}
                     </h3>
                     <p className="text-[9px] text-slate-500 font-semibold font-sans mt-0.5">
                       {startDate && endDate ? (
@@ -2952,22 +5144,34 @@ export default function SubjectTeacherPanel({
                     <table className="w-full border-collapse border border-slate-900 text-[10px] text-slate-950">
                       <thead>
                         <tr className="bg-slate-100 font-bold uppercase tracking-wider text-slate-900 text-center select-none">
+                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '4%', border: '1px solid #000' }}>No</th>
                           <th className="border border-slate-900 px-2 py-3 text-[10px]" style={{ width: '12%', border: '1px solid #000' }}>Hari / Tanggal / Kelas</th>
-                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '6%', border: '1px solid #000' }}>Jam Ke</th>
-                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '6%', border: '1px solid #000' }}>JP</th>
-                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '7%', border: '1px solid #000' }}>Pertemuan Ke</th>
-                          <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '23%', border: '1px solid #000' }}>Tujuan Pembelajaran</th>
-                          <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '23%', border: '1px solid #000' }}>Materi Pembelajaran</th>
-                          <th className="border border-slate-900 px-1.5 py-3 text-[9px]" style={{ width: '8%', border: '1px solid #000' }}>Pencapaian KKTP</th>
-                          <th className="border border-slate-900 px-1.5 py-3 text-[10px]" style={{ width: '15%', border: '1px solid #000' }}>Rekap Presensi KBM</th>
-                          <th className="border border-slate-900 px-2 py-3 text-[10px]" style={{ width: '10%', border: '1px solid #000' }}>Keterangan</th>
+                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '5%', border: '1px solid #000' }}>Jam Ke</th>
+                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '5%', border: '1px solid #000' }}>JP</th>
+                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '6%', border: '1px solid #000' }}>Pertemuan Ke</th>
+                          <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '22%', border: '1px solid #000' }}>Tujuan Pembelajaran</th>
+                          <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '22%', border: '1px solid #000' }}>Materi Pembelajaran</th>
+                          <th className="border border-slate-900 px-1.5 py-3 text-[9px]" style={{ width: '7%', border: '1px solid #000' }}>Pencapaian KKTP</th>
+                          <th className="border border-slate-900 px-1.5 py-3 text-[10px]" style={{ width: '10%', border: '1px solid #000' }}>Rekap Presensi KBM</th>
+                          <th className="border border-slate-900 px-2 py-3 text-[10px]" style={{ width: '7%', border: '1px solid #000' }}>Keterangan</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredJournals.map((journalToPrint, index) => (
                           <tr key={journalToPrint.id || index} className="align-top">
+                            <td className="border border-slate-900 text-center px-1 py-2.5 font-bold" style={{ border: '1px solid #000' }}>
+                              {index + 1}
+                            </td>
                             <td className="border border-slate-900 text-center px-1.5 py-2.5 font-bold" style={{ border: '1px solid #000' }}>
-                              <div>{new Date(journalToPrint.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                              <div>{(() => {
+                                if (!journalToPrint.date) return '-';
+                                try {
+                                  const d = new Date(journalToPrint.date);
+                                  return isNaN(d.getTime()) ? journalToPrint.date : d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+                                } catch {
+                                  return journalToPrint.date;
+                                }
+                              })()}</div>
                               <div className="text-[9px] bg-slate-100 rounded px-1 py-0.5 mt-1 text-slate-705 select-none inline-block font-sans font-black uppercase">{journalToPrint.className}</div>
                             </td>
                             <td className="border border-slate-900 text-center px-1 py-2.5 font-mono" style={{ border: '1px solid #000' }}>
@@ -2992,11 +5196,17 @@ export default function SubjectTeacherPanel({
                             {/* Absensi sub-table renderer reconstituted as a recap summary */}
                             <td className="border border-slate-900 px-2 py-2.5 text-center font-mono" style={{ border: '1px solid #000' }}>
                               {(() => {
-                                const total = journalToPrint.attendance.length;
-                                const h = journalToPrint.attendance.filter(a => a.status === 'Hadir' || a.status === 'Terlambat').length;
-                                const s = journalToPrint.attendance.filter(a => a.status === 'Sakit').length;
-                                const i = journalToPrint.attendance.filter(a => a.status === 'Izin').length;
-                                const a = journalToPrint.attendance.filter(a => a.status === 'Alpa').length;
+                                const collAtt = Array.isArray(journalToPrint.attendance) 
+                                  ? journalToPrint.attendance 
+                                  : Array.isArray((journalToPrint as any).attendanceData) 
+                                    ? (journalToPrint as any).attendanceData 
+                                    : [];
+                                const total = collAtt.length;
+                                const h = collAtt.filter((a: any) => a.status === 'Hadir' || a.status === 'Terlambat').length;
+                                const s = collAtt.filter((a: any) => a.status === 'Sakit').length;
+                                const i = collAtt.filter((a: any) => a.status === 'Izin').length;
+                                const a = collAtt.filter((a: any) => a.status === 'Alpa').length;
+                                const absentList = collAtt.filter((st: any) => st.status === 'Sakit' || st.status === 'Izin' || st.status === 'Alpa');
 
                                 return (
                                   <div className="text-[8px] leading-tight flex flex-col items-center">
@@ -3005,11 +5215,10 @@ export default function SubjectTeacherPanel({
                                     {s > 0 && <span className="text-amber-600 font-medium">S: {s}</span>}
                                     {i > 0 && <span className="text-blue-600 font-medium">I: {i}</span>}
                                     {a > 0 && <span className="text-rose-600 font-black">A: {a}</span>}
-                                    {journalToPrint.attendance.filter(st => st.status === 'Sakit' || st.status === 'Izin' || st.status === 'Alpa').length > 0 && (
+                                    {absentList.length > 0 && (
                                       <div className="text-[7.5px] leading-tight text-slate-500 mt-1 pb-0.5 font-sans border-t border-slate-200/40 pt-1 text-center font-normal">
-                                        {journalToPrint.attendance
-                                          .filter(st => st.status === 'Sakit' || st.status === 'Izin' || st.status === 'Alpa')
-                                          .map(st => `${st.studentName} (${st.status.substring(0, 1)})`)
+                                        {absentList
+                                          .map((st: any) => `${st.studentName} (${st.status.substring(0, 1)})`)
                                           .join(', ')
                                         }
                                       </div>
@@ -3133,10 +5342,10 @@ export default function SubjectTeacherPanel({
           onClick={() => setShowMoreMenu(prev => !prev)}
           className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
         >
-          <div className={`p-1.5 rounded-xl transition-colors ${(activeSubTab === 'profile' || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-            <LayoutGrid size={20} className={(activeSubTab === 'profile' || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          <div className={`p-1.5 rounded-xl transition-colors ${(activeSubTab === 'profile' || activeSubTab === 'jadwal' || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={(activeSubTab === 'profile' || activeSubTab === 'jadwal' || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
           </div>
-          <span className={`text-[9.5px] leading-none ${(activeSubTab === 'profile' || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
+          <span className={`text-[9.5px] leading-none ${(activeSubTab === 'profile' || activeSubTab === 'jadwal' || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
         </button>
       </div>
 
@@ -3156,22 +5365,49 @@ export default function SubjectTeacherPanel({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10"
+              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-5 shadow-2xl text-left flex flex-col gap-2 max-h-[85vh] overflow-y-auto pb-8"
             >
-              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Lainnya</span>
-                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Akses Tambahan Guru Mapel</h4>
+              {/* Android Top Drag Handle */}
+              <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0" />
+
+              {/* Minimal Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-600" />
+                  <h4 className="text-slate-900 font-bold text-sm tracking-tight">
+                    Menu Lainnya
+                  </h4>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowMoreMenu(false)}
-                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-xs cursor-pointer transition-colors"
                 >
-                  Tutup
+                  ✕
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+              {/* 3 Horizontal Columns Android App Drawer Grid */}
+              <div className="grid grid-cols-3 gap-y-4 gap-x-2 py-2">
+                {/* 1. Jadwal */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('jadwal');
+                    setFeedback(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-md shadow-indigo-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🗓️
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Jadwal Pelajaran
+                  </span>
+                </button>
+
+                {/* 2. Profil */}
                 <button
                   type="button"
                   onClick={() => {
@@ -3179,19 +5415,17 @@ export default function SubjectTeacherPanel({
                     setFeedback(null);
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeSubTab === 'profile'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg">👤</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Profil Saya</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Detail pendidik, verifikasi mata pelajaran, &amp; atur sandi</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-md shadow-sky-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    👤
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Profil Saya
+                  </span>
                 </button>
 
+                {/* 3. PKG */}
                 <button
                   type="button"
                   onClick={() => {
@@ -3199,87 +5433,289 @@ export default function SubjectTeacherPanel({
                     setFeedback(null);
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeSubTab === 'pkg'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🎖️</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Evaluasi PKG</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Penilaian Kinerja Guru berkala dari Kepala Sekolah</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md shadow-amber-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🎖️
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Evaluasi PKG
+                  </span>
                 </button>
 
+                {/* 4. Unduh APK */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (schoolIdentity?.apkUrl) {
+                      window.open(schoolIdentity.apkUrl, "_blank");
+                    } else {
+                      alert("Link unduhan Android belum diatur oleh Administrator.");
+                    }
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Smartphone className="w-7 h-7 text-white stroke-[2.2]" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Unduh APK
+                  </span>
+                </button>
+
+                {/* 5. Unduh iOS */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (schoolIdentity?.iosUrl) {
+                      window.open(schoolIdentity.iosUrl, "_blank");
+                    } else {
+                      alert("Link unduhan iOS belum diatur oleh Administrator.");
+                    }
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-900 shadow-md shadow-slate-700/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Apple className="w-7 h-7 text-white stroke-[2.2]" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Aplikasi iOS
+                  </span>
+                </button>
+
+                {/* 6. Keluar */}
                 <button
                   type="button"
                   onClick={() => {
                     onLogout();
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-rose-800">Keluar Sesi</h5>
-                    <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Akhiri sesi login guru mata pelajaran dengan aman</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-red-600 shadow-md shadow-rose-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🚪
                   </div>
+                  <span className="text-[11px] font-semibold text-rose-600 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Keluar Sesi
+                  </span>
                 </button>
-              </div>
-
-              {/* Quick access to download Mobile Apps in the bottom sheet menu */}
-              <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                  📲 Unduh Aplikasi Mobile Resmi
-                </span>
-                <p className="text-[10px] text-slate-500 leading-normal">
-                  Gunakan aplikasi mobile resmi untuk kemudahan akses monitor seluruh kegiatan pengajaran &amp; pelaporan penilaian langsung lewat HP.
-                </p>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  <a
-                    href={schoolIdentity?.apkUrl || "#"}
-                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!schoolIdentity?.apkUrl) {
-                        e.preventDefault();
-                        alert("Link unduhan Android belum diatur oleh Administrator.");
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
-                      schoolIdentity?.apkUrl 
-                        ? "bg-emerald-50 hover:bg-emerald-105 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
-                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <Smartphone size={13} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
-                    <span className="text-[10px]">Android APK</span>
-                  </a>
-
-                  <a
-                    href={schoolIdentity?.iosUrl || "#"}
-                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!schoolIdentity?.iosUrl) {
-                        e.preventDefault();
-                        alert("Link unduhan iOS belum diatur oleh Administrator.");
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
-                      schoolIdentity?.iosUrl 
-                        ? "bg-sky-50 hover:bg-sky-105 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
-                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <Apple size={13} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
-                    <span className="text-[10px]">iOS Apple</span>
-                  </a>
-                </div>
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+      {/* MODAL CETAK PDF RAPOR PENILAIAN */}
+      <AnimatePresence>
+        {showPrintGradePdfModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4 no-print overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-5xl w-full text-slate-900 overflow-hidden flex flex-col my-auto"
+            >
+              {/* Modal Actions Header - hidden during print */}
+              <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center no-print select-none">
+                <div className="flex items-center gap-2">
+                  <Printer size={18} className="text-amber-400" />
+                  <span className="font-extrabold text-sm uppercase">Cetak PDF / Print Rapor Penilaian</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md transition-all"
+                  >
+                    <Printer size={14} />
+                    <span>Cetak PDF Sekarang</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintGradePdfModal(false)}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white cursor-pointer"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Printable Paper Document Container */}
+              <div className="p-8 text-slate-900 bg-white" id="print-penilaian-document">
+                {/* Kop Surat Sekolah */}
+                <div className="flex items-center justify-between border-b-4 border-double border-slate-800 pb-4 mb-4">
+                  <div className="w-16 h-16 flex items-center justify-center shrink-0">
+                    {schoolIdentity?.logo ? (
+                      <img src={schoolIdentity.logo} alt="Logo Sekolah" className="max-h-16 object-contain" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full bg-slate-800 text-white flex items-center justify-center font-black text-xl">
+                        S
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-center flex-1 px-4">
+                    <h1 className="text-lg font-black uppercase tracking-wider text-slate-900">{schoolIdentity?.name || "PEMERINTAH KABUPATEN / MADRASAH"}</h1>
+                    <p className="text-xs font-bold text-slate-700">{schoolIdentity?.subheading || "LAPORAN HASIL EVALUASI PEMBELAJARAN KURIKULUM MERDEKA"}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{schoolIdentity?.address || "Jl. Pendidikan No. 1"} | Telp: {schoolIdentity?.phone || "(021) 1234567"}</p>
+                  </div>
+                  <div className="w-16 h-16 flex items-center justify-center shrink-0">
+                    {schoolIdentity?.logo2 ? (
+                      <img src={schoolIdentity.logo2} alt="Logo 2" className="max-h-16 object-contain" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full bg-indigo-900 text-white flex items-center justify-center font-black text-xs">
+                        {schoolIdentity?.accreditation ? `AKREDITASI ${schoolIdentity.accreditation}` : "MERDEKA"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Title */}
+                <div className="text-center mb-6">
+                  <h2 className="text-base font-black uppercase text-slate-900 underline underline-offset-4 decoration-2">
+                    REKAPITULASI PENILAIAN RAPOR KURIKULUM MERDEKA
+                  </h2>
+                  <p className="text-xs font-bold text-slate-600 mt-1">
+                    Format Penilaian Capaian Pembelajaran Terbaru
+                  </p>
+                </div>
+
+                {/* Metadata Grid */}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs font-medium text-slate-800 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <div><span className="font-bold text-slate-500">Mata Pelajaran:</span> <strong className="text-slate-900">{selectedSubject}</strong></div>
+                  <div><span className="font-bold text-slate-500">Kelas:</span> <strong className="text-slate-900">{selectedGradeClass}</strong></div>
+                  <div><span className="font-bold text-slate-500">Semester:</span> <strong className="text-slate-900">{selectedSemesterGrading}</strong></div>
+                  <div><span className="font-bold text-slate-500">Tahun Ajaran:</span> <strong className="text-slate-900">{selectedYearGrading}</strong></div>
+                  <div><span className="font-bold text-slate-500">Guru Pengampu:</span> <strong className="text-slate-900">{currentTeacher.name}</strong></div>
+                  <div><span className="font-bold text-slate-500">Tanggal Cetak:</span> <strong className="text-slate-900">{new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</strong></div>
+                </div>
+
+                {/* Grade Table */}
+                <div className="overflow-x-auto mb-8">
+                  <table className="w-full text-left text-[10px] border-collapse border border-slate-800">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-900 font-black uppercase text-center border-b border-slate-800">
+                        <th className="p-1.5 border border-slate-800 w-8 sticky left-0 z-20 bg-slate-100" rowSpan={2}>No</th>
+                        <th className="p-1.5 border border-slate-800 text-left min-w-[140px] sticky left-8 z-20 bg-slate-100 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.2)]" rowSpan={2}>NIS / Nama Siswa</th>
+                        <th className="p-1 border border-slate-800" colSpan={3}>TP 1</th>
+                        <th className="p-1 border border-slate-800" colSpan={3}>TP 2</th>
+                        <th className="p-1 border border-slate-800" colSpan={3}>TP 3</th>
+                        <th className="p-1 border border-slate-800" colSpan={3}>TP 4</th>
+                        <th className="p-1.5 border border-slate-800 w-12" rowSpan={2}>Rata TP</th>
+                        <th className="p-1.5 border border-slate-800 w-12" rowSpan={2}>Kokur.</th>
+                        <th className="p-1.5 border border-slate-800 w-10" rowSpan={2}>PTS</th>
+                        <th className="p-1.5 border border-slate-800 w-10" rowSpan={2}>PAS</th>
+                        <th className="p-1.5 border border-slate-800 w-12 font-black bg-slate-200" rowSpan={2}>NA Mapel</th>
+                      </tr>
+                      <tr className="bg-slate-50 text-slate-700 font-bold text-[9px] text-center border-b border-slate-800">
+                        <th className="p-1 border border-slate-800 w-8">Tugas</th><th className="p-1 border border-slate-800 w-8">UH</th>
+                        <th className="p-1 border border-slate-800 w-8">Tugas</th><th className="p-1 border border-slate-800 w-8">UH</th>
+                        <th className="p-1 border border-slate-800 w-8">Tugas</th><th className="p-1 border border-slate-800 w-8">UH</th>
+                        <th className="p-1 border border-slate-800 w-8">Tugas</th><th className="p-1 border border-slate-800 w-8">UH</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gradingClassStudents.map((st, idx) => {
+                        const inputState = gradeInputMap[st.id] || {
+                          tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+                          tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+                          tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+                          tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
+                        };
+
+                        const calcTp = (t1: any, uh: any) => {
+                          const n1 = t1 !== '' && !isNaN(Number(t1)) ? Number(t1) : null;
+                          const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
+                          if (n1 === null && n3 === null) return null;
+                          if (n1 !== null && n3 !== null) return Math.round((n1 * 0.7) + (n3 * 0.3));
+                          if (n1 !== null) return Math.round(n1);
+                          if (n3 !== null) return Math.round(n3);
+                          return null;
+                        };
+
+                        const tp1 = calcTp(inputState.tp1Tugas1, inputState.tp1Uh);
+                        const tp2 = calcTp(inputState.tp2Tugas1, inputState.tp2Uh);
+                        const tp3 = calcTp(inputState.tp3Tugas1, inputState.tp3Uh);
+                        const tp4 = calcTp(inputState.tp4Tugas1, inputState.tp4Uh);
+
+                        const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
+                        const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
+
+                        const matchedAssessment = merdekaAssessments.find(a =>
+                          a.studentId === st.id &&
+                          isSameSubject(a.subject, selectedSubject) &&
+                          a.semester === selectedSemesterGrading &&
+                          a.academicYear === selectedYearGrading
+                        );
+
+                        const kokuVal = (inputState as any).kokurikuler ? Number((inputState as any).kokurikuler) : (matchedAssessment?.nilaiKokurikuler ?? 0);
+                        const ptsVal = (inputState as any).pts ? Number((inputState as any).pts) : (matchedAssessment?.nilaiPts ?? 0);
+                        const pasVal = (inputState as any).pas ? Number((inputState as any).pas) : (matchedAssessment?.nilaiPas ?? 0);
+
+                        const finalMapel = avgTp !== null
+                          ? Math.round(((avgTp * 3) + kokuVal + ptsVal + pasVal) / 6)
+                          : null;
+
+                        return (
+                          <tr key={st.id} className="border-b border-slate-300 hover:bg-slate-50 text-center group">
+                            <td className="p-1 border border-slate-300 font-mono text-slate-500 sticky left-0 z-10 bg-white group-hover:bg-slate-50">{idx + 1}</td>
+                            <td className="p-1 border border-slate-300 text-left sticky left-8 z-10 bg-white group-hover:bg-slate-50 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.08)] min-w-[140px] max-w-[180px]">
+                              <div className="font-bold text-slate-900 truncate" title={st.name}>{st.name}</div>
+                              <div className="text-[9px] font-mono text-slate-500">{st.nis || st.id}</div>
+                            </td>
+                            <td className="p-1 border border-slate-300">{inputState.tp1Tugas1 || "-"}</td>
+                            <td className="p-1 border border-slate-300 font-bold">{inputState.tp1Uh || "-"}</td>
+
+                            <td className="p-1 border border-slate-300">{inputState.tp2Tugas1 || "-"}</td>
+                            <td className="p-1 border border-slate-300 font-bold">{inputState.tp2Uh || "-"}</td>
+
+                            <td className="p-1 border border-slate-300">{inputState.tp3Tugas1 || "-"}</td>
+                            <td className="p-1 border border-slate-300 font-bold">{inputState.tp3Uh || "-"}</td>
+
+                            <td className="p-1 border border-slate-300">{inputState.tp4Tugas1 || "-"}</td>
+                            <td className="p-1 border border-slate-300 font-bold">{inputState.tp4Uh || "-"}</td>
+
+                            <td className="p-1 border border-slate-300 font-bold text-indigo-900 bg-indigo-50/30">{avgTp !== null ? avgTp : "-"}</td>
+                            <td className="p-1 border border-slate-300 font-bold text-purple-900">{kokuVal || "-"}</td>
+                            <td className="p-1 border border-slate-300">{ptsVal || "-"}</td>
+                            <td className="p-1 border border-slate-300">{pasVal || "-"}</td>
+                            <td className="p-1 border border-slate-300 font-black text-slate-900 bg-slate-100 text-xs">{finalMapel !== null ? finalMapel : "-"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Signatures */}
+                <div className="grid grid-cols-2 gap-8 text-xs font-semibold text-slate-800 text-center pt-6">
+                  <div>
+                    <p>Mengetahui,</p>
+                    <p className="font-bold">Kepala Sekolah</p>
+                    <div className="h-16 flex items-center justify-center my-1">
+                      {schoolIdentity?.principalSignature ? (
+                        <img src={schoolIdentity.principalSignature} alt="TTD Kepala Sekolah" className="max-h-14 object-contain" />
+                      ) : (
+                        <div className="text-[10px] italic text-slate-400">(Tanda Tangan)</div>
+                      )}
+                    </div>
+                    <p className="font-extrabold underline text-slate-900">{schoolIdentity?.principal || "NUR HASAN, S.Pd., M.Si."}</p>
+                    <p className="text-[10px] text-slate-500">NIP. 19780512 200501 1 003</p>
+                  </div>
+
+                  <div>
+                    <p>Sidoarjo, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                    <p className="font-bold">Guru Mata Pelajaran</p>
+                    <div className="h-16 flex items-center justify-center my-1">
+                      <div className="text-[10px] italic text-slate-400">(Tanda Tangan)</div>
+                    </div>
+                    <p className="font-extrabold underline text-slate-900">{currentTeacher.name}</p>
+                    <p className="text-[10px] text-slate-500">NIP / NIK. {currentTeacher.username || "202401001"}</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

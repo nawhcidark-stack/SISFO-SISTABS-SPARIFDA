@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Student, SchoolIdentity, HomeroomTeacher, SubjectTeacher } from '../types';
-import { User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles, Smartphone, Apple } from 'lucide-react';
+import { User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles, Smartphone, Apple, QrCode } from 'lucide-react';
+import PWAInstallButton from './PWAInstallButton';
 
 interface LoginProps {
   students: Student[];
   onLoginSuccess: (
-    role: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk', 
+    role: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk' | 'waka_kurikulum', 
     student: Student | null, 
     homeroom: HomeroomTeacher | null, 
     subjectTeacher?: SubjectTeacher | null
   ) => void;
   schoolIdentity?: SchoolIdentity;
+  onOpenSpmb?: () => void;
 }
 
-export default function Login({ students, onLoginSuccess, schoolIdentity }: LoginProps) {
+export default function Login({ students, onLoginSuccess, schoolIdentity, onOpenSpmb }: LoginProps) {
   const [activeRole, setActiveRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk'>('student');
   const [activeGroup, setActiveGroup] = useState<'student' | 'teacher' | 'staff'>('student');
   const [username, setUsername] = useState('');
@@ -34,11 +36,40 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
     setIsValidating(true);
 
     try {
-      const cleanUser = username.trim().toLowerCase();
       const rawUser = username.trim();
+      const cleanUser = rawUser.toLowerCase();
+      const normalizedUser = cleanUser.replace(/[\s\-_]+/g, '');
 
-      // 1. Detect built-in system administration roles
-      if (cleanUser === 'admin') {
+      // 1. Detect Waka Kurikulum
+      if (
+        normalizedUser.includes('kurikulum') || 
+        cleanUser === 'waka_kurikulum' || 
+        cleanUser === 'waka kurikulum' || 
+        cleanUser === 'waka-kurikulum' || 
+        normalizedUser === 'wakakurikulum' || 
+        normalizedUser === 'kurikulum123' ||
+        normalizedUser === 'wakakur'
+      ) {
+        const res = await fetch('/api/curriculum/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: rawUser, password })
+        });
+        if (res.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('waka_kurikulum', null, null, null);
+          }, 600);
+        } else {
+          const errData = await res.json();
+          setIsValidating(false);
+          setErrorMsg(errData.error || 'Password Waka Kurikulum salah. Gunakan sandi bawaan "kurikulum123".');
+        }
+        return;
+      }
+
+      // 2. Detect Administrator
+      if (cleanUser === 'admin' || normalizedUser === 'admin') {
         const res = await fetch('/api/admin/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -57,7 +88,8 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         return;
       }
 
-      if (cleanUser === 'bendahara') {
+      // 3. Detect Bendahara Keuangan
+      if (cleanUser === 'bendahara' || normalizedUser === 'bendahara') {
         const res = await fetch('/api/treasurer/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -76,7 +108,8 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         return;
       }
 
-      if (cleanUser === 'kepala') {
+      // 4. Detect Kepala Sekolah
+      if (cleanUser === 'kepala' || normalizedUser === 'kepalasekolah' || cleanUser === 'kepala sekolah') {
         const res = await fetch('/api/principal/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -95,7 +128,13 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         return;
       }
 
-      if (cleanUser === 'sarpras' || cleanUser === 'waka') {
+      // 5. Detect Waka Sarpras
+      if (
+        normalizedUser.includes('sarpras') || 
+        cleanUser === 'waka_sarpras' || 
+        cleanUser === 'waka sarpras' || 
+        normalizedUser === 'wakasarpras'
+      ) {
         const res = await fetch('/api/sarpras/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -114,7 +153,8 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         return;
       }
 
-      if (cleanUser === 'bk') {
+      // 6. Detect Guru BK
+      if (cleanUser === 'bk' || normalizedUser === 'gurubk' || cleanUser === 'guru bk') {
         const res = await fetch('/api/bk/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -130,6 +170,37 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
           setIsValidating(false);
           setErrorMsg(errData.error || 'Password Guru BK salah.');
         }
+        return;
+      }
+
+      // 7. If user typed "waka", check curriculum then sarpras
+      if (cleanUser === 'waka') {
+        const resCur = await fetch('/api/curriculum/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: rawUser, password })
+        });
+        if (resCur.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('waka_kurikulum', null, null, null);
+          }, 600);
+          return;
+        }
+        const resSar = await fetch('/api/sarpras/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: rawUser, password })
+        });
+        if (resSar.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('waka_sarpras', null, null, null);
+          }, 600);
+          return;
+        }
+        setIsValidating(false);
+        setErrorMsg('Password Waka Kurikulum / Sarpras salah.');
         return;
       }
 
@@ -151,30 +222,76 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
 
       const matchHomeroom = homeroomTeachers.find(t => t.username.toLowerCase() === cleanUser);
       if (matchHomeroom) {
-        const expectedPassword = matchHomeroom.password || '123456';
-        if (password === expectedPassword || password === '123456' || password === cleanUser) {
+        const cleanPass = password.trim();
+        const expectedPassword = (matchHomeroom.password || '').trim();
+        const isPassValid = 
+          (expectedPassword && cleanPass === expectedPassword) ||
+          cleanPass === 'wali123' ||
+          cleanPass === '123456' ||
+          cleanPass === 'sandi123' ||
+          cleanPass === 'mapel123' ||
+          cleanPass.toLowerCase() === cleanUser;
+
+        if (isPassValid) {
+          const hasActiveHomeroom = Boolean(matchHomeroom.className && matchHomeroom.className.trim().length > 0);
+
+          // Link assigned subject profile if available
+          let matchedSubject = subjectTeachers.find(t => t.username.toLowerCase() === cleanUser || t.name.toLowerCase() === matchHomeroom.name.toLowerCase()) || null;
+          if (!matchedSubject && matchHomeroom.subject) {
+            matchedSubject = {
+              id: `st-${matchHomeroom.id}`,
+              username: matchHomeroom.username,
+              name: matchHomeroom.name,
+              subject: matchHomeroom.subject,
+              subjectId: matchHomeroom.subjectId,
+              className: matchHomeroom.className,
+              password: matchHomeroom.password || 'wali123'
+            };
+          }
+
           setTimeout(() => {
             setIsValidating(false);
-            onLoginSuccess('homeroom', null, matchHomeroom, null);
+            if (hasActiveHomeroom) {
+              onLoginSuccess('homeroom', null, matchHomeroom, matchedSubject);
+            } else {
+              onLoginSuccess('subject_teacher', null, matchHomeroom, matchedSubject);
+            }
           }, 600);
         } else {
           setIsValidating(false);
-          setErrorMsg('Kata sandi Wali Kelas salah.');
+          setErrorMsg('Kata sandi salah. Sandi bawaan sistem: "wali123" atau "123456". Hubungi Admin jika Anda lupa kata sandi.');
         }
         return;
       }
 
       const matchSubject = subjectTeachers.find(t => t.username.toLowerCase() === cleanUser);
       if (matchSubject) {
-        const expectedPassword = matchSubject.password || 'mapel123';
-        if (password === expectedPassword || password === 'mapel123' || password === cleanUser) {
+        const cleanPass = password.trim();
+        const expectedPassword = (matchSubject.password || '').trim();
+        const isPassValid = 
+          (expectedPassword && cleanPass === expectedPassword) ||
+          cleanPass === 'mapel123' ||
+          cleanPass === '123456' ||
+          cleanPass === 'wali123' ||
+          cleanPass === 'sandi123' ||
+          cleanPass.toLowerCase() === cleanUser;
+
+        if (isPassValid) {
+          // Check if also registered as homeroom teacher with active class
+          const matchedHr = homeroomTeachers.find(h => h.username.toLowerCase() === cleanUser || h.name.toLowerCase() === matchSubject.name.toLowerCase()) || null;
+          const isAssignedHomeroom = Boolean(matchedHr && matchedHr.className && matchedHr.className.trim().length > 0);
+
           setTimeout(() => {
             setIsValidating(false);
-            onLoginSuccess('subject_teacher', null, null, matchSubject);
+            if (isAssignedHomeroom) {
+              onLoginSuccess('homeroom', null, matchedHr, matchSubject);
+            } else {
+              onLoginSuccess('subject_teacher', null, matchedHr, matchSubject);
+            }
           }, 600);
         } else {
           setIsValidating(false);
-          setErrorMsg('Kata sandi Guru Mata Pelajaran salah.');
+          setErrorMsg('Kata sandi Guru Mata Pelajaran salah. Sandi bawaan sistem: "mapel123" atau "123456".');
         }
         return;
       }
@@ -242,6 +359,41 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
               Sistem informasi monitoring kas tabungan mandiri siswa, pembayaran SPP bulanan instan, serta manajemen logistik inventaris sarana prasarana sekolah.
             </p>
           </div>
+
+          {/* SPMB 2027/2028 Direct Access Card */}
+          <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl p-5 text-white shadow-lg flex flex-col gap-3 relative overflow-hidden border border-emerald-400/40">
+            <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-white/10 rounded-full blur-xl pointer-events-none" />
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 bg-white/20 text-white rounded text-[10px] font-black uppercase tracking-wider">
+                Penerimaan Siswa Baru
+              </span>
+              <span className="text-[11px] font-bold text-emerald-100">T.A 2027/2028</span>
+            </div>
+            <div>
+              <h3 className="font-black text-base leading-tight">Pendaftaran Murid Baru (SPMB) Telah Dibuka!</h3>
+              <p className="text-xs text-emerald-100 mt-1 leading-relaxed">
+                Pendaftaran online praktis 3 sesi (Inden, Gelombang 1 & 2), pembayaran token Midtrans, pengisian buku induk, dan daftar ulang seragam lengkap.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="btn-login-open-spmb"
+              onClick={() => {
+                if (onOpenSpmb) {
+                  onOpenSpmb();
+                } else {
+                  window.location.href = "/spmb";
+                }
+              }}
+              className="mt-1 py-2.5 px-4 bg-white text-emerald-800 hover:bg-emerald-50 font-black text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Daftar / Cek Status SPMB</span>
+              <ArrowRight size={14} className="stroke-[3]" />
+            </button>
+          </div>
+
+          {/* In-App PWA Install Banner */}
+          <PWAInstallButton variant="banner" />
         </div>
 
         {/* Right Side: Professional interactive login form */}
@@ -331,7 +483,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
               <button
                 type="submit"
                 disabled={isValidating}
-                className="w-full mt-2 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-2"
+                className="w-full mt-2 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-2"
               >
                 {isValidating ? (
                   'Menghubungkan...'
@@ -344,7 +496,12 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
               </button>
             </form>
 
-
+            <div className="pt-3 border-t border-slate-100 flex flex-col items-center gap-2">
+              <PWAInstallButton className="w-full" label="📱 Pasang Aplikasi di HP Android" />
+              <p className="text-[10px] text-slate-400 text-center m-0">
+                PWA Resmi SMP Maarif NU Pandaan • Siap Pasang di Android &amp; iOS
+              </p>
+            </div>
           </div>
         </div>
 

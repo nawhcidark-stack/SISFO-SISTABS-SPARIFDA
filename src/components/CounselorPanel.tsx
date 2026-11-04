@@ -33,35 +33,69 @@ import {
   ArrowRight,
   TrendingUp,
   FileText,
-  Check
+  Trash2,
+  Check,
+  Filter,
+  ArrowUpDown,
+  RotateCcw,
+  Plus,
+  X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student } from "../types";
+import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student, ClassSchedule, SubjectTeacher, HomeroomTeacher } from "../types";
 import BukuIndukManagement from "./BukuIndukManagement";
+import ScheduleView from "./ScheduleView";
+import { Pagination } from "./Pagination";
 
 interface CounselorPanelProps {
   schoolIdentity?: SchoolIdentity;
   onLogout: () => void;
   onRefresh: () => void;
   onUpdateStudent: (id: string, data: any) => Promise<boolean>;
+  classSchedules?: ClassSchedule[];
+  subjectTeachers?: SubjectTeacher[];
+  homerooms?: HomeroomTeacher[];
+  students?: Student[];
+  attendanceLogs?: AttendanceLog[];
 }
 
-export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, onUpdateStudent }: CounselorPanelProps) {
+export default function CounselorPanel({ 
+  schoolIdentity, 
+  onLogout, 
+  onRefresh, 
+  onUpdateStudent, 
+  classSchedules = [], 
+  subjectTeachers = [], 
+  homerooms = [], 
+  students = [],
+  attendanceLogs = []
+}: CounselorPanelProps) {
   const [logs, setLogs] = useState<StudentCounselingLog[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceLog[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceLog[]>(() => (attendanceLogs && attendanceLogs.length > 0) ? attendanceLogs : []);
   const [infractions, setInfractions] = useState<StudentInfractionLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   
   // Tab State
-  const [activeTab, setActiveTab] = useState<'home' | 'counseling' | 'attendance' | 'infractions' | 'buku_induk'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'counseling' | 'attendance' | 'infractions' | 'buku_induk' | 'journals' | 'jadwal'>('home');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+
+  // Teaching Journals State & Filters (Monitoring Jurnal Walas & KBM)
+  const [teachingJournals, setTeachingJournals] = useState<any[]>([]);
+  const [journalTeacherTypeFilter, setJournalTeacherTypeFilter] = useState<'all' | 'subject' | 'homeroom'>('all');
+  const [selectedSubjectTeacherFilter, setSelectedSubjectTeacherFilter] = useState<string>('all');
+  const [selectedHomeroomTeacherFilter, setSelectedHomeroomTeacherFilter] = useState<string>('all');
+  const [journalStartDate, setJournalStartDate] = useState("");
+  const [journalEndDate, setJournalEndDate] = useState("");
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'resolved'>('all');
   const [classFilter, setClassFilter] = useState("all");
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<'all' | 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'>('all');
+  const [attendanceSortBy, setAttendanceSortBy] = useState<'name' | 'class' | 'hadir' | 'sakit' | 'izin' | 'alpa' | 'terlambat' | 'total' | 'rate'>('name');
+  const [attendanceSortOrder, setAttendanceSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Date range filters for attendance & infractions
   const [attendanceStartDate, setAttendanceStartDate] = useState("");
@@ -71,7 +105,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
   // Secondary sub-tab states for custom list or aggregates
   const [attendanceSubTab, setAttendanceSubTab] = useState<'diary' | 'aggregate'>('aggregate');
-  const [infractionSubTab, setInfractionSubTab] = useState<'list' | 'points' | 'reduction' | 'rubric'>('points');
+  const [infractionSubTab, setInfractionSubTab] = useState<'list' | 'points' | 'add' | 'reduction' | 'rubric'>('points');
 
   // Infraction rules rubric configuration inside Counselor Panel
   const [infractionRules, setInfractionRules] = useState<any[]>([]);
@@ -94,13 +128,21 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const [changingPassword, setChangingPassword] = useState(false);
 
   // Custom Quick Counseling draft state (auto-connect from infractions or absences)
+  const [draftStudentId, setDraftStudentId] = useState("");
+  const [draftStudentNisn, setDraftStudentNisn] = useState("");
   const [draftStudentName, setDraftStudentName] = useState("");
   const [draftClassName, setDraftClassName] = useState("");
   const [draftReason, setDraftReason] = useState("");
   const [draftSuccess, setDraftSuccess] = useState(false);
+  const [initiatedStudentIds, setInitiatedStudentIds] = useState<string[]>([]);
+
+  // Print Student Modal state
+  const [showPrintStudentModal, setShowPrintStudentModal] = useState(false);
+  const [printStudentSearch, setPrintStudentSearch] = useState("");
+  const [selectedStudentForPrint, setSelectedStudentForPrint] = useState("");
 
   // Point Reduction State
-  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>(() => (students && students.length > 0) ? students : []);
   const [reductionStudentId, setReductionStudentId] = useState("");
   const [reductionStudentSearch, setReductionStudentSearch] = useState("");
   const [draftStudentSearch, setDraftStudentSearch] = useState("");
@@ -113,38 +155,100 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   });
   const [submittingReduction, setSubmittingReduction] = useState(false);
 
-  // Load all integrated databases
+  // Direct Infraction Point Giving State (Guru BK -> Langsung ke MySQL)
+  const [newInfractionStudentId, setNewInfractionStudentId] = useState("");
+  const [newInfractionStudentSearch, setNewInfractionStudentSearch] = useState("");
+  const [newInfractionRuleId, setNewInfractionRuleId] = useState("");
+  const [newInfractionType, setNewInfractionType] = useState("");
+  const [newInfractionPoints, setNewInfractionPoints] = useState<number>(5);
+  const [newInfractionLocation, setNewInfractionLocation] = useState("Lingkungan Sekolah");
+  const [newInfractionActionTaken, setNewInfractionActionTaken] = useState("Pembinaan disiplin dan konseling oleh Guru BK");
+  const [newInfractionResolutionStatus, setNewInfractionResolutionStatus] = useState<'Dalam Proses' | 'Belum Selesai' | 'Selesai' | 'Butuh Mediasi'>('Dalam Proses');
+  const [newInfractionDate, setNewInfractionDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [newInfractionTime, setNewInfractionTime] = useState(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  });
+  const [submittingInfraction, setSubmittingInfraction] = useState(false);
+
+  // Pagination states for high-volume tabs to eliminate DOM overload & browser freezing
+  const [attendanceAggregatePage, setAttendanceAggregatePage] = useState(1);
+  const [attendanceAggregatePageSize, setAttendanceAggregatePageSize] = useState(25);
+
+  const [attendanceDiaryPage, setAttendanceDiaryPage] = useState(1);
+  const [attendanceDiaryPageSize, setAttendanceDiaryPageSize] = useState(25);
+
+  const [journalsPage, setJournalsPage] = useState(1);
+  const [journalsPageSize, setJournalsPageSize] = useState(15);
+
+  const [infractionPage, setInfractionPage] = useState(1);
+  const [infractionPageSize, setInfractionPageSize] = useState(25);
+
+  const [counselingPage, setCounselingPage] = useState(1);
+  const [counselingPageSize, setCounselingPageSize] = useState(15);
+
+  // Reset pagination to page 1 on filter or search updates
+  useEffect(() => {
+    setCounselingPage(1);
+    setAttendanceAggregatePage(1);
+    setAttendanceDiaryPage(1);
+    setJournalsPage(1);
+    setInfractionPage(1);
+  }, [searchQuery, classFilter, statusFilter, attendanceStatusFilter, journalTeacherTypeFilter, selectedSubjectTeacherFilter, selectedHomeroomTeacherFilter, attendanceStartDate, attendanceEndDate, infractionStartDate, infractionEndDate]);
+
+  // Sync state if props become available after mounting
+  useEffect(() => {
+    if (students && students.length > 0 && allStudents.length === 0) {
+      setAllStudents(students);
+    }
+  }, [students]);
+
+  useEffect(() => {
+    if (attendanceLogs && attendanceLogs.length > 0 && attendance.length === 0) {
+      setAttendance(attendanceLogs);
+    }
+  }, [attendanceLogs]);
+
+  // Load all integrated databases efficiently
   const fetchAllData = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [resCouns, resAtt, resInf, resStud, resRules] = await Promise.all([
+      const [resCouns, resAtt, resInf, resRules, resJournals] = await Promise.all([
         fetch("/api/student-counseling-logs"),
         fetch("/api/attendance"),
         fetch("/api/student-infraction-logs"),
-        fetch("/api/students"),
-        fetch("/api/infraction-rules")
+        fetch("/api/infraction-rules"),
+        fetch("/api/teaching-journals")
       ]);
 
       if (resCouns.ok) {
         const data = await resCouns.json();
-        setLogs(data);
+        setLogs(Array.isArray(data) ? data : []);
       }
       if (resAtt.ok) {
         const data = await resAtt.json();
-        setAttendance(data);
+        setAttendance(Array.isArray(data) ? data : []);
       }
       if (resInf.ok) {
         const data = await resInf.json();
-        setInfractions(data);
-      }
-      if (resStud.ok) {
-        const data = await resStud.json();
-        setAllStudents(data);
+        setInfractions(Array.isArray(data) ? data : []);
       }
       if (resRules.ok) {
         const data = await resRules.json();
-        setInfractionRules(data);
+        setInfractionRules(Array.isArray(data) ? data : []);
+      }
+      if (resJournals.ok) {
+        const data = await resJournals.json();
+        setTeachingJournals(Array.isArray(data) ? data : []);
+      }
+
+      // If students prop is empty or missing, fetch students in background
+      if (!students || students.length === 0) {
+        fetch("/api/students")
+          .then(res => res.ok ? res.json() : [])
+          .then(data => { if (Array.isArray(data) && data.length > 0) setAllStudents(data); })
+          .catch(() => {});
       }
     } catch (err) {
       console.error(err);
@@ -205,6 +309,109 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       alert("Gagal terhubung ke server.");
     } finally {
       setSubmittingReduction(false);
+    }
+  };
+
+  const handleSubmitNewInfraction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newInfractionStudentId || !newInfractionPoints || !newInfractionType.trim()) {
+      alert("Mohon lengkapi data siswa, jenis pelanggaran, dan bobot poin pelanggaran.");
+      return;
+    }
+
+    const student = allStudents.find(s => s.id === newInfractionStudentId);
+    if (!student) {
+      alert("Siswa tidak ditemukan.");
+      return;
+    }
+
+    setSubmittingInfraction(true);
+    try {
+      const res = await fetch('/api/student-infraction-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: student.id,
+          studentName: student.name,
+          className: student.class,
+          date: newInfractionDate,
+          time: newInfractionTime,
+          location: newInfractionLocation.trim() || "Lingkungan Sekolah",
+          infractionType: newInfractionType.trim(),
+          actionTaken: newInfractionActionTaken.trim() || "Pembinaan disiplin dan konseling oleh Guru BK",
+          resolutionStatus: newInfractionResolutionStatus,
+          points: Math.abs(Number(newInfractionPoints)) || 5
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const mysqlStatus = data.mysqlSaved ? " (Tersimpan langsung ke database MySQL)" : "";
+        setSuccessMsg(`Berhasil memberikan ${newInfractionPoints} poin pelanggaran untuk ${student.name}${mysqlStatus}.`);
+        setNewInfractionType("");
+        setNewInfractionPoints(5);
+        setNewInfractionStudentId("");
+        setNewInfractionRuleId("");
+        setNewInfractionLocation("Lingkungan Sekolah");
+        setNewInfractionActionTaken("Pembinaan disiplin dan konseling oleh Guru BK");
+        fetchAllData();
+        onRefresh();
+        setInfractionSubTab('points');
+
+        // Auto dismiss success toast message after 4s
+        setTimeout(() => setSuccessMsg(null), 4000);
+      } else {
+        const errorData = await res.json();
+        alert(errorData.error || "Gagal memberikan poin pelanggaran.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Gagal terhubung ke server.");
+    } finally {
+      setSubmittingInfraction(false);
+    }
+  };
+
+  const handleDeleteStudentAttendance = async (studentId: string, studentName: string) => {
+    if (!window.confirm(`Hapus seluruh rekap absensi untuk siswa "${studentName}"?`)) return;
+    try {
+      const res = await fetch(`/api/attendance/student/${encodeURIComponent(studentId)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        await fetch(`/api/attendance/student/${encodeURIComponent(studentName)}`, {
+          method: 'DELETE'
+        });
+        setSuccessMsg(`Berhasil menghapus seluruh rekap absensi siswa ${studentName}.`);
+        setTimeout(() => setSuccessMsg(null), 4000);
+        fetchAllData();
+        onRefresh();
+      } else {
+        alert("Gagal menghapus data absensi siswa.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan sistem saat menghapus absensi.");
+    }
+  };
+
+  const handleDeleteSingleAttendance = async (id: string, studentName: string, date: string) => {
+    if (!window.confirm(`Hapus catatan presensi ${studentName} pada tanggal ${date}?`)) return;
+    try {
+      const res = await fetch(`/api/attendance/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setSuccessMsg(`Berhasil menghapus catatan presensi ${studentName} tanggal ${date}.`);
+        setTimeout(() => setSuccessMsg(null), 4000);
+        fetchAllData();
+        onRefresh();
+      } else {
+        alert("Gagal menghapus catatan presensi.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan sistem saat menghapus presensi.");
     }
   };
 
@@ -406,16 +613,22 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
           </style>
         </head>
         <body>
-          <table class="header-table">
-            <tr>
-              ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 60px; max-width: 60px;" /></td>` : ''}
-              <td class="info-cell">
-                <div class="school-name">${schoolName}</div>
-                <div class="school-sub">${subHeader} - Akreditasi: ${accreditation}</div>
-                <div class="school-meta">Alamat: ${address}</div>
-              </td>
-            </tr>
-          </table>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 8px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <table class="header-table">
+              <tr>
+                ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 60px; max-width: 60px;" /></td>` : ''}
+                <td class="info-cell">
+                  <div class="school-name">${schoolName}</div>
+                  <div class="school-sub">${subHeader} - Akreditasi: ${accreditation}</div>
+                  <div class="school-meta">Alamat: ${address}</div>
+                </td>
+              </tr>
+            </table>
+          `}
 
           <div class="title-doc">DOKUMEN INTEGRASI PEMBINAAN BIMBINGAN & KONSELING (BK)</div>
 
@@ -515,61 +728,597 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     printWindow.document.close();
   };
 
+  // Print Global Counseling Journal
+  const handlePrintGlobalLogs = () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Harap izinkan popup di browser Anda untuk mencetak dokumen.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const subHeader = schoolIdentity?.subheading || "Penilaian Karakter, Bimbingan & Kebiasaan Positif";
+    const accreditation = schoolIdentity?.accreditation || "Terakreditasi A";
+    const address = schoolIdentity?.address || "Jl. Pandaan, Jawa Timur";
+    const logoSrc = schoolIdentity?.logo || "";
+
+    const logsToPrint = filteredLogs.length > 0 ? filteredLogs : logs;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Jurnal Global Bimbingan & Konseling BK</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: 'Inter', system-ui, sans-serif; padding: 20px; color: #1e293b; background: white; line-height: 1.4; }
+            .header-table { width: 100%; border-collapse: collapse; border-bottom: 3px double #0f172a; margin-bottom: 18px; padding-bottom: 10px; }
+            .logo-cell { width: 70px; text-align: center; vertical-align: middle; }
+            .info-cell { text-align: center; vertical-align: middle; }
+            .school-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; color: #0f172a; letter-spacing: 0.5px; }
+            .school-sub { font-size: 11px; margin: 3px 0 0 0; color: #475569; font-weight: 600; }
+            .school-meta { font-size: 9px; margin: 3px 0 0 0; color: #64748b; font-style: italic; }
+            .title-doc { text-align: center; font-size: 14px; font-weight: 800; text-transform: uppercase; margin: 15px 0 5px 0; letter-spacing: 0.5px; text-decoration: underline; }
+            .sub-doc { text-align: center; font-size: 10px; color: #64748b; font-weight: 600; margin-bottom: 20px; }
+            .main-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 10px; }
+            .main-table th { background-color: #f1f5f9; color: #0f172a; font-weight: 800; border: 1px solid #cbd5e1; padding: 8px 6px; text-align: center; text-transform: uppercase; }
+            .main-table td { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; }
+            .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 8px; font-weight: bold; text-transform: uppercase; }
+            .badge-resolved { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+            .badge-pending { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+            .signatures { display: grid; grid-template-cols: 1fr 1fr; gap: 40px; margin-top: 35px; text-align: center; font-size: 11px; page-break-inside: avoid; }
+            .sig-space { height: 60px; }
+            .sig-title { font-weight: bold; margin-bottom: 5px; }
+            .footer-line { border-top: 1px solid #cbd5e1; font-size: 8px; font-style: italic; text-align: center; color: #94a3b8; margin-top: 25px; padding-top: 8px; }
+          </style>
+        </head>
+        <body>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 8px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <table class="header-table">
+              <tr>
+                ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 55px; max-width: 55px;" /></td>` : ''}
+                <td class="info-cell">
+                  <div class="school-name">${schoolName}</div>
+                  <div class="school-sub">${subHeader} - Akreditasi: ${accreditation}</div>
+                  <div class="school-meta">Alamat: ${address}</div>
+                </td>
+              </tr>
+            </table>
+          `}
+
+          <div class="title-doc">JURNAL REKAPITULASI GLOBAL BIMBINGAN & KONSELING (BK)</div>
+          <div class="sub-doc">Total Kasus / Bimbingan Terdata: ${logsToPrint.length} Rekaman Session | Tanggal Cetak: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+
+          <table class="main-table">
+            <thead>
+              <tr>
+                <th style="width: 25px;">No</th>
+                <th style="width: 75px;">Tanggal</th>
+                <th style="width: 120px;">Nama Siswa</th>
+                <th style="width: 45px;">Kelas</th>
+                <th>Topik & Kronologi Permasalahan</th>
+                <th>Upaya Advokasi Wali Kelas</th>
+                <th>Rekomendasi & Solusi Guru BK</th>
+                <th style="width: 65px;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${logsToPrint.length === 0 ? `
+                <tr><td colspan="8" style="text-align:center; padding: 20px; color: #94a3b8;">Belum ada data rekaman jurnal bimbingan konseling.</td></tr>
+              ` : logsToPrint.map((l, idx) => `
+                <tr>
+                  <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
+                  <td style="white-space: nowrap;">${l.date || "-"}</td>
+                  <td style="font-weight: bold; color: #0f172a;">${l.studentName || "Siswa"}</td>
+                  <td style="text-align: center; font-weight: bold;">${l.className || "-"}</td>
+                  <td>${l.topic || "-"}</td>
+                  <td>${l.actionPlan || "-"}</td>
+                  <td>${l.bkFeedback ? `<b>[Solusi BK]:</b> ${l.bkFeedback}` : `<i>(Belum ada tanggapan BK)</i>`}</td>
+                  <td style="text-align: center;">
+                    ${l.bkFeedback ? `<span class="badge badge-resolved">Disaran BK</span>` : `<span class="badge badge-pending">Pending</span>`}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="signatures">
+            <div>
+              <div class="sig-title">Guru Bimbingan Konseling (BK)</div>
+              <div class="sig-space"></div>
+              <div style="text-decoration: underline; font-weight: bold;">( Guru Konselor BK )</div>
+              <div style="font-size: 9px; color: #64748b;">NIP. Konselor Terdaftar</div>
+            </div>
+            <div>
+              <div class="sig-title">Kepala Sekolah / Yayasan</div>
+              <div class="sig-space"></div>
+              <div style="text-decoration: underline; font-weight: bold;">( ${schoolIdentity?.principal || "Kepala Sekolah"} )</div>
+              <div style="font-size: 9px; color: #64748b;">NIP. Penanggung Jawab</div>
+            </div>
+          </div>
+
+          <div class="footer-line">
+            Dokumen resmi UPT Bimbingan & Konseling Sekolah. Dicetak otomatis oleh Sistem Manajemen Sekolah Integratif.
+          </div>
+
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // Print Student Individual Counseling Journal
+  const handlePrintStudentLogs = (targetStudentIdentifier: string) => {
+    if (!targetStudentIdentifier) {
+      alert("Silakan pilih siswa terlebih dahulu.");
+      return;
+    }
+
+    const cleanTerm = targetStudentIdentifier.trim().toLowerCase();
+    
+    const matchedStudent = allStudents.find(s => 
+      s.id === targetStudentIdentifier || 
+      (s.name && s.name.trim().toLowerCase() === cleanTerm) || 
+      (s.nis && s.nis.trim().toLowerCase() === cleanTerm)
+    );
+
+    const studentName = matchedStudent ? matchedStudent.name : targetStudentIdentifier;
+    const className = matchedStudent ? matchedStudent.class : "";
+    const nisn = matchedStudent ? (matchedStudent.nisn || matchedStudent.nis || "-") : "-";
+
+    const studentLogs = logs.filter(l => {
+      if (!l) return false;
+      const matchId = l.studentId && l.studentId === targetStudentIdentifier;
+      const matchName = l.studentName && l.studentName.trim().toLowerCase() === cleanTerm;
+      return matchId || matchName;
+    });
+
+    if (studentLogs.length === 0) {
+      alert(`Tidak ditemukan catatan bimbingan konseling untuk siswa: ${studentName}`);
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Harap izinkan popup di browser Anda untuk mencetak dokumen.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const subHeader = schoolIdentity?.subheading || "Penilaian Karakter, Bimbingan & Kebiasaan Positif";
+    const accreditation = schoolIdentity?.accreditation || "Terakreditasi A";
+    const address = schoolIdentity?.address || "Jl. Pandaan, Jawa Timur";
+    const logoSrc = schoolIdentity?.logo || "";
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Rekap Bimbingan BK - ${studentName}</title>
+          <style>
+            @page { size: A4 portrait; margin: 15mm; }
+            body { font-family: 'Inter', system-ui, sans-serif; padding: 25px; color: #1e293b; background: white; line-height: 1.5; }
+            .header-table { width: 100%; border-collapse: collapse; border-bottom: 3px double #0f172a; margin-bottom: 20px; padding-bottom: 10px; }
+            .logo-cell { width: 70px; text-align: center; vertical-align: middle; }
+            .info-cell { text-align: center; vertical-align: middle; }
+            .school-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; color: #0f172a; letter-spacing: 0.5px; }
+            .school-sub { font-size: 11px; margin: 3px 0 0 0; color: #475569; font-weight: 600; }
+            .school-meta { font-size: 9px; margin: 3px 0 0 0; color: #64748b; font-style: italic; }
+            .title-doc { text-align: center; font-size: 14px; font-weight: 800; text-transform: uppercase; margin: 20px 0 15px 0; letter-spacing: 0.5px; text-decoration: underline; }
+            
+            .student-card { width: 100%; border: 1px solid #cbd5e1; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }
+            .student-card th { background: #f8fafc; padding: 8px 12px; text-align: left; border: 1px solid #cbd5e1; width: 25%; font-weight: bold; }
+            .student-card td { padding: 8px 12px; border: 1px solid #cbd5e1; }
+
+            .log-box { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; overflow: hidden; page-break-inside: avoid; }
+            .log-header { background: #f1f5f9; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: bold; display: flex; justify-content: space-between; }
+            .log-body { padding: 12px; font-size: 11px; }
+            .log-row { margin-bottom: 8px; }
+            .log-label { font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 2px; }
+            .log-val { margin: 0; color: #334155; line-height: 1.5; white-space: pre-wrap; }
+            .bk-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 10px; border-radius: 6px; margin-top: 8px; }
+
+            .signatures { display: grid; grid-template-cols: 1fr 1fr; gap: 40px; margin-top: 40px; text-align: center; font-size: 11px; page-break-inside: avoid; }
+            .sig-space { height: 65px; }
+            .sig-title { font-weight: bold; margin-bottom: 5px; }
+            .footer-line { border-top: 1px solid #cbd5e1; font-size: 8px; font-style: italic; text-align: center; color: #94a3b8; margin-top: 30px; padding-top: 8px; }
+          </style>
+        </head>
+        <body>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 8px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <table class="header-table">
+              <tr>
+                ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 55px; max-width: 55px;" /></td>` : ''}
+                <td class="info-cell">
+                  <div class="school-name">${schoolName}</div>
+                  <div class="school-sub">${subHeader} - Akreditasi: ${accreditation}</div>
+                  <div class="school-meta">Alamat: ${address}</div>
+                </td>
+              </tr>
+            </table>
+          `}
+
+          <div class="title-doc">REKAPITULASI DOKUMEN BIMBINGAN & KONSELING INDIVIDUAL SISWA</div>
+
+          <table class="student-card">
+            <tr>
+              <th>Nama Lengkap Siswa</th>
+              <td style="font-weight: bold; font-size: 12px; color: #0f172a;">${studentName}</td>
+              <th>Tingkat / Kelas</th>
+              <td>Kelas ${className || (studentLogs[0] ? studentLogs[0].className : "-")}</td>
+            </tr>
+            <tr>
+              <th>NIS / NISN</th>
+              <td>${nisn}</td>
+              <th>Total Sesi Bimbingan</th>
+              <td style="font-weight: bold;">${studentLogs.length} Sesi Terdata</td>
+            </tr>
+          </table>
+
+          <div style="font-size: 11px; font-weight: 800; color: #0f172a; margin-bottom: 12px; text-transform: uppercase;">RIWAYAT PERTEMUAN & INTERVENSI BIMBINGAN BK:</div>
+
+          ${studentLogs.map((l, idx) => `
+            <div class="log-box">
+              <div class="log-header">
+                <span>Sesi ${idx + 1} - Tanggal: ${l.date || "-"} (Diinput Wali Kelas ${l.className})</span>
+                <span>Status: ${l.bkFeedback ? "✓ Disaran BK" : "⏳ Menunggu Solusi"}</span>
+              </div>
+              <div class="log-body">
+                <div class="log-row">
+                  <span class="log-label">I. Topik / Kronologi Permasalahan:</span>
+                  <p class="log-val">"${l.topic || "-"}"</p>
+                </div>
+                <div class="log-row">
+                  <span class="log-label">II. Upaya Advokasi & Mediasi Wali Kelas:</span>
+                  <p class="log-val">"${l.actionPlan || "-"}"</p>
+                </div>
+                <div class="log-row">
+                  <span class="log-label">III. Komitmen Perubahan Perilaku Siswa:</span>
+                  <p class="log-val">"${l.result || "-"}"</p>
+                </div>
+                ${l.bkFeedback ? `
+                  <div class="bk-box">
+                    <span class="log-label" style="color: #166534;">IV. Solusi, Catatan Profesional & Intervensi Guru BK:</span>
+                    <p class="log-val" style="color: #14532d; font-weight: bold;">"${l.bkFeedback}"</p>
+                    ${l.bkFeedbackAt ? `<span style="font-size: 8px; color: #166534; display: block; margin-top: 4px;">Waktu Respon: ${new Date(l.bkFeedbackAt).toLocaleString('id-ID')}</span>` : ''}
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          `).join('')}
+
+          <div class="signatures">
+            <div>
+              <div class="sig-title">Guru Bimbingan Konseling (BK)</div>
+              <div class="sig-space"></div>
+              <div style="text-decoration: underline; font-weight: bold;">( Guru Konselor BK )</div>
+              <div style="font-size: 9px; color: #64748b;">NIP. Konselor Terdaftar</div>
+            </div>
+            <div>
+              <div class="sig-title">Wali Kelas ${className || (studentLogs[0] ? studentLogs[0].className : "")}</div>
+              <div class="sig-space"></div>
+              <div style="text-decoration: underline; font-weight: bold;">( Wali Kelas )</div>
+              <div style="font-size: 9px; color: #64748b;">NIP. Wali Kelas</div>
+            </div>
+          </div>
+
+          <div class="footer-line">
+            Dokumen Bimbingan Konseling bersifat rahasia dan terlindungi di bawah kode etik Guru BK. Dilarang menyebarluaskan tanpa persetujuan resmi.
+          </div>
+
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // High-performance precomputed index maps for O(1) instant student lookups
+  const studentLookup = useMemo(() => {
+    const byId = new Map<string, { name: string; className: string }>();
+    const byName = new Map<string, { name: string; className: string }>();
+
+    // 1. Seed with master students
+    const masterList = allStudents.length > 0 ? allStudents : students;
+    masterList.forEach(st => {
+      if (!st) return;
+      const info = { name: st.name?.trim() || 'Siswa', className: st.class || '7-A' };
+      if (st.id) {
+        byId.set(st.id, info);
+        byId.set(String(st.id).toLowerCase().trim(), info);
+      }
+      if (st.nis) {
+        byId.set(String(st.nis).trim(), info);
+        byId.set(String(st.nis).toLowerCase().trim(), info);
+      }
+      if (st.nisn) {
+        byId.set(String(st.nisn).trim(), info);
+        byId.set(String(st.nisn).toLowerCase().trim(), info);
+      }
+      if (st.name) {
+        byName.set(st.name.trim().toLowerCase(), info);
+      }
+    });
+
+    // 2. Also map non-standard student names from teaching journals without linear search
+    teachingJournals.forEach(j => {
+      if (Array.isArray(j.attendance)) {
+        j.attendance.forEach((att: any) => {
+          if (att?.studentName && !att.studentName.startsWith("Siswa (std-")) {
+            const lower = att.studentName.trim().toLowerCase();
+            if (!byName.has(lower)) {
+              const info = { name: att.studentName.trim(), className: j.className || "7-A" };
+              byName.set(lower, info);
+              if (att.studentId) byId.set(att.studentId, info);
+            }
+          }
+        });
+      }
+    });
+
+    // 3. Map any counseling or infraction entries
+    logs.forEach(l => {
+      if (l.studentName && !l.studentName.startsWith("Siswa (std-")) {
+        const lower = l.studentName.trim().toLowerCase();
+        if (!byName.has(lower)) {
+          const info = { name: l.studentName.trim(), className: l.className || "7-A" };
+          byName.set(lower, info);
+          if (l.studentId) byId.set(l.studentId, info);
+        }
+      }
+    });
+
+    infractions.forEach(i => {
+      if (i.studentName && !i.studentName.startsWith("Siswa (std-")) {
+        const lower = i.studentName.trim().toLowerCase();
+        if (!byName.has(lower)) {
+          const info = { name: i.studentName.trim(), className: i.className || "7-A" };
+          byName.set(lower, info);
+          if (i.studentId) byId.set(i.studentId, info);
+        }
+      }
+    });
+
+    return { byId, byName };
+  }, [allStudents, students, teachingJournals, logs, infractions]);
+
+  // Instant O(1) resolution of student name and class
+  const getStudentInfo = (studentId: string, fallbackName?: string) => {
+    if (!studentId && !fallbackName) return { name: "Siswa Tidak Dikenal", className: "-" };
+
+    const cleanId = String(studentId || "").trim();
+    const cleanFallback = String(fallbackName || "").trim();
+
+    if (cleanId) {
+      const found = studentLookup.byId.get(cleanId) || studentLookup.byId.get(cleanId.toLowerCase());
+      if (found) return found;
+    }
+    if (cleanFallback) {
+      const found = studentLookup.byName.get(cleanFallback.toLowerCase());
+      if (found) return found;
+    }
+
+    return {
+      name: (cleanFallback && !cleanFallback.startsWith("Siswa (std-")) ? cleanFallback : (cleanFallback || `Siswa (${studentId})`),
+      className: "7-A"
+    };
+  };
+
+  // Unified attendance list combining /api/attendance and teachingJournals attendance (O(1) deduping via Set)
+  const allAttendance = useMemo(() => {
+    const list: AttendanceLog[] = [...attendance];
+    const seenStudentDate = new Set<string>();
+
+    list.forEach(a => {
+      if (a.studentId && a.date) seenStudentDate.add(`${a.studentId}_${a.date}`);
+      if (a.studentName && a.date) seenStudentDate.add(`${a.studentName.toLowerCase().trim()}_${a.date}`);
+    });
+
+    const existingIds = new Set(list.map(a => a.id));
+
+    teachingJournals.forEach(j => {
+      if (Array.isArray(j.attendance)) {
+        j.attendance.forEach((att: any, idx: number) => {
+          const generatedId = att.id || `tj-att-${j.id}-${att.studentId || idx}`;
+          if (existingIds.has(generatedId)) return;
+
+          const idKey = att.studentId && j.date ? `${att.studentId}_${j.date}` : null;
+          const nameKey = att.studentName && j.date ? `${att.studentName.toLowerCase().trim()}_${j.date}` : null;
+
+          if ((idKey && seenStudentDate.has(idKey)) || (nameKey && seenStudentDate.has(nameKey))) {
+            return;
+          }
+
+          if (idKey) seenStudentDate.add(idKey);
+          if (nameKey) seenStudentDate.add(nameKey);
+          existingIds.add(generatedId);
+
+          list.push({
+            id: generatedId,
+            studentId: att.studentId || "",
+            studentName: att.studentName || "",
+            className: j.className || "",
+            date: j.date || "",
+            status: att.status || "Hadir",
+            notes: att.notes || (j.subject ? `Jurnal Mapel: ${j.subject}` : ""),
+            subjectNotes: []
+          });
+        });
+      }
+    });
+
+    return list;
+  }, [attendance, teachingJournals]);
+
   // Get distinct classes from available logs for filters
   const uniqueClasses = useMemo(() => {
     const list = new Set<string>();
+    const masterList = allStudents.length > 0 ? allStudents : students;
+    masterList.forEach(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      if (!isMut && !isLulus && s.class) list.add(s.class);
+    });
     logs.forEach(l => {
       if (l.className) list.add(l.className);
     });
-    attendance.forEach(a => {
-      // Find class name if available, otherwise skip
+    allAttendance.forEach(a => {
+      if (a.className && a.className !== "-") list.add(a.className);
     });
     infractions.forEach(i => {
       if (i.className) list.add(i.className);
     });
-    return Array.from(list).sort();
-  }, [logs, attendance, infractions]);
+    teachingJournals.forEach(j => {
+      if (j.className) list.add(j.className);
+    });
+    return Array.from(list).sort((a, b) => a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' }));
+  }, [allStudents, students, logs, allAttendance, infractions, teachingJournals]);
 
-  // Aggregate Attendance states grouping per student
+  // Extract unique subject teachers for BK Journal Monitoring
+  const uniqueSubjectTeacherNames = useMemo(() => {
+    const set = new Set<string>();
+    teachingJournals.forEach(j => {
+      if ((j.teacherType === 'subject_teacher' || !j.teacherType) && j.teacherName) {
+        set.add(j.teacherName);
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [teachingJournals]);
+
+  // Extract unique homeroom teachers for BK Journal Monitoring
+  const uniqueHomeroomTeacherList = useMemo(() => {
+    const map = new Map<string, { name: string; className?: string; label: string }>();
+    teachingJournals.forEach(j => {
+      if (j.teacherType === 'homeroom' && j.teacherName) {
+        if (!map.has(j.teacherName)) {
+          const label = j.className ? `${j.teacherName} (Wali Kelas ${j.className})` : j.teacherName;
+          map.set(j.teacherName, { name: j.teacherName, className: j.className, label });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [teachingJournals]);
+
+  // Filtered Teaching Journals for BK Monitoring
+  const filteredTeachingJournals = useMemo(() => {
+    return teachingJournals.filter(j => {
+      // Teacher Type Filter
+      if (journalTeacherTypeFilter === 'subject' && j.teacherType === 'homeroom') return false;
+      if (journalTeacherTypeFilter === 'homeroom' && j.teacherType !== 'homeroom') return false;
+
+      // Subject Teacher Filter
+      if (selectedSubjectTeacherFilter !== 'all' && j.teacherName !== selectedSubjectTeacherFilter) return false;
+
+      // Homeroom Teacher Filter
+      if (selectedHomeroomTeacherFilter !== 'all' && j.teacherName !== selectedHomeroomTeacherFilter) return false;
+
+      // Class Filter
+      if (classFilter !== 'all' && j.className !== classFilter) return false;
+
+      // Search Query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchTopic = (j.topic || '').toLowerCase().includes(q);
+        const matchTeacher = (j.teacherName || '').toLowerCase().includes(q);
+        const matchSubject = (j.subject || '').toLowerCase().includes(q);
+        const matchNotes = (j.notes || '').toLowerCase().includes(q);
+        const matchClass = (j.className || '').toLowerCase().includes(q);
+        if (!matchTopic && !matchTeacher && !matchSubject && !matchNotes && !matchClass) return false;
+      }
+
+      // Date Range Filter
+      if (journalStartDate || journalEndDate) {
+        const d = j.date ? j.date.substring(0, 10) : "";
+        if (journalStartDate && d < journalStartDate) return false;
+        if (journalEndDate && d > journalEndDate) return false;
+      }
+
+      return true;
+    });
+  }, [
+    teachingJournals, 
+    journalTeacherTypeFilter, 
+    selectedSubjectTeacherFilter, 
+    selectedHomeroomTeacherFilter, 
+    classFilter, 
+    searchQuery, 
+    journalStartDate, 
+    journalEndDate
+  ]);
+
+  // Aggregate Attendance states grouping per student (Optimized O(1) Map matching)
   const aggregatedAttendance = useMemo(() => {
     const studentMap: { [key: string]: { id: string; name: string; className: string; hadir: number; sakit: number; izin: number; alpa: number; terlambat: number; total: number } } = {};
 
-    attendance.forEach(log => {
-      // Filter by date range if provided
+    // 1. Seed with all active master students
+    const masterList = allStudents.length > 0 ? allStudents : students;
+    masterList.forEach(st => {
+      const isMut = !!st.mutationDate || (st.class && (st.class.toLowerCase() === 'mutasi' || st.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = st.class && (st.class.toLowerCase() === 'lulus' || st.class.toLowerCase() === 'lulusan');
+      if (isMut || isLulus) return;
+
+      studentMap[st.id] = {
+        id: st.id,
+        name: st.name,
+        className: st.class || "7-A",
+        hadir: 0,
+        sakit: 0,
+        izin: 0,
+        alpa: 0,
+        terlambat: 0,
+        total: 0
+      };
+    });
+
+    // 2. Process all attendance records via O(1) studentLookup
+    allAttendance.forEach(log => {
       if (attendanceStartDate || attendanceEndDate) {
         const d = log.date ? log.date.substring(0, 10) : "";
         if (attendanceStartDate && d < attendanceStartDate) return;
         if (attendanceEndDate && d > attendanceEndDate) return;
       }
 
-      const key = `${log.studentId}`;
-      if (!studentMap[key]) {
-        // Let's find student name from other logs or search
-        let name = "Siswa Terdaftar";
-        let cName = "7-A";
-
-        // Try lookup in logs or infractions
-        const foundC = logs.find(l => l.studentId === log.studentId);
-        const foundI = infractions.find(i => i.studentId === log.studentId);
-        if (foundC) {
-          name = foundC.studentName;
-          cName = foundC.className;
-        } else if (foundI) {
-          name = foundI.studentName;
-          cName = foundI.className;
+      let key = log.studentId;
+      if (!key || !studentMap[key]) {
+        if (log.studentName) {
+          const match = studentLookup.byName.get(log.studentName.trim().toLowerCase());
+          if (match) {
+            const stId = (masterList.find(s => s.name?.trim().toLowerCase() === log.studentName?.trim().toLowerCase()))?.id;
+            if (stId && studentMap[stId]) {
+              key = stId;
+            }
+          }
         }
+      }
 
-        studentMap[key] = {
-          id: log.studentId,
-          name: name,
-          className: cName,
-          hadir: 0,
-          sakit: 0,
-          izin: 0,
-          alpa: 0,
-          terlambat: 0,
-          total: 0
-        };
+      if (!key || !studentMap[key]) {
+        const info = getStudentInfo(log.studentId, log.studentName);
+        const fallbackKey = log.studentId || (log.studentName ? `name-${log.studentName.trim().toLowerCase()}` : `std-unmapped-${Math.random()}`);
+        if (!studentMap[fallbackKey]) {
+          studentMap[fallbackKey] = {
+            id: log.studentId || fallbackKey,
+            name: info.name,
+            className: info.className,
+            hadir: 0,
+            sakit: 0,
+            izin: 0,
+            alpa: 0,
+            terlambat: 0,
+            total: 0
+          };
+        }
+        key = fallbackKey;
       }
 
       const status = log.status;
@@ -583,14 +1332,13 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     });
 
     return Object.values(studentMap);
-  }, [attendance, logs, infractions, attendanceStartDate, attendanceEndDate]);
+  }, [allStudents, students, allAttendance, attendanceStartDate, attendanceEndDate, studentLookup]);
 
   // Aggregate Infractions (Leaderboard points)
   const aggregatedInfractions = useMemo(() => {
     const map: { [key: string]: { id: string; name: string; className: string; points: number; count: number; list: StudentInfractionLog[] } } = {};
 
     infractions.forEach(log => {
-      // Filter by date range if provided
       if (infractionStartDate || infractionEndDate) {
         const d = log.date ? log.date.substring(0, 10) : "";
         if (infractionStartDate && d < infractionStartDate) return;
@@ -617,54 +1365,123 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   }, [infractions, infractionStartDate, infractionEndDate]);
 
   // Warn Interventions: Students with high infractions (>10 pts) or High Alpa (>= 2 alpa)
+  // Smart Radar Filtering: Optimized with pre-indexed Map lookups
   const interventionStudents = useMemo(() => {
-    const list: { id: string; name: string; className: string; alpaCount: number; infractionPoints: number; reason: string }[] = [];
+    const candidateMap: { [key: string]: { id: string; name: string; className: string; alpaCount: number; infractionPoints: number; reason: string } } = {};
 
     // Check high infractions
     aggregatedInfractions.forEach(st => {
       if (st.points >= 15) {
-        list.push({
+        candidateMap[st.id] = {
           id: st.id,
           name: st.name,
           className: st.className,
           alpaCount: 0,
           infractionPoints: st.points,
           reason: `Poin pelanggaran kumulatif sangat tinggi (${st.points} poin). Butuh konseling moral bimbingan.`
-        });
+        };
       }
     });
 
     // Check high alpa
     aggregatedAttendance.forEach(att => {
       if (att.alpa >= 2) {
-        // Prevent duplicate
-        const exist = list.find(l => l.id === att.id);
-        if (!exist) {
-          list.push({
+        if (!candidateMap[att.id]) {
+          candidateMap[att.id] = {
             id: att.id,
             name: att.name,
             className: att.className,
             alpaCount: att.alpa,
             infractionPoints: 0,
-            reason: `Sering absen tanpa keterangan (${att.alpa} hari Alpa). Indikasi putus sekolah atau problem keluarga.`
-          });
+            reason: `Sering absen tanpa keterangan (${att.alpa} hari Alpa). Indikasi masalah pribadi.`
+          };
         } else {
-          exist.alpaCount = att.alpa;
-          exist.reason = `Memiliki catatan ${att.alpa} hari Alpa & ${exist.infractionPoints} poin pelanggaran disiplin. Urgen pembinaan keluarga!`;
+          candidateMap[att.id].alpaCount = att.alpa;
+          candidateMap[att.id].reason = `Memiliki catatan ${att.alpa} hari Alpa & ${candidateMap[att.id].infractionPoints} poin pelanggaran disiplin. Urgen pembinaan keluarga!`;
         }
       }
     });
 
-    return list;
-  }, [aggregatedAttendance, aggregatedInfractions]);
+    const candidates = Object.values(candidateMap);
+    if (candidates.length === 0) return [];
+
+    // Pre-index latest counseling date by student (O(N))
+    const latestCounselingByStudent = new Map<string, string>();
+    logs.forEach(l => {
+      const dateStr = (l.date || l.createdAt || "").substring(0, 10);
+      if (!dateStr) return;
+      if (l.studentId) {
+        const cur = latestCounselingByStudent.get(l.studentId);
+        if (!cur || dateStr > cur) latestCounselingByStudent.set(l.studentId, dateStr);
+      }
+      if (l.studentName) {
+        const lower = l.studentName.trim().toLowerCase();
+        const cur = latestCounselingByStudent.get(lower);
+        if (!cur || dateStr > cur) latestCounselingByStudent.set(lower, dateStr);
+      }
+    });
+
+    // Pre-index Alpa attendance dates by student (O(N))
+    const alpasByStudent = new Map<string, string[]>();
+    allAttendance.forEach(att => {
+      if (att.status !== 'Alpa') return;
+      const d = (att.date || "").substring(0, 10);
+      if (!d) return;
+      if (att.studentId) {
+        let arr = alpasByStudent.get(att.studentId);
+        if (!arr) { arr = []; alpasByStudent.set(att.studentId, arr); }
+        arr.push(d);
+      }
+      if (att.studentName) {
+        const lower = att.studentName.trim().toLowerCase();
+        let arr = alpasByStudent.get(lower);
+        if (!arr) { arr = []; alpasByStudent.set(lower, arr); }
+        arr.push(d);
+      }
+    });
+
+    const resultList: typeof candidates = [];
+
+    candidates.forEach(st => {
+      const sId = st.id;
+      const sName = st.name;
+      const sLowerName = sName ? sName.trim().toLowerCase() : '';
+
+      const latestCounselingDate = (sId && latestCounselingByStudent.get(sId)) || (sLowerName && latestCounselingByStudent.get(sLowerName));
+
+      if (latestCounselingDate) {
+        const studentAlpas = (sId && alpasByStudent.get(sId)) || (sLowerName && alpasByStudent.get(sLowerName)) || [];
+        const newAlpaCount = studentAlpas.filter(d => d > latestCounselingDate).length;
+
+        if (newAlpaCount >= 2) {
+          resultList.push({
+            ...st,
+            alpaCount: newAlpaCount,
+            reason: `⚠️ Siswa kembali ALPA ${newAlpaCount} kali setelah Sesi Bimbingan BK terakhir (${latestCounselingDate}). Urgen dilakukan bimbingan ulang!`
+          });
+        }
+      } else {
+        const isInitiated = initiatedStudentIds.includes(sId) || (sName && initiatedStudentIds.includes(sName));
+        if (!isInitiated) {
+          resultList.push(st);
+        }
+      }
+    });
+
+    return resultList;
+  }, [aggregatedAttendance, aggregatedInfractions, logs, allAttendance, initiatedStudentIds]);
 
   // Counseling list filters mapping
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
+      if (!log || typeof log !== 'object' || !log.studentName) return false;
+      const sName = log.studentName || '';
+      const sTopic = log.topic || '';
+      const sClass = log.className || '';
       const searchMatch = 
-        log.studentName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        log.topic.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.className.toLowerCase().includes(searchQuery.toLowerCase());
+        sName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        sTopic.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        sClass.toLowerCase().includes(searchQuery.toLowerCase());
 
       const statusMatch = 
         statusFilter === 'all' ? true :
@@ -679,14 +1496,10 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
   // Attendance filter mapping
   const filteredAttendanceDiary = useMemo(() => {
-    return attendance.filter(log => {
-      // Find name from counseling / infractions
-      let name = "Siswa Terdaftar";
-      let cName = "7-A";
-      const foundC = logs.find(l => l.studentId === log.studentId);
-      const foundI = infractions.find(i => i.studentId === log.studentId);
-      if (foundC) { name = foundC.studentName; cName = foundC.className; }
-      else if (foundI) { name = foundI.studentName; cName = foundI.className; }
+    return allAttendance.filter(log => {
+      const info = getStudentInfo(log.studentId, log.studentName);
+      const name = info.name;
+      const cName = info.className || log.className || "7-A";
 
       const searchMatch = 
         name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -695,6 +1508,10 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       const classMatch = 
         classFilter === "all" ? true : cName === classFilter;
 
+      // Filter by status H S I A T
+      const statusMatch = 
+        attendanceStatusFilter === 'all' ? true : log.status === attendanceStatusFilter;
+
       // Filter by date range if provided
       if (attendanceStartDate || attendanceEndDate) {
         const d = log.date ? log.date.substring(0, 10) : "";
@@ -702,17 +1519,67 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
         if (attendanceEndDate && d > attendanceEndDate) return false;
       }
 
-      return searchMatch && classMatch;
+      return searchMatch && classMatch && statusMatch;
     });
-  }, [attendance, logs, infractions, searchQuery, classFilter, attendanceStartDate, attendanceEndDate]);
+  }, [allAttendance, searchQuery, classFilter, attendanceStatusFilter, attendanceStartDate, attendanceEndDate]);
 
   const filteredAttendanceAggregate = useMemo(() => {
-    return aggregatedAttendance.filter(st => {
+    const filtered = aggregatedAttendance.filter(st => {
       const searchMatch = st.name.toLowerCase().includes(searchQuery.toLowerCase());
       const classMatch = classFilter === "all" ? true : st.className === classFilter;
-      return searchMatch && classMatch;
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [aggregatedAttendance, searchQuery, classFilter]);
+
+      let statusMatch = true;
+      if (attendanceStatusFilter === 'Hadir') statusMatch = st.hadir > 0;
+      else if (attendanceStatusFilter === 'Sakit') statusMatch = st.sakit > 0;
+      else if (attendanceStatusFilter === 'Izin') statusMatch = st.izin > 0;
+      else if (attendanceStatusFilter === 'Alpa') statusMatch = st.alpa > 0;
+      else if (attendanceStatusFilter === 'Terlambat') statusMatch = st.terlambat > 0;
+
+      return searchMatch && classMatch && statusMatch;
+    });
+
+    return [...filtered].sort((a, b) => {
+      const compareClasses = (clsA: string = '', clsB: string = '') => {
+        return clsA.localeCompare(clsB, 'id', { numeric: true, sensitivity: 'base' });
+      };
+
+      if (attendanceSortBy === 'name') {
+        const classComp = compareClasses(a.className, b.className);
+        if (classComp !== 0) {
+          return attendanceSortOrder === 'asc' ? classComp : -classComp;
+        }
+        return attendanceSortOrder === 'asc'
+          ? a.name.localeCompare(b.name, 'id', { sensitivity: 'base' })
+          : b.name.localeCompare(a.name, 'id', { sensitivity: 'base' });
+      }
+      if (attendanceSortBy === 'class') {
+        const classComp = compareClasses(a.className, b.className);
+        if (classComp !== 0) {
+          return attendanceSortOrder === 'asc' ? classComp : -classComp;
+        }
+        return a.name.localeCompare(b.name, 'id', { sensitivity: 'base' });
+      }
+
+      let valA = 0;
+      let valB = 0;
+
+      if (attendanceSortBy === 'rate') {
+        valA = a.total > 0 ? (a.hadir / a.total) * 100 : 0;
+        valB = b.total > 0 ? (b.hadir / b.total) * 100 : 0;
+      } else {
+        valA = (a as any)[attendanceSortBy] || 0;
+        valB = (b as any)[attendanceSortBy] || 0;
+      }
+
+      if (valA === valB) {
+        const classComp = compareClasses(a.className, b.className);
+        if (classComp !== 0) return classComp;
+        return a.name.localeCompare(b.name, 'id', { sensitivity: 'base' });
+      }
+
+      return attendanceSortOrder === 'desc' ? valB - valA : valA - valB;
+    });
+  }, [aggregatedAttendance, searchQuery, classFilter, attendanceStatusFilter, attendanceSortBy, attendanceSortOrder]);
 
   // Infractions filter mapping
   const filteredInfractionsList = useMemo(() => {
@@ -743,8 +1610,48 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [aggregatedInfractions, searchQuery, classFilter]);
 
+  // Paginated slices to keep browser rendering lightweight and instantaneous
+  const paginatedAttendanceAggregate = useMemo(() => {
+    const start = (attendanceAggregatePage - 1) * attendanceAggregatePageSize;
+    return filteredAttendanceAggregate.slice(start, start + attendanceAggregatePageSize);
+  }, [filteredAttendanceAggregate, attendanceAggregatePage, attendanceAggregatePageSize]);
+
+  const paginatedAttendanceDiary = useMemo(() => {
+    const start = (attendanceDiaryPage - 1) * attendanceDiaryPageSize;
+    return filteredAttendanceDiary.slice(start, start + attendanceDiaryPageSize);
+  }, [filteredAttendanceDiary, attendanceDiaryPage, attendanceDiaryPageSize]);
+
+  const paginatedTeachingJournals = useMemo(() => {
+    const start = (journalsPage - 1) * journalsPageSize;
+    return filteredTeachingJournals.slice(start, start + journalsPageSize);
+  }, [filteredTeachingJournals, journalsPage, journalsPageSize]);
+
+  const paginatedInfractionsList = useMemo(() => {
+    const start = (infractionPage - 1) * infractionPageSize;
+    return filteredInfractionsList.slice(start, start + infractionPageSize);
+  }, [filteredInfractionsList, infractionPage, infractionPageSize]);
+
+  const paginatedLogs = useMemo(() => {
+    const start = (counselingPage - 1) * counselingPageSize;
+    return filteredLogs.slice(start, start + counselingPageSize);
+  }, [filteredLogs, counselingPage, counselingPageSize]);
+
   // Trigger quick counseling creation (to draft and save a new counseling log)
   const handleInitiateCounseling = (studentName: string, className: string, problemReason: string) => {
+    const match = allStudents.find(s => s.name.trim().toLowerCase() === studentName.trim().toLowerCase());
+    const targetId = match ? match.id : studentName;
+
+    if (targetId) {
+      setInitiatedStudentIds(prev => prev.includes(targetId) ? prev : [...prev, targetId]);
+    }
+
+    if (match) {
+      setDraftStudentId(match.id);
+      setDraftStudentNisn(match.nisn || match.nis || '');
+    } else {
+      setDraftStudentId('');
+      setDraftStudentNisn('');
+    }
     setDraftStudentName(studentName);
     setDraftClassName(className);
     setDraftReason(`Hasil pantauan BK: Siswa mengalami ${problemReason}`);
@@ -757,27 +1664,42 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     e.preventDefault();
     setSubmittingFeedback(true);
     try {
-      // Find or generate synthetic details
+      let targetId = draftStudentId;
+      let targetNisn = draftStudentNisn;
+      if (!targetId && draftStudentName) {
+        const match = allStudents.find(s => s.name.trim().toLowerCase() === draftStudentName.trim().toLowerCase());
+        if (match) {
+          targetId = match.id;
+          targetNisn = match.nisn || match.nis || '';
+        }
+      }
+
       const response = await fetch("/api/student-counseling-logs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          studentId: `ST-${Math.floor(Math.random() * 90000) + 10000}`,
+          studentId: targetId || `ST-${Math.floor(Math.random() * 90000) + 10000}`,
           studentName: draftStudentName,
+          studentNisn: targetNisn,
           className: draftClassName,
           date: new Date().toISOString().split('T')[0],
           topic: draftReason,
           actionPlan: "Dipanggil langsung ke ruang BK oleh Guru Bimbingan Konseling.",
-          result: "Diberikan arahan pembinaan khusus dan motivasi konseling terintegrasi.",
-          bkFeedback: "Telah diberikan motivasi pengembangan diri terpadu."
+          result: "Siswa telah diberikan layanan bimbingan konseling solutif.",
+          bkFeedback: "Telah diberikan motivasi dan penanganan konseling terpadu oleh Guru BK."
         })
       });
 
       if (response.ok) {
         const data = await response.json();
-        setLogs(prev => [data, ...prev]);
+        const createdLog = data.newLog || (data.studentName ? data : null);
+        if (createdLog) {
+          setLogs(prev => [createdLog, ...prev.filter(l => l && l.id !== createdLog.id)]);
+        } else if (Array.isArray(data.studentCounselingLogs)) {
+          setLogs(data.studentCounselingLogs);
+        }
         setSelectedLogId(null);
-        setSuccessMsg(`Berhasil menjadwalkan kasus bimbingan mandiri untuk ${draftStudentName}!`);
+        setSuccessMsg(`Berhasil menjadwalkan dan mencatat bimbingan BK untuk ${draftStudentName}!`);
         setTimeout(() => setSuccessMsg(null), 5000);
       } else {
         alert("Gagal menyimpan rekam bimbingan mandiri.");
@@ -983,6 +1905,238 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     URL.revokeObjectURL(url);
   };
 
+  const handlePrintPdfAttendance = () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Harap izinkan popup di browser Anda untuk mencetak dokumen.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const subHeader = schoolIdentity?.subheading || "Penilaian Karakter, Bimbingan & Kebiasaan Positif";
+    const accreditation = schoolIdentity?.accreditation || "Terakreditasi A";
+    const address = schoolIdentity?.address || "Jl. Pandaan, Jawa Timur";
+    const logoSrc = schoolIdentity?.logo || "";
+    const principalName = schoolIdentity?.principal || "Kepala Sekolah";
+
+    const periodStr = attendanceStartDate && attendanceEndDate
+      ? `${new Date(attendanceStartDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} s.d ${new Date(attendanceEndDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`
+      : (attendanceStartDate ? `Mulai ${new Date(attendanceStartDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}` : "Semua Periode Tanggal");
+
+    const filterClassStr = classFilter === "all" ? "Semua Kelas" : `Kelas ${classFilter}`;
+    const filterStatusStr = attendanceStatusFilter === "all" ? "Semua Status (H, S, I, A, T)" : `Status: ${attendanceStatusFilter}`;
+
+    const isAggregate = attendanceSubTab === 'aggregate';
+
+    let totalRecords = 0;
+    let totalHadir = 0;
+    let totalSakit = 0;
+    let totalIzin = 0;
+    let totalAlpa = 0;
+    let totalTerlambat = 0;
+
+    if (isAggregate) {
+      totalRecords = filteredAttendanceAggregate.length;
+      filteredAttendanceAggregate.forEach(s => {
+        totalHadir += s.hadir;
+        totalSakit += s.sakit;
+        totalIzin += s.izin;
+        totalAlpa += s.alpa;
+        totalTerlambat += s.terlambat;
+      });
+    } else {
+      totalRecords = filteredAttendanceDiary.length;
+      filteredAttendanceDiary.forEach(a => {
+        if (a.status === 'Hadir') totalHadir++;
+        else if (a.status === 'Sakit') totalSakit++;
+        else if (a.status === 'Izin') totalIzin++;
+        else if (a.status === 'Alpa') totalAlpa++;
+        else if (a.status === 'Terlambat') totalTerlambat++;
+      });
+    }
+
+    let tableRowsHtml = "";
+
+    if (isAggregate) {
+      tableRowsHtml = filteredAttendanceAggregate.map((st, idx) => {
+        const rate = st.total > 0 ? Math.round((st.hadir / st.total) * 100) : 0;
+        return `
+          <tr>
+            <td style="text-align: center;">${idx + 1}</td>
+            <td style="font-weight: bold; text-align: left;">${st.name}</td>
+            <td style="text-align: center;">Kelas ${st.className}</td>
+            <td style="text-align: center; color: #047857; font-weight: bold;">${st.hadir}</td>
+            <td style="text-align: center; color: #1d4ed8;">${st.sakit}</td>
+            <td style="text-align: center; color: #a16207;">${st.izin}</td>
+            <td style="text-align: center; color: #b91c1c; font-weight: bold; ${st.alpa > 0 ? 'background-color: #fef2f2;' : ''}">${st.alpa}</td>
+            <td style="text-align: center; color: #6b21a8;">${st.terlambat}</td>
+            <td style="text-align: center; font-weight: bold; color: #059669;">${rate}%</td>
+          </tr>
+        `;
+      }).join("");
+    } else {
+      tableRowsHtml = filteredAttendanceDiary.map((a, idx) => {
+        const info = getStudentInfo(a.studentId, a.studentName);
+        return `
+          <tr>
+            <td style="text-align: center;">${idx + 1}</td>
+            <td style="text-align: center; font-family: monospace;">${a.date}</td>
+            <td style="font-weight: bold; text-align: left;">${info.name}</td>
+            <td style="text-align: center;">Kelas ${info.className || a.className || '-'}</td>
+            <td style="text-align: center; font-weight: bold; ${
+              a.status === 'Alpa' ? 'color: #dc2626; background-color: #fef2f2;' :
+              a.status === 'Hadir' ? 'color: #16a34a;' :
+              a.status === 'Sakit' ? 'color: #2563eb;' :
+              a.status === 'Izin' ? 'color: #d97706;' : 'color: #9333ea;'
+            }">${a.status}</td>
+            <td style="text-align: left; font-size: 10px;">${a.notes || '-'}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Rekap Presensi BK - ${schoolName}</title>
+          <style>
+            @page { size: A4 portrait; margin: 12mm; }
+            body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 20px; color: #0f172a; background: white; line-height: 1.4; font-size: 11px; }
+            .header-table { width: 100%; border-collapse: collapse; border-bottom: 3px double #0f172a; margin-bottom: 15px; padding-bottom: 8px; }
+            .logo-cell { width: 65px; text-align: center; vertical-align: middle; }
+            .info-cell { text-align: center; vertical-align: middle; }
+            .school-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; color: #0f172a; letter-spacing: 0.5px; }
+            .school-sub { font-size: 11px; margin: 3px 0 0 0; color: #334155; font-weight: 600; }
+            .school-meta { font-size: 9px; margin: 2px 0 0 0; color: #64748b; font-style: italic; }
+            .doc-title { text-align: center; font-size: 13px; font-weight: 800; text-transform: uppercase; margin: 15px 0 5px 0; letter-spacing: 0.5px; color: #047857; }
+            .doc-subtitle { text-align: center; font-size: 10px; font-weight: 600; color: #475569; margin-bottom: 15px; }
+            
+            .summary-cards { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 15px; }
+            .card { flex: 1; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px; text-align: center; background: #f8fafc; }
+            .card-val { font-size: 13px; font-weight: 800; margin-top: 2px; }
+            .card-lbl { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+
+            .data-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .data-table th, .data-table td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; }
+            .data-table th { background-color: #f1f5f9; font-weight: bold; text-align: center; color: #0f172a; }
+            .data-table tr:nth-child(even) { background-color: #f8fafc; }
+
+            .signatures { display: flex; justify-content: space-between; margin-top: 35px; text-align: center; font-size: 10px; }
+            .sig-block { width: 200px; }
+            .sig-space { height: 60px; }
+            .sig-name { font-weight: bold; text-decoration: underline; }
+            
+            @media print {
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <table class="header-table">
+              <tr>
+                ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 55px; max-width: 55px;" /></td>` : ''}
+                <td class="info-cell">
+                  <div class="school-name">${schoolName}</div>
+                  <div class="school-sub">${subHeader} &bull; Akreditasi: ${accreditation}</div>
+                  <div class="school-meta">Alamat: ${address}</div>
+                </td>
+              </tr>
+            </table>
+          `}
+
+          <div class="doc-title">LAPORAN REKAPITULASI PRESENSI &amp; KETIDAKHADIRAN SISWA (BK)</div>
+          <div class="doc-subtitle">
+            Tampilan: ${isAggregate ? 'Akumulasi Status Presensi per Siswa' : 'Riwayat Harian Jurnal Presensi'} &bull; Filter: ${filterClassStr} &bull; ${filterStatusStr} &bull; Periode: ${periodStr}
+          </div>
+
+          <div class="summary-cards">
+            <div class="card">
+              <div class="card-lbl">Total Record</div>
+              <div class="card-val" style="color: #0f172a;">${totalRecords}</div>
+            </div>
+            <div class="card" style="background-color: #ecfdf5; border-color: #a7f3d0;">
+              <div class="card-lbl" style="color: #047857;">Hadir (H)</div>
+              <div class="card-val" style="color: #047857;">${totalHadir}</div>
+            </div>
+            <div class="card" style="background-color: #eff6ff; border-color: #bfdbfe;">
+              <div class="card-lbl" style="color: #1d4ed8;">Sakit (S)</div>
+              <div class="card-val" style="color: #1d4ed8;">${totalSakit}</div>
+            </div>
+            <div class="card" style="background-color: #fef9c3; border-color: #fde047;">
+              <div class="card-lbl" style="color: #a16207;">Izin (I)</div>
+              <div class="card-val" style="color: #a16207;">${totalIzin}</div>
+            </div>
+            <div class="card" style="background-color: #fef2f2; border-color: #fecaca;">
+              <div class="card-lbl" style="color: #b91c1c;">Alpa (A)</div>
+              <div class="card-val" style="color: #b91c1c;">${totalAlpa}</div>
+            </div>
+            <div class="card" style="background-color: #faf5ff; border-color: #e9d5ff;">
+              <div class="card-lbl" style="color: #6b21a8;">Terlambat (T)</div>
+              <div class="card-val" style="color: #6b21a8;">${totalTerlambat}</div>
+            </div>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              ${isAggregate ? `
+                <tr>
+                  <th style="width: 30px;">No</th>
+                  <th>Nama Siswa</th>
+                  <th style="width: 60px;">Kelas</th>
+                  <th style="width: 50px; background-color: #d1fae5; color: #065f46;">Hadir</th>
+                  <th style="width: 50px; background-color: #dbeafe; color: #1e40af;">Sakit</th>
+                  <th style="width: 50px; background-color: #fef3c7; color: #92400e;">Izin</th>
+                  <th style="width: 50px; background-color: #fee2e2; color: #991b1b;">Alpa</th>
+                  <th style="width: 50px; background-color: #f3e8ff; color: #6b21a8;">Terlambat</th>
+                  <th style="width: 55px;">Rasio (%)</th>
+                </tr>
+              ` : `
+                <tr>
+                  <th style="width: 30px;">No</th>
+                  <th style="width: 80px;">Tanggal</th>
+                  <th>Nama Siswa</th>
+                  <th style="width: 60px;">Kelas</th>
+                  <th style="width: 70px;">Status</th>
+                  <th>Catatan Keterangan</th>
+                </tr>
+              `}
+            </thead>
+            <tbody>
+              ${tableRowsHtml || `<tr><td colspan="${isAggregate ? 9 : 6}" style="text-align: center; padding: 20px; color: #94a3b8; font-style: italic;">Tidak ada data presensi siswa yang sesuai filter.</td></tr>`}
+            </tbody>
+          </table>
+
+          <div class="signatures">
+            <div class="sig-block">
+              <div>Mengetahui,</div>
+              <div style="font-weight: bold; margin-top: 2px;">Guru Bimbingan Konseling (BK)</div>
+              <div class="sig-space"></div>
+              <div class="sig-name">( Tim Konselor BK )</div>
+              <div style="font-size: 8px; color: #64748b;">NIP. Guru Bimbingan Konseling</div>
+            </div>
+            <div class="sig-block">
+              <div>Pandaan, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+              <div style="font-weight: bold; margin-top: 2px;">Kepala Sekolah</div>
+              <div class="sig-space"></div>
+              <div class="sig-name">( ${principalName} )</div>
+              <div style="font-size: 8px; color: #64748b;">NIP. Penanggung Jawab Lembaga</div>
+            </div>
+          </div>
+
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const downloadExcelInfractions = () => {
     const schoolNameUpper = (schoolIdentity?.name || 'SMP MAARIF NU PANDAAN').toUpperCase();
     const periodStr = `Periode: ${infractionStartDate ? infractionStartDate : 'Awal'} s.d ${infractionEndDate ? infractionEndDate : 'Akhir'}`;
@@ -1117,10 +2271,10 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       </div>
 
       {/* ================= DESKTOP SIDEBAR OR TABS MENU (Non-Mobile) ================= */}
-      <div className="hidden md:flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl max-w-3xl">
+      <div className="hidden md:flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl max-w-4xl overflow-x-auto">
         <button
           onClick={() => { setActiveTab('home'); setShowPasswordTab(false); }}
-          className={`flex-1 py-2 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`py-2 px-3.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
             activeTab === 'home' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
           }`}
         >
@@ -1129,7 +2283,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
         </button>
         <button
           onClick={() => { setActiveTab('counseling'); setShowPasswordTab(false); }}
-          className={`flex-1 py-2 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`py-2 px-3.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
             activeTab === 'counseling' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
           }`}
         >
@@ -1137,8 +2291,26 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
           <span>Jurnal Bimbingan</span>
         </button>
         <button
+          onClick={() => { setActiveTab('journals'); setShowPasswordTab(false); }}
+          className={`py-2 px-3.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            activeTab === 'journals' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <BookOpen size={14} />
+          <span>Jurnal Walas & KBM</span>
+        </button>
+        <button
+          onClick={() => { setActiveTab('jadwal'); setShowPasswordTab(false); }}
+          className={`py-2 px-3.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            activeTab === 'jadwal' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <Calendar size={14} />
+          <span>Jadwal Pelajaran</span>
+        </button>
+        <button
           onClick={() => { setActiveTab('attendance'); setShowPasswordTab(false); }}
-          className={`flex-1 py-2 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`py-2 px-3.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
             activeTab === 'attendance' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
           }`}
         >
@@ -1147,7 +2319,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
         </button>
         <button
           onClick={() => { setActiveTab('infractions'); setShowPasswordTab(false); }}
-          className={`flex-1 py-2 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`py-2 px-3.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
             activeTab === 'infractions' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
           }`}
         >
@@ -1156,11 +2328,11 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
         </button>
         <button
           onClick={() => { setActiveTab('buku_induk'); setShowPasswordTab(false); }}
-          className={`flex-1 py-2 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`py-2 px-3.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
             activeTab === 'buku_induk' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
           }`}
         >
-          <BookOpen size={14} />
+          <FileText size={14} />
           <span>Buku Induk</span>
         </button>
       </div>
@@ -1336,7 +2508,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
                 {interventionStudents.length === 0 ? (
                   <div className="py-6 text-center text-slate-400 font-semibold text-xs italic">
-                    Belum ditemukan kondisi darurat ketidakhadiran alpa (&gt;=2 hari) atau poin pelanggaran ekstrem (&gt;=15). Keadaan lingkungan sekolah aman & tertib.
+                    Belum ada siswa urgen di radar intervensi, atau semua siswa terdeteksi telah dibuatkan sesi bimbingan & dipindahkan ke Jurnal Bimbingan BK.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1354,7 +2526,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
                         <button
                           onClick={() => handleInitiateCounseling(st.name, st.className, st.reason)}
-                          className="w-full py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-[10px] uppercase tracking-wider transition-colors cursor-pointer text-center inline-flex items-center justify-center gap-1"
+                          className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl text-[10px] uppercase tracking-wider transition-colors cursor-pointer text-center inline-flex items-center justify-center gap-1 shadow-xs"
                         >
                           <Brain size={12} />
                           <span>Buat Sesi Bimbingan Siswa BK ini 🧠</span>
@@ -1366,13 +2538,13 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
               </div>
 
               {/* RECENT RECORDS SNEAK PEEK */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
                 {/* A. Recent Absences */}
                 <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xxs text-left flex flex-col gap-3">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                     <span className="text-xs font-black text-slate-800 flex items-center gap-1">
-                      <Calendar size={14} className="text-amber-500" /> Kejadian Absen Terakhir (Sakit/Alpa/Izin/Terlambat)
+                      <Calendar size={14} className="text-amber-500" /> Kejadian Absen Terakhir
                     </span>
                     <button onClick={() => { setActiveTab('attendance'); setAttendanceSubTab('diary'); }} className="text-[10px] font-bold text-indigo-650 hover:underline">
                       Lihat Semua
@@ -1389,9 +2561,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       };
                       
                       // Find student info
-                      const f = logs.find(log => log.studentId === a.studentId) || infractions.find(inf => inf.studentId === a.studentId);
-                      const stdName = f ? f.studentName : "Siswa No Rekam " + a.studentId;
-                      const cName = f ? f.className : "7-A";
+                      const info = getStudentInfo(a.studentId);
+                      const stdName = info.name;
+                      const cName = info.className;
 
                       return (
                         <div key={i} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-105 rounded-xl text-[11px]">
@@ -1413,7 +2585,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                 <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xxs text-left flex flex-col gap-3">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                     <span className="text-xs font-black text-slate-800 flex items-center gap-1">
-                      <AlertTriangle size={14} className="text-rose-500" /> Rekaman Kejadian Pelanggaran Terakhir
+                      <AlertTriangle size={14} className="text-rose-500" /> Pelanggaran Terakhir
                     </span>
                     <button onClick={() => { setActiveTab('infractions'); setInfractionSubTab('list'); }} className="text-[10px] font-bold text-indigo-650 hover:underline">
                       Lihat Semua
@@ -1425,7 +2597,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       <div key={i} className="flex justify-between items-center p-2.5 bg-slate-50 border border-slate-105 rounded-xl text-[11px]">
                         <div className="text-left font-semibold flex-1 pr-2">
                           <span className="font-extrabold text-slate-800 block text-xs leading-none mb-1">{inf.studentName}</span>
-                          <span className="text-slate-500 font-medium block truncate-custom max-w-[200px] sm:max-w-xs">{inf.infractionType}</span>
+                          <span className="text-slate-500 font-medium block truncate max-w-[180px]">{inf.infractionType}</span>
                         </div>
                         <div className="text-right shrink-0">
                           <span className="font-black text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-100 block text-[10.5px]">+{inf.points || 0} Pts</span>
@@ -1434,6 +2606,45 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       </div>
                     ))}
                     {infractions.length === 0 && <span className="text-[11px] text-slate-400 text-center py-4">Belum ada rekam pelanggaran tertib masuk.</span>}
+                  </div>
+                </div>
+
+                {/* C. Recent Teaching Journals (Walas & KBM) */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xxs text-left flex flex-col gap-3">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1">
+                      <BookOpen size={14} className="text-teal-600" /> Jurnal Walas & KBM Terbaru
+                    </span>
+                    <button onClick={() => setActiveTab('journals')} className="text-[10px] font-bold text-teal-700 hover:underline">
+                      Lihat Semua ({teachingJournals.length})
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-2 max-h-[250px] overflow-y-auto">
+                    {teachingJournals.slice(0, 5).map((j, i) => {
+                      const isHomeroom = j.teacherType === 'homeroom';
+                      return (
+                        <div key={i} className="p-2.5 bg-slate-50 border border-slate-105 rounded-xl text-[11px] flex flex-col gap-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider ${
+                              isHomeroom ? 'bg-teal-100 text-teal-800' : 'bg-indigo-100 text-indigo-800'
+                            }`}>
+                              {j.subject || (isHomeroom ? 'Wali Kelas' : 'Mapel')}
+                            </span>
+                            <span className="text-[9.5px] font-bold text-slate-400 font-mono">
+                              Kls {j.className} • {j.date}
+                            </span>
+                          </div>
+                          <span className="font-extrabold text-slate-900 leading-tight block truncate">
+                            {j.topic || 'Topik Pengajaran'}
+                          </span>
+                          <span className="text-[10px] font-semibold text-slate-500 block truncate">
+                            Guru: {j.teacherName}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {teachingJournals.length === 0 && <span className="text-[11px] text-slate-400 text-center py-4">Belum ada jurnal pengajaran masuk.</span>}
                   </div>
                 </div>
 
@@ -1455,14 +2666,50 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   </h2>
                   <p className="text-slate-450 text-[11px]">Gunakan form masukan solusi untuk secara instan menyinkronkan masukan bimbingan ke tabel portal Wali Kelas.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={downloadExcelCounseling}
-                  className="cursor-pointer bg-indigo-50 border border-indigo-250 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
-                >
-                  <FileSpreadsheet size={13} />
-                  <span>Ekspor Excel Bimbingan Rapi</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftStudentId('');
+                      setDraftStudentNisn('');
+                      setDraftStudentName('');
+                      setDraftClassName('');
+                      setDraftReason('');
+                      setDraftSuccess(false);
+                      setSelectedLogId('draft_new');
+                    }}
+                    className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-xs transition-all"
+                  >
+                    <Plus size={14} />
+                    <span>Form Bimbingan BK Baru</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrintGlobalLogs}
+                    className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-xs transition-all"
+                    title="Cetak Jurnal Bimbingan BK Seluruh Siswa / Sesuai Filter"
+                  >
+                    <Printer size={13} />
+                    <span>Cetak Jurnal Global</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintStudentModal(true)}
+                    className="cursor-pointer bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-xs transition-all"
+                    title="Pilih Siswa & Cetak Rekap Bimbingan Individual"
+                  >
+                    <Printer size={13} />
+                    <span>Cetak Per Siswa</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadExcelCounseling}
+                    className="cursor-pointer bg-indigo-50 border border-indigo-250 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5"
+                  >
+                    <FileSpreadsheet size={13} />
+                    <span>Ekspor Excel</span>
+                  </button>
+                </div>
               </div>
 
               {/* SEARCH & FILTERS FOR COUNSELING LIST */}
@@ -1599,8 +2846,8 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     </div>
                     <div className="flex justify-end gap-2 md:col-span-2">
                       <button type="button" onClick={() => setSelectedLogId(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl text-xs">Tutup</button>
-                      <button type="submit" disabled={submittingFeedback} className="px-5 py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5">
-                        {submittingFeedback ? <Loader2 size={12} className="animate-spin" /> : null}
+                      <button type="submit" disabled={submittingFeedback} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all active:scale-95">
+                        {submittingFeedback ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={14} />}
                         <span>Jadwalkan Penanganan BK</span>
                       </button>
                     </div>
@@ -1621,8 +2868,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   <span className="text-[11px] text-slate-400 mt-1 block">Silakan coba sesuaikan pencarian atau pilih filter status bimbingan lainnya.</span>
                 </div>
               ) : (
-                <div className="flex flex-col gap-5">
-                  {filteredLogs.map((log) => {
+                <>
+                  <div className="flex flex-col gap-5">
+                  {paginatedLogs.map((log) => {
                     const isSelected = selectedLogId === log.id;
                     return (
                       <div 
@@ -1674,10 +2922,20 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
                             <button
                               onClick={() => handlePrintLog(log)}
-                              className="cursor-pointer p-1.5 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 shadow-2xs transition-colors flex items-center justify-center bg-white"
-                              title="Cetak Log Bimbingan Integrasi"
+                              className="cursor-pointer px-2 py-1 hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 shadow-2xs transition-colors flex items-center gap-1 bg-white text-[10.5px] font-bold"
+                              title="Cetak Dokumentasi Sesi Ini"
                             >
-                              <Printer size={13} />
+                              <Printer size={12} />
+                              <span>Cetak Sesi Ini</span>
+                            </button>
+
+                            <button
+                              onClick={() => handlePrintStudentLogs(log.studentId || log.studentName)}
+                              className="cursor-pointer px-2 py-1 hover:bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-200 shadow-2xs transition-colors flex items-center gap-1 bg-white text-[10.5px] font-bold"
+                              title={`Cetak Rekap Seluruh Bimbingan Siswa (${log.studentName})`}
+                            >
+                              <Printer size={12} className="text-indigo-600" />
+                              <span>Cetak Rekap Siswa</span>
                             </button>
                           </div>
                         </div>
@@ -1807,6 +3065,18 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     );
                   })}
                 </div>
+                {filteredLogs.length > 0 && (
+                  <Pagination
+                    currentPage={counselingPage}
+                    totalItems={filteredLogs.length}
+                    pageSize={counselingPageSize}
+                    onPageChange={setCounselingPage}
+                    onPageSizeChange={(size) => { setCounselingPageSize(size); setCounselingPage(1); }}
+                    pageSizeOptions={[10, 15, 25, 50]}
+                    className="mt-4 rounded-2xl border"
+                  />
+                )}
+              </>
               )}
             </motion.div>
           )}
@@ -1825,14 +3095,25 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   </h2>
                   <p className="text-slate-450 text-[11px]">Amati siswa yang kerap mangkir kelas (Alpa) untuk diprioritaskan mendapat pembinaan mental bimbingan.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={downloadExcelAttendance}
-                  className="cursor-pointer bg-emerald-50 border border-emerald-250 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
-                >
-                  <FileSpreadsheet size={13} />
-                  <span>Ekspor Excel Ketidakhadiran</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePrintPdfAttendance}
+                    className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2 shadow-xs transition-all"
+                    title="Cetak PDF Rekapitulasi Presensi Siswa BK"
+                  >
+                    <Printer size={13} />
+                    <span>Cetak PDF Rekap Absensi</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadExcelAttendance}
+                    className="cursor-pointer bg-emerald-50 border border-emerald-250 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
+                  >
+                    <FileSpreadsheet size={13} />
+                    <span>Ekspor Excel Ketidakhadiran</span>
+                  </button>
+                </div>
               </div>
 
               {/* DUAL SELECTOR SUBTABS DIRECT ON SCREEN */}
@@ -1881,6 +3162,136 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   </select>
                 </div>
 
+                {/* Status Filter H S I A T */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-50 border border-slate-200 p-2.5 rounded-2xl">
+                  <div className="text-[11px] font-extrabold text-slate-700 flex items-center gap-1.5 uppercase tracking-wide">
+                    <Filter size={13} className="text-indigo-600" />
+                    <span>Filter Status Presensi (H / S / I / A / T):</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setAttendanceStatusFilter('all');
+                        setAttendanceSortBy('name');
+                        setAttendanceSortOrder('asc');
+                      }}
+                      className={`notranslate px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'all'
+                          ? 'bg-slate-800 text-white shadow-2xs'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      Semua
+                    </button>
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setAttendanceStatusFilter('Hadir');
+                        setAttendanceSortBy('hadir');
+                        setAttendanceSortOrder('desc');
+                      }}
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'Hadir'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                      title="Urutkan & Saring berdasarkan Hadir (H) Terbanyak"
+                    >
+                      H <span className="text-[10px] font-bold">(Hadir)</span>
+                    </button>
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setAttendanceStatusFilter('Sakit');
+                        setAttendanceSortBy('sakit');
+                        setAttendanceSortOrder('desc');
+                      }}
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'Sakit'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                      }`}
+                      title="Urutkan & Saring berdasarkan Sakit (S) Terbanyak"
+                    >
+                      S <span className="text-[10px] font-bold">(Sakit)</span>
+                    </button>
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setAttendanceStatusFilter('Izin');
+                        setAttendanceSortBy('izin');
+                        setAttendanceSortOrder('desc');
+                      }}
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'Izin'
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                      }`}
+                      title="Urutkan & Saring berdasarkan Izin (I) Terbanyak"
+                    >
+                      I <span className="text-[10px] font-bold">(Izin)</span>
+                    </button>
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setAttendanceStatusFilter('Alpa');
+                        setAttendanceSortBy('alpa');
+                        setAttendanceSortOrder('desc');
+                      }}
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'Alpa'
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                      }`}
+                      title="Urutkan & Saring berdasarkan Alpa (A) Terbanyak"
+                    >
+                      A <span className="text-[10px] font-bold">(Alpa)</span>
+                    </button>
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setAttendanceStatusFilter('Terlambat');
+                        setAttendanceSortBy('terlambat');
+                        setAttendanceSortOrder('desc');
+                      }}
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'Terlambat'
+                          ? 'bg-purple-600 text-white shadow-2xs'
+                          : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                      }`}
+                      title="Urutkan & Saring berdasarkan Terlambat (T) Terbanyak"
+                    >
+                      T <span className="text-[10px] font-bold">(Terlambat)</span>
+                    </button>
+                    {(attendanceStatusFilter !== 'all' || attendanceStartDate !== '' || attendanceEndDate !== '' || classFilter !== 'all' || searchQuery !== '' || attendanceSortBy !== 'name' || attendanceSortOrder !== 'asc') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttendanceStatusFilter('all');
+                          setClassFilter('all');
+                          setSearchQuery('');
+                          setAttendanceStartDate('');
+                          setAttendanceEndDate('');
+                          setAttendanceSortBy('name');
+                          setAttendanceSortOrder('asc');
+                        }}
+                        className="px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-all cursor-pointer flex items-center gap-1 shrink-0 ml-1"
+                        title="Reset semua filter dan pengurutan ke default"
+                      >
+                        <RotateCcw size={12} />
+                        <span>Reset Default</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 {/* Saringan Tanggal Export & Tampilan */}
                 <div className="flex flex-wrap items-center justify-between gap-3 bg-emerald-50/30 border border-emerald-100 p-3 rounded-2xl">
                   <div className="text-[11px] font-black text-emerald-800 flex items-center gap-1.5 uppercase tracking-wide">
@@ -1915,9 +3326,82 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                         }}
                         className="text-[10px] uppercase font-black tracking-wider text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg hover:bg-rose-100 transition-colors cursor-pointer"
                       >
-                        Reset Saring
+                        Reset Saring Tanggal
                       </button>
                     )}
+                  </div>
+                </div>
+                {/* Sorting Bar: Terbesar ke Terkecil / Terkecil ke Terbesar */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 bg-indigo-50/70 border border-indigo-150 p-3 rounded-2xl">
+                  <div className="text-[11px] font-extrabold text-indigo-900 flex items-center gap-1.5 uppercase tracking-wide">
+                    <ArrowUpDown size={13} className="text-indigo-600" />
+                    <span>Urutkan Rekap Absensi BK (Sorting):</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-white border border-indigo-200 rounded-xl px-2.5 py-1">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">Kriteria:</span>
+                      <select
+                        value={attendanceSortBy}
+                        onChange={(e: any) => setAttendanceSortBy(e.target.value)}
+                        className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                      >
+                        <option value="name">Nama Siswa (A - Z)</option>
+                        <option value="class">Kelas Siswa</option>
+                        <option value="rate">Persentase Kehadiran (%)</option>
+                        <option value="alpa">Jumlah Alpa (A)</option>
+                        <option value="terlambat">Jumlah Terlambat (T)</option>
+                        <option value="sakit">Jumlah Sakit (S)</option>
+                        <option value="izin">Jumlah Izin (I)</option>
+                        <option value="hadir">Jumlah Hadir (H)</option>
+                        <option value="total">Total Hari Pencatatan</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center rounded-xl bg-white border border-indigo-200 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceSortOrder('desc')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                          attendanceSortOrder === 'desc'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="Urutkan dari angka terbesar ke terkecil (Descending)"
+                      >
+                        <span>⬇️ Terbesar → Terkecil</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceSortOrder('asc')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                          attendanceSortOrder === 'asc'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="Urutkan dari angka terkecil ke terbesar (Ascending)"
+                      >
+                        <span>⬆️ Terkecil → Terbesar</span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttendanceStatusFilter('all');
+                        setClassFilter('all');
+                        setSearchQuery('');
+                        setAttendanceStartDate('');
+                        setAttendanceEndDate('');
+                        setAttendanceSortBy('name');
+                        setAttendanceSortOrder('asc');
+                      }}
+                      className="px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 bg-white border border-rose-200 hover:bg-rose-50 transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                      title="Reset semua filter status, kelas, pencarian, tanggal, dan pengurutan ke default"
+                    >
+                      <RotateCcw size={12} />
+                      <span>Reset Filter & Urutan</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1932,19 +3416,107 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-50/75 border-b border-slate-200">
-                        <th className="py-3 px-4 font-black text-slate-800">Nama Siswa</th>
-                        <th className="py-3 px-4 font-black text-slate-850 text-center">Kelas</th>
-                        <th className="py-3 px-2 font-black text-emerald-700 text-center">Hadir</th>
-                        <th className="py-3 px-2 font-black text-indigo-700 text-center">Sakit</th>
-                        <th className="py-3 px-2 font-black text-amber-700 text-center">Izin</th>
-                        <th className="py-3 px-2 font-black text-rose-700 text-center">Alpa (A)</th>
-                        <th className="py-3 px-2 font-black text-purple-700 text-center">Terlambat</th>
-                        <th className="py-3 px-2 font-black text-slate-800 text-center">Rasio</th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'name') setAttendanceSortOrder(attendanceSortOrder === 'asc' ? 'desc' : 'asc');
+                            else { setAttendanceSortBy('name'); setAttendanceSortOrder('asc'); }
+                          }}
+                          className="py-3 px-4 font-black text-slate-800 cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Nama Siswa</span>
+                            {attendanceSortBy === 'name' && (<span>{attendanceSortOrder === 'asc' ? '▲' : '▼'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'class') setAttendanceSortOrder(attendanceSortOrder === 'asc' ? 'desc' : 'asc');
+                            else { setAttendanceSortBy('class'); setAttendanceSortOrder('asc'); }
+                          }}
+                          className="py-3 px-4 font-black text-slate-850 text-center cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Kelas</span>
+                            {attendanceSortBy === 'class' && (<span>{attendanceSortOrder === 'asc' ? '▲' : '▼'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'hadir') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('hadir'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-emerald-700 text-center cursor-pointer hover:bg-emerald-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Hadir</span>
+                            {attendanceSortBy === 'hadir' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'sakit') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('sakit'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-indigo-700 text-center cursor-pointer hover:bg-indigo-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Sakit</span>
+                            {attendanceSortBy === 'sakit' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'izin') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('izin'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-amber-700 text-center cursor-pointer hover:bg-amber-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Izin</span>
+                            {attendanceSortBy === 'izin' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'alpa') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('alpa'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-rose-700 text-center cursor-pointer hover:bg-rose-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Alpa (A)</span>
+                            {attendanceSortBy === 'alpa' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'terlambat') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('terlambat'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-purple-700 text-center cursor-pointer hover:bg-purple-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Terlambat</span>
+                            {attendanceSortBy === 'terlambat' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'rate') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('rate'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-slate-800 text-center cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Rasio</span>
+                            {attendanceSortBy === 'rate' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
                         <th className="py-3 px-4 font-black text-indigo-650 text-center">Tindakan BK</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                      {filteredAttendanceAggregate.map((st, i) => {
+                      {paginatedAttendanceAggregate.map((st, i) => {
                         const hasAlpaProblem = st.alpa >= 2;
                         return (
                           <tr key={i} className={`hover:bg-slate-50 bg-white ${hasAlpaProblem ? 'bg-rose-50/20' : ''}`}>
@@ -1959,16 +3531,26 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                               {st.total > 0 ? Math.round((st.hadir / st.total) * 100) : 0}%
                             </td>
                             <td className="py-3 px-4 text-center">
-                              {st.alpa > 0 || st.terlambat > 0 ? (
+                              <div className="flex items-center justify-center gap-1.5">
+                                {st.alpa > 0 || st.terlambat > 0 ? (
+                                  <button
+                                    onClick={() => handleInitiateCounseling(st.name, st.className, `${st.alpa} hari ALPA & ${st.terlambat} kali Terlambat`)}
+                                    className="px-2 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-705 text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    Inisiasi BK 🧠
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-emerald-600 font-bold">Baik/Tertib ✅</span>
+                                )}
                                 <button
-                                  onClick={() => handleInitiateCounseling(st.name, st.className, `${st.alpa} hari ALPA & ${st.terlambat} kali Terlambat`)}
-                                  className="px-2 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-705 text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors cursor-pointer"
+                                  type="button"
+                                  onClick={() => handleDeleteStudentAttendance(st.id, st.name)}
+                                  title={`Hapus seluruh rekap absensi ${st.name}`}
+                                  className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                                 >
-                                  Inisiasi BK 🧠
+                                  <Trash2 size={13} />
                                 </button>
-                              ) : (
-                                <span className="text-[10px] text-emerald-600 font-bold">Baik/Tertib ✅</span>
-                              )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1980,6 +3562,14 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       )}
                     </tbody>
                   </table>
+                  <Pagination
+                    currentPage={attendanceAggregatePage}
+                    totalItems={filteredAttendanceAggregate.length}
+                    pageSize={attendanceAggregatePageSize}
+                    onPageChange={setAttendanceAggregatePage}
+                    onPageSizeChange={(size) => { setAttendanceAggregatePageSize(size); setAttendanceAggregatePage(1); }}
+                    pageSizeOptions={[20, 25, 50, 100]}
+                  />
                 </div>
               ) : (
                 <div className="border border-slate-150 rounded-2xl overflow-x-auto">
@@ -1991,13 +3581,14 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                         <th className="py-3 px-4 font-black text-center">Kelas</th>
                         <th className="py-3 px-4 font-black text-center">Status</th>
                         <th className="py-3 px-4 font-black">Catatan Keterangan Sakit/Alpa</th>
+                        <th className="py-3 px-3 font-black text-center">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                      {filteredAttendanceDiary.map((a, i) => {
-                        const f = logs.find(log => log.studentId === a.studentId) || infractions.find(inf => inf.studentId === a.studentId);
-                        const name = f ? f.studentName : "Siswa No Registrasi " + a.studentId;
-                        const cName = f ? f.className : "7-A";
+                      {paginatedAttendanceDiary.map((a, i) => {
+                        const info = getStudentInfo(a.studentId, a.studentName);
+                        const name = info.name;
+                        const cName = info.className || a.className || "7-A";
 
                         return (
                           <tr key={i} className="hover:bg-slate-50 bg-white">
@@ -2016,16 +3607,34 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                               </span>
                             </td>
                             <td className="py-3 px-4 text-slate-500 italic text-[11px] font-medium">"{a.notes || "Tidak ada rincian daktili kelas"}"</td>
+                            <td className="py-3 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSingleAttendance(a.id, name, a.date)}
+                                title={`Hapus presensi tanggal ${a.date}`}
+                                className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
                       {filteredAttendanceDiary.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="py-8 text-center text-slate-400 font-medium italic">Belum ada riwayat presensi terekam saat ini.</td>
+                          <td colSpan={6} className="py-8 text-center text-slate-400 font-medium italic">Belum ada riwayat presensi terekam saat ini.</td>
                         </tr>
                       )}
                     </tbody>
                   </table>
+                  <Pagination
+                    currentPage={attendanceDiaryPage}
+                    totalItems={filteredAttendanceDiary.length}
+                    pageSize={attendanceDiaryPageSize}
+                    onPageChange={setAttendanceDiaryPage}
+                    onPageSizeChange={(size) => { setAttendanceDiaryPageSize(size); setAttendanceDiaryPage(1); }}
+                    pageSizeOptions={[20, 25, 50, 100]}
+                  />
                 </div>
               )}
             </motion.div>
@@ -2055,7 +3664,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                 </button>
               </div>
 
-              {/* TRIPLE SELECTOR SUBTABS DIRECT ON SCREEN */}
+              {/* SELECTOR SUBTABS DIRECT ON SCREEN */}
               <div className="flex gap-2 border-b border-slate-100 pb-3 flex-wrap">
                 <button
                   type="button"
@@ -2074,6 +3683,15 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   }`}
                 >
                   Daftar Kejadian Kasus Masuk 🚨
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInfractionSubTab('add')}
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${
+                    infractionSubTab === 'add' ? 'bg-rose-600 text-white shadow-xs' : 'text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100'
+                  }`}
+                >
+                  ➕ Beri Poin Pelanggaran (BK)
                 </button>
                 <button
                   type="button"
@@ -2096,7 +3714,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
               </div>
 
               {/* FILTERS PANEL */}
-              {infractionSubTab !== 'reduction' && infractionSubTab !== 'rubric' && (
+              {infractionSubTab !== 'reduction' && infractionSubTab !== 'rubric' && infractionSubTab !== 'add' && (
                 <div className="flex flex-col gap-3 pb-2">
                   <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
                     <div className="relative flex-1">
@@ -2217,6 +3835,16 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    setNewInfractionStudentId(st.id);
+                                    setInfractionSubTab('add');
+                                  }}
+                                  className="px-2.5 py-1 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-800 text-[10.5px] uppercase font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <span>🚨 Beri Poin</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
                                     setReductionStudentId(st.id);
                                     setInfractionSubTab('reduction');
                                   }}
@@ -2236,6 +3864,263 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       )}
                     </tbody>
                   </table>
+                </div>
+              ) : infractionSubTab === 'add' ? (
+                <div className="bg-rose-50/40 border border-rose-200 rounded-2xl p-6 shadow-xxs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-5 border-b border-rose-200 gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-base shadow-sm">
+                        🚨
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-extrabold text-sm text-slate-900">Form Pemberian Poin Pelanggaran Siswa (Guru BK)</h3>
+                          <span className="text-[9.5px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-250 px-2 py-0.5 rounded-full">
+                            💾 Langsung Simpan ke MySQL
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-medium leading-tight mt-0.5">
+                          Pemberian poin sanksi ini langsung disimpan ke basis data MySQL sekolah secara realtime tanpa melalui penyimpanan lokal sementara, dan langsung diakumulasikan ke rekaman tata tertib siswa.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInfractionSubTab('points')}
+                      className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors self-start sm:self-auto cursor-pointer"
+                    >
+                      ← Kembali ke Kumulatif
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSubmitNewInfraction} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Pilih Siswa */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                          👤 Pilih Siswa Terkait <span className="text-rose-500">*</span>
+                        </label>
+                        {newInfractionStudentSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setNewInfractionStudentSearch('')}
+                            className="text-[9px] text-rose-500 hover:underline font-bold cursor-pointer"
+                          >
+                            Reset Cari
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="🔍 Tulis nama murid atau NIS untuk memfilter pilihan..."
+                        value={newInfractionStudentSearch}
+                        onChange={(e) => setNewInfractionStudentSearch(e.target.value)}
+                        className="p-2 border border-slate-200 bg-white rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-rose-500 mb-1"
+                      />
+                      <select
+                        value={newInfractionStudentId}
+                        onChange={(e) => setNewInfractionStudentId(e.target.value)}
+                        className="p-2.5 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 pointer-events-auto cursor-pointer focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        required
+                      >
+                        <option value="">
+                          {newInfractionStudentSearch
+                            ? `-- Hasil Pencarian (${allStudents.filter(s => {
+                                const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                                const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                                if (isMut || isLulus) return false;
+                                return s.name.toLowerCase().includes(newInfractionStudentSearch.toLowerCase()) || (s.nis && s.nis.toLowerCase().includes(newInfractionStudentSearch.toLowerCase()));
+                              }).length} siswa ditemukan) --`
+                            : "-- Pilih Siswa Terdaftar --"}
+                        </option>
+                        {allStudents
+                          .filter(s => {
+                            const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                            const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                            if (isMut || isLulus) return false;
+                            if (!newInfractionStudentSearch) return true;
+                            const term = newInfractionStudentSearch.toLowerCase();
+                            return s.name.toLowerCase().includes(term) || (s.nis && s.nis.toLowerCase().includes(term));
+                          })
+                          .map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} (Kelas {s.class}) - NIS: {s.nis}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    {/* Acuan Rubrik Sanksi (Opsional Otomatis) */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        📋 Pilih Cepat dari Master Rubrik Sanksi (Opsional)
+                      </label>
+                      <select
+                        value={newInfractionRuleId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewInfractionRuleId(val);
+                          const matched = infractionRules.find(r => r.id === val);
+                          if (matched) {
+                            setNewInfractionType(matched.name);
+                            setNewInfractionPoints(matched.points || 5);
+                          }
+                        }}
+                        className="p-2 border border-slate-200 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer"
+                      >
+                        <option value="">-- Pilih Jenis Pelanggaran dari Rubrik / Input Manual --</option>
+                        {infractionRules.map(r => (
+                          <option key={r.id} value={r.id}>
+                            [{r.category || 'Aturan'}] {r.name} (+{r.points} Poin Sanksi)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Deskripsi Jenis Pelanggaran */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        ⚠️ Jenis / Uraian Pelanggaran <span className="text-rose-500">*</span>
+                      </label>
+                      <textarea
+                        value={newInfractionType}
+                        onChange={(e) => setNewInfractionType(e.target.value)}
+                        placeholder="Contoh: Terlambat masuk sekolah lebih dari 30 menit, atribut seragam tidak lengkap, meninggalkan jam KBM tanpa izin..."
+                        rows={2}
+                        className="p-2.5 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 placeholder-slate-400"
+                        required
+                      />
+                    </div>
+
+                    {/* Besaran Poin Pelanggaran */}
+                    <div className="flex flex-col gap-1.5 text-left">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        🔢 Besaran Poin Pelanggaran (Positif) <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max="200"
+                          value={newInfractionPoints}
+                          onChange={(e) => setNewInfractionPoints(Number(e.target.value))}
+                          className="flex-1 p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 font-mono"
+                          required
+                        />
+                        <div className="flex gap-1">
+                          {[5, 10, 15, 20, 25].map(pt => (
+                            <button
+                              key={pt}
+                              type="button"
+                              onClick={() => setNewInfractionPoints(pt)}
+                              className={`px-2 py-1 text-[10px] font-black rounded-lg border cursor-pointer ${
+                                newInfractionPoints === pt ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              +{pt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status Penanganan */}
+                    <div className="flex flex-col gap-1.5 text-left">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        📌 Status Penanganan / Mediasi
+                      </label>
+                      <select
+                        value={newInfractionResolutionStatus}
+                        onChange={(e) => setNewInfractionResolutionStatus(e.target.value as any)}
+                        className="p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer"
+                      >
+                        <option value="Dalam Proses">Dalam Proses (Dipantau BK)</option>
+                        <option value="Belum Selesai">Belum Selesai</option>
+                        <option value="Butuh Mediasi">Butuh Mediasi (Panggilan Walas/Ortu)</option>
+                        <option value="Selesai">Selesai (Sudah Diberi Tindakan/Sanksi)</option>
+                      </select>
+                    </div>
+
+                    {/* Tanggal & Jam */}
+                    <div className="flex flex-col gap-1.5 text-left">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        📅 Tanggal Kejadian
+                      </label>
+                      <input
+                        type="date"
+                        value={newInfractionDate}
+                        onChange={(e) => setNewInfractionDate(e.target.value)}
+                        className="p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 text-left">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        ⏱️ Waktu Kejadian (WIB)
+                      </label>
+                      <input
+                        type="time"
+                        value={newInfractionTime}
+                        onChange={(e) => setNewInfractionTime(e.target.value)}
+                        className="p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        required
+                      />
+                    </div>
+
+                    {/* Lokasi */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        📍 Lokasi Kejadian
+                      </label>
+                      <input
+                        type="text"
+                        value={newInfractionLocation}
+                        onChange={(e) => setNewInfractionLocation(e.target.value)}
+                        placeholder="Contoh: Gerbang Masuk Sekolah, Ruang Kelas 8-B, Kantin, Lapangan..."
+                        className="p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                      />
+                    </div>
+
+                    {/* Tindakan / Sanksi Pembinaan */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        ⚖️ Tindakan / Sanksi Pembinaan yang Diberikan Guru BK
+                      </label>
+                      <textarea
+                        value={newInfractionActionTaken}
+                        onChange={(e) => setNewInfractionActionTaken(e.target.value)}
+                        placeholder="Contoh: Peringatan lisan, pembuatan surat pernyataan komitmen disiplin, dan penjadwalan bimbingan konseling individual..."
+                        rows={2}
+                        className="p-2.5 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        required
+                      />
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex justify-end gap-2 md:col-span-2 border-t border-rose-200 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInfractionSubTab('points');
+                          setNewInfractionType("");
+                          setNewInfractionStudentId("");
+                          setNewInfractionRuleId("");
+                        }}
+                        className="px-4 py-2 bg-white border border-slate-250 hover:bg-slate-100 text-slate-700 font-extrabold rounded-xl text-xs cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submittingInfraction}
+                        className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        {submittingInfraction ? <Loader2 size={12} className="animate-spin" /> : null}
+                        <span>Simpan Poin Langsung ke MySQL 🚀</span>
+                      </button>
+                    </div>
+                  </form>
                 </div>
               ) : infractionSubTab === 'reduction' ? (
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-xxs">
@@ -2280,11 +4165,19 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       >
                         <option value="">
                           {reductionStudentSearch
-                            ? `-- Hasil Pencarian (${allStudents.filter(s => s.name.toLowerCase().includes(reductionStudentSearch.toLowerCase()) || (s.nis && s.nis.toLowerCase().includes(reductionStudentSearch.toLowerCase()))).length} ditemukan) --`
+                            ? `-- Hasil Pencarian (${allStudents.filter(s => {
+                                const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                                const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                                if (isMut || isLulus) return false;
+                                return s.name.toLowerCase().includes(reductionStudentSearch.toLowerCase()) || (s.nis && s.nis.toLowerCase().includes(reductionStudentSearch.toLowerCase()));
+                              }).length} ditemukan) --`
                             : "-- Pilih Siswa --"}
                         </option>
                         {allStudents
                           .filter(s => {
+                            const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                            const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                            if (isMut || isLulus) return false;
                             if (!reductionStudentSearch) return true;
                             const term = reductionStudentSearch.toLowerCase();
                             return s.name.toLowerCase().includes(term) || (s.nis && s.nis.toLowerCase().includes(term));
@@ -2532,7 +4425,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {filteredInfractionsList.map((log) => (
+                  {paginatedInfractionsList.map((log) => (
                     <div key={log.id} className="p-4 bg-slate-50 border border-slate-220 rounded-2xl flex flex-col gap-2 relative">
                       <div className="flex justify-between items-start gap-2">
                         <div>
@@ -2585,12 +4478,423 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   {filteredInfractionsList.length === 0 && (
                     <span className="text-slate-400 text-xs font-medium py-8 text-center bg-slate-50 border border-dashed rounded-2xl block">Tidak ada kasus melanggar terdaftar.</span>
                   )}
+                  {filteredInfractionsList.length > 0 && (
+                    <Pagination
+                      currentPage={infractionPage}
+                      totalItems={filteredInfractionsList.length}
+                      pageSize={infractionPageSize}
+                      onPageChange={setInfractionPage}
+                      onPageSizeChange={(size) => { setInfractionPageSize(size); setInfractionPage(1); }}
+                      pageSizeOptions={[10, 25, 50]}
+                      className="mt-2 rounded-2xl border"
+                    />
+                  )}
                 </div>
               )}
             </motion.div>
           )}
 
-          {/* 5. TAB BUKU INDUK SISWA INTEGRATED */}
+          {/* 5. TAB MONITORING JURNAL WALAS & KBM */}
+          {activeTab === 'journals' && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col gap-6"
+            >
+              {/* Header Banner */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden text-left">
+                <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-teal-500 via-indigo-500 to-purple-500" />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <span className="bg-teal-50 text-teal-800 border border-teal-200 font-extrabold text-[9.5px] px-2.5 py-1 rounded-full uppercase tracking-widest inline-block mb-1.5">
+                      Oversight KBM & Presensi Harian
+                    </span>
+                    <h2 className="text-slate-900 font-black text-lg leading-tight">
+                      📚 Monitoring Jurnal Walas & KBM (Guru Mapel)
+                    </h2>
+                    <p className="text-slate-500 text-xs mt-1 leading-relaxed">
+                      Pantau seluruh rekaman jurnal pengajaran harian, materi pelajaran, aktivitas wali kelas, dan catatan ketidakhadiran siswa di setiap jam pelajaran. Terkoneksi dengan modul Bimbingan Konseling.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl text-center min-w-[85px]">
+                      <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Jurnal</span>
+                      <span className="text-base font-black text-slate-900">{teachingJournals.length}</span>
+                    </div>
+                    <div className="bg-indigo-50 border border-indigo-150 p-3 rounded-2xl text-center min-w-[85px]">
+                      <span className="block text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Guru Mapel</span>
+                      <span className="text-base font-black text-indigo-700">
+                        {teachingJournals.filter(j => j.teacherType === 'subject_teacher' || !j.teacherType).length}
+                      </span>
+                    </div>
+                    <div className="bg-teal-50 border border-teal-150 p-3 rounded-2xl text-center min-w-[85px]">
+                      <span className="block text-[10px] font-bold text-teal-600 uppercase tracking-wider">Wali Kelas</span>
+                      <span className="text-base font-black text-teal-700">
+                        {teachingJournals.filter(j => j.teacherType === 'homeroom').length}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filter & Control Toolbar */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs text-left flex flex-col gap-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  {/* Segment Tabs: Semua / Guru Mapel / Wali Kelas */}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setJournalTeacherTypeFilter('all')}
+                      className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                        journalTeacherTypeFilter === 'all'
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      Semua Jurnal ({teachingJournals.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setJournalTeacherTypeFilter('subject')}
+                      className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                        journalTeacherTypeFilter === 'subject'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      Guru Mapel ({teachingJournals.filter(j => j.teacherType === 'subject_teacher' || !j.teacherType).length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setJournalTeacherTypeFilter('homeroom')}
+                      className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                        journalTeacherTypeFilter === 'homeroom'
+                          ? 'bg-teal-600 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      Wali Kelas ({teachingJournals.filter(j => j.teacherType === 'homeroom').length})
+                    </button>
+                  </div>
+
+                  {/* Filter Dropdowns & Search */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Filter Guru Mapel */}
+                    <div className="flex items-center gap-1.5 bg-indigo-50/70 border border-indigo-100 px-3 py-1.5 rounded-xl">
+                      <User size={13} className="text-indigo-600 shrink-0" />
+                      <span className="text-[10px] font-black text-indigo-700 uppercase">Guru Mapel:</span>
+                      <select
+                        value={selectedSubjectTeacherFilter}
+                        onChange={(e) => setSelectedSubjectTeacherFilter(e.target.value)}
+                        className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer max-w-[160px] truncate"
+                      >
+                        <option value="all">Semua Guru Mapel</option>
+                        {uniqueSubjectTeacherNames.map(name => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Filter Wali Kelas */}
+                    <div className="flex items-center gap-1.5 bg-teal-50/70 border border-teal-100 px-3 py-1.5 rounded-xl">
+                      <User size={13} className="text-teal-600 shrink-0" />
+                      <span className="text-[10px] font-black text-teal-700 uppercase">Wali Kelas:</span>
+                      <select
+                        value={selectedHomeroomTeacherFilter}
+                        onChange={(e) => setSelectedHomeroomTeacherFilter(e.target.value)}
+                        className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer max-w-[180px] truncate"
+                      >
+                        <option value="all">Semua Wali Kelas</option>
+                        {uniqueHomeroomTeacherList.map(item => (
+                          <option key={item.name} value={item.name}>{item.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Class Filter */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                      <span className="text-[10px] font-black text-slate-400 uppercase">Kelas:</span>
+                      <select
+                        value={classFilter}
+                        onChange={(e) => setClassFilter(e.target.value)}
+                        className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer"
+                      >
+                        <option value="all">Semua Kelas</option>
+                        {uniqueClasses.map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Search Box */}
+                    <div className="relative flex-1 min-w-[180px]">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Cari materi, guru, mapel..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Date Range Row */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                  <div className="flex items-center gap-2 text-xs text-slate-600 font-semibold flex-wrap">
+                    <Calendar size={13} className="text-teal-600 shrink-0" />
+                    <span>Rentang Tanggal Jurnal:</span>
+                    <input
+                      type="date"
+                      value={journalStartDate}
+                      onChange={(e) => setJournalStartDate(e.target.value)}
+                      className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none"
+                    />
+                    <span>s.d.</span>
+                    <input
+                      type="date"
+                      value={journalEndDate}
+                      onChange={(e) => setJournalEndDate(e.target.value)}
+                      className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none"
+                    />
+                    {(journalStartDate || journalEndDate || selectedSubjectTeacherFilter !== 'all' || selectedHomeroomTeacherFilter !== 'all' || classFilter !== 'all' || searchQuery) && (
+                      <button
+                        onClick={() => { 
+                          setJournalStartDate(''); 
+                          setJournalEndDate(''); 
+                          setSelectedSubjectTeacherFilter('all');
+                          setSelectedHomeroomTeacherFilter('all');
+                          setClassFilter('all');
+                          setSearchQuery('');
+                        }}
+                        className="text-[10px] font-extrabold text-rose-600 hover:underline ml-1 cursor-pointer"
+                      >
+                        Reset Filter
+                      </button>
+                    )}
+                  </div>
+
+                  <span className="text-[10px] bg-slate-100 px-2.5 py-1 rounded-lg text-slate-700 font-black uppercase tracking-wider">
+                    {filteredTeachingJournals.length} Jurnal Ditemukan
+                  </span>
+                </div>
+              </div>
+
+              {/* Journal Cards List */}
+              {filteredTeachingJournals.length === 0 ? (
+                <div className="bg-white border border-slate-200 rounded-3xl p-12 text-center text-slate-400 font-semibold text-xs leading-relaxed">
+                  {teachingJournals.length === 0
+                    ? "Belum ada rekam jurnal pengajaran atau jurnal walas terdaftar di server."
+                    : "Tidak ada jurnal mengajar yang sesuai dengan kriteria pencarian/filter."}
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-4">
+                  {paginatedTeachingJournals.map((j) => {
+                    const isHomeroom = j.teacherType === 'homeroom';
+                    const attendanceList = Array.isArray(j.attendance) ? j.attendance : [];
+                    const totalC = attendanceList.length;
+                    const hadirC = attendanceList.filter((a: any) => a.status === 'Hadir').length;
+                    const terlambatC = attendanceList.filter((a: any) => a.status === 'Terlambat').length;
+                    const sakitC = attendanceList.filter((a: any) => a.status === 'Sakit').length;
+                    const izinC = attendanceList.filter((a: any) => a.status === 'Izin').length;
+                    const alpaC = attendanceList.filter((a: any) => a.status === 'Alpa').length;
+
+                    const nonPresent = attendanceList.filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
+
+                    return (
+                      <div
+                        key={j.id}
+                        className="bg-white border border-slate-200 hover:border-slate-300 rounded-3xl p-5 shadow-xs transition-all relative overflow-hidden text-left flex flex-col gap-3"
+                      >
+                        {/* Color indicator bar */}
+                        <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${isHomeroom ? 'bg-teal-500' : 'bg-indigo-600'}`} />
+
+                        <div className="pl-2.5 flex flex-col gap-2">
+                          {/* Header info */}
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                                isHomeroom ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                              }`}>
+                                {j.subject || 'Mata Pelajaran'}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-lg text-[9.5px] font-extrabold ${
+                                isHomeroom ? 'bg-emerald-50 text-emerald-800' : 'bg-blue-50 text-blue-800'
+                              }`}>
+                                {isHomeroom ? '📂 Jurnal Wali Kelas' : '📖 Jurnal Guru Mapel'}
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-500">
+                                Kelas {j.className}
+                              </span>
+                            </div>
+
+                            <div className="text-[11px] font-bold text-slate-400 font-mono">
+                              📅 {j.date} {j.jamKe ? `| Jam ke-${j.jamKe}` : ''} {j.pertemuanKe ? `(P. ${j.pertemuanKe})` : ''}
+                            </div>
+                          </div>
+
+                          {/* Teacher name & topic */}
+                          <div className="mt-1">
+                            <h3 className="text-base font-extrabold text-slate-900 leading-snug">
+                              {j.topic || 'Topik Pembelajaran'}
+                            </h3>
+                            <div className="text-xs font-semibold text-slate-600 mt-0.5 flex items-center gap-2 flex-wrap">
+                              <span>Pengajar: <strong className="text-slate-800">{j.teacherName}</strong></span>
+                              {j.alokasiWaktu && <span className="text-slate-400">• {j.alokasiWaktu}</span>}
+                              {j.fase && <span className="text-slate-400">• Fase {j.fase}</span>}
+                            </div>
+                          </div>
+
+                          {/* Notes & Objectives */}
+                          {(j.notes || j.tujuanPembelajaran) && (
+                            <div className="bg-slate-50 border border-slate-150 p-3 rounded-2xl text-xs text-slate-700 flex flex-col gap-1.5 mt-1">
+                              {j.tujuanPembelajaran && (
+                                <div>
+                                  <strong className="text-slate-800 text-[10.5px] uppercase tracking-wider block font-black">Tujuan Pembelajaran / KKTP:</strong>
+                                  <p className="text-slate-600 mt-0.5">{j.tujuanPembelajaran}</p>
+                                </div>
+                              )}
+                              {j.notes && (
+                                <div>
+                                  <strong className="text-slate-800 text-[10.5px] uppercase tracking-wider block font-black">Catatan KBM / Evaluasi Guru:</strong>
+                                  <p className="text-slate-600 mt-0.5">{j.notes}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Presensi Summary Badges */}
+                          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 mt-1">
+                            <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                              <span className="font-bold text-slate-500 text-[11px]">Rekap Presensi Siswa ({totalC}):</span>
+                              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-md font-bold text-[10.5px]">
+                                Hadir: {hadirC}
+                              </span>
+                              {terlambatC > 0 && (
+                                <span className="px-2 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 rounded-md font-bold text-[10.5px]">
+                                  Terlambat: {terlambatC}
+                                </span>
+                              )}
+                              {sakitC > 0 && (
+                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-md font-bold text-[10.5px]">
+                                  Sakit: {sakitC}
+                                </span>
+                              )}
+                              {izinC > 0 && (
+                                <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-md font-bold text-[10.5px]">
+                                  Izin: {izinC}
+                                </span>
+                              )}
+                              {alpaC > 0 && (
+                                <span className="px-2 py-0.5 bg-rose-50 text-rose-800 border border-rose-200 rounded-md font-bold text-[10.5px]">
+                                  Alpa: {alpaC}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Non-present list details */}
+                          {nonPresent.length > 0 && (
+                            <div className="mt-2 bg-rose-50/40 border border-rose-150 p-3 rounded-2xl flex flex-col gap-2">
+                              <span className="text-[10.5px] font-black text-rose-900 uppercase tracking-wider flex items-center gap-1">
+                                <AlertTriangle size={12} className="text-rose-600" />
+                                Siswa Tidak Hadir di Jam Mapel Ini ({nonPresent.length} Siswa):
+                              </span>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {nonPresent.map((st: any, idx: number) => {
+                                  const statusColors: { [key: string]: string } = {
+                                    "Alpa": "bg-rose-100 text-rose-800 border-rose-200",
+                                    "Sakit": "bg-indigo-100 text-indigo-800 border-indigo-200",
+                                    "Izin": "bg-amber-100 text-amber-800 border-amber-200"
+                                  };
+
+                                  const stdDisplayName = (st.studentName && !st.studentName.startsWith("Siswa (std-"))
+                                    ? st.studentName
+                                    : getStudentInfo(st.studentId).name;
+
+                                  return (
+                                    <div key={idx} className="bg-white border border-rose-100 p-2.5 rounded-xl flex items-center justify-between gap-2 shadow-2xs">
+                                      <div className="min-w-0 flex-1">
+                                        <span className="font-extrabold text-slate-800 text-xs block truncate">
+                                          {stdDisplayName}
+                                        </span>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                          <span className={`px-1.5 py-0.2 rounded text-[9.5px] font-extrabold border uppercase ${statusColors[st.status] || "bg-slate-100 text-slate-700"}`}>
+                                            {st.status}
+                                          </span>
+                                          {st.notes && (
+                                            <span className="text-[10px] text-slate-500 truncate max-w-[120px]">
+                                              ({st.notes})
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleInitiateCounseling(
+                                          st.studentName,
+                                          j.className,
+                                          `Ketidakhadiran (${st.status}) pada mata pelajaran ${j.subject} tgl ${j.date}${st.notes ? `: ${st.notes}` : ''}`
+                                        )}
+                                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9.5px] font-black uppercase tracking-wider shrink-0 transition-colors cursor-pointer flex items-center gap-1"
+                                        title="Buat Sesi Bimbingan BK"
+                                      >
+                                        <Brain size={10} />
+                                        <span>BK 🧠</span>
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {filteredTeachingJournals.length > 0 && (
+                  <Pagination
+                    currentPage={journalsPage}
+                    totalItems={filteredTeachingJournals.length}
+                    pageSize={journalsPageSize}
+                    onPageChange={setJournalsPage}
+                    onPageSizeChange={(size) => { setJournalsPageSize(size); setJournalsPage(1); }}
+                    pageSizeOptions={[10, 15, 25, 50]}
+                    className="mt-4 rounded-2xl border"
+                  />
+                )}
+              </>
+              )}
+            </motion.div>
+          )}
+
+          {/* TAB JADWAL PELAJARAN */}
+          {activeTab === 'jadwal' && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="w-full text-left"
+            >
+              <ScheduleView
+                role="bk"
+                schedules={classSchedules}
+                onRefreshSchedule={onRefresh}
+                availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
+                subjectTeachers={subjectTeachers}
+                homerooms={homerooms}
+                academicYear={schoolIdentity?.activeAcademicYear || '2026/2027'}
+              />
+            </motion.div>
+          )}
+
+          {/* 6. TAB BUKU INDUK SISWA INTEGRATED */}
           {activeTab === 'buku_induk' && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
@@ -2678,10 +4982,10 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
           onClick={() => setShowMoreMenu(prev => !prev)}
           className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
         >
-          <div className={`p-1.5 rounded-xl transition-colors ${(showPasswordTab || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-            <LayoutGrid size={20} className={(showPasswordTab || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          <div className={`p-1.5 rounded-xl transition-colors ${(activeTab === 'jadwal' || showPasswordTab || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={(activeTab === 'jadwal' || showPasswordTab || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
           </div>
-          <span className={`text-[9.5px] leading-none ${(showPasswordTab || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
+          <span className={`text-[9.5px] leading-none ${(activeTab === 'jadwal' || showPasswordTab || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
         </button>
       </div>
 
@@ -2701,114 +5005,296 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-16 left-0 right-0 z-45 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10"
+              className="fixed bottom-16 left-0 right-0 z-45 bg-white border-t border-slate-200 rounded-t-3xl p-5 shadow-2xl text-left flex flex-col gap-2 max-h-[85vh] overflow-y-auto pb-8"
             >
-              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Lainnya</span>
-                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5 font-bold">Portal Administrasi BK</h4>
+              {/* Android Top Drag Handle */}
+              <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0" />
+
+              {/* Minimal Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-600" />
+                  <h4 className="text-slate-900 font-bold text-sm tracking-tight">
+                    Menu Lainnya
+                  </h4>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowMoreMenu(false)}
-                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-xs cursor-pointer transition-colors"
                 >
-                  Tutup
+                  ✕
                 </button>
               </div>
 
-              <div className="flex flex-col gap-2">
+              {/* 3 Horizontal Columns Android App Drawer Grid */}
+              <div className="grid grid-cols-3 gap-y-4 gap-x-2 py-2">
+                {/* 1. Jadwal */}
                 <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('jadwal');
+                    setShowPasswordTab(false);
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-md shadow-indigo-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🗓️
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Jadwal Pelajaran
+                  </span>
+                </button>
+
+                {/* 2. Jurnal */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('journals');
+                    setShowPasswordTab(false);
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md shadow-teal-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📚
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Jurnal KBM
+                  </span>
+                </button>
+
+                {/* 3. Buku Induk */}
+                <button
+                  type="button"
                   onClick={() => {
                     setActiveTab('buku_induk');
                     setShowPasswordTab(false);
                     setShowMoreMenu(false);
                   }}
-                  className="w-full text-left py-3 px-4 rounded-xl border border-indigo-100 bg-indigo-50/50 hover:bg-indigo-100/50 flex items-center gap-3 text-indigo-900 font-extrabold text-xs"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <BookOpen size={16} className="text-indigo-600 shrink-0" />
-                  <span>📗 Buku Induk Siswa (Master Ledger)</span>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-600 to-green-700 shadow-md shadow-emerald-600/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📗
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Buku Induk
+                  </span>
                 </button>
 
+                {/* 4. Password */}
                 <button
+                  type="button"
                   onClick={() => {
                     setShowPasswordTab(true);
                     setShowMoreMenu(false);
                   }}
-                  className="w-full text-left py-3 px-4 rounded-xl border border-slate-150 hover:bg-slate-50 flex items-center gap-3 text-slate-705 font-bold text-xs"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <Key size={16} className="text-amber-500 shrink-0 text-slate-500 hover:text-slate-800" />
-                  <span>Atur Password Akun Guru BK</span>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md shadow-amber-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🔑
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Atur Password
+                  </span>
                 </button>
 
-                <div className="mt-2 py-1 px-1">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">📑 Ekspor Laporan Excel (.xls)</span>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <button
-                      onClick={() => { downloadExcelCounseling(); setShowMoreMenu(false); }}
-                      className="py-2.5 px-3 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[10.5px] font-extrabold text-center transition-all flex items-center justify-center gap-1"
-                    >
-                      <FileSpreadsheet size={12} />
-                      <span>Excel Bimbingan 🧠</span>
-                    </button>
-                    <button
-                      onClick={() => { downloadExcelAttendance(); setShowMoreMenu(false); }}
-                      className="py-2.5 px-3 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10.5px] font-extrabold text-center transition-all flex items-center justify-center gap-1"
-                    >
-                      <Calendar size={12} />
-                      <span>Excel Absensi 📊</span>
-                    </button>
-                    <button
-                      onClick={() => { downloadExcelInfractions(); setShowMoreMenu(false); }}
-                      className="py-2.5 px-3 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-800 text-[10.5px] font-extrabold text-center transition-all flex items-center justify-center gap-1"
-                    >
-                      <AlertTriangle size={12} />
-                      <span>Excel Disiplin 🚨</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Mobile app install links */}
-                <div className="mt-4 border-t border-slate-100 pt-4 flex flex-col gap-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">📲 Download Aplikasi Mobile Sekolah</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    <a
-                      href={schoolIdentity?.apkUrl || "#"}
-                      target={schoolIdentity?.apkUrl ? "_blank" : undefined}
-                      onClick={(e) => {
-                        if (!schoolIdentity?.apkUrl) { e.preventDefault(); alert("Unduhan Android belum disiapkan admin sekolah."); }
-                      }}
-                      className="py-2.5 px-3 rounded-lg border border-slate-150 text-slate-700 bg-slate-50 font-bold text-[10.5px] text-center transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <Smartphone size={12} className="text-emerald-600" />
-                      <span>Download APK Android</span>
-                    </a>
-                    <a
-                      href={schoolIdentity?.iosUrl || "#"}
-                      target={schoolIdentity?.iosUrl ? "_blank" : undefined}
-                      onClick={(e) => {
-                        if (!schoolIdentity?.iosUrl) { e.preventDefault(); alert("Unduhan App Store iOS belum disiapkan admin sekolah."); }
-                      }}
-                      className="py-2.5 px-3 rounded-lg border border-slate-150 text-slate-700 bg-slate-50 font-bold text-[10.5px] text-center transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <Apple size={12} className="text-sky-600" />
-                      <span>Download iOS App</span>
-                    </a>
-                  </div>
-                </div>
-
+                {/* 5. Excel Bimbingan */}
                 <button
+                  type="button"
+                  onClick={() => {
+                    downloadExcelCounseling();
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 shadow-md shadow-purple-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🧠
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Excel BK
+                  </span>
+                </button>
+
+                {/* 6. Excel Absensi */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    downloadExcelAttendance();
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-600 shadow-md shadow-blue-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📊
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Excel Absensi
+                  </span>
+                </button>
+
+                {/* 7. Excel Disiplin */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    downloadExcelInfractions();
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500 to-red-500 shadow-md shadow-orange-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🚨
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Excel Disiplin
+                  </span>
+                </button>
+
+                {/* 8. Unduh APK */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (schoolIdentity?.apkUrl) {
+                      window.open(schoolIdentity.apkUrl, "_blank");
+                    } else {
+                      alert("Link unduhan Android belum disiapkan admin sekolah.");
+                    }
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Smartphone className="w-7 h-7 text-white stroke-[2.2]" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Unduh APK
+                  </span>
+                </button>
+
+                {/* 9. Keluar */}
+                <button
+                  type="button"
                   onClick={() => {
                     onLogout();
                     setShowMoreMenu(false);
                   }}
-                  className="w-full text-center py-3 px-4 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100/90 text-rose-700 font-extrabold text-xs transition-colors flex items-center justify-center gap-2 mt-4 cursor-pointer"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <LogOut size={14} />
-                  <span>Log Out Keluar Akun</span>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-red-600 shadow-md shadow-rose-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🚪
+                  </div>
+                  <span className="text-[11px] font-semibold text-rose-600 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Keluar Sesi
+                  </span>
                 </button>
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL CETAK REKAP BIMBINGAN PER SISWA */}
+      <AnimatePresence>
+        {showPrintStudentModal && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl max-w-lg w-full text-left"
+            >
+              <div className="flex justify-between items-center pb-4 mb-4 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="p-2 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-100">
+                    <Printer size={18} />
+                  </span>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900">Cetak Rekap Bimbingan Per Siswa</h3>
+                    <p className="text-[11px] text-slate-500">Pilih siswa untuk mengunduh/mencetak dokumen riwayat bimbingan BK individual.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowPrintStudentModal(false)}
+                  className="p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-500">🔍 Cari Nama Siswa / NIS</label>
+                  <input
+                    type="text"
+                    placeholder="Tulis nama siswa atau NIS..."
+                    value={printStudentSearch}
+                    onChange={(e) => setPrintStudentSearch(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-500">👤 Pilih Siswa Terdaftar</label>
+                  <select
+                    value={selectedStudentForPrint}
+                    onChange={(e) => setSelectedStudentForPrint(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                  >
+                    <option value="">-- Pilih Siswa --</option>
+                    {allStudents
+                      .filter(s => {
+                        if (!printStudentSearch) return true;
+                        const term = printStudentSearch.toLowerCase();
+                        return s.name.toLowerCase().includes(term) || (s.nis && s.nis.toLowerCase().includes(term));
+                      })
+                      .map(s => {
+                        // Count counseling logs for this student
+                        const sLogCount = logs.filter(l => 
+                          (l.studentId && l.studentId === s.id) || 
+                          (l.studentName && s.name && l.studentName.trim().toLowerCase() === s.name.trim().toLowerCase())
+                        ).length;
+                        return (
+                          <option key={s.id} value={s.id}>
+                            {s.name} (Kelas {s.class}) — {sLogCount} Sesi Bimbingan
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+
+                <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-3 text-[11px] text-indigo-900 leading-relaxed font-semibold">
+                  ℹ️ Dokumen cetak per siswa mencakup identitas siswa lengkap, daftar kronologi permasalahan, upaya advokasi wali kelas, komitmen siswa, dan masukan solusi resmi dari Guru BK.
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintStudentModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl text-xs cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!selectedStudentForPrint) {
+                        alert("Harap pilih siswa terlebih dahulu.");
+                        return;
+                      }
+                      handlePrintStudentLogs(selectedStudentForPrint);
+                      setShowPrintStudentModal(false);
+                    }}
+                    disabled={!selectedStudentForPrint}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer transition-all"
+                  >
+                    <Printer size={14} />
+                    <span>Cetak Rekap Bimbingan</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

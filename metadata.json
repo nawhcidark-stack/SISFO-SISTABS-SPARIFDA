@@ -1,6 +1,6 @@
 {
   "name": "Portal Administrasi Inspiratif",
-  "description": "Aplikasi pembayaran SPP dan Tabungan SMP Maarif NU Pandaan Terintegrasi dengan Midtrans dan Notifikasi Real-time",
+  "description": "Sistem Informasi Akademik, Keuangan, Waka Kurikulum, dan SPMB 2027/2028 SMP Maarif NU Pandaan Terintegrasi Midtrans dan Notifikasi Real-time",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

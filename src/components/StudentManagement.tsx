@@ -1,12 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle, Users, Layers, Hash, RotateCcw, CheckCircle2, Printer } from 'lucide-react';
+import { Pagination } from './Pagination';
+import BulkNisEditorModal from './BulkNisEditorModal';
 
 interface StudentManagementProps {
   students: Student[];
-  onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }) => Promise<boolean>;
-  onUpdateStudent: (id: string, data: { nis: string; name: string; class: string; email: string; phone: string; password?: string; gender?: string; mutationDate?: string; mutationReason?: string; mutationDestination?: string }) => Promise<boolean>;
+  onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string; customSppRate?: number }) => Promise<boolean>;
+  onUpdateStudent: (id: string, data: { nis: string; name: string; class: string; email: string; phone: string; password?: string; gender?: string; mutationDate?: string; mutationReason?: string; mutationDestination?: string; customSppRate?: number | null }) => Promise<boolean>;
   onDeleteStudent: (id: string) => Promise<boolean>;
   onImportStudents: (
     list: Array<{
@@ -15,12 +17,16 @@ interface StudentManagementProps {
       class: string;
       email: string;
       phone: string;
-      initialSavings: number;
+      initialSavings?: number;
       gender?: string;
       password?: string;
     }>,
   ) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
+  onUndoLastImport?: () => Promise<{ success: boolean; message: string }>;
   onRefresh: () => void;
+  onPrintStudentRecap?: () => void;
+  schoolIdentity?: any;
+  homerooms?: any[];
 }
 
 export default function StudentManagement({
@@ -29,7 +35,11 @@ export default function StudentManagement({
   onUpdateStudent,
   onDeleteStudent,
   onImportStudents,
-  onRefresh
+  onUndoLastImport,
+  onRefresh,
+  onPrintStudentRecap,
+  schoolIdentity,
+  homerooms
 }: StudentManagementProps) {
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -40,6 +50,9 @@ export default function StudentManagement({
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [deletingStudent, setDeletingStudent] = useState<Student | null>(null);
 
+  // Bulk NIS Editor
+  const [isBulkNisOpen, setIsBulkNisOpen] = useState(false);
+
   // Form states
   const [formData, setFormData] = useState({
     nis: '',
@@ -49,7 +62,8 @@ export default function StudentManagement({
     phone: '',
     initialSavings: '0',
     password: '',
-    gender: 'Laki-laki'
+    gender: 'Laki-laki',
+    customSppRate: ''
   });
 
   const [saving, setSaving] = useState(false);
@@ -64,7 +78,7 @@ export default function StudentManagement({
     class: string;
     email: string;
     phone: string;
-    initialSavings: number;
+    initialSavings?: number;
     gender?: string;
     password?: string;
     isExisting: boolean;
@@ -77,9 +91,9 @@ export default function StudentManagement({
   const handleDownloadTemplate = () => {
     const headers = "nis,nama,kelas,jenis_kelamin,email,telepon,password,saldo_awal\n";
     const rows = [
-      "20261010,Budi Santoso,7-A,Laki-laki,budi@example.com,081234567812,budi123,100000",
-      "20261011,Aisyah Putri,7-B,Perempuan,aisyah@example.com,081234567813,aisyah77,0",
-      "20241001,Ahmad Fauzi,7-A,Laki-laki,ahmad.new_email@example.org,081234567890,fauzi321,0"
+      "20261010,Budi Santoso,7-A,Laki-laki,budi@smpmaarifnu.sch.id,081234567812,budi123,100000",
+      "20261011,Aisyah Putri,7-B,Perempuan,aisyah@smpmaarifnu.sch.id,081234567813,aisyah77,0",
+      "0012345678,Contoh Siswa,7-A,Laki-laki,contoh@smpmaarifnu.sch.id,081234567890,contoh123,0"
     ].join("\n");
     const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -96,7 +110,11 @@ export default function StudentManagement({
     const headers = "nis,nama,kelas,jenis_kelamin,email,telepon,password,saldo_awal\r\n";
     
     const escapeCsv = (val: string | number) => {
-      const str = String(val === undefined || val === null ? '' : val);
+      const str = String(val === undefined || val === null ? '' : val).trim();
+      // Prevent Excel from displaying long digit strings in scientific notation (e.g. NIS, No HP)
+      if (str.length >= 10 && /^\d+$/.test(str)) {
+        return `"=""${str}"""`;
+      }
       if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r') || str.includes(';')) {
         return `"${str.replace(/"/g, '""')}"`;
       }
@@ -152,7 +170,19 @@ export default function StudentManagement({
         }
 
         // Clean quotes helper
-        const clean = (val: string) => (val || "").replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1').trim();
+        const clean = (val: string) => {
+          let s = (val || "").trim();
+          if (s.startsWith('"') && s.endsWith('"')) {
+            s = s.substring(1, s.length - 1);
+          }
+          if (s.startsWith('=') && (s.substring(1).startsWith('"') || s.substring(1).startsWith("'"))) {
+            s = s.substring(2, s.length - 1);
+          }
+          if (s.startsWith("'")) {
+            s = s.substring(1);
+          }
+          return s.trim();
+        };
 
         // Helper function to split a string by delimiter while ignoring delimiters inside double quotes
         const parseCSVLineRobust = (rawLine: string, delim: string): string[] => {
@@ -207,7 +237,7 @@ export default function StudentManagement({
           class: string;
           email: string;
           phone: string;
-          initialSavings: number;
+          initialSavings?: number;
           gender?: string;
           password?: string;
           isExisting: boolean;
@@ -227,7 +257,7 @@ export default function StudentManagement({
           const emailVal = emailIdx !== -1 ? cols[emailIdx] : '';
           const phoneVal = phoneIdx !== -1 ? cols[phoneIdx] : '';
           const passwordVal = passwordIdx !== -1 ? cols[passwordIdx] : '';
-          const initSalVal = savingsIdx !== -1 ? (Number(cols[savingsIdx]) || 0) : 0;
+          const initSalVal = savingsIdx !== -1 ? (Number(cols[savingsIdx]) || 0) : undefined;
 
           if (!nisVal || !nameVal || !classVal) continue;
 
@@ -296,11 +326,38 @@ export default function StudentManagement({
     }
   };
 
+  const [isUndoingImport, setIsUndoingImport] = useState(false);
+  const [undoMessage, setUndoMessage] = useState<string | null>(null);
+
   const handleResetImportModal = () => {
     setImportError('');
     setPreviewImportData([]);
     setImportResult(null);
+    setUndoMessage(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleUndoImport = async () => {
+    if (!onUndoLastImport) return;
+    if (!window.confirm("Apakah Anda yakin ingin membatalkan import data kolektif CSV terakhir? Seluruh mutasi dan perubahan saldo dari import akan dipulihkan.")) {
+      return;
+    }
+    setIsUndoingImport(true);
+    setUndoMessage(null);
+    setImportError('');
+    try {
+      const res = await onUndoLastImport();
+      if (res.success) {
+        setUndoMessage(res.message);
+        onRefresh();
+      } else {
+        setImportError(res.message);
+      }
+    } catch (err: any) {
+      setImportError(err?.message || 'Gagal membatalkan import.');
+    } finally {
+      setIsUndoingImport(false);
+    }
   };
 
   // Handle inputs
@@ -313,7 +370,8 @@ export default function StudentManagement({
       phone: '',
       initialSavings: '0',
       password: '',
-      gender: 'Laki-laki'
+      gender: 'Laki-laki',
+      customSppRate: ''
     });
     setErrorMsg('');
   };
@@ -357,7 +415,8 @@ export default function StudentManagement({
         email: formData.email.trim(),
         phone: formData.phone.trim(),
         initialSavings: Number(formData.initialSavings) || 0,
-        gender: formData.gender
+        gender: formData.gender,
+        customSppRate: formData.customSppRate && !isNaN(Number(formData.customSppRate)) && Number(formData.customSppRate) > 0 ? Number(formData.customSppRate) : undefined
       });
 
       if (success) {
@@ -399,7 +458,8 @@ export default function StudentManagement({
         email: formData.email.trim(),
         phone: formData.phone.trim(),
         gender: formData.gender,
-        password: formData.password && formData.password.trim().length >= 6 ? formData.password.trim() : undefined
+        password: formData.password && formData.password.trim().length >= 6 ? formData.password.trim() : undefined,
+        customSppRate: formData.customSppRate !== undefined && formData.customSppRate !== '' ? (Number(formData.customSppRate) > 0 ? Number(formData.customSppRate) : null) : null
       });
 
       if (success) {
@@ -445,18 +505,22 @@ export default function StudentManagement({
       phone: student.phone || '',
       initialSavings: '0', // Not editable
       password: '',
-      gender: student.gender || 'Laki-laki'
+      gender: student.gender || 'Laki-laki',
+      customSppRate: student.customSppRate ? String(student.customSppRate) : ''
     });
   };
 
   // Filter students list
   const filteredStudents = students.filter(student => {
-    if (student.class && (
-      student.class.toLowerCase() === 'lulus' || 
-      student.class.toLowerCase() === 'lulusan' || 
-      student.class.toLowerCase() === 'mutasi' || 
-      student.class.toLowerCase() === 'mutasi keluar'
-    )) {
+    if (
+      student.mutationDate ||
+      (student.class && (
+        student.class.toLowerCase() === 'lulus' || 
+        student.class.toLowerCase() === 'lulusan' || 
+        student.class.toLowerCase() === 'mutasi' || 
+        student.class.toLowerCase() === 'mutasi keluar'
+      ))
+    ) {
       return false; // exclude alumni and mutated students from general student management list
     }
     const matchesSearch = 
@@ -468,9 +532,22 @@ export default function StudentManagement({
     return matchesSearch && matchesClass;
   }).sort((a, b) => a.name.localeCompare(b.name));
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, classFilter]);
+
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
+
   // Statistics Calculations
   const activeStudentsList = students.filter(student => {
-    return student.class && !(
+    return !student.mutationDate && student.class && !(
       student.class.toLowerCase() === 'lulus' || 
       student.class.toLowerCase() === 'lulusan' || 
       student.class.toLowerCase() === 'mutasi' || 
@@ -495,6 +572,54 @@ export default function StudentManagement({
     acc[cls] = activeStudentsList.filter(s => s.class === cls).length;
     return acc;
   }, {} as Record<string, number>);
+
+  const tingkatStats = React.useMemo(() => {
+    const stats: Record<string, { total: number; male: number; female: number }> = {};
+    
+    activeStudentsList.forEach(s => {
+      const clsName = s.class ? s.class.trim() : '';
+      if (!clsName) return;
+      
+      // Extract tingkat (e.g. from "7-A" or "10-B" or "Kelas 7")
+      let tingkat = 'Lainnya';
+      const match = clsName.match(/^\d+/);
+      if (match) {
+        tingkat = `Tingkat ${match[0]}`;
+      } else {
+        const romanMatch = clsName.match(/^(IX|IV|V?I{1,3})/i);
+        if (romanMatch && romanMatch[0]) {
+          tingkat = `Tingkat ${romanMatch[0].toUpperCase()}`;
+        } else {
+          const wordMatch = clsName.match(/^(Kelas\s+)?(\d+)/i);
+          if (wordMatch) {
+            tingkat = `Tingkat ${wordMatch[2]}`;
+          }
+        }
+      }
+      
+      if (!stats[tingkat]) {
+        stats[tingkat] = { total: 0, male: 0, female: 0 };
+      }
+      
+      stats[tingkat].total++;
+      const isFemale = s.gender && (s.gender.toLowerCase().startsWith('p') || s.gender === 'Perempuan');
+      if (isFemale) {
+        stats[tingkat].female++;
+      } else {
+        stats[tingkat].male++;
+      }
+    });
+    
+    // Sort keys naturally (e.g. Tingkat 7, Tingkat 8, Tingkat 9)
+    return Object.keys(stats)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+      .map(key => ({
+        tingkat: key,
+        total: stats[key].total,
+        male: stats[key].male,
+        female: stats[key].female
+      }));
+  }, [activeStudentsList]);
 
   return (
     <div id="student-crud-root" className="flex flex-col gap-5 text-slate-800">
@@ -530,6 +655,18 @@ export default function StudentManagement({
             <span>Ekspor Excel</span>
           </button>
 
+          {onPrintStudentRecap && (
+            <button
+              type="button"
+              onClick={onPrintStudentRecap}
+              className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Cetak PDF Laporan Rekapitulasi Jumlah Siswa"
+            >
+              <Printer size={14} className="text-emerald-400" />
+              <span>Cetak PDF Rekap Siswa</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {
@@ -541,6 +678,16 @@ export default function StudentManagement({
           >
             <FileSpreadsheet size={14} className="text-indigo-600" />
             <span>Import CSV</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsBulkNisOpen(true)}
+            className="px-3.5 py-2 bg-teal-50 border border-teal-200 hover:bg-teal-100 text-teal-800 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+            title="Sesuaikan nomor NIS massal siswa tanpa mengubah NISN"
+          >
+            <Hash size={14} className="text-teal-700" />
+            <span>Edit Massal NIS</span>
           </button>
 
           <button
@@ -606,11 +753,104 @@ export default function StudentManagement({
         </div>
       </div>
 
+      {/* Statistik Jumlah Siswa per Tingkat */}
+      <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Layers className="text-indigo-650" size={16} />
+            <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Statistik Jumlah Siswa Per Tingkat</h4>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] bg-slate-100 text-slate-500 px-2.5 py-1 rounded font-black tracking-wider uppercase">Grafik & Gender</span>
+            {onPrintStudentRecap && (
+              <button
+                type="button"
+                onClick={onPrintStudentRecap}
+                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-850 border border-emerald-200 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all shadow-3xs"
+                title="Cetak PDF Laporan Rekapitulasi Siswa Per Tingkat"
+              >
+                <Printer size={11} className="text-emerald-700" />
+                <span>Cetak PDF</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {tingkatStats.map((stat) => {
+            const malePct = stat.total > 0 ? (stat.male / stat.total) * 100 : 0;
+            const femalePct = stat.total > 0 ? (stat.female / stat.total) * 100 : 0;
+            return (
+              <div key={stat.tingkat} className="bg-slate-50/50 p-4 rounded-xl border border-slate-150 hover:border-slate-300 transition-all flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-black text-slate-700 tracking-wide">{stat.tingkat}</span>
+                  <span className="text-xs font-extrabold text-slate-900 bg-white border border-slate-200/80 px-2.5 py-0.5 rounded-lg shadow-2xs">
+                    {stat.total} <span className="text-[9.5px] font-medium text-slate-400">Siswa</span>
+                  </span>
+                </div>
+
+                {/* Progress bar ratio L & P */}
+                <div className="w-full bg-slate-200/70 rounded-full h-3.5 overflow-hidden flex mb-3 shadow-2xs">
+                  {stat.male > 0 && (
+                    <div 
+                      style={{ width: `${malePct}%` }} 
+                      className="bg-indigo-600 h-full flex items-center justify-center text-[8px] font-black text-white"
+                      title={`Laki-laki: ${stat.male} (${malePct.toFixed(1)}%)`}
+                    >
+                      {malePct >= 15 && `${malePct.toFixed(0)}%`}
+                    </div>
+                  )}
+                  {stat.female > 0 && (
+                    <div 
+                      style={{ width: `${femalePct}%` }} 
+                      className="bg-rose-500 h-full flex items-center justify-center text-[8px] font-black text-white"
+                      title={`Perempuan: ${stat.female} (${femalePct.toFixed(1)}%)`}
+                    >
+                      {femalePct >= 15 && `${femalePct.toFixed(0)}%`}
+                    </div>
+                  )}
+                </div>
+
+                {/* Gender detailed metrics */}
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 mt-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-indigo-600 block"></span>
+                    <span>Laki-Laki: <strong className="text-indigo-650 font-black">{stat.male}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 block"></span>
+                    <span>Perempuan: <strong className="text-rose-600 font-black">{stat.female}</strong></span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {tingkatStats.length === 0 && (
+            <div className="col-span-1 md:col-span-3 text-center py-6 text-slate-400 text-xs">
+              Tidak ada data siswa aktif untuk dikelompokkan per tingkat.
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Rincian Per Kelas */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-bold text-slate-805 uppercase tracking-wider">Distribusi Jumlah Siswa per-Kelas</h4>
-          <span className="text-[9px] bg-slate-100 text-slate-550 px-2 py-0.5 rounded font-extrabold tracking-wider uppercase">Tahun Ajaran Aktif</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] bg-slate-100 text-slate-550 px-2 py-0.5 rounded font-extrabold tracking-wider uppercase">Tahun Ajaran Aktif</span>
+            {onPrintStudentRecap && (
+              <button
+                type="button"
+                onClick={onPrintStudentRecap}
+                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-850 border border-emerald-200 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all shadow-3xs"
+                title="Cetak PDF Laporan Rekapitulasi Siswa Per Kelas"
+              >
+                <Printer size={11} className="text-emerald-700" />
+                <span>Cetak PDF</span>
+              </button>
+            )}
+          </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-2">
           {classes.map((cls) => {
@@ -683,13 +923,14 @@ export default function StudentManagement({
                 <th className="px-5 py-3">Kelas</th>
                 <th className="px-5 py-3">Email Wali</th>
                 <th className="px-5 py-3">Telepon</th>
+                <th className="px-5 py-3 text-right">Tarif SPP</th>
                 <th className="px-5 py-3 text-right">Saldo Tabungan</th>
                 <th className="px-5 py-3 text-center">Tindakan</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-150">
               {filteredStudents.length > 0 ? (
-                filteredStudents.map((std) => (
+                paginatedStudents.map((std) => (
                   <tr key={std.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-3.5 font-mono font-bold text-slate-800">{std.nis}</td>
                     <td className="px-5 py-3.5 font-semibold text-slate-900">{std.name}</td>
@@ -705,8 +946,19 @@ export default function StudentManagement({
                     </td>
                     <td className="px-5 py-3.5 text-slate-600 font-medium">{std.email || '-'}</td>
                     <td className="px-5 py-3.5 font-mono text-slate-500">{std.phone || '-'}</td>
-                    <td className="px-5 py-3.5 text-right font-mono font-bold text-emerald-800">
-                      Rp {std.savingsBalance.toLocaleString('id-ID')}
+                    <td className="px-5 py-3.5 text-right font-mono text-xs font-semibold">
+                      {std.customSppRate ? (
+                        <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/80 text-[10px]">
+                          ⭐ Rp {std.customSppRate.toLocaleString('id-ID')}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-[10px] italic">
+                          Standar Tingkat
+                        </span>
+                      )}
+                    </td>
+                    <td className={`px-5 py-3.5 text-right font-mono font-bold ${std.savingsBalance < 0 ? 'text-rose-700' : 'text-emerald-800'}`}>
+                      {std.savingsBalance < 0 ? `-Rp ${Math.abs(std.savingsBalance).toLocaleString('id-ID')}` : `Rp ${std.savingsBalance.toLocaleString('id-ID')}`}
                     </td>
                     <td className="px-5 py-3.5 text-center whitespace-nowrap">
                       <div className="flex justify-center items-center gap-2">
@@ -730,7 +982,7 @@ export default function StudentManagement({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400 font-medium">
+                  <td colSpan={9} className="px-5 py-10 text-center text-slate-400 font-medium">
                     Tidak ada siswa yang sesuai dengan filter pencarian.
                   </td>
                 </tr>
@@ -739,11 +991,15 @@ export default function StudentManagement({
           </table>
         </div>
         
-        {/* Footnote count */}
-        <div className="p-3 bg-slate-50 border-t border-slate-150 flex justify-between items-center text-[10px] text-slate-400 font-bold">
-          <span>MENAMPILKAN {filteredStudents.length} DARI {students.length} SISWA AKTIF</span>
-          <span className="uppercase tracking-wider">Sistem Akademik Terintegrasi 🇮🇩</span>
-        </div>
+        {/* Pagination Bar */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredStudents.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[10, 20, 50, 100]}
+        />
       </div>
 
       {/* CREATE STUDENT FORM DIALOG MODAL */}
@@ -835,7 +1091,7 @@ export default function StudentManagement({
                     <label className="font-bold text-slate-500 uppercase text-[9px] tracking-wide">Email Wali Murid</label>
                     <input
                       type="email"
-                      placeholder="wali@example.com"
+                      placeholder="wali@smpmaarifnu.sch.id"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-slate-800 focus:bg-white"
@@ -868,6 +1124,26 @@ export default function StudentManagement({
                   </div>
                   <p className="text-[10px] text-emerald-700/85 italic leading-snug">
                     *Uang setoran awal tabungan siswa akan otomatis tercatat sebagai transaksi &quot;Setoran Awal&quot; di teller sekolah.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200 flex flex-col gap-1.5">
+                  <label className="font-bold text-amber-900 uppercase text-[9px] tracking-wide flex items-center justify-between">
+                    <span>Nominal Khusus SPP (Rp) — Opsional</span>
+                    <span className="text-[9px] text-amber-700 font-normal">Kosongkan jika tarif standar</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-amber-800 text-xs">Rp</span>
+                    <input
+                      type="number"
+                      placeholder="Misal: 100000"
+                      value={formData.customSppRate}
+                      onChange={(e) => setFormData({ ...formData, customSppRate: e.target.value })}
+                      className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-amber-900 outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <p className="text-[10px] text-amber-700/90 italic leading-snug">
+                    *Diisi jika siswa mempunyai besaran SPP khusus (keringanan/kebijakan/beasiswa parsial). Tagihan SPP otomatis menggunakan nominal ini.
                   </p>
                 </div>
 
@@ -987,7 +1263,7 @@ export default function StudentManagement({
                     <label className="font-bold text-slate-500 uppercase text-[9px] tracking-wide">Email Wali Murid</label>
                     <input
                       type="email"
-                      placeholder="wali@example.com"
+                      placeholder="wali@smpmaarifnu.sch.id"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-slate-800 focus:bg-white"
@@ -1004,6 +1280,26 @@ export default function StudentManagement({
                       className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:border-slate-800 focus:bg-white"
                     />
                   </div>
+                </div>
+
+                <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200 flex flex-col gap-1.5 mt-1">
+                  <label className="font-bold text-amber-900 uppercase text-[9px] tracking-wide flex items-center justify-between">
+                    <span>Nominal Khusus SPP (Rp) — Opsional</span>
+                    <span className="text-[9px] text-amber-700 font-normal">Kosongkan jika menggunakan tarif standar</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-amber-800 text-xs">Rp</span>
+                    <input
+                      type="number"
+                      placeholder="Misal: 100000 (kosongkan untuk tarif standar)"
+                      value={formData.customSppRate}
+                      onChange={(e) => setFormData({ ...formData, customSppRate: e.target.value })}
+                      className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-amber-900 outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <p className="text-[10px] text-amber-700/90 italic leading-snug">
+                    *Mengubah nominal khusus akan otomatis menyesuaikan nominal seluruh tagihan SPP yang <strong>Belum Lunas</strong> milik siswa ini.
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-1 bg-amber-50/60 p-3 rounded-lg border border-amber-200/80 mt-1">
@@ -1154,6 +1450,35 @@ export default function StudentManagement({
                   </div>
                 </div>
 
+                {/* Undo Last Import Section */}
+                <div className="bg-amber-50/80 border border-amber-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-start gap-2.5 text-amber-950">
+                    <RotateCcw size={15} className="text-amber-700 mt-0.5 shrink-0" />
+                    <div>
+                      <div className="font-bold text-xs">Batalkan Import Kolektif Terakhir</div>
+                      <div className="text-[10.5px] text-amber-800 leading-snug">
+                        Ingin mengembalikan data jika file CSV yang diimpor keliru? Klik tombol ini untuk membatalkan proses import terakhir dan memulihkan saldo/data siswa.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isUndoingImport}
+                    onClick={handleUndoImport}
+                    className="shrink-0 px-3 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-bold rounded-lg text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw size={12} className={isUndoingImport ? "animate-spin" : ""} />
+                    <span>{isUndoingImport ? "Membatalkan..." : "Batalkan Import Terakhir"}</span>
+                  </button>
+                </div>
+
+                {undoMessage && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-lg font-bold text-xs flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-emerald-700 shrink-0" />
+                    <span>{undoMessage}</span>
+                  </div>
+                )}
+
                 {importError && (
                   <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-700 rounded-lg font-bold flex items-center gap-1.5 animate-pulse">
                     <AlertTriangle size={14} /> {importError}
@@ -1243,8 +1568,8 @@ export default function StudentManagement({
                               </td>
                               <td className="px-3 py-2 text-slate-500">{row.email || '-'}</td>
                               <td className="px-3 py-2 font-mono text-slate-600 font-medium">{row.password || '-'}</td>
-                              <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800">
-                                {row.initialSavings > 0 ? `Rp ${row.initialSavings.toLocaleString('id-ID')}` : '-'}
+                              <td className={`px-3 py-2 text-right font-mono font-bold ${row.initialSavings !== undefined && row.initialSavings < 0 ? 'text-rose-700' : 'text-emerald-800'}`}>
+                                {row.initialSavings !== undefined && row.initialSavings !== null && row.initialSavings !== 0 ? (row.initialSavings < 0 ? `-Rp ${Math.abs(row.initialSavings).toLocaleString('id-ID')}` : `Rp ${row.initialSavings.toLocaleString('id-ID')}`) : '-'}
                               </td>
                               <td className="px-3 py-2 text-center">
                                 {row.isExisting ? (
@@ -1298,6 +1623,15 @@ export default function StudentManagement({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Modal Edit Massal NIS Siswa (NISN Tetap) */}
+      <BulkNisEditorModal
+        isOpen={isBulkNisOpen}
+        onClose={() => setIsBulkNisOpen(false)}
+        students={students}
+        onRefresh={onRefresh}
+        initialClassFilter={classFilter}
+      />
     </div>
   );
 }

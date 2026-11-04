@@ -6,5 +6,7 @@
   "firestoreDatabaseId": "ai-studio-7ff6ffdf-833a-490d-a519-ec4364d0517f",
   "storageBucket": "ungoogly-impulse-271nt.firebasestorage.app",
   "messagingSenderId": "77575326547",
-  "measurementId": ""
+  "measurementId": "",
+  "oAuthClientId": "77575326547-s2cultuse0afdj0ksvo5vr16g0nsgc21.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }

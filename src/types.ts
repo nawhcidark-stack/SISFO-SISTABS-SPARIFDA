@@ -6,6 +6,7 @@ export interface Student {
   email: string;
   phone: string;
   savingsBalance: number;
+  status?: string; // e.g. "Aktif" | "Lulus" | "Keluar" | "Mutasi"
   password?: string;
   gender?: string;
   mutationDate?: string;
@@ -25,6 +26,20 @@ export interface Student {
   siblingsCount?: string | number;
   stepSiblingsCount?: string | number;
   address?: string;
+  photoUrl?: string;
+  parentName?: string;
+  googleDriveLink?: string;
+  documentsFolder?: string;
+  documents?: {
+    aktaPhoto?: string;
+    kkPhoto?: string;
+    ktpPhoto?: string;
+    ktpAyahPhoto?: string;
+    ktpIbuPhoto?: string;
+    pasPhoto?: string;
+    kipPhoto?: string;
+    [key: string]: string | undefined;
+  };
 
   // Data Orang Tua - Ayah
   fatherName?: string;
@@ -62,6 +77,24 @@ export interface Student {
   guardianPhone?: string;
   guardianStatus?: string; // Hidup / Meninggal
   guardianIsSameAsFather?: boolean;
+  
+  // Status Bebas SPP Diluar Prestasi / Beasiswa
+  isSppExempt?: boolean;
+  sppExemptionReason?: string;
+  sppExemptionType?: 'akademik' | 'non-akademik' | 'non-prestasi' | 'kebijakan';
+
+  // Nominal Khusus SPP Siswa (jika ada besaran khusus diluar tarif standar tingkat)
+  customSppRate?: number;
+
+  // Rekam Jejak Kelas per Tahun Ajaran (Histori Periodik Anggota Kelas)
+  classHistory?: StudentClassHistoryItem[];
+}
+
+export interface StudentClassHistoryItem {
+  academicYear: string; // e.g. "2024/2025", "2025/2026", "2026/2027", "2027/2028"
+  className: string;    // e.g. "7-A", "8-A", "9-A"
+  status?: string;      // "Aktif" | "Naik Kelas" | "Tinggal Kelas" | "Lulus" | "Mutasi"
+  updatedAt?: string;
 }
 
 export interface SppBill {
@@ -74,20 +107,64 @@ export interface SppBill {
   paidAt?: string;
   paymentMethod?: string;
   orderId?: string;
-  achievementType?: 'akademik' | 'non-akademik';
+  transactionId?: string;
+  achievementType?: 'akademik' | 'non-akademik' | 'non-prestasi' | 'kebijakan';
   achievementDetail?: string;
+  isVoidedByAdmin?: boolean;
+  voidedAt?: string;
+  voidReason?: string;
+  academicYear?: string; // e.g., "2026/2027"
 }
 
 export interface SavingsTransaction {
   id: string;
   studentId: string;
+  studentNis?: string;
+  studentName?: string;
   type: 'deposit' | 'withdrawal';
   amount: number;
   status: 'success' | 'pending' | 'failed';
   createdAt: string;
   paymentMethod?: string;
   orderId?: string;
+  transactionId?: string;
   notes?: string;
+  isVoidedByAdmin?: boolean;
+  voidedAt?: string;
+  voidReason?: string;
+  academicYear?: string; // e.g., "2026/2027"
+}
+
+export interface MiscBill {
+  id: string;
+  studentId: string;
+  title: string;
+  amount: number;
+  status: 'paid' | 'unpaid' | 'pending';
+  createdAt: string;
+  paidAt?: string;
+  paymentMethod?: string;
+  orderId?: string;
+  transactionId?: string;
+  isMonthly?: boolean;
+  month?: string;
+  isVoidedByAdmin?: boolean;
+  voidedAt?: string;
+  voidReason?: string;
+  academicYear?: string; // e.g., "2026/2027"
+}
+
+export interface VoidedPaymentRecord {
+  id: string;
+  billId?: string;
+  orderId?: string;
+  transactionId?: string;
+  studentId?: string;
+  billType: 'spp' | 'misc' | 'savings' | 'cart';
+  period?: string;
+  amount?: number;
+  voidReason?: string;
+  voidedAt: string;
 }
 
 export interface RealtimeNotification {
@@ -96,6 +173,7 @@ export interface RealtimeNotification {
   title: string;
   message: string;
   type: 'info' | 'success' | 'warning' | 'payment';
+  category?: 'kbm' | 'pembayaran' | 'bk' | 'admin' | string;
   createdAt: string;
 }
 
@@ -111,17 +189,55 @@ export interface MidtransConfig {
   pin?: string;
 }
 
+export interface MidtransTransactionRecord {
+  id: string;
+  orderId: string;
+  transactionId?: string;
+  studentId?: string;
+  studentName?: string;
+  studentNis?: string;
+  nisn?: string;
+  billType: 'spp' | 'misc' | 'cart' | 'savings' | 'spmb_token' | 'spmb_reregistration' | 'other';
+  description: string;
+  grossAmount: number;
+  paymentType: string;
+  transactionStatus: 'settlement' | 'capture' | 'pending' | 'expire' | 'cancel' | 'deny' | 'refund' | 'failure';
+  fraudStatus?: string;
+  settlementTime?: string;
+  transactionTime?: string;
+  createdAt: string;
+  updatedAt: string;
+  snapToken?: string;
+  rawResponse?: any;
+}
+
+export interface StudentReconcileRetryStatus {
+  studentId: string;
+  attempts: number;
+  maxAttempts: number;
+  lastAttemptAt?: string;
+  pendingOrderIds: string[];
+  resolvedOrderIds: string[];
+  isExhausted: boolean;
+  status: 'idle' | 'retrying' | 'settled' | 'pending';
+  lastMessage: string;
+}
+
 export interface SchoolIdentity {
   name: string;
   subheading: string;
   accreditation: string;
   address: string;
   phone: string;
+  email?: string;
+  npsn?: string;
   principal: string;
+  principalNip?: string;
   principalSignature?: string;
   treasurer: string;
   logo: string;
   logo2?: string;
+  loadingLogo?: string;
   letterhead?: string;
   treasurerSignature?: string;
   schoolStamp?: string;
@@ -131,6 +247,8 @@ export interface SchoolIdentity {
   sarprasSkUrl?: string;
   paymentCardTemplate?: string;
   favicon?: string;
+  activeAcademicYear?: string;
+  activeSemester?: string;
   sppRates?: {
     grade7: number;
     grade8: number;
@@ -152,6 +270,8 @@ export interface WhatsappConfig {
 export interface AttendanceLog {
   id: string;
   studentId: string;
+  studentName?: string;
+  className?: string;
   date: string; // "YYYY-MM-DD"
   status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat';
   notes?: string;
@@ -163,6 +283,16 @@ export interface AttendanceLog {
   }[];
 }
 
+export interface TeacherAssignment {
+  academicYear: string; // e.g. "2024/2025", "2025/2026", "2026/2027", "2027/2028"
+  role: 'homeroom' | 'subject_teacher';
+  className?: string; // e.g., "7-A", "7-B", "8-A", "9-C" (if homeroom)
+  subject?: string;
+  subjectId?: string;
+  notes?: string;
+  updatedAt?: string;
+}
+
 export interface HomeroomTeacher {
   id: string;
   username: string;
@@ -170,15 +300,94 @@ export interface HomeroomTeacher {
   className: string; // e.g., "7-A", "7-B", "8-A", "9-C"
   password?: string;
   skUrl?: string;
+  role?: string;
+  subject?: string; // Mata pelajaran yang diampu oleh wali kelas (e.g., "Matematika", "Bahasa Indonesia", etc.)
+  subjectId?: string; // ID master mapel terhubung ke master data mapel
+  subjects?: string[]; // Daftar multi-mapel bila mengampu lebih dari 1 mapel
+  academicYear?: string; // e.g., "2026/2027"
+  assignments?: TeacherAssignment[];
 }
 
 export interface SubjectTeacher {
   id: string;
   username: string;
   name: string;
+  role?: string;
   subject: string; // e.g., "Matematika", "Bahasa Inggris", "IPA", etc.
+  subjectId?: string; // id mapel terhubung ke master data mapel
+  className?: string; // e.g., "7-A" or "SEMUA KELAS"
   password?: string;
   skUrl?: string;
+  academicYear?: string;
+  assignments?: TeacherAssignment[];
+}
+
+export interface CurriculumSubject {
+  id: string; // e.g., "mapel-pai", "mapel-bindo", "mapel-mtk"
+  code: string; // e.g., "PAI", "BINDO", "MAT"
+  name: string; // e.g., "Pendidikan Agama Islam dan Budi Pekerti"
+  category?: string; // e.g., "Muatan Nasional", "Muatan Lokal", "Peminatan"
+  kktp?: number; // default KKTP / KKM e.g., 75
+  tingkat?: string; // "Semua Tingkat" | "7" | "8" | "9"
+  orderNum?: number; // nomor urut tampilan rapor
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CurriculumTpDescription {
+  id?: string;
+  gradeLevel: string; // "7" | "8" | "9"
+  subject: string;
+  subjectId?: string;
+  semester: string; // "Ganjil" | "Genap"
+  academicYear: string; // e.g. "2026/2027"
+  tp1Name?: string;
+  tp2Name?: string;
+  tp3Name?: string;
+  tp4Name?: string;
+  isLocked?: boolean;
+  filledBy?: string; // Nama guru serumpun yang mengisi/mengunci TP
+  filledByRole?: string; // e.g., "Guru Bahasa Indonesia"
+  filledAt?: string;
+  editedBy?: string; // Nama guru serumpun yang membuka kunci atau mengedit TP
+  editedByRole?: string; // Role guru yang mengedit TP
+  editedAt?: string; // Waktu pengeditan/pembukaan kunci TP
+  editHistory?: Array<{
+    editorName: string;
+    editorRole?: string;
+    action: 'unlock' | 'edit';
+    timestamp: string;
+    note?: string;
+  }>;
+  updatedAt?: string;
+}
+
+export interface SharedLearningObjective {
+  id: string; // e.g. "tp-mat-7-01", "tp-1738..."
+  code: string; // e.g. "TP-7-01", "TP-MAT-7.1"
+  subjectId: string; // ID Mata Pelajaran (e.g. "mapel-mtk")
+  subjectName: string; // Nama Mata Pelajaran (e.g. "Matematika")
+  gradeLevel: string; // "7" | "8" | "9"
+  semester: string; // "Ganjil" | "Genap"
+  academicYear: string; // e.g. "2026/2027"
+  tpNumber?: number; // 1 | 2 | 3 | 4
+  title: string; // Rumusan Tujuan Pembelajaran (TP)
+  creatorId?: string; // ID Guru pembuat
+  creatorName: string; // Nama guru / Waka Kurikulum
+  creatorRole?: string; // e.g. "Guru Matematika"
+  status: 'Aktif' | 'Disetujui' | 'Menunggu Verifikasi' | 'Nonaktif';
+  revisionRequests?: Array<{
+    id: string;
+    teacherId?: string;
+    teacherName: string;
+    teacherRole?: string;
+    note: string;
+    requestedAt: string;
+    status: 'pending' | 'approved' | 'rejected';
+  }>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SubjectAttendanceEntry {
@@ -195,14 +404,37 @@ export interface TreasurerTransaction {
   amount: number;
   description: string;
   date: string; // "YYYY-MM-DD"
-  source: 'spp' | 'savings' | 'custom';
+  source?: 'spp' | 'savings' | 'custom';
   studentName?: string;
+  studentId?: string;
   nis?: string;
   createdBy?: string;
   recipientName?: string;
   fundingSource?: string;
+  paymentMethod?: string;
+  kodeRekening?: string;
+  noBukti?: string;
+  orderId?: string;
+  transactionId?: string;
 }
 
+
+export interface ClassSchedule {
+  id: string;
+  day: 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu';
+  className: string;
+  subject: string;
+  subjectId?: string;
+  teacherId: string;
+  teacherName: string;
+  jamKe: string; // e.g. "1-2", "3-4", "5"
+  startTime?: string; // e.g. "07:00"
+  endTime?: string; // e.g. "08:20"
+  alokasiWaktu?: string; // e.g. "2 JP"
+  academicYear?: string;
+  semester?: string;
+  createdAt?: string;
+}
 
 export interface TeachingJournal {
   id: string;
@@ -300,21 +532,63 @@ export interface MerdekaAssessment {
   studentName: string;
   className: string;
   subject: string;
+  teacherId?: string;
   teacherName: string;
   semester: string; // "Ganjil" | "Genap"
   academicYear: string; // e.g. "2025/2026"
-  tp1Name: string;
-  tp1Grade: number;
+
+  // TP 1
+  tp1Id?: string; // Relasi ke Bank TP Bersama (SharedLearningObjective.id)
+  tp1Name?: string;
+  tp1Tugas1?: number | string;
+  tp1Tugas2?: number | string;
+  tp1Uh?: number | string;
+  nilaiTp1?: number; // (Rata2 Tugas * 0.7) + (UH * 0.3)
+
+  // TP 2
+  tp2Id?: string; // Relasi ke Bank TP Bersama (SharedLearningObjective.id)
   tp2Name?: string;
-  tp2Grade?: number;
+  tp2Tugas1?: number | string;
+  tp2Tugas2?: number | string;
+  tp2Uh?: number | string;
+  nilaiTp2?: number;
+
+  // TP 3
+  tp3Id?: string; // Relasi ke Bank TP Bersama (SharedLearningObjective.id)
   tp3Name?: string;
+  tp3Tugas1?: number | string;
+  tp3Tugas2?: number | string;
+  tp3Uh?: number | string;
+  nilaiTp3?: number;
+
+  // TP 4
+  tp4Id?: string; // Relasi ke Bank TP Bersama (SharedLearningObjective.id)
+  tp4Name?: string;
+  tp4Tugas1?: number | string;
+  tp4Tugas2?: number | string;
+  tp4Uh?: number | string;
+  nilaiTp4?: number;
+
+  // Aggregates & Scores
+  nilaiRataTp?: number; // Rata-rata dari nilai TP1..4 yang valid
+  nilaiKokurikuler?: number; // Khusus Wali Kelas, terhubung ke Guru Mapel
+  nilaiPts?: number; // Input Waka Kurikulum
+  nilaiPas?: number; // Input Waka Kurikulum
+  nilaiAkhirMapel?: number; // ((Nilai Rata2 TP * 3) + Kokurikuler + PTS + PAS) / 6
+
+  // Legacy/Fallback compatibility
+  tp1Grade?: number;
+  tp2Grade?: number;
   tp3Grade?: number;
-  nilaiFormatif: number; // calculated as avg of available TPs
-  nilaiSumatifLM: number; // Sumatif Lingkup Materi
-  nilaiSAS: number; // Sumatif Akhir Semester
-  nilaiRapor: number; // calculated as e.g., (nilaiFormatif + nilaiSumatifLM + nilaiSAS) / 3 or customized weights
-  deskripsiCapaian: string;
+  tp4Grade?: number;
+  nilaiFormatif?: number;
+  nilaiSumatifLM?: number;
+  nilaiSAS?: number;
+  nilaiRapor?: number;
+  deskripsiCapaian?: string;
+
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface PrincipalWorkProgram {
@@ -457,8 +731,342 @@ export function isSppBillOverdue(bill: { status: string; month: string; year: nu
   return false;
 }
 
+export function getSppMonthIndex(monthName: string): number {
+  if (!monthName) return 0;
+  const clean = monthName.trim().toLowerCase();
+  const monthMap: Record<string, number> = {
+    "januari": 1, "jan": 1, "january": 1,
+    "februari": 2, "feb": 2, "february": 2,
+    "maret": 3, "mar": 3, "march": 3,
+    "april": 4, "apr": 4,
+    "mei": 5, "may": 5,
+    "juni": 6, "jun": 6, "june": 6,
+    "juli": 7, "jul": 7, "july": 7,
+    "agustus": 8, "agu": 8, "agust": 8, "august": 8, "aug": 8,
+    "september": 9, "sep": 9, "sept": 9,
+    "oktober": 10, "okt": 10, "october": 10, "oct": 10,
+    "november": 11, "nov": 11,
+    "desember": 12, "des": 12, "december": 12, "dec": 12
+  };
+  return monthMap[clean] || 0;
+}
 
+export function sortSppBills<T extends { month: string; year?: number }>(bills: T[]): T[] {
+  if (!bills || !Array.isArray(bills)) return [];
+  return [...bills].sort((a, b) => {
+    const yA = Number(a?.year) || 0;
+    const yB = Number(b?.year) || 0;
+    const mA = getSppMonthIndex(a?.month || '');
+    const mB = getSppMonthIndex(b?.month || '');
+    const scoreA = yA * 12 + mA;
+    const scoreB = yB * 12 + mB;
+    return scoreA - scoreB;
+  });
+}// ==========================================
+// SPMB (SISTEM PENERIMAAN MURID BARU) 2027/2028
+// ==========================================
 
+export interface SpmbSession {
+  id: string; // 'inden' | 'gelombang-1' | 'gelombang-2'
+  name: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  isActive: boolean;
+  quota: number;
+  description: string;
+  discountPercent?: number; // Diskon Uang Gedung dalam persen (%) misal: 50% untuk Inden, 25% Gelombang 1
+  discountAmount?: number; // Nilai potongan rupiah (opsional / fallback)
+  sportsUniformBonusForMaarif?: boolean; // Bonus 1 Set Seragam Olahraga khusus bagi pendaftar dari SD/MI LP. Maarif
+}
 
+export interface SpmbUniformItem {
+  id: string;
+  name: string; // seragam olahraga, bedge, hasduk, jilbab, topi, kaos kaki, baju batik, ikat pinggang
+  price: number;
+  gender: 'male' | 'female' | 'both' | 'L' | 'P' | 'all';
+  required: boolean;
+  description?: string;
+}
 
+export interface SpmbConfig {
+  academicYear: string; // "2027/2028"
+  isOpen: boolean;
+  registrationTokenFee: number; // e.g. 50000 (Biaya Formulir / Token Pendaftaran)
+  buildingFee: number; // Uang Gedung / Infaq Pembangunan e.g. 1500000
+  julySppFee: number; // SPP Bulan Juli 2027 e.g. 200000
+  reRegistrationBaseFee?: number; // Biaya Administrasi Tambahan (opsional)
+  sessions: SpmbSession[];
+  uniformItems: SpmbUniformItem[];
+  contactPhone: string;
+  spmbChairName?: string; // Nama Ketua Panitia SPMB
+  spmbChairTitle?: string; // Jabatan / Gelar (e.g. "Ketua Panitia SPMB")
+  spmbChairSignatureUrl?: string; // TTD Ketua Panitia SPMB (Base64 / URL)
+  spmbTreasurerName?: string; // Nama Bendahara Panitia SPMB
+  spmbTreasurerTitle?: string; // Jabatan Bendahara SPMB
+  spmbTreasurerSignatureUrl?: string; // TTD Bendahara SPMB
+  spmbOfficerName?: string; // Nama Panitia Pelayanan Sekolah / Kantor SPMB
+  spmbOfficerTitle?: string; // Jabatan Panitia Pelayanan (e.g. "Panitia Pelayanan SPMB Sekolah")
+  spmbOfficerSignatureUrl?: string; // TTD Panitia Pelayanan Sekolah / Kantor SPMB
+  spmbStampUrl?: string; // Stempel Resmi Panitia SPMB (Base64 / URL PNG Transparan)
+  spmbTreasurerStampUrl?: string; // Stempel Khusus Bendahara SPMB (Base64 / URL PNG Transparan)
+  bankAccountInfo?: string;
+  instructions?: string;
+
+  // Pengaturan Khusus SD MAARIF JOGOSARI & LP. MAARIF
+  maarifSchoolName?: string; // Default: "SD MAARIF JOGOSARI"
+  maarifBuildingDiscountType?: 'percent' | 'amount'; // 'percent' atau 'amount' (nominal rupiah)
+  maarifBuildingDiscount?: number; // Nilai diskon Uang Gedung khusus SD Maarif (misal: Rp 250.000 atau 20%)
+  maarifUniformDiscountType?: 'percent' | 'amount'; // 'percent' atau 'amount' (nominal rupiah)
+  maarifUniformDiscount?: number; // Nilai diskon Perlengkapan / Seragam khusus SD Maarif (misal: Rp 100.000 atau 15%)
+  maarifIndenSportsUniformBonus?: boolean; // Default true: Bonus 1 set seragam olahraga khusus pendaftar Sesi Inden dari SD/MI LP. Maarif
+  indenSiblingFreeFirstMonthSpp?: boolean; // Default true: Gratis SPP bulan pertama (Juli) di Sesi Inden jika No KK sama dengan murid aktif kelas 7/8/9 atau sesama calon murid baru
+
+  // Pengaturan Pendaftaran Kolektif Langsung di Sekolah
+  collectiveRegistrationEnabled?: boolean; // Aktifkan jalur pendaftaran kolektif / langsung di sekolah
+  collectiveTokenFree?: boolean; // Gratis biaya token formulir pendaftaran (Rp 0) untuk pendaftaran kolektif
+
+  // Pengaturan Otomatisasi Pengalihan Jalur / Gelombang jika Belum Daftar Ulang
+  autoTransferExpiredSessions?: boolean; // Default: true (Otomatis alihkan jika batas akhir gelombang terlampaui dan belum lunas daftar ulang)
+}
+
+export interface SpmbCandidate {
+  id: string;
+  registrationNo: string; // Nomor pendaftaran (biasanya sama dengan NISN)
+  nisn: string;
+  nik: string;
+  fullName: string;
+  gender: 'L' | 'P';
+  birthPlace: string;
+  birthDate: string; // YYYY-MM-DD
+  phone: string; // WhatsApp
+  schoolOriginType?: 'maarif_jogosari' | 'lp_maarif' | 'maarif' | 'alumni' | 'other' | string; // 'maarif_jogosari' | 'lp_maarif' | 'maarif' | 'other'
+  schoolOrigin: string; // "SD MAARIF JOGOSARI" atau nama manual
+  registrationType?: 'online_individual' | 'school_collective'; // Jalur pendaftaran mandiri vs kolektif di sekolah
+  sessionId: string; // 'inden' | 'gelombang-1' | 'gelombang-2'
+  createdAt: string;
+
+  // Pengalihan Jalur / Gelombang Otomatis & Pembatalan
+  originalSessionId?: string; // Jalur pertama kali mendaftar
+  previousSessionId?: string; // Jalur sebelum dialihkan
+  isTransferredSession?: boolean; // True jika dialihkan karena melewati batas akhir daftar ulang
+  transferredAt?: string; // Waktu pengalihan
+  transferReason?: string; // Keterangan penyebab pengalihan
+  transferHistory?: Array<{
+    action: 'transfer' | 'revert' | 'manual_change';
+    fromSessionId: string;
+    toSessionId: string;
+    timestamp: string;
+    reason?: string;
+    operator?: string;
+  }>;
+
+  // 1. Pembayaran Token Pendaftaran (Rp. 50.000)
+  tokenPaymentStatus: 'unpaid' | 'pending' | 'paid' | 'waived' | 'pending_cash_teller';
+  tokenPaymentOrderId?: string;
+  tokenOrderId?: string;
+  tokenPaidAt?: string;
+  tokenPaymentMethod?: string;
+  tokenAmount?: number;
+  tokenExpiryTime?: string;
+  tokenSnapToken?: string;
+  tokenRedirectUrl?: string;
+  tokenVaNumbers?: Array<{ bank?: string; va_number?: string }>;
+  tokenPaymentType?: string;
+  tokenBillKey?: string;
+  tokenBillerCode?: string;
+  tokenQrString?: string;
+  isCashAtSchool?: boolean;
+  cashSelectedAt?: string;
+  cashPaymentDeadline?: string;
+  tokenSnapExpired?: boolean;
+  snapExpiredAt?: string;
+
+  // 1b. Pengembalian Uang Token Tunai / Cash (Khusus Jalur Kolektif yang membayar via online)
+  collectiveRefundStatus?: 'none' | 'pending' | 'refunded';
+  collectiveRefundAmount?: number; // e.g. 50000
+  collectiveRefundedAt?: string;
+  collectiveRefundedBy?: string; // Nama Admin / Petugas Panitia
+  collectiveRefundRecipient?: string; // Nama Penerima (Wali Murid / Siswa / Koordinator SD)
+  collectiveRefundNote?: string;
+  collectiveRefundReceiptNo?: string;
+
+  // 2. Data Lengkap Format Buku Induk
+  isFormCompleted: boolean;
+  formCompletedAt?: string;
+  nickname?: string;
+  kkNumber?: string;
+  isSiblingKkMatch?: boolean;
+  matchedSiblingDetail?: string;
+  freeFirstMonthSpp?: boolean;
+  birthCertNumber?: string;
+  studentPhone?: string;
+  religion?: string;
+  address?: string;
+  dusun?: string;
+  rt?: string;
+  rw?: string;
+  village?: string;
+  district?: string;
+  city?: string;
+  postalCode?: string;
+  livingWith?: string;
+  childOrder?: string | number;
+  siblingsCount?: string | number;
+  stepSiblingsCount?: string | number;
+  transportation?: string;
+  specialNeeds?: string;
+  height?: number;
+  weight?: number;
+  distanceToSchool?: string;
+  travelTime?: string;
+
+  // Data Orang Tua / Wali
+  fatherName?: string;
+  fatherNik?: string;
+  fatherBirthPlace?: string;
+  fatherBirthDate?: string;
+  fatherEducation?: string;
+  fatherOccupation?: string;
+  fatherIncome?: string;
+  fatherPhone?: string;
+  fatherStatus?: string;
+  fatherAddress?: string;
+
+  motherName?: string;
+  motherNik?: string;
+  motherBirthPlace?: string;
+  motherBirthDate?: string;
+  motherEducation?: string;
+  motherOccupation?: string;
+  motherIncome?: string;
+  motherPhone?: string;
+  motherStatus?: string;
+  motherAddress?: string;
+
+  guardianName?: string;
+  guardianNik?: string;
+  guardianBirthPlace?: string;
+  guardianBirthDate?: string;
+  guardianEducation?: string;
+  guardianOccupation?: string;
+  guardianIncome?: string;
+  guardianPhone?: string;
+  guardianRelation?: string;
+  guardianAddress?: string;
+
+  // 3. Pembayaran Daftar Ulang & Perlengkapan (Midtrans / Tunai Teller)
+  reRegistrationStatus: 'unpaid' | 'pending' | 'paid' | 'pending_cash_teller';
+  reRegistrationAmount?: number;
+  reRegistrationOrderId?: string;
+  reRegistrationPaidAt?: string;
+  reRegistrationPaymentMethod?: string;
+  selectedUniformSize?: string; // e.g. "S", "M", "L", "XL", "XXL", "Jumbo"
+  customUniformNote?: string;
+
+  // 4. Berkas Upload (Akte Kelahiran, Kartu Keluarga, KTP Orang Tua, Pas Foto Murid)
+  documentsFolder?: string; // URL Folder Hosting (e.g. /uploads/spmb/MUHAMMAD_RIZKY_PRATAMA/)
+  documentsFolderName?: string; // Nama Folder pada Hosting
+  documents?: {
+    aktaPhoto?: string;
+    kkPhoto?: string;
+    ktpPhoto?: string;
+    ktpAyahPhoto?: string;
+    ktpIbuPhoto?: string;
+    pasPhoto?: string;
+    kipPhoto?: string;
+    ktp?: string;
+    sklPhoto?: string;
+  };
+  documentsUploadedAt?: string;
+
+  // 5. Status Penerimaan
+  status: 'registered' | 'form_submitted' | 're_registered' | 'documents_verified' | 'accepted' | 'rejected';
+  verificationNotes?: string;
+  isPromotedToStudent?: boolean;
+  promotedAt?: string;
+  assignedClass?: string;
+  [key: string]: any;
+}
+
+export interface MysqlDatabaseConfig {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  password?: string;
+  hasPassword?: boolean;
+  ssl?: boolean;
+  phpmyadminUrl?: string;
+  charset?: string;
+  connectionLimit?: number;
+  connectTimeout?: number;
+  autoSyncEnabled?: boolean;
+  autoSyncIntervalHours?: number; // 1 s/d 24 Jam
+  autoSyncDirection?: 'push' | 'pull' | 'bidirectional';
+  nextAutoSyncAt?: string;
+  lastAutoSyncAt?: string;
+  lastAutoSyncStatus?: 'success' | 'error' | 'pending';
+  lastAutoSyncMessage?: string;
+  lastConnectedAt?: string;
+  lastSyncAt?: string;
+  status?: 'connected' | 'disconnected' | 'error' | 'unconfigured';
+}
+
+export interface MysqlTestResult {
+  success: boolean;
+  message: string;
+  pingMs?: number;
+  serverVersion?: string;
+  databaseName?: string;
+  serverTime?: string;
+  tablesCount?: number;
+  tables?: string[];
+  error?: string;
+  hint?: string;
+}
+
+export interface MysqlSyncResult {
+  success: boolean;
+  message: string;
+  syncedAt: string;
+  stats: {
+    students: number;
+    transactions: number;
+    sppBills: number;
+    salaries: number;
+    savings: number;
+    miscBills: number;
+    configs?: number;
+    totalRows?: number;
+    [key: string]: number | undefined;
+  };
+  durationMs: number;
+  error?: string;
+}
+
+export type GuestBookCategory = 'umum' | 'pembinaan';
+
+export interface GuestBookEntry {
+  id: string;
+  category?: GuestBookCategory; // 'umum' | 'pembinaan'
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
+  name: string;
+  position?: string; // Jabatan
+  institution: string; // Asal Instansi
+  purpose: string; // Keperluan Kunjungan
+  phone: string; // No. HP / WhatsApp
+  notes?: string; // Catatan Tambahan
+  // Field Khusus Buku Tamu Pembinaan (Pengawas / Dinas / LP Maarif / Asesor):
+  supervisorNip?: string; // NIP / NUPTK Pembina / Pengawas
+  coachingSubject?: string; // Aspek / Materi Pembinaan
+  findings?: string; // Temuan / Catatan Hasil Pembinaan
+  recommendations?: string; // Saran / Rekomendasi Tindak Lanjut
+  followUpStatus?: string; // 'Belum' | 'Proses' | 'Selesai'
+  followUpNotes?: string; // Catatan Realisasi Tindak Lanjut Kepala Sekolah
+  signature?: string; // Tanda Tangan Digital Tamu / Pembina (Data URL / Base64)
+  status?: string; // e.g. "Selesai" | "Diterima" | "Menunggu"
+  createdAt?: string;
+  updatedAt?: string;
+}
 

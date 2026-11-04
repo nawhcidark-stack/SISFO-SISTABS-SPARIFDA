@@ -1,0 +1,20 @@
+{
+  "host": "srv1393.hstgr.io",
+  "port": 3306,
+  "database": "u604170242_spp_db",
+  "user": "u604170242_spp_user",
+  "password": "Sparifda@92",
+  "hasPassword": true,
+  "ssl": false,
+  "phpmyadminUrl": "https://auth-db1393.hstgr.io/index.php?db=u604170242_spp_db",
+  "charset": "utf8mb4",
+  "connectionLimit": 10,
+  "connectTimeout": 10000,
+  "autoSyncEnabled": true,
+  "autoSyncDirection": "push",
+  "status": "connected",
+  "lastConnectedAt": "2026-11-04T09:23:41.332Z",
+  "lastSyncAt": "2026-11-04T09:23:48.002Z",
+  "lastAutoSyncStatus": "error",
+  "lastAutoSyncMessage": "Column 'nik' cannot be null"
+}

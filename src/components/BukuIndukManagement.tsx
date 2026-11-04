@@ -1,11 +1,14 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   BookOpen, Search, FileUp, FileDown, Edit, X, Check, Filter, 
   Users, CheckSquare, Square, AlertCircle, RefreshCw, UserCheck, 
-  Trash2, ShieldAlert
+  Trash2, ShieldAlert, ExternalLink, Eye, Info, Hash
 } from 'lucide-react';
+import { Pagination } from './Pagination';
+import BulkNisEditorModal from './BulkNisEditorModal';
 
 interface BukuIndukManagementProps {
   students: Student[];
@@ -19,9 +22,12 @@ export default function BukuIndukManagement({
   onRefresh
 }: BukuIndukManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedGrade, setSelectedGrade] = useState('ALL');
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [activeViewTab, setActiveViewTab] = useState<'siswa' | 'ayah' | 'ibu' | 'wali'>('siswa');
   
   // Tabs inside edit/view modal: 'siswa' | 'ortu_ayah' | 'ortu_ibu' | 'wali'
   const [activeFormTab, setActiveFormTab] = useState<'siswa' | 'ayah' | 'ibu' | 'wali'>('siswa');
@@ -35,6 +41,23 @@ export default function BukuIndukManagement({
   const [importResult, setImportResult] = useState<{ success: boolean; added: number; updated: number } | null>(null);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Bulk NIS Editor
+  const [isBulkNisOpen, setIsBulkNisOpen] = useState(false);
+
+  // List of unique grades (tingkat) for grade filter
+  const gradesList = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach(s => {
+      if (s.class) {
+        const firstDigit = s.class.trim().charAt(0);
+        if (/^\d$/.test(firstDigit)) {
+          set.add(firstDigit);
+        }
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [students]);
 
   // List of unique classes for class filter
   const classesList = useMemo(() => {
@@ -50,12 +73,19 @@ export default function BukuIndukManagement({
     setIsEditModalOpen(true);
   };
 
+  // Handle opening of view modal
+  const handleOpenView = (student: Student) => {
+    setSelectedStudent(student);
+    setActiveViewTab('siswa');
+    setIsViewModalOpen(true);
+  };
+
   // Helper to calculate how many fields are filled for a student’s Buku Induk profile (Completeness Score)
   const calculateCompleteness = (student: Student) => {
-    const fieldsToTrack: (keyof Student)[] = [
+    const fieldsToTrack: (keyof Student)[ ] = [
       'nis', 'nisn', 'name', 'nickname', 'nik', 'gender', 'birthPlace', 'birthDate', 
       'kkNumber', 'birthCertNumber', 'phone', 'address', 'livingWith', 
-      'childOrder', 'siblingsCount', 'stepSiblingsCount', 'class',
+      'childOrder', 'siblingsCount', 'stepSiblingsCount', 'class', 'googleDriveLink',
       'fatherName', 'fatherNik', 'fatherBirthPlace', 'fatherBirthDate', 'fatherEducation', 'fatherOccupation', 'fatherIncome', 'fatherAddress', 'fatherPhone', 'fatherStatus',
       'motherName', 'motherNik', 'motherBirthPlace', 'motherBirthDate', 'motherEducation', 'motherOccupation', 'motherIncome', 'motherAddress', 'motherPhone', 'motherStatus'
     ];
@@ -78,9 +108,13 @@ export default function BukuIndukManagement({
     return { filled, total, pct };
   };
 
-  // Filter students based on search and class selection
+  // Filter students based on search, grade, and class selection
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      if (isMut || isLulus) return false;
+
       const matchSearch = 
         s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         s.nis.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -89,10 +123,23 @@ export default function BukuIndukManagement({
         (s.fatherName && s.fatherName.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (s.motherName && s.motherName.toLowerCase().includes(searchTerm.toLowerCase()));
       
+      const matchGrade = selectedGrade === 'ALL' || (s.class && s.class.trim().startsWith(selectedGrade));
       const matchClass = selectedClass === 'ALL' || s.class === selectedClass;
-      return matchSearch && matchClass;
+      return matchSearch && matchGrade && matchClass;
     }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [students, searchTerm, selectedClass]);
+  }, [students, searchTerm, selectedGrade, selectedClass]);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedGrade, selectedClass]);
+
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
 
   // Handle changes in edit fields
   const handleInputChange = (field: keyof Student, value: any) => {
@@ -134,21 +181,97 @@ export default function BukuIndukManagement({
     }
   };
 
-  // Helper to escape CSV cell contents
+  // Helper to escape CSV cell contents preserving numeric string format
   const escapeCsvVal = (val: any) => {
     const str = String(val === undefined || val === null ? '' : val).trim();
-    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    if (!str) return '';
+    // Prevent Excel from displaying digit strings (NIS, NISN, NIK, KK, No HP, Dates) in scientific notation or stripping leading zeros
+    if (/^\d+$/.test(str) || /^0\d+/.test(str) || (str.length >= 6 && /^[\d\-\.\/]+$/.test(str))) {
+      return `"=""${str}"""`;
+    }
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r') || str.includes(';')) {
       return `"${str.replace(/"/g, '""')}"`;
     }
     return str;
   };
 
-  // Download CSV Import Template (Contoh Template)
-  const downloadImportTemplate = () => {
+  // Helper to clean raw cell values from CSV or Excel
+  const clean = (val: any) => {
+    if (val === undefined || val === null) return '';
+    let s = String(val).trim();
+    // Remove wrapping double quotes
+    if (s.startsWith('"') && s.endsWith('"')) {
+      s = s.substring(1, s.length - 1).trim();
+    }
+    // Remove Excel formula prefix like =""3514..."" or ="3514..." or ='3514...'
+    if (s.startsWith('=')) {
+      s = s.substring(1).trim();
+      if (s.startsWith('"') && s.endsWith('"')) {
+        s = s.substring(1, s.length - 1).trim();
+      }
+    }
+    // Remove single quote prefix like '0812345678 or '3514...
+    if (s.startsWith("'")) {
+      s = s.substring(1).trim();
+    }
+    // Handle potential scientific notation strings like 3.514096e+15 or 3.5141E+15
+    if (/[eE]\+/.test(s) && /^\d+(\.\d+)?[eE]\+\d+$/.test(s)) {
+      try {
+        const num = Number(s);
+        if (!isNaN(num)) {
+          s = BigInt(Math.round(num)).toString();
+        }
+      } catch {
+        // keep as is
+      }
+    }
+    return s.trim();
+  };
+
+  // Download Excel (.xlsx) Import Template
+  const downloadImportTemplateExcel = () => {
     const headers = [
       'nis', 'nisn', 'nama_lengkap', 'nama_panggilan', 'nik', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
       'no_kk', 'no_akte_kelahiran', 'no_hp_siswa', 'alamat_siswa', 'tinggal_bersama', 'anak_ke',
-      'jumlah_saudara_kandung', 'jumlah_saudara_tiri', 'kelas',
+      'jumlah_saudara_kandung', 'jumlah_saudara_tiri', 'kelas', 'link_google_drive',
+      'ayah_nama', 'ayah_nik', 'ayah_tempat_lahir', 'ayah_tanggal_lahir', 'ayah_pendidikan', 'ayah_pekerjaan', 'ayah_penghasilan', 'ayah_alamat', 'ayah_no_hp', 'ayah_status',
+      'ibu_nama', 'ibu_nik', 'ibu_tempat_lahir', 'ibu_tanggal_lahir', 'ibu_pendidikan', 'ibu_pekerjaan', 'ibu_penghasilan', 'ibu_alamat', 'ibu_no_hp', 'ibu_status',
+      'wali_nama', 'wali_nik', 'wali_tempat_lahir', 'wali_tanggal_lahir', 'wali_pendidikan', 'wali_pekerjaan', 'wali_penghasilan', 'wali_alamat', 'wali_no_hp', 'wali_status',
+      'wali_sama_dengan_ayah'
+    ];
+
+    const exampleRow = [
+      '0012345678', '0112345678', 'Siswa Contoh', 'Contoh', '35140212040003', 'Laki-laki', 'Pandaan', '2011-04-12',
+      '35140012012001', '40532/DISDUK/2011', '', 'Jl. Kebon No. 4 Pandaan Pasuruan', 'Orang Tua', '1',
+      '2', '0', '7-A', 'https://drive.google.com/drive/folders/1abc123xyz_example',
+      'Fauzi Sr', '351402101072002', 'Malang', '1972-05-18', 'S1', 'Wiraswasta', '4500000', 'Jl. Kebon No. 4 Pandaan Pasuruan', '081255556666', 'Hidup',
+      'Siti Aminah', '351402102062002', 'Pasuruan', '1976-06-22', 'SMA', 'Ibu Rumah Tangga', '0', 'Jl. Kebon No. 4 Pandaan Pasuruan', '081277778888', 'Hidup',
+      '', '', '', '', '', '', '', '', '', '', 'ya'
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cell_address = XLSX.utils.encode_cell({ r: R, c: C });
+        if (ws[cell_address]) {
+          ws[cell_address].t = 's';
+          ws[cell_address].z = '@';
+        }
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template Buku Induk");
+    XLSX.writeFile(wb, "template_import_buku_induk.xlsx");
+  };
+
+  // Download CSV Import Template
+  const downloadImportTemplateCSV = () => {
+    const headers = [
+      'nis', 'nisn', 'nama_lengkap', 'nama_panggilan', 'nik', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
+      'no_kk', 'no_akte_kelahiran', 'no_hp_siswa', 'alamat_siswa', 'tinggal_bersama', 'anak_ke',
+      'jumlah_saudara_kandung', 'jumlah_saudara_tiri', 'kelas', 'link_google_drive',
       'ayah_nama', 'ayah_nik', 'ayah_tempat_lahir', 'ayah_tanggal_lahir', 'ayah_pendidikan', 'ayah_pekerjaan', 'ayah_penghasilan', 'ayah_alamat', 'ayah_no_hp', 'ayah_status',
       'ibu_nama', 'ibu_nik', 'ibu_tempat_lahir', 'ibu_tanggal_lahir', 'ibu_pendidikan', 'ibu_pekerjaan', 'ibu_penghasilan', 'ibu_alamat', 'ibu_no_hp', 'ibu_status',
       'wali_nama', 'wali_nik', 'wali_tempat_lahir', 'wali_tanggal_lahir', 'wali_pendidikan', 'wali_pekerjaan', 'wali_penghasilan', 'wali_alamat', 'wali_no_hp', 'wali_status',
@@ -156,9 +279,9 @@ export default function BukuIndukManagement({
     ].join(',');
 
     const exampleRow = [
-      '20241001', '0112345678', 'Ahmad Fauzi', 'Ahmad', '35140212040003', 'Laki-laki', 'Pandaan', '2011-04-12',
+      '0012345678', '0112345678', 'Siswa Contoh', 'Contoh', '35140212040003', 'Laki-laki', 'Pandaan', '2011-04-12',
       '35140012012001', '40532/DISDUK/2011', '081234567890', 'Jl. Kebon No. 4 Pandaan Pasuruan', 'Orang Tua', '1',
-      '2', '0', '7-A',
+      '2', '0', '7-A', 'https://drive.google.com/drive/folders/1abc123xyz_example',
       'Fauzi Sr', '351402101072002', 'Malang', '1972-05-18', 'S1', 'Wiraswasta', '4500000', 'Jl. Kebon No. 4 Pandaan Pasuruan', '081255556666', 'Hidup',
       'Siti Aminah', '351402102062002', 'Pasuruan', '1976-06-22', 'SMA', 'Ibu Rumah Tangga', '0', 'Jl. Kebon No. 4 Pandaan Pasuruan', '081277778888', 'Hidup',
       '', '', '', '', '', '', '', '', '', '', 'ya'
@@ -174,12 +297,94 @@ export default function BukuIndukManagement({
     document.body.removeChild(link);
   };
 
-  // Export existing Buku Induk Database for Updating
+  // Export existing Buku Induk Database to Excel (.xlsx) with text cell preservation
+  const exportBukuIndukExcel = () => {
+    const headers = [
+      'nis', 'nisn', 'nama_lengkap', 'nama_panggilan', 'nik', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
+      'no_kk', 'no_akte_kelahiran', 'no_hp_siswa', 'alamat_siswa', 'tinggal_bersama', 'anak_ke',
+      'jumlah_saudara_kandung', 'jumlah_saudara_tiri', 'kelas', 'link_google_drive',
+      'ayah_nama', 'ayah_nik', 'ayah_tempat_lahir', 'ayah_tanggal_lahir', 'ayah_pendidikan', 'ayah_pekerjaan', 'ayah_penghasilan', 'ayah_alamat', 'ayah_no_hp', 'ayah_status',
+      'ibu_nama', 'ibu_nik', 'ibu_tempat_lahir', 'ibu_tanggal_lahir', 'ibu_pendidikan', 'ibu_pekerjaan', 'ibu_penghasilan', 'ibu_alamat', 'ibu_no_hp', 'ibu_status',
+      'wali_nama', 'wali_nik', 'wali_tempat_lahir', 'wali_tanggal_lahir', 'wali_pendidikan', 'wali_pekerjaan', 'wali_penghasilan', 'wali_alamat', 'wali_no_hp', 'wali_status',
+      'wali_sama_dengan_ayah'
+    ];
+
+    const rows = students.map(s => [
+      String(s.nis || ''),
+      String(s.nisn || ''),
+      String(s.name || ''),
+      String(s.nickname || ''),
+      String(s.nik || ''),
+      String(s.gender || 'Laki-laki'),
+      String(s.birthPlace || ''),
+      String(s.birthDate || ''),
+      String(s.kkNumber || ''),
+      String(s.birthCertNumber || ''),
+      String(s.phone || ''),
+      String(s.address || ''),
+      String(s.livingWith || ''),
+      String(s.childOrder || ''),
+      String(s.siblingsCount || ''),
+      String(s.stepSiblingsCount || ''),
+      String(s.class || ''),
+      String(s.googleDriveLink || ''),
+      String(s.fatherName || ''),
+      String(s.fatherNik || ''),
+      String(s.fatherBirthPlace || ''),
+      String(s.fatherBirthDate || ''),
+      String(s.fatherEducation || ''),
+      String(s.fatherOccupation || ''),
+      String(s.fatherIncome || ''),
+      String(s.fatherAddress || ''),
+      String(s.fatherPhone || ''),
+      String(s.fatherStatus || 'Hidup'),
+      String(s.motherName || ''),
+      String(s.motherNik || ''),
+      String(s.motherBirthPlace || ''),
+      String(s.motherBirthDate || ''),
+      String(s.motherEducation || ''),
+      String(s.motherOccupation || ''),
+      String(s.motherIncome || ''),
+      String(s.motherAddress || ''),
+      String(s.motherPhone || ''),
+      String(s.motherStatus || 'Hidup'),
+      String(s.guardianName || ''),
+      String(s.guardianNik || ''),
+      String(s.guardianBirthPlace || ''),
+      String(s.guardianBirthDate || ''),
+      String(s.guardianEducation || ''),
+      String(s.guardianOccupation || ''),
+      String(s.guardianIncome || ''),
+      String(s.guardianAddress || ''),
+      String(s.guardianPhone || ''),
+      String(s.guardianStatus || 'Hidup'),
+      s.guardianIsSameAsFather ? 'ya' : 'tidak'
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cell_address = XLSX.utils.encode_cell({ r: R, c: C });
+        if (ws[cell_address]) {
+          ws[cell_address].t = 's';
+          ws[cell_address].z = '@';
+        }
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Update Buku Induk");
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `Buku_Induk_Siswa_Backup_${dateStr}.xlsx`);
+  };
+
+  // Export existing Buku Induk Database to CSV
   const exportBukuIndukForUpdate = () => {
     const headers = [
       'nis', 'nisn', 'nama_lengkap', 'nama_panggilan', 'nik', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
       'no_kk', 'no_akte_kelahiran', 'no_hp_siswa', 'alamat_siswa', 'tinggal_bersama', 'anak_ke',
-      'jumlah_saudara_kandung', 'jumlah_saudara_tiri', 'kelas',
+      'jumlah_saudara_kandung', 'jumlah_saudara_tiri', 'kelas', 'link_google_drive',
       'ayah_nama', 'ayah_nik', 'ayah_tempat_lahir', 'ayah_tanggal_lahir', 'ayah_pendidikan', 'ayah_pekerjaan', 'ayah_penghasilan', 'ayah_alamat', 'ayah_no_hp', 'ayah_status',
       'ibu_nama', 'ibu_nik', 'ibu_tempat_lahir', 'ibu_tanggal_lahir', 'ibu_pendidikan', 'ibu_pekerjaan', 'ibu_penghasilan', 'ibu_alamat', 'ibu_no_hp', 'ibu_status',
       'wali_nama', 'wali_nik', 'wali_tempat_lahir', 'wali_tanggal_lahir', 'wali_pendidikan', 'wali_pekerjaan', 'wali_penghasilan', 'wali_alamat', 'wali_no_hp', 'wali_status',
@@ -205,6 +410,7 @@ export default function BukuIndukManagement({
         s.siblingsCount || '',
         s.stepSiblingsCount || '',
         s.class,
+        s.googleDriveLink || '',
         s.fatherName || '',
         s.fatherNik || '',
         s.fatherBirthPlace || '',
@@ -277,8 +483,8 @@ export default function BukuIndukManagement({
     return result;
   };
 
-  // Handle uploading and parsing of the CSV file
-  const handleCSVImportUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle uploading and parsing of the CSV or Excel file (.xlsx/.xls/.csv)
+  const handleCSVImportUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -286,135 +492,149 @@ export default function BukuIndukManagement({
     setImportResult(null);
     setPreviewData([]);
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string;
+    try {
+      const fileName = file.name.toLowerCase();
+      let rawMatrix: string[][] = [];
+
+      if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' }) as any[][];
+        rawMatrix = rows.map(r => r.map(cell => clean(cell)));
+      } else {
+        const text = await file.text();
         if (!text) {
           setImportError('File kosong atau rusak.');
           return;
         }
-
         const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
         if (lines.length < 2) {
           setImportError('File CSV minimal harus berisi header & satu baris data.');
           return;
         }
-
-        const clean = (val: string) => (val || "").replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1').trim();
-
-        // Detect delimiter: comma (,) or semicolon (;)
         const firstLine = lines[0];
         const delimiter = firstLine.includes(';') ? ';' : ',';
-        const headers = parseCSVLineRobust(firstLine, delimiter).map(h => clean(h).toLowerCase());
-
-        // Validate required headers
-        const nisIdx = headers.findIndex(h => h === 'nis');
-        const namaIdx = headers.findIndex(h => h === 'nama_lengkap' || h === 'nama');
-        const kelasIdx = headers.findIndex(h => h === 'kelas' || h === 'class');
-        
-        if (nisIdx === -1) {
-          setImportError('Header "nis" tidak ditemukan pada file Anda.');
-          return;
-        }
-
-        // Prepare raw parsed models
-        const parsedRows: any[] = [];
-        
-        // Header mapping helper
-        const fieldsMapping: Record<string, string> = {
-          nisn: 'nisn',
-          nama_lengkap: 'name',
-          nama: 'name',
-          nama_panggilan: 'nickname',
-          nik: 'nik',
-          jenis_kelamin: 'gender',
-          jk: 'gender',
-          tempat_lahir: 'birthPlace',
-          tanggal_lahir: 'birthDate',
-          no_kk: 'kkNumber',
-          no_akte_kelahiran: 'birthCertNumber',
-          no_hp_siswa: 'phone',
-          alamat_siswa: 'address',
-          tinggal_bersama: 'livingWith',
-          anak_ke: 'childOrder',
-          jumlah_saudara_kandung: 'siblingsCount',
-          jumlah_saudara_tiri: 'stepSiblingsCount',
-          kelas: 'class',
-          // Ayah
-          ayah_nama: 'fatherName',
-          ayah_nik: 'fatherNik',
-          ayah_tempat_lahir: 'fatherBirthPlace',
-          ayah_tanggal_lahir: 'fatherBirthDate',
-          ayah_pendidikan: 'fatherEducation',
-          ayah_pekerjaan: 'fatherOccupation',
-          ayah_penghasilan: 'fatherIncome',
-          ayah_alamat: 'fatherAddress',
-          ayah_no_hp: 'fatherPhone',
-          ayah_status: 'fatherStatus',
-          // Ibu
-          ibu_nama: 'motherName',
-          ibu_nik: 'motherNik',
-          ibu_tempat_lahir: 'motherBirthPlace',
-          ibu_tanggal_lahir: 'motherBirthDate',
-          ibu_pendidikan: 'motherEducation',
-          ibu_pekerjaan: 'motherOccupation',
-          ibu_penghasilan: 'motherIncome',
-          ibu_alamat: 'motherAddress',
-          ibu_no_hp: 'motherPhone',
-          ibu_status: 'motherStatus',
-          // Wali
-          wali_nama: 'guardianName',
-          wali_nik: 'guardianNik',
-          wali_tempat_lahir: 'guardianBirthPlace',
-          wali_tanggal_lahir: 'guardianBirthDate',
-          wali_pendidikan: 'guardianEducation',
-          wali_pekerjaan: 'guardianOccupation',
-          wali_penghasilan: 'guardianIncome',
-          wali_alamat: 'guardianAddress',
-          wali_no_hp: 'guardianPhone',
-          wali_status: 'guardianStatus',
-          wali_sama_dengan_ayah: 'guardianIsSameAsFather'
-        };
-
-        for (let i = 1; i < lines.length; i++) {
-          const cells = parseCSVLineRobust(lines[i], delimiter);
-          if (cells.length < headers.length) continue; // Skip malformed rows
-          
-          const rowObj: any = {};
-          headers.forEach((h, hIdx) => {
-            const mappedField = fieldsMapping[h];
-            if (mappedField) {
-              const cleanedVal = clean(cells[hIdx]);
-              if (mappedField === 'guardianIsSameAsFather') {
-                rowObj[mappedField] = (cleanedVal.toLowerCase() === 'ya' || cleanedVal.toLowerCase() === 'true');
-              } else {
-                rowObj[mappedField] = cleanedVal;
-              }
-            }
-          });
-
-          // Extra validation: fallback for standard fields matching current app
-          if (!rowObj.name && namaIdx !== -1) rowObj.name = clean(cells[namaIdx]);
-          if (!rowObj.class && kelasIdx !== -1) rowObj.class = clean(cells[kelasIdx]);
-          if (!rowObj.nis) rowObj.nis = clean(cells[nisIdx]);
-
-          if (rowObj.nis && rowObj.name) {
-            parsedRows.push(rowObj);
-          }
-        }
-
-        if (parsedRows.length === 0) {
-          setImportError('Tidak ada baris data siswa valid yang berhasil diproses.');
-        } else {
-          setPreviewData(parsedRows);
-        }
-
-      } catch (err: any) {
-        setImportError(`Gagal membaca file: ${err.message}`);
+        rawMatrix = lines.map(line => parseCSVLineRobust(line, delimiter).map(clean));
       }
-    };
-    reader.readAsText(file);
+
+      if (rawMatrix.length < 2) {
+        setImportError('File spreadsheet minimal harus berisi header & satu baris data.');
+        return;
+      }
+
+      const headers = rawMatrix[0].map(h => clean(h).toLowerCase());
+
+      // Validate required headers
+      const nisIdx = headers.findIndex(h => h === 'nis');
+      const namaIdx = headers.findIndex(h => h === 'nama_lengkap' || h === 'nama');
+      const kelasIdx = headers.findIndex(h => h === 'kelas' || h === 'class');
+      
+      if (nisIdx === -1) {
+        setImportError('Header "nis" tidak ditemukan pada file Anda.');
+        return;
+      }
+
+      // Prepare raw parsed models
+      const parsedRows: any[] = [];
+      
+      // Header mapping helper
+      const fieldsMapping: Record<string, string> = {
+        nis: 'nis',
+        nisn: 'nisn',
+        nama_lengkap: 'name',
+        nama: 'name',
+        nama_panggilan: 'nickname',
+        nik: 'nik',
+        jenis_kelamin: 'gender',
+        jk: 'gender',
+        tempat_lahir: 'birthPlace',
+        tanggal_lahir: 'birthDate',
+        no_kk: 'kkNumber',
+        no_akte_kelahiran: 'birthCertNumber',
+        no_hp_siswa: 'phone',
+        alamat_siswa: 'address',
+        tinggal_bersama: 'livingWith',
+        anak_ke: 'childOrder',
+        jumlah_saudara_kandung: 'siblingsCount',
+        jumlah_saudara_tiri: 'stepSiblingsCount',
+        kelas: 'class',
+        link_google_drive: 'googleDriveLink',
+        berkas_google_drive: 'googleDriveLink',
+        google_drive_link: 'googleDriveLink',
+        // Ayah
+        ayah_nama: 'fatherName',
+        ayah_nik: 'fatherNik',
+        ayah_tempat_lahir: 'fatherBirthPlace',
+        ayah_tanggal_lahir: 'fatherBirthDate',
+        ayah_pendidikan: 'fatherEducation',
+        ayah_pekerjaan: 'fatherOccupation',
+        ayah_penghasilan: 'fatherIncome',
+        ayah_alamat: 'fatherAddress',
+        ayah_no_hp: 'fatherPhone',
+        ayah_status: 'fatherStatus',
+        // Ibu
+        ibu_nama: 'motherName',
+        ibu_nik: 'motherNik',
+        ibu_tempat_lahir: 'motherBirthPlace',
+        ibu_tanggal_lahir: 'motherBirthDate',
+        ibu_pendidikan: 'motherEducation',
+        ibu_pekerjaan: 'motherOccupation',
+        ibu_penghasilan: 'motherIncome',
+        ibu_alamat: 'motherAddress',
+        ibu_no_hp: 'motherPhone',
+        ibu_status: 'motherStatus',
+        // Wali
+        wali_nama: 'guardianName',
+        wali_nik: 'guardianNik',
+        wali_tempat_lahir: 'guardianBirthPlace',
+        wali_tanggal_lahir: 'guardianBirthDate',
+        wali_pendidikan: 'guardianEducation',
+        wali_pekerjaan: 'guardianOccupation',
+        wali_penghasilan: 'guardianIncome',
+        wali_alamat: 'guardianAddress',
+        wali_no_hp: 'guardianPhone',
+        wali_status: 'guardianStatus',
+        wali_sama_dengan_ayah: 'guardianIsSameAsFather'
+      };
+
+      for (let i = 1; i < rawMatrix.length; i++) {
+        const cells = rawMatrix[i];
+        if (!cells || cells.length === 0) continue;
+        
+        const rowObj: any = {};
+        headers.forEach((h, hIdx) => {
+          const mappedField = fieldsMapping[h];
+          if (mappedField && cells[hIdx] !== undefined) {
+            const cleanedVal = clean(cells[hIdx]);
+            if (mappedField === 'guardianIsSameAsFather') {
+              rowObj[mappedField] = (cleanedVal.toLowerCase() === 'ya' || cleanedVal.toLowerCase() === 'true');
+            } else {
+              rowObj[mappedField] = cleanedVal;
+            }
+          }
+        });
+
+        // Extra validation: fallback for standard fields matching current app
+        if (!rowObj.name && namaIdx !== -1 && cells[namaIdx] !== undefined) rowObj.name = clean(cells[namaIdx]);
+        if (!rowObj.class && kelasIdx !== -1 && cells[kelasIdx] !== undefined) rowObj.class = clean(cells[kelasIdx]);
+        if (!rowObj.nis && nisIdx !== -1 && cells[nisIdx] !== undefined) rowObj.nis = clean(cells[nisIdx]);
+
+        if (rowObj.nis) {
+          parsedRows.push(rowObj);
+        }
+      }
+
+      if (parsedRows.length === 0) {
+        setImportError('Tidak ada baris data siswa valid yang berhasil diproses.');
+      } else {
+        setPreviewData(parsedRows);
+      }
+
+    } catch (err: any) {
+      setImportError(`Gagal membaca file: ${err.message}`);
+    }
   };
 
   // Submit the batch import data to the App backend
@@ -464,20 +684,41 @@ export default function BukuIndukManagement({
               Manajemen buku induk profil lengkap siswa Pasuruan yang terintegrasi langsung dengan akun murid, wali kelas, backup stempel virtual, dan sistem laporan rekapitulasi data periodik.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={downloadImportTemplate}
-              className="px-3.5 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title="Unduh contoh template berkas excel/csv"
+              onClick={downloadImportTemplateExcel}
+              className="px-3 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Unduh contoh template berkas Excel (.xlsx) dengan format NISN, NIK, No HP, dan Tanggal Lahir aman"
             >
-              <FileDown size={14} className="text-indigo-400" /> Unduh Template
+              <FileDown size={14} className="text-emerald-400" /> Template Excel (.xlsx)
+            </button>
+            <button
+              onClick={downloadImportTemplateCSV}
+              className="px-3 py-2 bg-slate-800/80 border border-slate-700/80 hover:bg-slate-750 text-slate-300 text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Unduh contoh template berkas CSV (.csv)"
+            >
+              <FileDown size={14} className="text-indigo-400" /> Template CSV
+            </button>
+            <button
+              onClick={exportBukuIndukExcel}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-550 text-white text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Ekspor seluruh database buku induk ke berkas Excel (.xlsx) - Format NISN, NIK 16 digit & tgl lahir terproteksi"
+            >
+              <FileUp size={14} /> Ekspor Excel (.xlsx)
             </button>
             <button
               onClick={exportBukuIndukForUpdate}
               className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-550 text-white text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title="Ekspor seluruh database buku induk siswa Pasuruan ke berkas CSV"
+              title="Ekspor seluruh database buku induk siswa Pasuruan ke berkas CSV (.csv)"
             >
-              <FileUp size={14} /> Ekspor Buku Induk
+              <FileUp size={14} /> Ekspor CSV
+            </button>
+            <button
+              onClick={() => setIsBulkNisOpen(true)}
+              className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Sesuaikan nomor NIS secara massal untuk kelas tertentu (NISN tetap utuh)"
+            >
+              <Hash size={14} /> Edit Massal NIS
             </button>
           </div>
         </div>
@@ -536,14 +777,14 @@ export default function BukuIndukManagement({
             <div className="border border-dashed border-slate-200 hover:border-indigo-500 rounded-xl p-6 text-center transition-all bg-slate-50/50 hover:bg-indigo-50/10 cursor-pointer relative">
               <input
                 type="file"
-                accept=".csv"
+                accept=".xlsx, .xls, .csv"
                 ref={fileInputRef}
                 onChange={handleCSVImportUpload}
                 className="absolute inset-0 opacity-0 cursor-pointer"
               />
-              <FileUp size={30} className="mx-auto text-slate-400 mb-2" />
-              <span className="text-xs font-extrabold text-slate-700 block mb-0.5">Klik untuk Pilih Berkas CSV</span>
-              <span className="text-[9.5px] text-slate-400 font-mono font-medium block">Format: UTF-8 CSV (nis, nama_lengkap, etc)</span>
+              <FileUp size={30} className="mx-auto text-indigo-500 mb-2" />
+              <span className="text-xs font-extrabold text-slate-700 block mb-0.5">Klik untuk Pilih Berkas Excel (.xlsx) / CSV</span>
+              <span className="text-[9.5px] text-slate-400 font-mono font-medium block">Format: .xlsx, .xls, .csv (NIS, NISN, NIK, Tgl Lahir terproteksi)</span>
             </div>
 
             {/* Error alerts */}
@@ -626,20 +867,48 @@ export default function BukuIndukManagement({
                 />
               </div>
 
-              {/* Class Filter */}
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                  <Filter size={12} /> Filter Kelas
-                </span>
-                <select
-                  value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
-                  className="p-1.5 px-3 border border-slate-200 bg-white text-xs font-bold rounded-xl focus:outline-none focus:border-indigo-500 shadow-xs"
-                >
-                  {classesList.map(cls => (
-                    <option key={cls} value={cls}>{cls === 'ALL' ? 'Semua Kelas' : `Kelas ${cls}`}</option>
-                  ))}
-                </select>
+              {/* Grade and Class Filters */}
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+                {/* Filter Tingkat */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                    <Filter size={12} /> Tingkat
+                  </span>
+                  <select
+                    value={selectedGrade}
+                    onChange={(e) => {
+                      const newGrade = e.target.value;
+                      setSelectedGrade(newGrade);
+                      if (selectedClass !== 'ALL' && newGrade !== 'ALL' && !selectedClass.startsWith(newGrade)) {
+                        setSelectedClass('ALL');
+                      }
+                    }}
+                    className="p-1.5 px-3 border border-slate-200 bg-white text-xs font-bold rounded-xl focus:outline-none focus:border-indigo-500 shadow-xs cursor-pointer"
+                  >
+                    <option value="ALL">Semua Tingkat</option>
+                    {gradesList.filter(g => g !== 'ALL').map(g => (
+                      <option key={g} value={g}>Tingkat {g}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Kelas */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+                    Kelas
+                  </span>
+                  <select
+                    value={selectedClass}
+                    onChange={(e) => setSelectedClass(e.target.value)}
+                    className="p-1.5 px-3 border border-slate-200 bg-white text-xs font-bold rounded-xl focus:outline-none focus:border-indigo-500 shadow-xs cursor-pointer"
+                  >
+                    {classesList
+                      .filter(cls => cls === 'ALL' || selectedGrade === 'ALL' || cls.trim().startsWith(selectedGrade))
+                      .map(cls => (
+                        <option key={cls} value={cls}>{cls === 'ALL' ? 'Semua Kelas' : `Kelas ${cls}`}</option>
+                      ))}
+                  </select>
+                </div>
               </div>
 
             </div>
@@ -654,7 +923,7 @@ export default function BukuIndukManagement({
                     <th className="w-40">Identitas (NIS / NISN)</th>
                     <th className="w-48">Biodata Orang Tua (Ayah / Ibu)</th>
                     <th className="w-40">Kelengkapan Data</th>
-                    <th className="pr-6 text-right w-24">Aksi</th>
+                    <th className="pr-6 text-right w-64">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -666,20 +935,31 @@ export default function BukuIndukManagement({
                       </td>
                     </tr>
                   ) : (
-                    filteredStudents.map((student, index) => {
+                    paginatedStudents.map((student, index) => {
                       const { filled, total, pct } = calculateCompleteness(student);
                       
                       return (
                         <tr key={student.id} className="hover:bg-slate-50/50 transition duration-100">
-                          <td className="pl-6 font-mono text-slate-400 text-[11px]">{index + 1}</td>
+                          <td className="pl-6 font-mono text-slate-400 text-[11px]">{(currentPage - 1) * pageSize + index + 1}</td>
                           <td className="py-3">
                             <div>
                               <p className="font-extrabold text-slate-800 leading-snug">{student.name}</p>
-                              <p className="text-[10px] text-slate-400 flex items-center gap-1 font-mono mt-0.5">
+                              <p className="text-[10px] text-slate-400 flex flex-wrap items-center gap-1.5 font-mono mt-0.5">
                                 <span className="bg-indigo-50 text-indigo-650 px-1 py-0.5 rounded text-[8.5px] font-black uppercase font-sans">
                                   Kelas {student.class}
                                 </span>
                                 <span>• {student.gender || 'Laki-laki'}</span>
+                                {student.googleDriveLink && (
+                                  <a
+                                    href={student.googleDriveLink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[8.5px] font-extrabold uppercase font-sans border border-emerald-150 transition"
+                                    title="Klik untuk membuka folder berkas Google Drive"
+                                  >
+                                    <ExternalLink size={8.5} /> Berkas Drive
+                                  </a>
+                                )}
                               </p>
                             </div>
                           </td>
@@ -714,13 +994,50 @@ export default function BukuIndukManagement({
                             </div>
                           </td>
                           <td className="pr-6 text-right">
-                            <button
-                              onClick={() => handleOpenEdit(student)}
-                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-650 rounded-lg transition"
-                              title="Sunting berkas buku induk murid"
-                            >
-                              <Edit size={13.5} />
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenView(student)}
+                                className="p-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-650 rounded-lg transition inline-flex items-center gap-1 text-[10px] font-bold"
+                                title="Lihat detail lengkap data & berkas siswa"
+                              >
+                                <Eye size={13.5} /> <span className="hidden xl:inline">Detail</span>
+                              </button>
+                              
+                              {(() => {
+                                const cleanFolder = (student.name || '').trim().replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
+                                const docLink = student.googleDriveLink || student.documentsFolder || (student.documents && Object.keys(student.documents).length > 0 ? `/uploads/berkas_murid/${cleanFolder}` : '');
+                                if (docLink) {
+                                  return (
+                                    <a
+                                      href={docLink}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition inline-flex items-center justify-center gap-1 text-[10px] font-extrabold uppercase shadow-sm tracking-wider hover:scale-[1.02] active:scale-95 shrink-0"
+                                      title="Buka Folder Berkas Murid (Hosting / Drive - KK, Akte, KTP, dll)"
+                                    >
+                                      <ExternalLink size={11} /> BERKAS MURID
+                                    </a>
+                                  );
+                                }
+                                return (
+                                  <button
+                                    onClick={() => handleOpenEdit(student)}
+                                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 border border-dashed border-slate-200 hover:border-indigo-200 rounded-lg transition inline-flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider"
+                                    title="Belum ada link berkas, klik untuk tambah"
+                                  >
+                                    <ExternalLink size={11} className="opacity-40" /> + Berkas
+                                  </button>
+                                );
+                              })()}
+
+                              <button
+                                onClick={() => handleOpenEdit(student)}
+                                className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-650 rounded-lg transition"
+                                title="Sunting berkas buku induk murid"
+                              >
+                                <Edit size={13.5} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -730,10 +1047,15 @@ export default function BukuIndukManagement({
               </table>
             </div>
 
-            {/* List footer stats */}
-            <div className="p-3 bg-slate-50 border-t border-slate-150 text-[10.5px] text-slate-400 font-bold uppercase tracking-wider px-6 flex justify-between">
-              <span>Menunjukkan {filteredStudents.length} siswa terfilter</span>
-              <span>Total DB: {students.length} record siswa</span>
+            {/* List footer stats & Pagination */}
+            <div className="p-3 bg-slate-50 border-t border-slate-150 flex flex-col sm:flex-row items-center justify-between gap-3 px-6">
+              <Pagination
+                currentPage={currentPage}
+                totalItems={filteredStudents.length}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={setPageSize}
+              />
             </div>
 
           </div>
@@ -979,13 +1301,23 @@ export default function BukuIndukManagement({
                       </div>
                     </div>
                     <div className="md:col-span-2">
-                      <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block mb-1">Alamat Domisili Siswa Lengkap</label>
+                      <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block mb-1 font-sans">Alamat Domisili Siswa Lengkap</label>
                       <textarea
                         value={formData.address || ''}
                         onChange={(e) => handleInputChange('address', e.target.value)}
                         rows={2}
                         className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
                         placeholder="Nama jalan, RT/RW, Dusun, Desa/Kelurahan, Kecamatan, Kabupaten Pasuruan"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block mb-1 font-sans">Link Google Drive Berkas Siswa (KK, Akte Kelahiran, dll.)</label>
+                      <input
+                        type="url"
+                        value={formData.googleDriveLink || ''}
+                        onChange={(e) => handleInputChange('googleDriveLink', e.target.value)}
+                        className="w-full p-2.5 border border-indigo-200 text-indigo-700 bg-indigo-50/25 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500 focus:bg-white placeholder-indigo-300"
+                        placeholder="Contoh: https://drive.google.com/drive/folders/1abc123xyz_example"
                       />
                     </div>
                   </div>
@@ -1348,6 +1680,298 @@ export default function BukuIndukManagement({
         )}
       </AnimatePresence>
 
+      {/* Modal: Lihat Detail Buku Induk */}
+      <AnimatePresence>
+        {isViewModalOpen && selectedStudent && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden text-slate-800 animate-fade-in"
+            >
+              {/* Modal Banner */}
+              <div className="p-5 bg-emerald-950 text-white flex justify-between items-center shrink-0">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 p-1 px-2.5 rounded-full text-[8.5px] font-mono tracking-widest font-black uppercase w-fit">
+                    <BookOpen size={10} /> DETAIL LENGKAP BUKU INDUK SISWA
+                  </div>
+                  <h2 className="text-base font-black font-display tracking-tight leading-none text-white">{selectedStudent.name}</h2>
+                  <p className="text-[10px] text-emerald-300/80 font-mono mt-1">
+                    ID Murid: <span className="text-emerald-400 font-bold">{selectedStudent.id}</span> | NIS: {selectedStudent.nis} | Kelas: {selectedStudent.class}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsViewModalOpen(false)}
+                  className="p-1.5 hover:bg-white/10 rounded-lg text-emerald-300 hover:text-white transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* View Tabs */}
+              <div className="flex border-b border-slate-150 bg-slate-50 shrink-0 overflow-x-auto">
+                {(['siswa', 'ayah', 'ibu', 'wali'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveViewTab(tab)}
+                    className={`px-5 py-3 text-xs font-bold transition-all relative border-b-2 flex-1 text-center whitespace-nowrap uppercase tracking-wider ${
+                      activeViewTab === tab
+                        ? 'border-emerald-600 text-emerald-700 bg-white'
+                        : 'border-transparent text-slate-400 hover:text-slate-700 hover:bg-slate-100/50'
+                    }`}
+                  >
+                    {tab === 'siswa' && 'Data Siswa'}
+                    {tab === 'ayah' && 'Data Ayah'}
+                    {tab === 'ibu' && 'Data Ibu'}
+                    {tab === 'wali' && 'Data Wali'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Details Content Container */}
+              <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                
+                {activeViewTab === 'siswa' && (
+                  <div className="space-y-6">
+                    {/* Google Drive / Hosting Files Card */}
+                    {(() => {
+                      const cleanFolder = (selectedStudent.name || '').trim().replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
+                      const docLink = selectedStudent.googleDriveLink || selectedStudent.documentsFolder || (selectedStudent.documents && Object.keys(selectedStudent.documents).length > 0 ? `/uploads/berkas_murid/${cleanFolder}` : '');
+                      return (
+                        <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                          <div className="flex-1">
+                            <h4 className="text-xs font-black text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                              <ExternalLink size={14} className="text-emerald-600" /> FOLDER BERKAS MURID (HOSTING / DRIVE)
+                            </h4>
+                            <p className="text-[11px] text-slate-500 mt-1">
+                              Folder ini berisi berkas pendukung murid baru seperti scan Pas Foto, Kartu Keluarga (KK), Akta Kelahiran, KTP Orang Tua, dan dokumen lainnya yang tersimpan di hosting atau Drive.
+                            </p>
+                            {docLink && (
+                              <div className="mt-2">
+                                <a
+                                  href={docLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs text-emerald-700 hover:text-emerald-900 hover:underline font-mono font-bold break-all flex items-center gap-1"
+                                >
+                                  <ExternalLink size={11} /> {docLink}
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                          <div className="shrink-0 w-full md:w-auto">
+                            {docLink ? (
+                              <a
+                                href={docLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="w-full md:w-auto px-4 py-2.5 bg-emerald-650 hover:bg-emerald-750 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow-md transition flex items-center justify-center gap-2"
+                              >
+                                <ExternalLink size={14} /> Buka Folder Berkas
+                              </a>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setIsViewModalOpen(false);
+                                  handleOpenEdit(selectedStudent);
+                                }}
+                                className="w-full md:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                <Edit size={13} /> Tambah Link Berkas
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[
+                        { label: 'Nama Lengkap', val: selectedStudent.name },
+                        { label: 'Nama Panggilan', val: selectedStudent.nickname },
+                        { label: 'NIS (Nomor Induk Siswa)', val: selectedStudent.nis },
+                        { label: 'NISN', val: selectedStudent.nisn },
+                        { label: 'NIK Siswa', val: selectedStudent.nik },
+                        { label: 'Jenis Kelamin', val: selectedStudent.gender },
+                        { label: 'Tempat Lahir', val: selectedStudent.birthPlace },
+                        { label: 'Tanggal Lahir', val: selectedStudent.birthDate },
+                        { label: 'No. Kartu Keluarga (KK)', val: selectedStudent.kkNumber },
+                        { label: 'No. Akte Kelahiran', val: selectedStudent.birthCertNumber },
+                        { label: 'No. HP / Kontak Siswa', val: selectedStudent.phone },
+                        { label: 'Tinggal Bersama', val: selectedStudent.livingWith },
+                        { label: 'Anak Ke-', val: selectedStudent.childOrder },
+                        { label: 'Jumlah Saudara Kandung', val: selectedStudent.siblingsCount },
+                        { label: 'Jumlah Saudara Tiri', val: selectedStudent.stepSiblingsCount },
+                        { label: 'Kelas', val: selectedStudent.class },
+                        { label: 'Link Google Drive Berkas', val: selectedStudent.googleDriveLink, isLink: true },
+                      ].map((item, idx) => (
+                        <div key={idx} className="p-3 bg-slate-50/50 rounded-xl border border-slate-100">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1 font-sans">{item.label}</span>
+                          <span className="text-xs font-bold text-slate-700 block min-h-[1.25rem]">
+                            {item.isLink && item.val ? (
+                              <a
+                                href={String(item.val)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-emerald-650 hover:text-emerald-800 hover:underline inline-flex items-center gap-1 break-all"
+                              >
+                                <ExternalLink size={12} /> Buka Berkas Google Drive
+                              </a>
+                            ) : item.val !== undefined && item.val !== null && String(item.val).trim() !== '' ? (
+                              String(item.val)
+                            ) : (
+                              <span className="text-slate-350 italic font-medium">Belum diinput</span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="md:col-span-2 p-3 bg-slate-50/50 rounded-xl border border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1 font-sans">Alamat Lengkap</span>
+                        <span className="text-xs font-bold text-slate-700 block whitespace-pre-wrap">
+                          {selectedStudent.address || <span className="text-slate-350 italic font-medium">Belum diinput</span>}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeViewTab === 'ayah' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[
+                      { label: 'Nama Lengkap Ayah', val: selectedStudent.fatherName },
+                      { label: 'NIK Ayah', val: selectedStudent.fatherNik },
+                      { label: 'Tempat Lahir Ayah', val: selectedStudent.fatherBirthPlace },
+                      { label: 'Tanggal Lahir Ayah', val: selectedStudent.fatherBirthDate },
+                      { label: 'Pendidikan Terakhir', val: selectedStudent.fatherEducation },
+                      { label: 'Pekerjaan', val: selectedStudent.fatherOccupation },
+                      { label: 'Penghasilan Bulanan', val: selectedStudent.fatherIncome },
+                      { label: 'Nomor HP / Kontak', val: selectedStudent.fatherPhone },
+                      { label: 'Status Hubungan', val: selectedStudent.fatherStatus },
+                    ].map((item, idx) => (
+                      <div key={idx} className="p-3 bg-slate-50/50 rounded-xl border border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1 font-sans">{item.label}</span>
+                        <span className="text-xs font-bold text-slate-700 block min-h-[1.25rem]">
+                          {item.val !== undefined && item.val !== null && String(item.val).trim() !== '' ? String(item.val) : <span className="text-slate-350 italic font-medium">Belum diinput</span>}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="md:col-span-2 p-3 bg-slate-50/50 rounded-xl border border-slate-100">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1 font-sans">Alamat Lengkap Ayah</span>
+                      <span className="text-xs font-bold text-slate-700 block whitespace-pre-wrap">
+                        {selectedStudent.fatherAddress || <span className="text-slate-350 italic font-medium">Belum diinput</span>}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {activeViewTab === 'ibu' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[
+                      { label: 'Nama Lengkap Ibu', val: selectedStudent.motherName },
+                      { label: 'NIK Ibu', val: selectedStudent.motherNik },
+                      { label: 'Tempat Lahir Ibu', val: selectedStudent.motherBirthPlace },
+                      { label: 'Tanggal Lahir Ibu', val: selectedStudent.motherBirthDate },
+                      { label: 'Pendidikan Terakhir', val: selectedStudent.motherEducation },
+                      { label: 'Pekerjaan', val: selectedStudent.motherOccupation },
+                      { label: 'Penghasilan Bulanan', val: selectedStudent.motherIncome },
+                      { label: 'Nomor HP / Kontak', val: selectedStudent.motherPhone },
+                      { label: 'Status Hubungan', val: selectedStudent.motherStatus },
+                    ].map((item, idx) => (
+                      <div key={idx} className="p-3 bg-slate-50/50 rounded-xl border border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1 font-sans">{item.label}</span>
+                        <span className="text-xs font-bold text-slate-700 block min-h-[1.25rem]">
+                          {item.val !== undefined && item.val !== null && String(item.val).trim() !== '' ? String(item.val) : <span className="text-slate-350 italic font-medium">Belum diinput</span>}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="md:col-span-2 p-3 bg-slate-50/50 rounded-xl border border-slate-100">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1 font-sans">Alamat Lengkap Ibu</span>
+                      <span className="text-xs font-bold text-slate-700 block whitespace-pre-wrap">
+                        {selectedStudent.motherAddress || <span className="text-slate-350 italic font-medium">Belum diinput</span>}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {activeViewTab === 'wali' && (
+                  <div>
+                    {selectedStudent.guardianIsSameAsFather && (
+                      <div className="mb-4 p-3.5 bg-indigo-50 border border-indigo-150 rounded-xl text-indigo-800 text-xs font-bold flex items-center gap-2">
+                        <Info size={16} className="text-indigo-600" />
+                        Data wali siswa disamakan dengan data Ayah Kandung.
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[
+                        { label: 'Nama Lengkap Wali', val: selectedStudent.guardianName },
+                        { label: 'NIK Wali', val: selectedStudent.guardianNik },
+                        { label: 'Tempat Lahir Wali', val: selectedStudent.guardianBirthPlace },
+                        { label: 'Tanggal Lahir Wali', val: selectedStudent.guardianBirthDate },
+                        { label: 'Pendidikan Terakhir', val: selectedStudent.guardianEducation },
+                        { label: 'Pekerjaan', val: selectedStudent.guardianOccupation },
+                        { label: 'Penghasilan Bulanan', val: selectedStudent.guardianIncome },
+                        { label: 'Nomor HP / Kontak', val: selectedStudent.guardianPhone },
+                        { label: 'Status Hubungan', val: selectedStudent.guardianStatus },
+                      ].map((item, idx) => (
+                        <div key={idx} className="p-3 bg-slate-50/50 rounded-xl border border-slate-100">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1 font-sans">{item.label}</span>
+                          <span className="text-xs font-bold text-slate-700 block min-h-[1.25rem]">
+                            {item.val !== undefined && item.val !== null && String(item.val).trim() !== '' ? String(item.val) : <span className="text-slate-350 italic font-medium">Belum diinput</span>}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="md:col-span-2 p-3 bg-slate-50/50 rounded-xl border border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1 font-sans">Alamat Lengkap Wali</span>
+                        <span className="text-xs font-bold text-slate-700 block whitespace-pre-wrap">
+                          {selectedStudent.guardianAddress || <span className="text-slate-350 italic font-medium">Belum diinput</span>}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* Modal controls footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-150 flex justify-between items-center shrink-0">
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  ℹ️ Buku Induk Siswa Digital Pasuruan
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsViewModalOpen(false)}
+                    className="px-4 py-2 hover:bg-slate-200 text-slate-600 hover:text-slate-800 text-xs font-bold rounded-xl transition cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsViewModalOpen(false);
+                      handleOpenEdit(selectedStudent);
+                    }}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Edit size={13} /> Edit Data Ini
+                  </button>
+                </div>
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Edit Massal NIS Siswa (NISN Tetap) */}
+      <BulkNisEditorModal
+        isOpen={isBulkNisOpen}
+        onClose={() => setIsBulkNisOpen(false)}
+        students={students}
+        onRefresh={onRefresh}
+        initialClassFilter={selectedClass !== 'ALL' ? selectedClass : (selectedGrade !== 'ALL' ? selectedGrade : 'ALL')}
+      />
     </div>
   );
 }

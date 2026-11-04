@@ -5,28 +5,34 @@ import {
   LogOut, DollarSign, Calendar, Tag, FileText, Search, Printer, 
   Download, Building2, CheckCircle2, AlertTriangle, ArrowUpRight, 
   ArrowDownRight, Wallet, UserCheck, Percent, HelpCircle, Eye, Key,
-  LayoutGrid, Home, Smartphone, Apple
+  LayoutGrid, Home, Smartphone, Apple, UploadCloud, FileSpreadsheet, Database, X
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
 import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig, HomeroomTeacher, SubjectTeacher } from '../types';
+import { MidtransBulkReportModal } from './MidtransBulkReportModal';
+import { SingleMidtransReconcileModal } from './SingleMidtransReconcileModal';
+import { Pagination } from './Pagination';
+import TreasurerMysqlSettings from './TreasurerMysqlSettings';
 
 interface TreasurerPanelProps {
   schoolIdentity: SchoolIdentity;
   homerooms?: HomeroomTeacher[];
   subjectTeachers?: SubjectTeacher[];
   onLogout: () => void;
+  onRefresh?: () => void;
 }
 
 export default function TreasurerPanel({ 
   schoolIdentity, 
   homerooms = [], 
   subjectTeachers = [], 
-  onLogout 
+  onLogout,
+  onRefresh
 }: TreasurerPanelProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'kas_ledger' | 'password' | 'gaji_guru'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'kas_ledger' | 'password' | 'gaji_guru' | 'database_mysql'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [transactions, setTransactions] = useState<TreasurerTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,6 +40,9 @@ export default function TreasurerPanel({
   
   // Modal configurations
   const [showFormModal, setShowFormModal] = useState(false);
+  const [isBulkReportModalOpen, setIsBulkReportModalOpen] = useState(false);
+  const [isSingleReconcileModalOpen, setIsSingleReconcileModalOpen] = useState(false);
+  const [singleReconcileInitialId, setSingleReconcileInitialId] = useState('');
   const [editingTransaction, setEditingTransaction] = useState<TreasurerTransaction | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -60,12 +69,17 @@ export default function TreasurerPanel({
   const [isCustomRecipient, setIsCustomRecipient] = useState(false);
   const [formFundingSource, setFormFundingSource] = useState('');
   const [formDate, setFormDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [formPaymentMethod, setFormPaymentMethod] = useState<'kas' | 'bank'>('kas');
+  const [formKodeRekening, setFormKodeRekening] = useState('');
+  const [formNoBukti, setFormNoBukti] = useState('');
+  const [selectedBook, setSelectedBook] = useState<'bku' | 'bp_kas' | 'bp_bank'>('bku');
 
   // Filter configurations
   const [term, setTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'incoming' | 'outgoing'>('all');
   const [filterSource, setFilterSource] = useState<'all' | 'spp' | 'savings' | 'custom'>('all');
   const [filterCategory, setFilterCategory] = useState<'all' | string>('all');
+  const [filterRecipient, setFilterRecipient] = useState<'all' | string>('all');
 
   // --- STATE PENGGAJIAN GURU ---
   const [salaries, setSalaries] = useState<TeacherSalary[]>([]);
@@ -136,10 +150,25 @@ export default function TreasurerPanel({
 
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
-  
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [reconcileStatus, setReconcileStatus] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
   // Invoice state to print
   const [activePrintTransaction, setActivePrintTransaction] = useState<TreasurerTransaction | null>(null);
   const [receiptPrintFormat, setReceiptPrintFormat] = useState<'standard' | 'thermal'>('standard');
+
+  // Handle ESC key to quickly close print modals
+  useEffect(() => {
+    if (!activePrintTransaction && !showReceiptModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActivePrintTransaction(null);
+        setShowReceiptModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activePrintTransaction, showReceiptModal]);
 
   // Password alteration states
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -204,7 +233,7 @@ export default function TreasurerPanel({
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.map(c => {
+          const mapped = parsed.map(c => {
             if (typeof c === 'string') {
               let type: 'incoming' | 'outgoing' | 'both' = 'both';
               const nameLower = c.toLowerCase();
@@ -227,6 +256,30 @@ export default function TreasurerPanel({
             }
             return { name, type };
           });
+          const cleaned = mapped.filter(c => {
+            const nl = c.name.toLowerCase().trim();
+            return !nl.includes('midtrans') && 
+                   !nl.includes('transaksi online') &&
+                   nl !== 'spp siswa' &&
+                   nl !== 'tagihan non-spp' &&
+                   nl !== 'spmb siswa baru' &&
+                   nl !== 'daftar ulang siswa baru' &&
+                   nl !== 'spmb - token formulir' &&
+                   nl !== 'spmb - daftar ulang' &&
+                   nl !== 'spmb - daftar ulang & seragam' &&
+                   nl !== 'spmb daftar ulang & seragam' &&
+                   nl !== 'spmb formulir' &&
+                   nl !== 'spp' &&
+                   nl !== 'tabungan';
+          });
+          if (!cleaned.some(c => c.name.toLowerCase().trim() === 'token spmb formulir')) {
+            cleaned.push({ name: 'Token SPMB Formulir', type: 'both' });
+          }
+          if (!cleaned.some(c => c.name.toLowerCase().trim() === 'spmb daftar ulang')) {
+            cleaned.push({ name: 'SPMB DAFTAR ULANG', type: 'both' });
+          }
+          localStorage.setItem('treasurer_categories', JSON.stringify(cleaned));
+          return cleaned;
         }
       } catch (e) {
         console.error("Gagal parse kategori disimpan: ", e);
@@ -235,11 +288,69 @@ export default function TreasurerPanel({
     return [
       { name: 'Operasional', type: 'outgoing' },
       { name: 'Gaji Guru', type: 'outgoing' },
+      { name: 'Token SPMB Formulir', type: 'both' },
+      { name: 'SPMB DAFTAR ULANG', type: 'both' },
       { name: 'Pembangunan', type: 'outgoing' },
       { name: 'Ujian', type: 'outgoing' },
+      { name: 'HUT RI 81 2026', type: 'both' },
+      { name: 'JARIYAH', type: 'incoming' },
+      { name: 'SPARIFDA MART', type: 'both' },
+      { name: 'MPLS 2026', type: 'both' },
+      { name: 'Lain-lain', type: 'outgoing' },
+      { name: 'Mantenance Aplikasi', type: 'outgoing' },
       { name: 'Utama', type: 'both' }
     ];
   });
+
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+
+  const fetchTreasurerCategories = async () => {
+    try {
+      const res = await fetch('/api/treasurer/categories');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.categories) && data.categories.length > 0) {
+          setCategories(data.categories);
+          localStorage.setItem('treasurer_categories', JSON.stringify(data.categories));
+        }
+      }
+    } catch (e) {
+      console.warn("Gagal sinkron kategori POS dari server:", e);
+    }
+  };
+
+  const syncCategoriesToServer = async (cats: BudgetCategory[]) => {
+    try {
+      await fetch('/api/treasurer/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categories: cats })
+      });
+    } catch (e) {
+      console.warn("Gagal menyimpan kategori POS ke server:", e);
+    }
+  };
+
+  const handleTriggerCloudSync = async () => {
+    setIsCloudSyncing(true);
+    try {
+      const res = await fetch('/api/treasurer/sync');
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLastSyncTime(new Date().toLocaleTimeString('id-ID'));
+        await fetchTransactions();
+        await fetchTreasurerCategories();
+        showBudgetMsg('success', `☁️ ${data.message || 'Sinkronisasi Cloud MongoDB Atlas sukses!'}`);
+      } else {
+        showBudgetMsg('error', data.error || 'Gagal sinkronisasi dengan Cloud.');
+      }
+    } catch (e) {
+      showBudgetMsg('error', 'Gangguan koneksi saat sinkronisasi Cloud.');
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
 
   useEffect(() => {
     if (categories.length > 0 && !categories.some(c => c.name === formCategory)) {
@@ -282,6 +393,7 @@ export default function TreasurerPanel({
     const updated: BudgetCategory[] = [...categories, { name: clean, type: newBudgetCatType }];
     setCategories(updated);
     localStorage.setItem('treasurer_categories', JSON.stringify(updated));
+    syncCategoriesToServer(updated);
     setNewBudgetCatInput('');
     setNewBudgetCatType('both');
     showBudgetMsg('success', `Sukses mendaftarkan POS BUDGET baru: ${clean} (${newBudgetCatType === 'incoming' ? 'Pemasukan' : newBudgetCatType === 'outgoing' ? 'Pengeluaran' : 'Umum/Keduanya'})`);
@@ -307,6 +419,7 @@ export default function TreasurerPanel({
 
     setCategories(updated);
     localStorage.setItem('treasurer_categories', JSON.stringify(updated));
+    syncCategoriesToServer(updated);
 
     const affectedTxs = transactions.filter(t => t.category === catName && t.source === 'custom');
     if (affectedTxs.length > 0) {
@@ -409,6 +522,7 @@ export default function TreasurerPanel({
     const updated = categories.map(c => c.name === editingCategory ? { name: clean, type: editCategoryType } : c);
     setCategories(updated);
     localStorage.setItem('treasurer_categories', JSON.stringify(updated));
+    syncCategoriesToServer(updated);
 
     const affectedTxs = transactions.filter(t => t.category === editingCategory && t.source === 'custom');
     if (affectedTxs.length > 0) {
@@ -439,6 +553,7 @@ export default function TreasurerPanel({
   useEffect(() => {
     fetchTransactions();
     fetchSalaries();
+    fetchTreasurerCategories();
   }, []);
 
   const fetchSalaries = async () => {
@@ -594,6 +709,88 @@ export default function TreasurerPanel({
     }
   };
 
+  const handleBulkReconcile = async (forceSimulated = false) => {
+    setIsReconciling(true);
+    setReconcileStatus(null);
+    try {
+      const res = await fetch('/api/treasurer/reconcile-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceReconcileSimulated: forceSimulated })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setReconcileStatus({
+          type: 'success',
+          text: `🔍 ${data.message}`
+        });
+        await fetchTransactions(); // Refresh the list
+      } else {
+        const errData = await res.json();
+        setReconcileStatus({
+          type: 'error',
+          text: errData.error || 'Gagal menjalankan rekonsiliasi massal.'
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      setReconcileStatus({
+        type: 'error',
+        text: 'Terjadi kesalahan koneksi saat mencoba merekonsiliasi data.'
+      });
+    } finally {
+      setIsReconciling(false);
+    }
+  };
+
+  const [manualOrderIdInput, setManualOrderIdInput] = useState('');
+
+  const handleVerifySingleOrderId = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!manualOrderIdInput.trim()) {
+      alert('Masukkan Order ID / Ref Midtrans yang ingin diverifikasi.');
+      return;
+    }
+    setIsReconciling(true);
+    setReconcileStatus(null);
+    try {
+      const res = await fetch('/api/verify-midtrans-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: manualOrderIdInput.trim() })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setReconcileStatus({
+          type: 'success',
+          text: `✅ ${data.message}`
+        });
+        if (data.type === "midtrans_only") {
+          // Open single reconcile modal for manual pairing
+          setSingleReconcileInitialId(manualOrderIdInput.trim());
+          setIsSingleReconcileModalOpen(true);
+        }
+        setManualOrderIdInput('');
+        await fetchTransactions();
+      } else {
+        setReconcileStatus({
+          type: 'error',
+          text: data.error || data.message || 'Verifikasi Order ID gagal. Membuka portal rekonsiliasi...'
+        });
+        setSingleReconcileInitialId(manualOrderIdInput.trim());
+        setIsSingleReconcileModalOpen(true);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setReconcileStatus({
+        type: 'error',
+        text: 'Gagal terhubung ke server untuk verifikasi Midtrans.'
+      });
+    } finally {
+      setIsReconciling(false);
+    }
+  };
+
   const fetchTransactions = async () => {
     setIsLoading(true);
     setErrorMsg(null);
@@ -601,47 +798,87 @@ export default function TreasurerPanel({
       const res = await fetch('/api/treasurer/transactions');
       if (res.ok) {
         const data = await res.json();
-        setTransactions(data);
+        const rawData = Array.isArray(data) ? data : [];
+        const sanitizedData = rawData.filter((tx: any) => {
+          if (!tx) return false;
+          const id = (tx.id || '').toLowerCase();
+          const cat = (tx.category || '').toLowerCase().trim();
+          if (id.startsWith('trx-spmb-')) return false;
+          if (
+            cat === 'spmb - token formulir' ||
+            cat === 'spmb - daftar ulang' ||
+            cat === 'spmb - daftar ulang & seragam' ||
+            cat === 'spmb daftar ulang & seragam' ||
+            cat === 'spmb formulir'
+          ) return false;
+          return true;
+        });
+        setTransactions(sanitizedData);
 
         // Auto-detect any missing category in existing transactions and add it to the active POS categories list
-        if (Array.isArray(data)) {
+        if (Array.isArray(sanitizedData)) {
           const fetchedCategories = new Set<string>();
-          data.forEach((tx: any) => {
+          sanitizedData.forEach((tx: any) => {
             if (tx.category && typeof tx.category === 'string') {
               const trimmed = tx.category.trim();
-              if (trimmed && !['SPP', 'Tabungan'].includes(trimmed)) {
+              const catLower = trimmed.toLowerCase();
+              const isExcluded = 
+                ['spp', 'tabungan', 'spp siswa', 'tagihan non-spp', 'spmb siswa baru', 'daftar ulang siswa baru', 'spmb - token formulir', 'spmb - daftar ulang', 'spmb - daftar ulang & seragam', 'spmb daftar ulang & seragam', 'spmb formulir'].includes(catLower) ||
+                catLower.includes('midtrans') || 
+                catLower.includes('transaksi online');
+
+              if (trimmed && !isExcluded) {
                 fetchedCategories.add(trimmed);
               }
             }
           });
 
-          if (fetchedCategories.size > 0) {
-            setCategories(prev => {
-              const currentNames = new Set(prev.map(c => c.name.toLowerCase()));
-              const newlyDetected: BudgetCategory[] = [];
-              fetchedCategories.forEach((catName: string) => {
-                if (!currentNames.has(catName.toLowerCase())) {
-                  const sameCatTxs = data.filter((tx: any) => tx.category === catName);
-                  const hasIncoming = sameCatTxs.some((tx: any) => tx.type === 'incoming');
-                  const hasOutgoing = sameCatTxs.some((tx: any) => tx.type === 'outgoing');
-                  let type: 'incoming' | 'outgoing' | 'both' = 'both';
-                  if (hasIncoming && !hasOutgoing) {
-                    type = 'incoming';
-                  } else if (hasOutgoing && !hasIncoming) {
-                    type = 'outgoing';
-                  }
-                  newlyDetected.push({ name: catName, type });
-                }
-              });
-
-              if (newlyDetected.length > 0) {
-                const updated = [...prev, ...newlyDetected];
-                localStorage.setItem('treasurer_categories', JSON.stringify(updated));
-                return updated;
-              }
-              return prev;
+          setCategories(prev => {
+            // First, purge any forbidden categories that may still be in previous state
+            const cleanedPrev = prev.filter(c => {
+              const nl = c.name.toLowerCase().trim();
+              return !nl.includes('midtrans') && 
+                     !nl.includes('transaksi online') &&
+                     nl !== 'spp siswa' &&
+                     nl !== 'tagihan non-spp' &&
+                     nl !== 'spmb siswa baru' &&
+                     nl !== 'daftar ulang siswa baru' &&
+                     nl !== 'spmb - token formulir' &&
+                     nl !== 'spmb - daftar ulang' &&
+                     nl !== 'spmb - daftar ulang & seragam' &&
+                     nl !== 'spmb daftar ulang & seragam' &&
+                     nl !== 'spmb formulir' &&
+                     nl !== 'spp' &&
+                     nl !== 'tabungan';
             });
-          }
+            if (!cleanedPrev.some(c => c.name.toLowerCase().trim() === 'token spmb formulir')) {
+              cleanedPrev.push({ name: 'Token SPMB Formulir', type: 'both' });
+            }
+            if (!cleanedPrev.some(c => c.name.toLowerCase().trim() === 'spmb daftar ulang')) {
+              cleanedPrev.push({ name: 'SPMB DAFTAR ULANG', type: 'both' });
+            }
+
+            const currentNames = new Set(cleanedPrev.map(c => c.name.toLowerCase()));
+            const newlyDetected: BudgetCategory[] = [];
+            fetchedCategories.forEach((catName: string) => {
+              if (!currentNames.has(catName.toLowerCase())) {
+                const sameCatTxs = sanitizedData.filter((tx: any) => tx.category === catName);
+                const hasIncoming = sameCatTxs.some((tx: any) => tx.type === 'incoming');
+                const hasOutgoing = sameCatTxs.some((tx: any) => tx.type === 'outgoing');
+                let type: 'incoming' | 'outgoing' | 'both' = 'both';
+                if (hasIncoming && !hasOutgoing) {
+                  type = 'incoming';
+                } else if (hasOutgoing && !hasIncoming) {
+                  type = 'outgoing';
+                }
+                newlyDetected.push({ name: catName, type });
+              }
+            });
+
+            const finalCategories = [...cleanedPrev, ...newlyDetected];
+            localStorage.setItem('treasurer_categories', JSON.stringify(finalCategories));
+            return finalCategories;
+          });
         }
       } else {
         setErrorMsg('Gagal memuat pembukuan bendahara.');
@@ -663,6 +900,9 @@ export default function TreasurerPanel({
     setIsCustomRecipient(false);
     setFormFundingSource('');
     setFormDate(new Date().toISOString().substring(0, 10));
+    setFormPaymentMethod('kas');
+    setFormKodeRekening('');
+    setFormNoBukti('');
     setShowFormModal(true);
   };
 
@@ -680,13 +920,21 @@ export default function TreasurerPanel({
 
     setFormFundingSource(tx.fundingSource || '');
     setFormDate(tx.date);
+    setFormPaymentMethod(tx.paymentMethod === 'bank' ? 'bank' : 'kas');
+    setFormKodeRekening(tx.kodeRekening || '');
+    setFormNoBukti(tx.noBukti || '');
     setShowFormModal(true);
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formAmount || Number(formAmount) <= 0 || !formDescription.trim()) {
-      alert('Harap isi jumlah dan deskripsi dengan benar.');
+    
+    // Parse amount robustly by removing any formatting like dots, commas, Rp (e.g. "50.000" -> 50000)
+    const cleanAmountStr = formAmount.toString().replace(/[^0-9]/g, '');
+    const numericAmount = Number(cleanAmountStr) || 0;
+
+    if (numericAmount <= 0 || !formDescription.trim()) {
+      alert('Harap isi jumlah nominal dan deskripsi dengan benar.');
       return;
     }
 
@@ -699,11 +947,14 @@ export default function TreasurerPanel({
     const bodyArgs = {
       type: formType,
       category: formCategory,
-      amount: Number(formAmount),
+      amount: numericAmount,
       description: formDescription,
       date: formDate,
       recipientName: formType === 'outgoing' ? formRecipientName : '',
-      fundingSource: formType === 'incoming' ? formFundingSource : ''
+      fundingSource: formType === 'incoming' ? formFundingSource : '',
+      paymentMethod: formPaymentMethod,
+      kodeRekening: formKodeRekening,
+      noBukti: formNoBukti
     };
 
     try {
@@ -826,6 +1077,100 @@ export default function TreasurerPanel({
     }));
   }, [categories, transactions]);
 
+  // Helper to determine if a transaction belongs to Kas (Cash) or Bank
+  const isCashTransaction = (t: TreasurerTransaction): boolean => {
+    if (t.source === 'spp') {
+      const pm = (t.createdBy || '').toLowerCase();
+      if (pm.includes('manual') || pm.includes('teller') || pm.includes('cash') || pm.includes('tunai') || pm === '') {
+        return true;
+      }
+      return false;
+    }
+    if (t.source === 'savings') {
+      const pm = (t.createdBy || '').toLowerCase();
+      if (pm.includes('teller') || pm.includes('penyamaan saldo') || pm.includes('manual') || pm.includes('tunai') || pm === '') {
+        return true;
+      }
+      return false;
+    }
+    if (t.source === 'custom') {
+      if (t.paymentMethod === 'bank') return false;
+      if (t.paymentMethod === 'kas') return true;
+      
+      const desc = t.description.toLowerCase();
+      const fund = (t.fundingSource || '').toLowerCase();
+      if (desc.includes('transfer') || desc.includes('bank') || desc.includes('midtrans') || desc.includes('online') ||
+          fund.includes('bank') || fund.includes('transfer') || fund.includes('midtrans')) {
+        return false;
+      }
+      return true;
+    }
+    
+    const creator = (t.createdBy || '').toLowerCase();
+    if (creator.includes('manual') || creator.includes('teller') || creator.includes('cash') || creator.includes('tunai') || creator === '') {
+      return true;
+    }
+    return false;
+  };
+
+  // Helper to dynamically get Kode Rekening
+  const getKodeRekening = (tx: TreasurerTransaction): string => {
+    if (tx.kodeRekening) return tx.kodeRekening;
+    if (tx.source === 'spp') return '4.1.01.01'; // Kode Penerimaan SPP
+    if (tx.source === 'savings') return '2.1.01.01'; // Kode Tabungan Siswa
+    
+    const cat = tx.category.toLowerCase();
+    if (tx.type === 'incoming') {
+      if (cat.includes('bos')) return '4.2.01.01';
+      if (cat.includes('hibah') || cat.includes('sumbangan') || cat.includes('donatur')) return '4.3.01.01';
+      return '4.1.01.99';
+    } else {
+      if (cat.includes('gaji') || cat.includes('honor') || cat.includes('tunjangan')) return '5.1.01.01';
+      if (cat.includes('operasional') || cat.includes('belanja')) return '5.2.01.01';
+      if (cat.includes('pembangunan') || cat.includes('gedung')) return '5.3.01.01';
+      return '5.1.01.99';
+    }
+  };
+
+  // Helper to dynamically get No Bukti
+  const getNoBukti = (tx: TreasurerTransaction): string => {
+    if (tx.noBukti) return tx.noBukti;
+    const suffix = tx.id.substring(tx.id.length - 6).toUpperCase();
+    if (tx.source === 'spp') return `BM-SPP-${suffix}`;
+    if (tx.source === 'savings') return `${tx.type === 'incoming' ? 'BM' : 'BK'}-TAB-${suffix}`;
+    return `${tx.type === 'incoming' ? 'BM' : 'BK'}-MAN-${suffix}`;
+  };
+
+  // Helper to get Indonesian Month Name and Year based on current active filters or today
+  const getIndonesianMonthYear = (): string => {
+    const refDateStr = filterEndDate || filterStartDate || new Date().toISOString().substring(0, 10);
+    try {
+      const parts = refDateStr.split('-');
+      if (parts.length >= 2) {
+        const months = [
+          'JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI',
+          'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'
+        ];
+        const monthIndex = parseInt(parts[1], 10) - 1;
+        if (monthIndex >= 0 && monthIndex < 12) {
+          return `${months[monthIndex]} ${parts[0]}`;
+        }
+      }
+    } catch (e) {}
+    return 'JULI 2026';
+  };
+
+  // Unique recipient names from outgoing transactions
+  const uniqueRecipients = useMemo(() => {
+    const recipientsSet = new Set<string>();
+    transactions.forEach(t => {
+      if (t.type === 'outgoing' && t.recipientName) {
+        recipientsSet.add(t.recipientName.trim());
+      }
+    });
+    return Array.from(recipientsSet).sort();
+  }, [transactions]);
+
   // Filtered transactions list
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
@@ -840,10 +1185,54 @@ export default function TreasurerPanel({
       const matchCategory = filterCategory === 'all' || t.category === filterCategory;
       const matchStartDate = !filterStartDate || t.date >= filterStartDate;
       const matchEndDate = !filterEndDate || t.date <= filterEndDate;
+      const matchRecipient = filterRecipient === 'all' || (t.recipientName && t.recipientName.trim() === filterRecipient);
 
-      return matchTerm && matchType && matchSource && matchCategory && matchStartDate && matchEndDate;
+      // Filter by Buku Kas Umum, Buku Pembantu Kas, or Buku Pembantu Bank
+      const isCash = isCashTransaction(t);
+      const matchBook = 
+        selectedBook === 'bku' ||
+        (selectedBook === 'bp_kas' && isCash) ||
+        (selectedBook === 'bp_bank' && !isCash);
+
+      return matchTerm && matchType && matchSource && matchCategory && matchStartDate && matchEndDate && matchBook && matchRecipient;
     });
-  }, [transactions, term, filterType, filterSource, filterCategory, filterStartDate, filterEndDate]);
+  }, [transactions, term, filterType, filterSource, filterCategory, filterRecipient, filterStartDate, filterEndDate, selectedBook]);
+
+  // Compute chronologically sorted transactions with running balances for ledger
+  const transactionsWithRunningBalance = useMemo(() => {
+    // Sort ascending by date, then ID to stabilize
+    const sorted = [...filteredTransactions].sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare !== 0) return dateCompare;
+      return a.id.localeCompare(b.id);
+    });
+
+    let balance = 0;
+    return sorted.map((tx) => {
+      if (tx.type === 'incoming') {
+        balance += tx.amount;
+      } else {
+        balance -= tx.amount;
+      }
+      return {
+        ...tx,
+        runningBalance: balance
+      };
+    });
+  }, [filteredTransactions]);
+
+  // Pagination for Buku Kas Terpadu
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [ledgerPageSize, setLedgerPageSize] = useState(10);
+
+  useEffect(() => {
+    setLedgerPage(1);
+  }, [term, filterType, filterSource, filterCategory, filterRecipient, filterStartDate, filterEndDate, selectedBook]);
+
+  const paginatedTransactions = useMemo(() => {
+    const start = (ledgerPage - 1) * ledgerPageSize;
+    return transactionsWithRunningBalance.slice(start, start + ledgerPageSize);
+  }, [transactionsWithRunningBalance, ledgerPage, ledgerPageSize]);
 
   // Chart data formatting: Category distribution
   const chartCategoryData = useMemo(() => {
@@ -918,59 +1307,104 @@ export default function TreasurerPanel({
     const sourceStr = filterSource === 'all' ? 'SEMUA SUMBER' : filterSource.toUpperCase();
     const typeStr = filterType === 'all' ? 'SEMUA ARUS KAS' : filterType === 'incoming' ? 'DEBIT (UANG MASUK)' : 'KREDIT (UANG KELUAR)';
     const dateRangeStr = filterStartDate || filterEndDate ? `Periode: ${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Akhir'}` : 'Semua Periode';
+    const recipientStr = filterRecipient === 'all' ? '' : ` | Penerima: ${filterRecipient.toUpperCase()}`;
+    const recipientFilename = filterRecipient === 'all' ? '' : `_RECIPIENT_${filterRecipient.toUpperCase().replace(/\s+/g, '_')}`;
     
+    let bookSheetName = 'Buku Kas Umum';
+    let bookTitleExcel = 'BUKU KAS UMUM (BKU) SEKOLAH';
+    let filenamePrefix = 'BUKU_KAS_UMUM';
+
+    if (selectedBook === 'bp_kas') {
+      bookSheetName = 'Buku Pembantu Kas';
+      bookTitleExcel = 'BUKU PEMBANTU KAS';
+      filenamePrefix = 'BUKU_PEMBANTU_KAS';
+    } else if (selectedBook === 'bp_bank') {
+      bookSheetName = 'Buku Pembantu Bank';
+      bookTitleExcel = 'BUKU PEMBANTU BANK';
+      filenamePrefix = 'BUKU_PEMBANTU_BANK';
+    }
+
     let excelHtml = `
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
-<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Buku Kas Global</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>${bookSheetName}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
 <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
 <style>
   table { border-collapse: collapse; }
-  .table-header { background-color: #4f46e5; color: white; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; }
-  td { border: 1px solid #cbd5e1; padding: 6px; font-size: 10pt; }
+  .table-header { background-color: #f1f5f9; color: #1e293b; font-weight: bold; text-align: center; border: 1px solid #000000; font-size: 10pt; }
+  td { border: 1px solid #000000; padding: 6px; font-size: 10pt; }
   .title { font-size: 14pt; font-weight: bold; text-align: center; }
-  .subtitle { font-size: 11pt; font-weight: bold; text-align: center; color: #475569; }
+  .subtitle { font-size: 11pt; font-weight: bold; text-align: center; color: #1e293b; }
   .text-right { text-align: right; }
   .font-bold { font-weight: bold; }
-  .bg-gray { background-color: #f1f5f9; }
+  .bg-gray { background-color: #f8fafc; }
 </style>
 </head>
 <body>
   <table>
-    <tr><td colspan="7" class="title">BUKU KAS BESAR GLOBAL TERPADU</td></tr>
-    <tr><td colspan="7" class="subtitle">${schoolNameUpper} - PORTAL BK & KEUANGAN</td></tr>
-    <tr><td colspan="7" style="text-align: center; font-style: italic; color: #64748b;">Tanggal Unduh: ${new Date().toLocaleDateString('id-ID')}</td></tr>
-    <tr><td colspan="7" style="text-align: center; font-weight: bold;">Kategori Pos: ${catStr} | Sumber: ${sourceStr} | Arus Kas: ${typeStr}</td></tr>
-    <tr><td colspan="7" style="text-align: center; font-weight: bold; color: #dc2626;">${dateRangeStr}</td></tr>
+    <tr><td colspan="8" class="title">${bookTitleExcel}</td></tr>
+    <tr><td colspan="8" class="subtitle">BULAN: ${getIndonesianMonthYear()}</td></tr>
+    <tr></tr>
+    <tr>
+      <td colspan="3" style="font-weight: bold; border: none;">Nama Sekolah</td>
+      <td colspan="5" style="border: none;">: ${schoolIdentity.name || "SMP Ma'arif NU Pandaan"}</td>
+    </tr>
+    <tr>
+      <td colspan="3" style="font-weight: bold; border: none;">Desa / Kecamatan</td>
+      <td colspan="5" style="border: none;">: Pandaan</td>
+    </tr>
+    <tr>
+      <td colspan="3" style="font-weight: bold; border: none;">Kabupaten / Kota</td>
+      <td colspan="5" style="border: none;">: Pasuruan</td>
+    </tr>
+    <tr>
+      <td colspan="3" style="font-weight: bold; border: none;">Provinsi</td>
+      <td colspan="5" style="border: none;">: Jawa Timur</td>
+    </tr>
+    <tr></tr>
+    <tr><td colspan="8" style="text-align: left; font-style: italic; color: #64748b; border: none;">Tanggal Unduh: ${new Date().toLocaleDateString('id-ID')} | Kategori: ${catStr} | Sumber: ${sourceStr} | Periode: ${dateRangeStr}${recipientStr}</td></tr>
     <tr></tr>
     <tr class="bg-gray">
-      <td colspan="3" class="font-bold">TOTAL DEBIT (+)</td>
-      <td colspan="4" class="font-bold text-right" style="color: #047857;">Rp ${filteredMetrics.totalInflow.toLocaleString('id-ID')}</td>
+      <td colspan="5" class="font-bold">TOTAL PENERIMAAN (DEBIT)</td>
+      <td colspan="3" class="font-bold text-right" style="color: #047857;">Rp ${filteredMetrics.totalInflow.toLocaleString('id-ID')}</td>
     </tr>
     <tr class="bg-gray">
-      <td colspan="3" class="font-bold">TOTAL KREDIT (-)</td>
-      <td colspan="4" class="font-bold text-right" style="color: #be123c;">Rp ${filteredMetrics.totalOutflow.toLocaleString('id-ID')}</td>
+      <td colspan="5" class="font-bold">TOTAL PENGELUARAN (KREDIT)</td>
+      <td colspan="3" class="font-bold text-right" style="color: #be123c;">Rp ${filteredMetrics.totalOutflow.toLocaleString('id-ID')}</td>
     </tr>
     <tr class="bg-gray">
-      <td colspan="3" class="font-bold">SALDO NETO</td>
-      <td colspan="4" class="font-bold text-right" style="color: #1d4ed8;">Rp ${filteredMetrics.netBalance.toLocaleString('id-ID')}</td>
+      <td colspan="5" class="font-bold">SALDO AKHIR BERJALAN</td>
+      <td colspan="3" class="font-bold text-right" style="color: #1d4ed8;">Rp ${filteredMetrics.netBalance.toLocaleString('id-ID')}</td>
     </tr>
     <tr></tr>
     <tr>
-      <td class="table-header" style="width: 50px;">No</td>
-      <td class="table-header" style="width: 100px;">Tanggal</td>
-      <td class="table-header" style="width: 300px;">Deskripsi Transaksi</td>
-      <td class="table-header" style="width: 150px;">Kategori / Pos</td>
-      <td class="table-header" style="width: 120px;">Sumber Pos</td>
-      <td class="table-header" style="width: 130px; text-align: right;">Debit (+)</td>
-      <td class="table-header" style="width: 130px; text-align: right;">Kredit (-)</td>
+      <td class="table-header" style="width: 50px;">NO</td>
+      <td class="table-header" style="width: 100px;">TANGGAL</td>
+      <td class="table-header" style="width: 120px;">KODE REKENING</td>
+      <td class="table-header" style="width: 140px;">NO BUKTI</td>
+      <td class="table-header" style="width: 320px; text-align: left;">URAIAN</td>
+      <td class="table-header" style="width: 130px; text-align: right;">PENERIMAAN</td>
+      <td class="table-header" style="width: 130px; text-align: right;">PENGELUARAN</td>
+      <td class="table-header" style="width: 140px; text-align: right;">SALDO</td>
+    </tr>
+    <tr class="bg-gray" style="font-size: 8pt; text-align: center; font-weight: bold; color: #64748b;">
+      <td>1</td>
+      <td>2</td>
+      <td>3</td>
+      <td>4</td>
+      <td style="text-align: left;">5</td>
+      <td style="text-align: right;">6</td>
+      <td style="text-align: right;">7</td>
+      <td style="text-align: right;">8</td>
     </tr>
 `;
 
-    filteredTransactions.forEach((tx, idx) => {
-      const srcDisplay = tx.source === 'spp' ? 'SPP (Sistem)' : tx.source === 'savings' ? 'Tabungan' : 'Manual (Bendahara)';
-      const debitVal = tx.type === 'incoming' ? tx.amount : 0;
-      const kreditVal = tx.type === 'outgoing' ? tx.amount : 0;
+    transactionsWithRunningBalance.forEach((tx, idx) => {
+      const isIncoming = tx.type === 'incoming';
+      const kodeRekening = getKodeRekening(tx);
+      const noBukti = getNoBukti(tx);
+      const debitVal = isIncoming ? tx.amount : 0;
+      const kreditVal = !isIncoming ? tx.amount : 0;
       
       let descWord = tx.description;
       if (tx.studentName) {
@@ -987,25 +1421,31 @@ export default function TreasurerPanel({
     <tr>
       <td style="text-align: center;">${idx + 1}</td>
       <td style="text-align: center;">${tx.date}</td>
+      <td style="text-align: center; font-family: monospace;">${kodeRekening}</td>
+      <td style="text-align: center; font-family: monospace;">${noBukti}</td>
       <td>${descWord}</td>
-      <td style="text-align: center; text-transform: uppercase;">${tx.category}</td>
-      <td style="text-align: center;">${srcDisplay}</td>
       <td class="text-right" style="color: #047857;">${debitVal ? 'Rp ' + debitVal.toLocaleString('id-ID') : '-'}</td>
       <td class="text-right" style="color: #be123c;">${kreditVal ? 'Rp ' + kreditVal.toLocaleString('id-ID') : '-'}</td>
+      <td class="text-right font-bold">Rp ${tx.runningBalance.toLocaleString('id-ID')}</td>
     </tr>
 `;
     });
 
     excelHtml += `
+    <tr class="bg-gray" style="font-weight: bold;">
+      <td colspan="5">JUMLAH TOTAL BULAN INI</td>
+      <td class="text-right" style="color: #047857;">Rp ${filteredMetrics.totalInflow.toLocaleString('id-ID')}</td>
+      <td class="text-right" style="color: #be123c;">Rp ${filteredMetrics.totalOutflow.toLocaleString('id-ID')}</td>
+      <td class="text-right" style="color: #1d4ed8;">Rp ${filteredMetrics.netBalance.toLocaleString('id-ID')}</td>
+    </tr>
     <tr></tr>
     <tr>
-      <td colspan="3" style="text-align: center; border: none;">
+      <td colspan="4" style="text-align: center; border: none;">
         <br/>Mengetahui,<br/>Kepala Sekolah<br/><br/><br/><br/>
         <b>${schoolIdentity.principal || '-'}</b>
       </td>
-      <td colspan="1" style="border: none;"></td>
-      <td colspan="3" style="text-align: center; border: none;">
-        <br/>Pandaan, ${new Date().toLocaleDateString('id-ID')}<br/>Bendahara Kas Sekolah<br/><br/><br/><br/>
+      <td colspan="4" style="text-align: center; border: none;">
+        <br/>Pandaan, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}<br/>Bendahara<br/><br/><br/><br/>
         <b>${schoolIdentity.treasurer || '-'}</b>
       </td>
     </tr>
@@ -1020,7 +1460,7 @@ export default function TreasurerPanel({
     link.href = url;
     const catNameFilename = filterCategory === 'all' ? 'GLOBAL' : filterCategory.toUpperCase().replace(/\s+/g, '_');
     const dateSuffix = filterStartDate || filterEndDate ? `_PERIOD_${filterStartDate || 'AWAL'}_TO_${filterEndDate || 'AKHIR'}` : `_${new Date().toISOString().split('T')[0]}`;
-    link.download = `BUKU_KAS_${catNameFilename}${dateSuffix}.xls`;
+    link.download = `${filenamePrefix}_${catNameFilename}${recipientFilename}${dateSuffix}.xls`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -1030,113 +1470,194 @@ export default function TreasurerPanel({
           {/* Printable Area 1: Ledger/Buku Kas - Only active when not printing an individual receipt */}
       {!activePrintTransaction && (
         <div id="print-report-section" className="hidden print:block bg-white p-8 text-black text-xs leading-relaxed">
-          {/* Letterhead */}
-          <div className="flex items-center justify-between border-b-2 border-double border-slate-900 pb-4 mb-6">
-            <div className="w-16 h-16 flex items-center justify-center bg-slate-100 rounded border">
-              {schoolIdentity.logo ? (
-                <img src={schoolIdentity.logo} className="w-full h-full object-contain" alt="Logo" referrerPolicy="no-referrer" />
-              ) : (
-                <span className="font-extrabold text-[10px] text-slate-400">LOGO LP</span>
-              )}
-            </div>
-            <div className="flex-1 text-center px-4">
-              <h2 className="text-sm font-extrabold tracking-tight uppercase">{schoolIdentity.subheading}</h2>
-              <h1 className="text-lg font-black tracking-tight text-slate-900 leading-tight">{schoolIdentity.name}</h1>
-              <p className="text-[10px] text-slate-500 font-semibold">{schoolIdentity.address} | Telp: {schoolIdentity.phone}</p>
-              <span className="text-[9px] px-2 py-0.5 rounded border bg-slate-50 font-bold tracking-wider uppercase mt-1 inline-block">{schoolIdentity.accreditation}</span>
-            </div>
-            <div className="w-16 h-16 flex items-center justify-center bg-slate-100 rounded border">
-              {schoolIdentity.logo2 ? (
-                <img src={schoolIdentity.logo2} className="w-full h-full object-contain" alt="Logo 2" referrerPolicy="no-referrer" />
-              ) : (
-                <span className="font-extrabold text-[10px] text-slate-400">LOGO NU</span>
-              )}
+          {/* Official Kop Surat (School Letterhead) */}
+          <div className="mb-6">
+            {schoolIdentity?.letterhead ? (
+              <div className="w-full flex flex-col items-center mb-4">
+                <img
+                  src={schoolIdentity.letterhead}
+                  className="w-full h-auto block"
+                  alt="Kop Surat"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="w-full border-b-2 border-black mt-2"></div>
+              </div>
+            ) : (
+              <div className="border-b-4 border-double border-black pb-4 mb-6 flex justify-between items-center gap-4 text-left">
+                <div className="flex items-center gap-4">
+                  {schoolIdentity?.logo && (
+                    <img
+                      src={schoolIdentity.logo}
+                      className="w-16 h-16 object-contain"
+                      alt="Logo Kiri"
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-black uppercase tracking-wider text-black">
+                      {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+                    </span>
+                    <span className="text-[10px] text-slate-800 uppercase tracking-widest font-bold leading-none block">
+                      {schoolIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}
+                    </span>
+                    <span className="text-[9px] text-slate-600 block font-semibold mt-1">
+                      {schoolIdentity?.accreditation || "Terakreditasi A"} &bull; {schoolIdentity?.address || "Pasuruan, Jawa Timur, Indonesia"}
+                    </span>
+                    <span className="text-[8px] text-slate-600 block italic leading-none mt-0.5">
+                      Telp: {schoolIdentity?.phone || "(0343) 631234"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 shrink-0">
+                  {schoolIdentity?.logo2 && (
+                    <img
+                      src={schoolIdentity.logo2}
+                      className="w-16 h-16 object-contain"
+                      alt="Logo Kanan"
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Header metadata to match the image precisely */}
+          <div className="mb-6">
+            <table className="w-full text-xs font-bold mb-4">
+              <tbody>
+                <tr>
+                  <td className="w-36 py-0.5 text-left">Nama Sekolah</td>
+                  <td className="w-4 py-0.5 text-center">:</td>
+                  <td className="py-0.5 text-left">{schoolIdentity.name || "SMP Ma'arif NU Pandaan"}</td>
+                </tr>
+                <tr>
+                  <td className="w-36 py-0.5 text-left">Desa / Kecamatan</td>
+                  <td className="w-4 py-0.5 text-center">:</td>
+                  <td className="py-0.5 text-left">Pandaan</td>
+                </tr>
+                <tr>
+                  <td className="w-36 py-0.5 text-left">Kabupaten / Kota</td>
+                  <td className="w-4 py-0.5 text-center">:</td>
+                  <td className="py-0.5 text-left">Pasuruan</td>
+                </tr>
+                <tr>
+                  <td className="w-36 py-0.5 text-left">Provinsi</td>
+                  <td className="w-4 py-0.5 text-center">:</td>
+                  <td className="py-0.5 text-left">Jawa Timur</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div className="text-center my-6">
+              <h1 className="text-sm font-black uppercase tracking-wider text-center decoration-solid underline">
+                {selectedBook === 'bp_kas' && 'BUKU PEMBANTU KAS'}
+                {selectedBook === 'bp_bank' && 'BUKU PEMBANTU BANK'}
+                {selectedBook === 'bku' && 'BUKU KAS UMUM (BKU)'}
+              </h1>
+              <p className="text-xs font-bold text-center mt-1 uppercase">
+                BULAN: {getIndonesianMonthYear()}
+              </p>
             </div>
           </div>
 
-          <div className="text-center mb-6">
-            <h2 className="text-sm font-bold uppercase decoration-solid underline">LAPORAN BUKU KAS BESAR TERPADU</h2>
-            <p className="text-[10px] text-slate-500 mt-1 font-semibold">
-              Tanggal Cetak: {new Date().toLocaleDateString('id-ID')} {filterStartDate || filterEndDate ? `| Periode: ${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Akhir'}` : ''} | POS Kategori: {filterCategory === 'all' ? 'SEMUA POS KATEGORI' : filterCategory.toUpperCase()} | Sumber: {filterSource === 'all' ? 'Semua Sumber' : filterSource.toUpperCase()} ({filterType === 'all' ? 'Semua Arus Kas' : filterType === 'incoming' ? 'Hanya Pemasukan' : 'Hanya Pengeluaran'})
-            </p>
-          </div>
-
-          {/* Printable summary card */}
-          <div className="grid grid-cols-3 gap-2 border p-3 rounded-lg bg-slate-50 mb-6 font-semibold">
-            <div>
-              <div className="text-slate-500 text-[9px] uppercase">TOTAL PEMASUKAN (DEBIT)</div>
-              <div className="text-xs font-bold text-emerald-800">Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}</div>
-            </div>
-            <div>
-              <div className="text-slate-500 text-[9px] uppercase">TOTAL PENGELUARAN (KREDIT)</div>
-              <div className="text-xs font-bold text-rose-800">Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}</div>
-            </div>
-            <div>
-              <div className="text-slate-500 text-[9px] uppercase">SALDO KAS NETO BERJALAN</div>
-              <div className="text-xs font-extrabold text-blue-800">Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}</div>
-            </div>
-          </div>
-
-          {/* Books Table */}
-          <table className="w-full border-collapse border border-slate-300 text-[10px] text-left">
+          {/* Books Table with 8 Columns matching the image */}
+          <table className="w-full border-collapse border border-black text-[10px] text-left">
             <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
-                <th className="border border-slate-300 p-2">Tgl</th>
-                <th className="border border-slate-300 p-2">Deskripsi Transaksi Pokok</th>
-                <th className="border border-slate-300 p-2">Sumber / Pos</th>
-                <th className="border border-slate-300 p-2 text-right">Debit (+)</th>
-                <th className="border border-slate-300 p-2 text-right">Kredit (-)</th>
+              <tr className="bg-slate-100 text-slate-800 font-bold border border-black text-center uppercase tracking-wide">
+                <th className="border border-black p-2 text-center w-10">No</th>
+                <th className="border border-black p-2 text-center w-24">Tanggal</th>
+                <th className="border border-black p-2 text-center w-28">Kode Rekening</th>
+                <th className="border border-black p-2 text-center w-28">No Bukti</th>
+                <th className="border border-black p-2 text-left">Uraian</th>
+                <th className="border border-black p-2 text-right w-28">Penerimaan</th>
+                <th className="border border-black p-2 text-right w-28">Pengeluaran</th>
+                <th className="border border-black p-2 text-right w-28">Saldo</th>
+              </tr>
+              <tr className="bg-slate-50 text-slate-500 font-bold border border-black text-center text-[9px]">
+                <th className="border border-black p-1">1</th>
+                <th className="border border-black p-1">2</th>
+                <th className="border border-black p-1">3</th>
+                <th className="border border-black p-1">4</th>
+                <th className="border border-black p-1">5</th>
+                <th className="border border-black p-1">6</th>
+                <th className="border border-black p-1">7</th>
+                <th className="border border-black p-1">8</th>
               </tr>
             </thead>
             <tbody>
-              {filteredTransactions.map((tx) => (
-                <tr key={tx.id} className="border-b border-slate-250 hover:bg-slate-50">
-                  <td className="border border-slate-300 p-2 font-mono whitespace-nowrap">{tx.date}</td>
-                  <td className="border border-slate-300 p-2">
-                    <div className="font-bold">{tx.description}</div>
-                    {tx.studentName && (
-                      <div className="text-[9px] text-slate-500 font-semibold">Siswa: {tx.studentName} ({tx.nis})</div>
-                    )}
-                    {tx.recipientName && (
-                      <div className="text-[9px] text-indigo-600 font-extrabold">Penerima: {tx.recipientName}</div>
-                    )}
-                    {tx.fundingSource && (
-                      <div className="text-[9px] text-emerald-800 font-extrabold">Sumber Dana: {tx.fundingSource}</div>
-                    )}
-                  </td>
-                  <td className="border border-slate-300 p-2 font-bold uppercase">{tx.source === 'spp' ? 'SPP (Sistem)' : tx.source === 'savings' ? 'Tabungan' : `Manual (${tx.category})`}</td>
-                  <td className="border border-slate-300 p-2 text-right font-mono text-emerald-700 font-bold">
-                    {tx.type === 'incoming' ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
-                  </td>
-                  <td className="border border-slate-300 p-2 text-right font-mono text-rose-700 font-bold">
-                    {tx.type === 'outgoing' ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
-                  </td>
-                </tr>
-              ))}
+              {transactionsWithRunningBalance.map((tx, idx) => {
+                const isIncoming = tx.type === 'incoming';
+                const kodeRekening = getKodeRekening(tx);
+                const noBukti = getNoBukti(tx);
+                
+                return (
+                  <tr key={tx.id} className="border-b border-black">
+                    <td className="border border-black p-2 text-center font-bold">{idx + 1}</td>
+                    <td className="border border-black p-2 text-center font-mono whitespace-nowrap">{tx.date}</td>
+                    <td className="border border-black p-2 text-center font-mono font-semibold">{kodeRekening}</td>
+                    <td className="border border-black p-2 text-center font-mono font-semibold">{noBukti}</td>
+                    <td className="border border-black p-2">
+                      <div className="font-bold">{tx.description}</div>
+                      {tx.studentName && (
+                        <div className="text-[9px] text-slate-500 font-semibold mt-0.5">Siswa: {tx.studentName} ({tx.nis})</div>
+                      )}
+                      {tx.recipientName && (
+                        <div className="text-[9px] text-slate-600 font-extrabold mt-0.5">Penerima: {tx.recipientName}</div>
+                      )}
+                      {tx.fundingSource && (
+                        <div className="text-[9px] text-emerald-800 font-extrabold mt-0.5">Sumber Dana: {tx.fundingSource}</div>
+                      )}
+                    </td>
+                    <td className="border border-black p-2 text-right font-mono font-bold">
+                      {isIncoming ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
+                    </td>
+                    <td className="border border-black p-2 text-right font-mono font-bold">
+                      {!isIncoming ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
+                    </td>
+                    <td className="border border-black p-2 text-right font-mono font-black">
+                      Rp {tx.runningBalance.toLocaleString('id-ID')}
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Grand Total Row at the bottom of print */}
+              <tr className="bg-slate-100 font-bold border-t border-black text-black">
+                <td className="border border-black p-2 text-left" colSpan={5}>
+                  JUMLAH TOTAL BULAN INI
+                </td>
+                <td className="border border-black p-2 text-right font-mono font-bold">
+                  Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}
+                </td>
+                <td className="border border-black p-2 text-right font-mono font-bold">
+                  Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}
+                </td>
+                <td className="border border-black p-2 text-right font-mono font-black">
+                  Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}
+                </td>
+              </tr>
             </tbody>
           </table>
 
-          {/* Footers for signature */}
-          <div className="mt-12 grid grid-cols-2 text-center text-[10px]">
-            <div>
-              <p>Mengetahui,</p>
-              <p className="font-bold mt-2">Kepala Sekolah</p>
-              <div className="h-16 flex items-center justify-center">
-                {/* Stamp removed per request */}
-              </div>
-              <p className="font-bold text-slate-900 underline decoration-solid">{schoolIdentity.principal}</p>
-              <p className="text-[9px] text-slate-500">NIP. -</p>
+          {/* Footers for signature with BOS style */}
+          <div className="mt-12 flex justify-between text-xs px-4" style={{ pageBreakInside: 'avoid' }}>
+            <div className="text-center w-64">
+              <p className="mb-1">Mengetahui,</p>
+              <p className="font-bold">Kepala Sekolah</p>
+              <div className="h-16"></div>
+              <p className="font-bold underline decoration-solid">{schoolIdentity.principal || '................................'}</p>
+              <p className="text-[10px] text-slate-500">NIP. ....................................</p>
             </div>
-            <div>
-              <p>Pandaan, {new Date().toLocaleDateString('id-ID')}</p>
-              <p className="font-bold mt-2">Bendahara Keuangan / Kas</p>
+            <div className="text-center w-64">
+              <p className="mb-1">Pandaan, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+              <p className="font-bold">Bendahara</p>
               <div className="h-16 flex items-center justify-center">
                 {schoolIdentity.treasurerSignature && (
                   <img src={schoolIdentity.treasurerSignature} className="h-14 object-contain" alt="Signature" referrerPolicy="no-referrer" />
                 )}
               </div>
-              <p className="font-bold text-slate-900 underline decoration-solid">{schoolIdentity.treasurer}</p>
-              <p className="text-[9px] text-slate-500 font-medium">SMP Ma'arif NU Pandaan</p>
+              <p className="font-bold underline decoration-solid">{schoolIdentity.treasurer || '................................'}</p>
+              <p className="text-[10px] text-slate-500">NIP. ....................................</p>
             </div>
           </div>
         </div>
@@ -1183,6 +1704,29 @@ export default function TreasurerPanel({
                   <span>Unduh SK</span>
                 </a>
               )}
+              <button
+                type="button"
+                onClick={handleTriggerCloudSync}
+                disabled={isCloudSyncing}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-700/80 hover:border-indigo-500 font-bold text-xs rounded-xl cursor-pointer transition-all disabled:opacity-50"
+                title="Sinkronisasi data buku kas & POS dengan MongoDB Atlas"
+              >
+                <span className={isCloudSyncing ? "animate-spin" : ""}>🔄</span>
+                <span>{isCloudSyncing ? 'Sinkron...' : 'Sinkron Cloud'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('database_mysql')}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 ${
+                  activeTab === 'database_mysql'
+                    ? 'bg-emerald-700 text-white border border-emerald-500 shadow-xs'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:border-slate-500'
+                } font-bold text-xs rounded-xl cursor-pointer transition-all`}
+                title="Pengaturan Koneksi Database MySQL & phpMyAdmin"
+              >
+                <Database size={13} className="text-emerald-400" />
+                <span>MySQL / phpMyAdmin</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setShowPasswordModal(true)}
@@ -1303,6 +1847,18 @@ export default function TreasurerPanel({
             >
               💵 Gaji Guru
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('database_mysql')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'database_mysql'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Database size={13} className="text-emerald-500" />
+              <span>Database MySQL</span>
+            </button>
           </div>
         </div>
 
@@ -1331,21 +1887,21 @@ export default function TreasurerPanel({
               <button
                 type="button"
                 onClick={handlePrintLedger}
-                className="p-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs font-display"
+                className="p-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs font-display transition-colors"
                 title="Cetak Buku Kas / Simpan PDF Sesuai Hasil Filter Kategori/Pos Saat Ini"
               >
                 <Printer size={13} />
-                <span>Cetak Buku Kas ({filterCategory === 'all' ? 'Global' : filterCategory})</span>
+                <span>Cetak {selectedBook === 'bku' ? 'Buku Kas Umum (BKU)' : selectedBook === 'bp_kas' ? 'Buku Pembantu Kas' : 'Buku Pembantu Bank'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleDownloadExcelLedger}
-                className="p-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs font-display"
+                className="p-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs font-display transition-colors"
                 title="Ekspor Buku Kas Sesuai Hasil Filter Kategori/Pos ke Spreadsheet Excel"
               >
                 <Download size={13} className="text-emerald-700" />
-                <span>Unduh Excel ({filterCategory === 'all' ? 'Global' : filterCategory})</span>
+                <span>Unduh Excel {selectedBook === 'bku' ? 'BKU' : selectedBook === 'bp_kas' ? 'BP Kas' : 'BP Bank'}</span>
               </button>
 
               <button
@@ -1449,13 +2005,26 @@ export default function TreasurerPanel({
                 </h3>
                 <p className="text-[11px] text-slate-500 font-semibold mt-0.5">Pemantauan otomatis limit kuota dan akumulasi sisa kas di masing-masing pos keuangan.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowManageBudgetPos(!showManageBudgetPos)}
-                className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all border border-slate-250 font-display"
-              >
-                <span>🛠️</span> {showManageBudgetPos ? 'Sembunyikan Pengelola' : 'Kelola Kategori POS BUDGET'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTriggerCloudSync}
+                  disabled={isCloudSyncing}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all border border-indigo-200 disabled:opacity-50"
+                  title="Sinkronkan kategori dan saldo POS ke MongoDB Cloud"
+                >
+                  <span className={isCloudSyncing ? "animate-spin" : ""}>🔄</span>
+                  <span>{isCloudSyncing ? 'Menyinkronkan...' : 'Sinkron Cloud'}</span>
+                  {lastSyncTime && <span className="text-[9px] text-indigo-500 font-normal">({lastSyncTime})</span>}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowManageBudgetPos(!showManageBudgetPos)}
+                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all border border-slate-250 font-display"
+                >
+                  <span>🛠️</span> {showManageBudgetPos ? 'Sembunyikan Pengelola' : 'Kelola Kategori POS BUDGET'}
+                </button>
+              </div>
             </div>
 
             {/* Expander: Management of POS BUDGET Categories */}
@@ -1727,11 +2296,18 @@ export default function TreasurerPanel({
                 return (
                   <div
                     key={pos.name}
-                    className="p-4 rounded-2xl border border-slate-200 bg-slate-50/40 hover:bg-slate-50 hover:border-slate-300 transition-all flex flex-col justify-between shadow-xs"
+                    onClick={() => {
+                      setFilterCategory(pos.name);
+                      setSelectedBook('bku');
+                      setFilterType('all');
+                      setActiveTab('kas_ledger');
+                    }}
+                    title={`Klik untuk melihat rincian catatan pembukuan POS ${pos.name}`}
+                    className="p-4 rounded-2xl border border-slate-200 bg-slate-50/40 hover:bg-indigo-50/40 hover:border-indigo-300 transition-all flex flex-col justify-between shadow-xs cursor-pointer group"
                   >
                     <div>
                       <div className="flex items-center justify-between gap-1.5 mb-2">
-                        <span className="text-[10.5px] font-black text-slate-900 uppercase truncate" title={pos.name}>
+                        <span className="text-[10.5px] font-black text-slate-900 uppercase truncate group-hover:text-indigo-650 transition-colors" title={pos.name}>
                           📊 {pos.name}
                         </span>
                         {pos.name === 'SPP' || pos.name === 'Tabungan' ? (
@@ -1856,26 +2432,197 @@ export default function TreasurerPanel({
           {/* ================= TAB 2: INLINE BUKU KAS LEDGER ================= */}
           {activeTab === 'kas_ledger' && (
             <>
-              {/* Ledger Management Spreadsheet / Table list */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs mt-6 flex flex-col">
-            
-            {/* Header controls */}
-            <div className="p-6 border-b border-slate-150 flex flex-col gap-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900">Buku Kas Pembukuan Terpadu</h3>
-                  <p className="text-[11px] text-slate-500 font-semibold">Sistem ini memadukan iuran SPP siswa, simpanan/tarikan Tabungan, dan belanja operasional secara real-time.</p>
+              {/* Midtrans Status & Reconciliation Banner */}
+              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl border border-indigo-800/50 shadow-md flex flex-col gap-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-indigo-800/40 pb-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30 shrink-0 mt-0.5">
+                      <RefreshCw className={`w-5 h-5 ${isReconciling ? 'animate-spin text-amber-400' : 'text-emerald-400'}`} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-black text-xs uppercase tracking-wider text-emerald-400">
+                          Sistem Rekonsiliasi Midtrans
+                        </h4>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                          Mode Manual Terkendali
+                        </span>
+                      </div>
+                      <p className="text-slate-300 text-[11px] mt-1 leading-relaxed font-medium max-w-2xl">
+                        Fitur verifikasi transaksi Midtrans (SPP, Tagihan Lain, Tabungan). Anda dapat memicu pemindaian rekonsiliasi manual kapan saja atau memasukkan Order ID spesifik untuk memverifikasi pembayaran.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleBulkReconcile(false)}
+                      disabled={isReconciling}
+                      className={`px-4 py-2.5 rounded-xl font-extrabold text-xs uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-2 shadow-sm ${
+                        isReconciling ? 'bg-indigo-800 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/40'
+                      }`}
+                    >
+                      <RefreshCw size={14} className={isReconciling ? 'animate-spin' : ''} />
+                      <span>{isReconciling ? 'Memindai Midtrans...' : 'Jalankan Rekonsiliasi Manual'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkReportModalOpen(true)}
+                      className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all border border-slate-700 flex items-center gap-1.5"
+                      title="Upload file report CSV/Excel dari Midtrans MAP"
+                    >
+                      <UploadCloud size={14} />
+                      <span>Upload Report CSV</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSingleReconcileInitialId(manualOrderIdInput.trim());
+                        setIsSingleReconcileModalOpen(true);
+                      }}
+                      className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all border border-slate-700 flex items-center gap-1.5"
+                      title="Buka portal rekonsiliasi satuan (single) untuk cek rincian & pairing manual"
+                    >
+                      <Search size={14} />
+                      <span>Rekonsiliasi Satuan</span>
+                    </button>
+                  </div>
                 </div>
-                <div className="text-[10px] font-mono font-bold text-slate-400 text-right">
-                  Ditemukan: <span className="text-indigo-600 font-extrabold">{filteredTransactions.length}</span> dari {transactions.length} total transaksi
+
+                {/* Search / Verify Single Order ID Box */}
+                <div className="w-full">
+                  <form onSubmit={handleVerifySingleOrderId} className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                    <input
+                      type="text"
+                      value={manualOrderIdInput}
+                      onChange={(e) => setManualOrderIdInput(e.target.value)}
+                      placeholder="Cari & verifikasi Order ID spesifik (misal: SPP-12345)..."
+                      className="px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono font-semibold text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 w-full"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isReconciling || !manualOrderIdInput.trim()}
+                      className={`px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1.5 shrink-0 w-full sm:w-auto ${
+                        isReconciling || !manualOrderIdInput.trim() ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500'
+                      }`}
+                    >
+                      <Search size={13} />
+                      <span>Verifikasi Ref</span>
+                    </button>
+                  </form>
                 </div>
               </div>
+
+                {reconcileStatus && (
+                  <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 shadow-3xs animate-fade-in ${
+                    reconcileStatus.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-150 text-emerald-950 font-medium'
+                      : 'bg-rose-50 border-rose-150 text-rose-950'
+                  }`}>
+                    {reconcileStatus.type === 'success' ? (
+                      <CheckCircle2 size={15} className="text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <span className="font-extrabold block">
+                        {reconcileStatus.type === 'success' ? 'Hasil Pelacakan Sukses!' : 'Pelacakan Gagal'}
+                      </span>
+                      <p className="m-0 text-slate-750 mt-0.5 leading-relaxed font-semibold">
+                        {reconcileStatus.text}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+              {/* Ledger Management Spreadsheet / Table list */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs mt-6 flex flex-col">
+                
+                {/* Buku Kas Tabs (BKU, BP Kas, BP Bank) */}
+                <div className="flex flex-wrap border-b border-slate-150 bg-slate-50/50 p-2 gap-1 rounded-t-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBook('bku')}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-[11px] uppercase tracking-wider font-extrabold transition-all cursor-pointer ${
+                      selectedBook === 'bku'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-250 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>📖 Buku Kas Umum</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBook('bp_kas')}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-[11px] uppercase tracking-wider font-extrabold transition-all cursor-pointer ${
+                      selectedBook === 'bp_kas'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-250 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>💵 Buku Pembantu Kas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBook('bp_bank')}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-[11px] uppercase tracking-wider font-extrabold transition-all cursor-pointer ${
+                      selectedBook === 'bp_bank'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-250 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🏦 Buku Pembantu Bank</span>
+                  </button>
+                </div>
+            
+                {/* Header controls */}
+                <div className="p-6 border-b border-slate-150 flex flex-col gap-4">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <h3 className="font-extrabold text-sm text-indigo-950 flex items-center gap-2">
+                        {selectedBook === 'bku' && <span>📖 Buku Kas Umum (BKU) Sekolah</span>}
+                        {selectedBook === 'bp_kas' && <span>💵 Buku Pembantu Kas (Kas Tunai)</span>}
+                        {selectedBook === 'bp_bank' && <span>🏦 Buku Pembantu Bank (Giro / Rekening)</span>}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-semibold leading-relaxed max-w-3xl mt-0.5">
+                        {selectedBook === 'bku' && 'Laporan konsolidasi arus kas masuk dan keluar secara menyeluruh (gabungan tunai dan transaksi bank sekolah).'}
+                        {selectedBook === 'bp_kas' && 'Laporan pembantu khusus transaksi tunai (uang fisik di brankas sekolah) yang diinput oleh bendahara.'}
+                        {selectedBook === 'bp_bank' && 'Laporan pembantu khusus penampungan kas bank, rekening sekolah, dan transfer online terintegrasi.'}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2.5 shrink-0 mt-2 lg:mt-0">
+                      <button
+                        type="button"
+                        onClick={handlePrintLedger}
+                        className="p-2 px-3.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-3xs transition-colors"
+                        title="Cetak Buku Kas Aktif ini atau Simpan sebagai PDF"
+                      >
+                        <Printer size={13} />
+                        <span>Cetak Buku ({selectedBook === 'bku' ? 'BKU' : selectedBook === 'bp_kas' ? 'BP Kas' : 'BP Bank'})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDownloadExcelLedger}
+                        className="p-2 px-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-3xs transition-colors"
+                        title="Ekspor Buku Kas Aktif ini ke Spreadsheet Excel (.xls)"
+                      >
+                        <Download size={13} className="text-emerald-700" />
+                        <span>Ekspor Excel</span>
+                      </button>
+
+                      <div className="text-[10px] font-mono font-bold text-slate-400 bg-slate-50 border border-slate-150 px-2.5 py-2 rounded-xl shrink-0">
+                        Ditemukan: <span className="text-indigo-600 font-extrabold">{filteredTransactions.length}</span> dari {transactions.length} total
+                      </div>
+                    </div>
+                  </div>
 
               {/* Filter Row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 pt-2">
                 
                 {/* Search Bar */}
-                <div className="md:col-span-5 relative">
+                <div className="md:col-span-4 relative">
                   <input
                     type="text"
                     placeholder="Cari deskripsi, nama siswa, NIS, atau kategori..."
@@ -1892,7 +2639,13 @@ export default function TreasurerPanel({
                 <div className="md:col-span-2">
                   <select
                     value={filterType}
-                    onChange={(e) => setFilterType(e.target.value as any)}
+                    onChange={(e) => {
+                      const val = e.target.value as any;
+                      setFilterType(val);
+                      if (val === 'incoming') {
+                        setFilterRecipient('all');
+                      }
+                    }}
                     className="w-full text-xs font-semibold p-2 border border-slate-200 rounded-xl bg-white text-slate-700"
                   >
                     <option value="all">Semua Arus Kas</option>
@@ -1916,7 +2669,7 @@ export default function TreasurerPanel({
                 </div>
 
                 {/* Filter custom categories */}
-                <div className="md:col-span-3">
+                <div className="md:col-span-2">
                   <select
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
@@ -1925,8 +2678,36 @@ export default function TreasurerPanel({
                     <option value="all">Semua Kategori Pos</option>
                     <option value="SPP">SPP</option>
                     <option value="Tabungan">Tabungan</option>
-                    {categories.map(c => (
-                      <option key={c.name} value={c.name}>{c.name}</option>
+                    {categories
+                      .filter(c => {
+                        const nl = c.name.toLowerCase().trim();
+                        return !nl.includes('midtrans') && 
+                               !nl.includes('transaksi online') &&
+                               nl !== 'spp siswa' &&
+                               nl !== 'tagihan non-spp' &&
+                               nl !== 'spmb siswa baru' &&
+                               nl !== 'daftar ulang siswa baru' &&
+                               nl !== 'spp' &&
+                               nl !== 'tabungan';
+                      })
+                      .map(c => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))}
+                  </select>
+                </div>
+
+                {/* Filter Recipient (Penerima pada pengeluaran) */}
+                <div className="md:col-span-2">
+                  <select
+                    value={filterRecipient}
+                    onChange={(e) => setFilterRecipient(e.target.value)}
+                    className="w-full text-xs font-semibold p-2 border border-slate-200 rounded-xl bg-white text-slate-700 disabled:bg-slate-100 disabled:text-slate-400"
+                    disabled={filterType === 'incoming'}
+                    title={filterType === 'incoming' ? "Filter penerima hanya tersedia untuk pengeluaran" : "Filter berdasarkan penerima pengeluaran"}
+                  >
+                    <option value="all">Semua Penerima</option>
+                    {uniqueRecipients.map(r => (
+                      <option key={r} value={r}>{r}</option>
                     ))}
                   </select>
                 </div>
@@ -1955,6 +2736,16 @@ export default function TreasurerPanel({
                     title="Tanggal Selesai"
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterStartDate('2026-06-15');
+                    setFilterEndDate('2026-07-03');
+                  }}
+                  className="text-[10px] bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-3 py-2 rounded-lg uppercase tracking-wider transition-all cursor-pointer shadow-3xs"
+                >
+                  📅 Lacak Sejak 15 Juni 2026
+                </button>
                 {(filterStartDate || filterEndDate) && (
                   <button
                     type="button"
@@ -2009,31 +2800,50 @@ export default function TreasurerPanel({
             </div>
 
             {/* Table layout */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto relative rounded-2xl border border-slate-200">
+              {/* FORMULIR BPK watermark background to match requested design */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] select-none text-[8vw] font-black tracking-[1.5rem] text-slate-900 rotate-[-12deg] z-0">
+                FORMULIR BPK
+              </div>
+
+              <table className="w-full text-left border-collapse text-xs relative z-10 bg-white/70 backdrop-blur-3xs">
                 <thead>
-                  <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 uppercase text-[10px] tracking-wider">
-                    <th className="py-3.5 px-6">Tanggal</th>
-                    <th className="py-3.5 px-4">Sumber Pos</th>
-                    <th className="py-3.5 px-4">Deskripsi Transaksi Pokok</th>
-                    <th className="py-3.5 px-4 text-center">Tipe Kas</th>
-                    <th className="py-3.5 px-4 text-right">Jumlah (Nominal)</th>
-                    <th className="py-3.5 px-6 text-center">Modul / Operator</th>
+                  <tr className="bg-slate-100/80 text-slate-700 font-extrabold border-b border-slate-200 uppercase text-[10px] tracking-wider text-center">
+                    <th className="py-3 px-3 border border-slate-200 text-center w-12">No</th>
+                    <th className="py-3 px-3 border border-slate-200 text-center w-28">Tanggal</th>
+                    <th className="py-3 px-3 border border-slate-200 text-center w-36">Kode Rekening</th>
+                    <th className="py-3 px-3 border border-slate-200 text-center w-36">No Bukti</th>
+                    <th className="py-3 px-3 border border-slate-200 text-left">Uraian</th>
+                    <th className="py-3 px-3 border border-slate-200 text-right w-36">Penerimaan</th>
+                    <th className="py-3 px-3 border border-slate-200 text-right w-36">Pengeluaran</th>
+                    <th className="py-3 px-3 border border-slate-200 text-right w-36">Saldo</th>
+                    <th className="py-3 px-3 border border-slate-200 text-center w-28 print:hidden">Aksi</th>
+                  </tr>
+                  <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-200 text-[9px] text-center">
+                    <th className="py-1 px-3 border border-slate-200">1</th>
+                    <th className="py-1 px-3 border border-slate-200">2</th>
+                    <th className="py-1 px-3 border border-slate-200">3</th>
+                    <th className="py-1 px-3 border border-slate-200">4</th>
+                    <th className="py-1 px-3 border border-slate-200">5</th>
+                    <th className="py-1 px-3 border border-slate-200">6</th>
+                    <th className="py-1 px-3 border border-slate-200">7</th>
+                    <th className="py-1 px-3 border border-slate-200">8</th>
+                    <th className="py-1 px-3 border border-slate-200 print:hidden">-</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-150 font-medium">
                   {isLoading ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
                         <div className="inline-flex items-center gap-2 font-semibold">
                           <RefreshCw size={14} className="animate-spin" />
                           <span>Sedang memproses & sinkronisasi data pembukuan...</span>
                         </div>
                       </td>
                     </tr>
-                  ) : filteredTransactions.length === 0 ? (
+                  ) : transactionsWithRunningBalance.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
                         <div className="flex flex-col items-center justify-center gap-1">
                           <AlertTriangle size={24} className="text-amber-500 mb-1" />
                           <p className="font-bold text-slate-700">Tidak ada data transaksi ditemukan</p>
@@ -2042,79 +2852,84 @@ export default function TreasurerPanel({
                       </td>
                     </tr>
                   ) : (
-                    filteredTransactions.map((tx) => {
+                    paginatedTransactions.map((tx, idx) => {
                       const isIncoming = tx.type === 'incoming';
+                      const kodeRekening = getKodeRekening(tx);
+                      const noBukti = getNoBukti(tx);
                       
                       return (
-                        <tr key={tx.id} className="hover:bg-slate-100/50 transition-colors">
+                        <tr key={tx.id} className="hover:bg-slate-100/50 transition-colors text-slate-800">
+                          {/* 1. NO */}
+                          <td className="py-3 px-3 text-center border border-slate-150 font-bold text-slate-600">
+                            {(ledgerPage - 1) * ledgerPageSize + idx + 1}
+                          </td>
                           
-                          {/* 1. Date */}
-                          <td className="py-3 px-6 font-mono font-bold text-slate-500 whitespace-nowrap">
+                          {/* 2. TANGGAL */}
+                          <td className="py-3 px-3 text-center border border-slate-150 font-mono text-[11px] font-bold text-slate-600 whitespace-nowrap">
                             {tx.date}
                           </td>
 
-                          {/* 2. Source Badge */}
-                          <td className="py-3 px-4 whitespace-nowrap">
-                            {tx.source === 'spp' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold rounded-lg bg-blue-50 text-blue-700 border border-blue-150">
-                                <CheckCircle2 size={11} /> SPP LUNAS
-                              </span>
-                            ) : tx.source === 'savings' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold rounded-lg bg-amber-50 text-amber-700 border border-amber-150">
-                                <Wallet size={11} /> TABUNGAN
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-150">
-                                <Plus size={11} /> {tx.category}
-                              </span>
-                            )}
+                          {/* 3. KODE REKENING */}
+                          <td className="py-3 px-3 text-center border border-slate-150 font-mono text-[11px] font-bold text-indigo-700 whitespace-nowrap">
+                            {kodeRekening}
                           </td>
 
-                          {/* 3. Description & Student Info */}
-                          <td className="py-3 px-4 max-w-xs md:max-w-md">
+                          {/* 4. NO BUKTI */}
+                          <td className="py-3 px-3 text-center border border-slate-150 font-mono text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                            {noBukti}
+                          </td>
+
+                          {/* 5. URAIAN */}
+                          <td className="py-3 px-3 border border-slate-150">
                             <div className="font-black text-slate-800 leading-tight">
                               {tx.description}
                             </div>
                             {tx.studentName && (
-                              <div className="text-[10px] text-indigo-600 font-bold mt-0.5 inline-flex items-center gap-1 bg-indigo-50 px-1.5 py-0.5 rounded">
+                              <div className="text-[9px] text-indigo-600 font-bold mt-1 inline-flex items-center gap-1 bg-indigo-50 px-1.5 py-0.5 rounded">
                                 <UserCheck size={9} />
                                 <span>{tx.studentName} (NIS: {tx.nis || '-'})</span>
                               </div>
                             )}
                             {tx.recipientName && (
-                              <div className="text-[10px] text-amber-700 font-extrabold mt-0.5 inline-flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              <div className="text-[9px] text-amber-700 font-extrabold mt-1 inline-flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                                 <UserCheck size={9} />
                                 <span>Penerima: {tx.recipientName}</span>
                               </div>
                             )}
                             {tx.fundingSource && (
-                              <div className="text-[10px] text-emerald-800 font-extrabold mt-0.5 inline-flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              <div className="text-[9px] text-emerald-800 font-extrabold mt-1 inline-flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                                 <DollarSign size={9} />
                                 <span>Sumber Dana: {tx.fundingSource}</span>
                               </div>
                             )}
+                            <span className="inline-block ml-1.5">
+                              {tx.source === 'spp' ? (
+                                <span className="px-1.5 py-0.5 text-[8px] font-extrabold rounded bg-blue-50 text-blue-700 border border-blue-100">SPP LUNAS</span>
+                              ) : tx.source === 'savings' ? (
+                                <span className="px-1.5 py-0.5 text-[8px] font-extrabold rounded bg-amber-50 text-amber-700 border border-amber-100">TABUNGAN</span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 text-[8px] font-extrabold rounded bg-emerald-50 text-emerald-800 border border-emerald-150">{tx.category}</span>
+                              )}
+                            </span>
                           </td>
 
-                          {/* 4. Type (Debit/Kredit) */}
-                          <td className="py-3 px-4 text-center whitespace-nowrap">
-                            {isIncoming ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold rounded-md bg-emerald-100 text-emerald-800 uppercase tracking-wide">
-                                Debit (+)
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold rounded-md bg-rose-100 text-rose-800 uppercase tracking-wide">
-                                Kredit (-)
-                              </span>
-                            )}
+                          {/* 6. PENERIMAAN */}
+                          <td className="py-3 px-3 text-right border border-slate-150 font-mono font-bold text-emerald-700 whitespace-nowrap">
+                            {isIncoming ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
                           </td>
 
-                          {/* 5. Amount */}
-                          <td className={`py-3 px-4 text-right font-mono font-bold whitespace-nowrap text-xs ${isIncoming ? 'text-emerald-700' : 'text-rose-700'}`}>
-                            {isIncoming ? '+' : '-'}Rp {tx.amount.toLocaleString('id-ID')}
+                          {/* 7. PENGELUARAN */}
+                          <td className="py-3 px-3 text-right border border-slate-150 font-mono font-bold text-rose-700 whitespace-nowrap">
+                            {!isIncoming ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
                           </td>
 
-                          {/* 6. Action buttons / Operator */}
-                          <td className="py-3 px-6 whitespace-nowrap text-slate-500 font-semibold text-center">
+                          {/* 8. SALDO */}
+                          <td className={`py-3 px-3 text-right border border-slate-150 font-mono font-black whitespace-nowrap ${tx.runningBalance >= 0 ? 'text-slate-800 bg-slate-50/10' : 'text-rose-700'}`}>
+                            Rp {tx.runningBalance.toLocaleString('id-ID')}
+                          </td>
+
+                          {/* 9. AKSI */}
+                          <td className="py-3 px-3 text-center border border-slate-150 whitespace-nowrap text-slate-500 font-semibold print:hidden">
                             {tx.source === 'custom' ? (
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
@@ -2152,44 +2967,49 @@ export default function TreasurerPanel({
                                   title="Cetak Kuitansi Resmi"
                                 >
                                   <Printer size={10} />
-                                  <span>Cetak Kuitansi</span>
+                                  <span>Kuitansi</span>
                                 </button>
                               </div>
                             )}
                           </td>
-
                         </tr>
                       );
                     })
                   )}
                 </tbody>
                 {filteredTransactions.length > 0 && (
-                  <tfoot className="bg-slate-100/80 font-mono text-xs border-t-2 border-slate-300">
-                    <tr className="font-extrabold text-slate-800">
-                      <td className="py-3.5 px-6" colSpan={3}>
+                  <tfoot className="bg-slate-100/80 font-mono text-xs border-t-2 border-slate-300 relative z-10">
+                    <tr className="font-extrabold text-slate-800 bg-slate-100">
+                      <td className="py-3.5 px-4 text-left border border-slate-200" colSpan={5}>
                         TOTAL TERFILTER ({filteredTransactions.length} Transaksi)
                       </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex flex-col gap-0.5 text-[10px] items-center">
-                          <span className="text-[9px] text-emerald-750 bg-emerald-50 px-1.5 py-0.5 rounded font-extrabold">MASUK: Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}</span>
-                          <span className="text-[9px] text-rose-750 bg-rose-50 px-1.5 py-0.5 rounded font-extrabold">KELUAR: Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}</span>
-                        </div>
+                      <td className="py-3.5 px-3 text-right border border-slate-200 text-emerald-800 font-bold whitespace-nowrap bg-emerald-50/10">
+                        Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}
                       </td>
-                      <td className="py-3.5 px-4 text-right pr-4 text-slate-900 text-sm whitespace-nowrap">
+                      <td className="py-3.5 px-3 text-right border border-slate-200 text-rose-800 font-bold whitespace-nowrap bg-rose-50/10">
+                        Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}
+                      </td>
+                      <td className="py-3.5 px-3 text-right border border-slate-200 text-slate-900 font-black whitespace-nowrap" colSpan={2}>
                         <div className="flex flex-col items-end">
-                          <span className={`text-[10px] font-sans font-bold uppercase ${filteredMetrics.netBalance >= 0 ? 'text-emerald-700' : 'text-rose-750'}`}>
-                            {filteredMetrics.netBalance >= 0 ? 'Surplus:' : 'Defisit:'}
-                          </span>
-                          <span className={`font-black font-mono ${filteredMetrics.netBalance >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                          <span className="text-[8px] font-sans font-bold uppercase text-slate-400">Saldo Akhir Terfilter:</span>
+                          <span className={`text-xs font-black font-mono ${filteredMetrics.netBalance >= 0 ? 'text-indigo-800' : 'text-rose-800'}`}>
                             Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}
                           </span>
                         </div>
                       </td>
-                      <td className="py-3.5 px-6"></td>
                     </tr>
                   </tfoot>
                 )}
               </table>
+              <div className="p-3 border-t border-slate-150 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 px-6">
+                <Pagination
+                  currentPage={ledgerPage}
+                  totalItems={filteredTransactions.length}
+                  pageSize={ledgerPageSize}
+                  onPageChange={setLedgerPage}
+                  onPageSizeChange={setLedgerPageSize}
+                />
+              </div>
             </div>
 
           </div>
@@ -2553,6 +3373,10 @@ export default function TreasurerPanel({
             </div>
           )}
 
+          {activeTab === 'database_mysql' && (
+            <TreasurerMysqlSettings schoolIdentity={schoolIdentity} />
+          )}
+
         </main>
       </div>
 
@@ -2632,132 +3456,135 @@ export default function TreasurerPanel({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10"
+              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-5 shadow-2xl text-left flex flex-col gap-2 max-h-[85vh] overflow-y-auto pb-8"
             >
-              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Lainnya</span>
-                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Akses Tambahan Bendahara</h4>
+              {/* Android Top Drag Handle */}
+              <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0" />
+
+              {/* Minimal Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-600" />
+                  <h4 className="text-slate-900 font-bold text-sm tracking-tight">
+                    Menu Lainnya
+                  </h4>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowMoreMenu(false)}
-                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-xs cursor-pointer transition-colors"
                 >
-                  Tutup
+                  ✕
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+              {/* 3 Horizontal Columns Android App Drawer Grid */}
+              <div className="grid grid-cols-3 gap-y-4 gap-x-2 py-2">
+                {/* 1. Sinkronisasi Kas */}
                 <button
                   type="button"
                   onClick={() => {
                     fetchTransactions();
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">🔄</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Sinkronisasi Kas</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ulang muat mutasi tabungan &amp; rekapitulasi SPP terintegrasi</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md shadow-teal-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🔄
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Sinkron Kas
+                  </span>
                 </button>
 
+                {/* 2. Cetak Laporan */}
                 <button
                   type="button"
                   onClick={() => {
                     handlePrintLedger();
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🖨️</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Cetak Laporan</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ekspor cetakan Buku Kas Besar Resmi lembaga</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-md shadow-indigo-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🖨️
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Cetak Buku Kas
+                  </span>
                 </button>
 
+                {/* 3. Gaji Guru */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('gaji_guru');
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">💵</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Gaji Guru (Payroll)</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Kelola dan bayarkan gaji guru mapel &amp; wali kelas</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 shadow-md shadow-emerald-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    💵
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Gaji Guru
+                  </span>
                 </button>
 
+                {/* 4. Database MySQL */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('database_mysql');
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-md shadow-cyan-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🗄️
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Database
+                  </span>
+                </button>
+
+                {/* 5. Unduh APK */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (schoolIdentity?.apkUrl) {
+                      window.open(schoolIdentity.apkUrl, "_blank");
+                    } else {
+                      alert("Link unduhan Android belum diatur oleh Administrator.");
+                    }
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-md shadow-sky-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Smartphone className="w-7 h-7 text-white stroke-[2.2]" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Unduh APK
+                  </span>
+                </button>
+
+                {/* 6. Keluar Sesi */}
                 <button
                   type="button"
                   onClick={() => {
                     onLogout();
                     setShowMoreMenu(false);
                   }}
-                  className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-rose-800">Keluar Sesi</h5>
-                    <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Keluar aman dari portal utama bendahara sekolah</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-red-600 shadow-md shadow-rose-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🚪
                   </div>
+                  <span className="text-[11px] font-semibold text-rose-600 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Keluar Sesi
+                  </span>
                 </button>
-              </div>
-
-              {/* Quick access to download Mobile Apps in the bottom sheet menu */}
-              <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                  📲 Unduh Aplikasi Mobile Resmi
-                </span>
-                <p className="text-[10px] text-slate-500 leading-normal">
-                  Gunakan aplikasi mobile resmi untuk kemudahan akses monitor kas tabungan, rekonsiliasi SPP, &amp; data lembaga langsung lewat HP.
-                </p>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  <a
-                    href={schoolIdentity?.apkUrl || "#"}
-                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!schoolIdentity?.apkUrl) {
-                        e.preventDefault();
-                        alert("Link unduhan Android belum diatur oleh Administrator.");
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
-                      schoolIdentity?.apkUrl 
-                        ? "bg-emerald-50 hover:bg-emerald-105 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
-                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <Smartphone size={13} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
-                    <span className="text-[10px]">Android APK</span>
-                  </a>
-
-                  <a
-                    href={schoolIdentity?.iosUrl || "#"}
-                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!schoolIdentity?.iosUrl) {
-                        e.preventDefault();
-                        alert("Link unduhan iOS belum diatur oleh Administrator.");
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
-                      schoolIdentity?.iosUrl 
-                        ? "bg-sky-50 hover:bg-sky-105 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
-                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <Apple size={13} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
-                    <span className="text-[10px]">iOS Apple</span>
-                  </a>
-                </div>
               </div>
             </motion.div>
           </>
@@ -2884,6 +3711,51 @@ export default function TreasurerPanel({
                     rows={3}
                     className="w-full p-3 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold"
                   />
+                </div>
+
+                {/* 5.2. Media/Metode Transaksi (Kas vs Bank) */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">METODE / MEDIA PENYIMPANAN (BUKU PEMBANTU)</label>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setFormPaymentMethod('kas')}
+                      className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 ${formPaymentMethod === 'kas' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      <span>💵 Tunai / Kas</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormPaymentMethod('bank')}
+                      className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 ${formPaymentMethod === 'bank' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      <span>🏦 Bank / Rekening</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Kode Rekening & No Bukti */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">KODE REKENING</label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 5.1.01.01"
+                      value={formKodeRekening}
+                      onChange={(e) => setFormKodeRekening(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-mono font-bold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">NO BUKTI TRANSAKSI</label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 001/BPK/2026"
+                      value={formNoBukti}
+                      onChange={(e) => setFormNoBukti(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-mono font-bold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white"
+                    />
+                  </div>
                 </div>
 
                 {/* 5.1. Sumber Dana (Penerimaan/Pemasukan Only) */}
@@ -3034,35 +3906,82 @@ export default function TreasurerPanel({
        {/* Modal 2: Visual Printable Kuitansi (Invoice receipt) Modal for the Teller systems */}
       <AnimatePresence>
         {activePrintTransaction && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div 
+            className="fixed inset-0 z-50 flex flex-col items-center justify-start sm:justify-center p-2 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setActivePrintTransaction(null);
+            }}
+          >
+            {/* Floating Close Button: ALWAYS VISIBLE at top-right corner */}
+            <button
+              type="button"
+              onClick={() => setActivePrintTransaction(null)}
+              className="fixed top-2.5 right-2.5 sm:top-4 sm:right-4 z-[70] px-3.5 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-full shadow-2xl transition-all cursor-pointer flex items-center gap-1.5 font-bold text-xs ring-4 ring-white/90 no-print"
+              title="Tutup (Esc)"
+              aria-label="Tutup"
+            >
+              <X size={18} className="stroke-[3]" />
+              <span className="text-[11px] font-black uppercase tracking-wider">Tutup</span>
+            </button>
+
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white text-left w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl p-6 border flex flex-col gap-4 font-semibold text-xs text-slate-800"
+              className="bg-white text-left w-full max-w-lg rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border flex flex-col font-semibold text-xs text-slate-800 h-[94dvh] sm:h-auto sm:max-h-[88vh] min-h-0 my-auto"
             >
-              
-              {/* Format Selection Switcher */}
-              <div className="flex gap-1.5 p-1 bg-slate-100 rounded-xl no-print text-[11px] font-bold text-slate-650 w-full justify-center">
-                <button
-                  type="button"
-                  onClick={() => setReceiptPrintFormat('standard')}
-                  className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer ${receiptPrintFormat === 'standard' ? 'bg-white text-slate-900 shadow-xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'}`}
-                >
-                  Format Standar (A4/Kuitansi)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setReceiptPrintFormat('thermal')}
-                  className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer ${receiptPrintFormat === 'thermal' ? 'bg-white text-slate-900 shadow-xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'}`}
-                >
-                  Format Thermal (Roll Kasir)
-                </button>
+              {/* Top Fixed Sticky Header (Always visible) */}
+              <div className="sticky top-0 z-20 p-3 sm:p-4 bg-slate-50/95 backdrop-blur-xs border-b border-slate-200 flex flex-col gap-2.5 shrink-0 no-print">
+                <div className="flex items-center justify-between gap-3 pr-20 sm:pr-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="p-1.5 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold shrink-0">🧾</span>
+                    <div className="truncate">
+                      <h3 className="font-black text-xs sm:text-sm text-slate-900 leading-tight truncate">
+                        {activePrintTransaction.type === 'incoming' ? 'Bukti Penerimaan Kas' : 'Bukti Pengeluaran Kas'}
+                      </h3>
+                      <p className="text-[10px] text-slate-500 font-medium truncate">
+                        REF: {activePrintTransaction.id.toUpperCase()} • {activePrintTransaction.category}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Primary Close Button (X) at Top Right */}
+                  <button
+                    type="button"
+                    onClick={() => setActivePrintTransaction(null)}
+                    className="p-1.5 sm:px-3 sm:py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200 rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0 font-bold text-xs shadow-2xs"
+                    title="Tutup (Esc)"
+                    aria-label="Tutup"
+                  >
+                    <X size={16} />
+                    <span className="text-[11px]">Tutup</span>
+                  </button>
+                </div>
+
+                {/* Format Selection Switcher */}
+                <div className="flex gap-1.5 p-1 bg-white rounded-xl border border-slate-200/80 text-[11px] font-bold text-slate-650 w-full justify-center shadow-3xs">
+                  <button
+                    type="button"
+                    onClick={() => setReceiptPrintFormat('standard')}
+                    className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer text-xs font-bold ${receiptPrintFormat === 'standard' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
+                  >
+                    Format Standar (A4/Kuitansi)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptPrintFormat('thermal')}
+                    className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer text-xs font-bold ${receiptPrintFormat === 'thermal' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
+                  >
+                    Format Thermal (Roll Kasir)
+                  </button>
+                </div>
               </div>
 
-              {/* Receipt Wrapper div with print-receipt-section id */}
-              <div 
-                id="print-receipt-section"
+              {/* Scrollable Middle Container: min-h-0 is essential so flexbox shrinks inside max-height */}
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 bg-slate-100/50 print:p-0 print:overflow-visible print:bg-white custom-scrollbar">
+                {/* Receipt Wrapper div with print-receipt-section id */}
+                <div 
+                  id="print-receipt-section"
                 className={receiptPrintFormat === 'thermal'
                   ? "bg-white text-slate-900 p-2 font-mono flex flex-col gap-2.5 text-[10px] leading-tight text-center relative print-thermal w-full max-w-[76mm] mx-auto border-none select-all"
                   : "bg-white text-left w-full flex flex-col gap-4 font-semibold text-xs text-slate-800"
@@ -3106,7 +4025,18 @@ export default function TreasurerPanel({
                     <div className="text-center font-mono font-bold uppercase text-[9px] py-1 border-b border-dashed border-slate-900">
                       <span>* {activePrintTransaction.type === 'incoming' ? 'BUKTI PENERIMAAN' : 'BUKTI PENGELUARAN'} *</span>
                       <p className="text-[8px] font-mono normal-case tracking-tight mt-0.5">REF: {activePrintTransaction.id.toUpperCase()}</p>
-                      <p className="text-[8.5px] font-normal normal-case mt-0.5">Tgl: {activePrintTransaction.date}</p>
+                      <div className="flex flex-col gap-0.5 text-[8px] font-semibold normal-case mt-1 border-t border-dotted border-slate-300 pt-1 text-left">
+                        <div className="flex justify-between">
+                          <span className="text-slate-600">Tgl. Bayar:</span>
+                          <span className="font-bold text-slate-900">{activePrintTransaction.date}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-600">Tgl. Cetak:</span>
+                          <span className="font-mono text-slate-900">
+                            {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})} &bull; {new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'})}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Transaction Details */}
@@ -3151,49 +4081,15 @@ export default function TreasurerPanel({
                       <span className="font-mono text-xs">Rp {activePrintTransaction.amount.toLocaleString('id-ID')}</span>
                     </div>
 
-                    {/* Signatures */}
-                    <div className="grid grid-cols-2 text-[8px] text-center uppercase gap-2 pt-2 w-full">
-                      <div className="flex flex-col justify-between h-[50px] relative">
-                        <span>Kepala Sekolah</span>
-                        <div className="h-6 flex items-center justify-center relative my-0.5">
-                          {schoolIdentity?.principalSignature && (
-                            <img 
-                              src={schoolIdentity.principalSignature} 
-                              className="h-8 object-contain z-10" 
-                              alt="Ttd Kepala Sekolah" 
-                              referrerPolicy="no-referrer" 
-                            />
-                          )}
-                          {schoolIdentity?.schoolStamp && (
-                            <img 
-                              src={schoolIdentity.schoolStamp} 
-                              className="h-9 object-contain absolute opacity-75 mix-blend-multiply scale-110 z-0 transform -translate-x-[5mm]" 
-                              alt="Stempel" 
-                              referrerPolicy="no-referrer" 
-                            />
-                          )}
-                          {!schoolIdentity?.principalSignature && !schoolIdentity?.schoolStamp && (
-                            <div className="h-4"></div>
-                          )}
-                        </div>
-                        <span className="font-bold border-t border-slate-900 pt-0.5 truncate">({schoolIdentity?.principal?.substring(0, 12) || "Kepala Sekolah"})</span>
+                    {/* Compact Signatures (No signature gaps) */}
+                    <div className="grid grid-cols-2 text-[8px] text-center uppercase gap-1 pt-2">
+                      <div>
+                        <span className="block text-[6.5px] text-slate-500">Kepala Sekolah</span>
+                        <span className="font-bold block truncate">({schoolIdentity?.principal?.substring(0, 14) || "Kepala Sekolah"})</span>
                       </div>
-                      <div className="flex flex-col justify-between h-[50px] relative">
-                        <span>{activePrintTransaction.type === 'incoming' ? 'Teller / Penerima' : 'Ybs / Penerima Dana'}</span>
-                        <div className="h-6 flex items-center justify-center relative my-0.5">
-                          {schoolIdentity?.treasurerSignature && (
-                            <img 
-                              src={schoolIdentity.treasurerSignature} 
-                              className="h-8 object-contain z-10" 
-                              alt="Ttd Bendahara" 
-                              referrerPolicy="no-referrer" 
-                            />
-                          )}
-                          {!schoolIdentity?.treasurerSignature && (
-                            <div className="h-4"></div>
-                          )}
-                        </div>
-                        <span className="font-bold border-t border-slate-900 pt-0.5">({schoolIdentity?.treasurer?.substring(0, 12) || "Bendahara"})</span>
+                      <div>
+                        <span className="block text-[6.5px] text-slate-500">{activePrintTransaction.type === 'incoming' ? 'Teller/Penerima' : 'Ybs/Penerima'}</span>
+                        <span className="font-bold block truncate">({schoolIdentity?.treasurer?.substring(0, 14) || "Bendahara"})</span>
                       </div>
                     </div>
 
@@ -3345,24 +4241,25 @@ export default function TreasurerPanel({
                     </div>
                   </>
                 )}
+                </div>
               </div>
 
-              {/* Close Button */}
-              <div className="flex gap-2 mt-4 no-print">
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer inline-flex items-center justify-center gap-1.5 shadow"
-                >
-                  <Printer size={13} />
-                  <span>Cetak Langsung</span>
-                </button>
+              {/* Bottom Sticky Action Bar */}
+              <div className="sticky bottom-0 z-20 p-3 sm:p-4 bg-white border-t border-slate-200 flex gap-2.5 shrink-0 no-print shadow-[0_-4px_16px_rgba(0,0,0,0.08)]">
                 <button
                   type="button"
                   onClick={() => setActivePrintTransaction(null)}
-                  className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold cursor-pointer text-center"
+                  className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border-2 border-rose-300 text-rose-700 rounded-xl font-bold cursor-pointer text-center flex items-center justify-center gap-1.5 transition-all shadow-xs"
                 >
-                  Tutup Tampilan
+                  <X size={15} /> Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer inline-flex items-center justify-center gap-1.5 shadow transition-all"
+                >
+                  <Printer size={15} />
+                  <span>Cetak Langsung 🖨️</span>
                 </button>
               </div>
 
@@ -3776,15 +4673,23 @@ export default function TreasurerPanel({
       {/* 3. Official Teacher Salary Slip Print Representation Overlay */}
       <AnimatePresence>
         {showReceiptModal && receiptGaji && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs print:p-0 print:bg-white print:backdrop-blur-none transition-all">
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/65 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white print:backdrop-blur-none transition-all"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowReceiptModal(false);
+                setReceiptGaji(null);
+              }
+            }}
+          >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white border text-left border-slate-250 w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl print:shadow-none print:border-none print:w-full print:max-w-none print:rounded-none"
+              className="bg-white border text-left border-slate-250 w-full max-w-xl rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] sm:max-h-[90vh] my-auto print:shadow-none print:border-none print:w-full print:max-w-none print:rounded-none"
             >
               {/* Header inside overlay modal, hidden on print */}
-              <div className="p-4 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between print:hidden">
+              <div className="p-3 sm:p-4 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between shrink-0 print:hidden">
                 <div className="flex items-center gap-2">
                   <span className="p-1 px-1.5 bg-slate-850 rounded-lg text-slate-355">📄</span>
                   <div>
@@ -3798,14 +4703,17 @@ export default function TreasurerPanel({
                     setShowReceiptModal(false);
                     setReceiptGaji(null);
                   }}
-                  className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer transition-all text-base leading-none"
+                  className="p-1.5 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white cursor-pointer transition-all flex items-center gap-1 font-bold text-xs"
+                  title="Tutup (Esc)"
+                  aria-label="Tutup"
                 >
-                  &times;
+                  <X size={16} />
+                  <span className="hidden sm:inline text-[11px]">Tutup</span>
                 </button>
               </div>
 
               {/* Action controller bar - Hidden during print */}
-              <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center print:hidden">
+              <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0 print:hidden">
                 <span className="text-[10px] text-slate-500 font-bold">Tekan tombol cetak untuk mencatat fisik kuitansi</span>
                 <button
                   type="button"
@@ -3831,8 +4739,10 @@ export default function TreasurerPanel({
                 </button>
               </div>
 
-              {/* Exact printable segment using CSS print utility */}
-              <div id="print-salary-slip" className="p-8 bg-white text-slate-900 font-sans leading-relaxed select-all">
+              {/* Scrollable Container for salary slip content */}
+              <div className="flex-1 overflow-y-auto print:overflow-visible">
+                {/* Exact printable segment using CSS print utility */}
+                <div id="print-salary-slip" className="p-4 sm:p-8 bg-white text-slate-900 font-sans leading-relaxed select-all">
                 
                 {/* Letterhead */}
                 <div className="flex items-center justify-between border-b-2 border-slate-900 pb-3.5 mb-5 select-none">
@@ -3874,7 +4784,7 @@ export default function TreasurerPanel({
                     </div>
                     <div className="flex justify-between py-1 mt-1 border-b border-slate-100 font-mono">
                       <span className="text-slate-400">Tanggal Bayar:</span>
-                      <span className="font-bold text-emerald-800">{receiptGaji.paidAt ? receiptGaji.paidAt.substring(0, 10) : '-'}</span>
+                      <span className="font-bold text-emerald-800">{receiptGaji.paymentDate ? receiptGaji.paymentDate.substring(0, 10) : (receiptGaji as any).paidAt ? (receiptGaji as any).paidAt.substring(0, 10) : '-'}</span>
                     </div>
                   </div>
                 </div>
@@ -4017,10 +4927,30 @@ export default function TreasurerPanel({
                   Bukti pembayaran sah secara komparatif sistem informasi keuangan Ma'arif NU
                 </div>
               </div>
+              </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      <MidtransBulkReportModal
+        isOpen={isBulkReportModalOpen}
+        onClose={() => setIsBulkReportModalOpen(false)}
+        onSuccessReconciliation={() => {
+          fetchTransactions();
+          if (onRefresh) onRefresh();
+        }}
+      />
+
+      <SingleMidtransReconcileModal
+        isOpen={isSingleReconcileModalOpen}
+        onClose={() => setIsSingleReconcileModalOpen(false)}
+        initialOrderId={singleReconcileInitialId}
+        onSuccessReconciliation={() => {
+          fetchTransactions();
+          if (onRefresh) onRefresh();
+        }}
+      />
 
     </div>
   );

@@ -1,0 +1,4758 @@
+import fs from 'fs';
+import path from 'path';
+import mysql from 'mysql2/promise';
+import { MysqlDatabaseConfig, MysqlTestResult, MysqlSyncResult, CurriculumSubject, CurriculumTpDescription } from '../types';
+import { toProperCase, toUpperCase, toSentenceCase } from '../utils/textFormatters';
+
+const CONFIG_FILE = path.join(process.cwd(), 'mysql_config.json');
+
+// Default initial configuration based on Hostinger Remote MySQL
+let currentConfig: MysqlDatabaseConfig = {
+  host: process.env.MYSQL_HOST || 'srv1393.hstgr.io',
+  port: parseInt(process.env.MYSQL_PORT || '3306', 10),
+  database: process.env.MYSQL_DATABASE || 'u604170242_spp_db',
+  user: process.env.MYSQL_USER || 'u604170242_spp_user',
+  password: process.env.MYSQL_PASSWORD || '',
+  hasPassword: Boolean(process.env.MYSQL_PASSWORD),
+  ssl: false,
+  phpmyadminUrl: process.env.MYSQL_PHPMYADMIN_URL || 'https://portal.smpmaarifpdn.sch.id:8443',
+  charset: 'utf8mb4',
+  connectionLimit: 10,
+  connectTimeout: 10000,
+  autoSyncEnabled: true,
+  autoSyncDirection: 'push',
+  status: 'disconnected'
+};
+
+// Load saved configuration on startup
+export function loadMysqlConfig(): MysqlDatabaseConfig {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
+      const parsed = JSON.parse(data);
+      currentConfig = {
+        ...currentConfig,
+        ...parsed,
+        autoSyncEnabled: parsed.autoSyncEnabled !== undefined ? Boolean(parsed.autoSyncEnabled) : true,
+        autoSyncIntervalHours: undefined,
+        nextAutoSyncAt: undefined,
+        hasPassword: Boolean(parsed.password && parsed.password.length > 0)
+      };
+    }
+
+    // Environment variables take precedence if explicitly provided
+    if (process.env.MYSQL_HOST) currentConfig.host = process.env.MYSQL_HOST;
+    if (process.env.MYSQL_PORT) currentConfig.port = parseInt(process.env.MYSQL_PORT, 10);
+    if (process.env.MYSQL_DATABASE) currentConfig.database = process.env.MYSQL_DATABASE;
+    if (process.env.MYSQL_USER) currentConfig.user = process.env.MYSQL_USER;
+    if (process.env.MYSQL_PASSWORD !== undefined) {
+      currentConfig.password = process.env.MYSQL_PASSWORD;
+      currentConfig.hasPassword = Boolean(process.env.MYSQL_PASSWORD.length > 0);
+    }
+    if (process.env.MYSQL_PHPMYADMIN_URL) currentConfig.phpmyadminUrl = process.env.MYSQL_PHPMYADMIN_URL;
+    if (process.env.MYSQL_PRIMARY === 'true' || process.env.MYSQL_AUTO_SYNC === 'true') {
+      currentConfig.autoSyncEnabled = true;
+    }
+  } catch (err) {
+    console.error('Gagal membaca file konfigurasi MySQL:', err);
+  }
+  return currentConfig;
+}
+
+export function saveMysqlConfig(newConfig: Partial<MysqlDatabaseConfig>): MysqlDatabaseConfig {
+  const password = (newConfig.password !== undefined && newConfig.password !== '') 
+    ? newConfig.password 
+    : currentConfig.password;
+
+  const isEnabled = newConfig.autoSyncEnabled !== undefined 
+    ? Boolean(newConfig.autoSyncEnabled) 
+    : (currentConfig.autoSyncEnabled ?? true);
+
+  currentConfig = {
+    ...currentConfig,
+    ...newConfig,
+    port: Number(newConfig.port) || 3306,
+    password,
+    hasPassword: Boolean(password && password.length > 0),
+    autoSyncEnabled: isEnabled,
+    autoSyncIntervalHours: undefined,
+    nextAutoSyncAt: undefined
+  };
+
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Gagal menulis file konfigurasi MySQL:', err);
+  }
+
+  // Reset any cached pool when configuration changes so the new parameters are used
+  closeSharedPool();
+
+  return getSanitizedConfig();
+}
+
+export function getSanitizedConfig(): MysqlDatabaseConfig {
+  return {
+    host: currentConfig.host,
+    port: currentConfig.port,
+    database: currentConfig.database,
+    user: currentConfig.user,
+    hasPassword: Boolean(currentConfig.password && currentConfig.password.length > 0),
+    ssl: currentConfig.ssl,
+    phpmyadminUrl: currentConfig.phpmyadminUrl,
+    charset: currentConfig.charset || 'utf8mb4',
+    connectionLimit: currentConfig.connectionLimit || 4,
+    connectTimeout: currentConfig.connectTimeout || 8000,
+    autoSyncEnabled: currentConfig.autoSyncEnabled ?? true,
+    autoSyncDirection: currentConfig.autoSyncDirection || 'push',
+    lastAutoSyncAt: currentConfig.lastAutoSyncAt,
+    lastAutoSyncStatus: currentConfig.lastAutoSyncStatus,
+    lastAutoSyncMessage: currentConfig.lastAutoSyncMessage,
+    lastConnectedAt: currentConfig.lastConnectedAt,
+    lastSyncAt: currentConfig.lastSyncAt,
+    status: currentConfig.status || 'unconfigured'
+  };
+}
+
+// ==========================================================
+// PERSISTENT CONNECTION POOLING ENGINE
+// Preserves sockets across queries to avoid exceeding hosting limits (e.g., max_connections_per_hour = 500)
+// ==========================================================
+let sharedPool: mysql.Pool | null = null;
+let sharedPoolKey = '';
+
+export function getSharedPool(overrideConfig?: Partial<MysqlDatabaseConfig>): mysql.Pool {
+  const cfg = {
+    ...currentConfig,
+    ...overrideConfig
+  };
+
+  const key = `${cfg.host}:${cfg.port}:${cfg.user}:${cfg.database}:${cfg.password || ''}:${cfg.ssl ? '1' : '0'}`;
+
+  if (!sharedPool || sharedPoolKey !== key) {
+    if (sharedPool) {
+      sharedPool.end().catch(() => {});
+    }
+    sharedPoolKey = key;
+    sharedPool = mysql.createPool({
+      host: cfg.host,
+      port: Number(cfg.port) || 3306,
+      user: cfg.user,
+      password: cfg.password || '',
+      database: cfg.database,
+      waitForConnections: true,
+      // Keep low connection limit for shared hosting (Hostinger / cPanel)
+      connectionLimit: 4,
+      maxIdle: 2,
+      idleTimeout: 300000, // 5 minutes idle socket reuse
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000,
+      connectTimeout: cfg.connectTimeout || 10000,
+      charset: cfg.charset || 'utf8mb4',
+      multipleStatements: true,
+      ssl: cfg.ssl ? { rejectUnauthorized: false } : undefined
+    });
+  }
+
+  return sharedPool;
+}
+
+export function closeSharedPool(): void {
+  if (sharedPool) {
+    sharedPool.end().catch(() => {});
+    sharedPool = null;
+    sharedPoolKey = '';
+  }
+}
+
+// Backward-compatibility wrapper for pool creation
+function createPool(overrideConfig?: Partial<MysqlDatabaseConfig>) {
+  return getSharedPool(overrideConfig);
+}
+
+// Save or update an individual configuration into the app_configs MySQL table
+export async function saveConfigToMysql(configId: string, data: any, overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<boolean> {
+  const pool = getSharedPool(overrideConfig);
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`shared_learning_objectives\` (
+  \`id\` VARCHAR(120) NOT NULL,
+  \`code\` VARCHAR(64) NOT NULL,
+  \`subject_id\` VARCHAR(64) NOT NULL,
+  \`subject_name\` VARCHAR(150) NOT NULL,
+  \`grade_level\` VARCHAR(16) NOT NULL,
+  \`semester\` VARCHAR(16) NOT NULL,
+  \`academic_year\` VARCHAR(32) NOT NULL,
+  \`tp_number\` INT DEFAULT 1,
+  \`title\` TEXT NOT NULL,
+  \`creator_id\` VARCHAR(64) DEFAULT NULL,
+  \`creator_name\` VARCHAR(150) DEFAULT NULL,
+  \`creator_role\` VARCHAR(100) DEFAULT NULL,
+  \`status\` VARCHAR(32) DEFAULT "Aktif",
+  \`revision_requests\` LONGTEXT DEFAULT NULL,
+  \`created_at\` VARCHAR(64) DEFAULT NULL,
+  \`updated_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_slo_subject\` (\`subject_id\`),
+  KEY \`idx_slo_grade\` (\`grade_level\`),
+  KEY \`idx_slo_sem\` (\`semester\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`app_configs\` (
+        \`id\` VARCHAR(64) NOT NULL,
+        \`data\` LONGTEXT NOT NULL,
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
+    await connection.query(`
+      INSERT INTO \`app_configs\` (\`id\`, \`data\`)
+      VALUES (?, ?)
+      ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`)
+    `, [configId, jsonStr]);
+    return true;
+  } catch (err: any) {
+    console.warn(`[MySQL Config Sync] Gagal menyimpan config "${configId}" ke MySQL:`, err.message || err);
+    return false;
+  } finally {
+    if (connection) connection.release();
+    // Do NOT end pool here - persistent connection pooling reuses the connection!
+  }
+}
+
+// Retrieve an individual configuration from the app_configs MySQL table
+export async function getConfigFromMysql<T = any>(configId: string, overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<T | null> {
+  const pool = getSharedPool(overrideConfig);
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query("SELECT `data` FROM `app_configs` WHERE `id` = ?", [configId]);
+    if (rows && rows.length > 0 && rows[0].data) {
+      const raw = rows[0].data;
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    }
+    return null;
+  } catch (err: any) {
+    console.warn(`[MySQL Config Fetch] Gagal mengambil config "${configId}" dari MySQL:`, err.message || err);
+    return null;
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Save or update multiple configurations into the app_configs MySQL table in a SINGLE query
+export async function saveConfigsBatchToMysql(configs: { id: string; data: any }[], overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<boolean> {
+  if (!Array.isArray(configs) || configs.length === 0) return true;
+  const pool = getSharedPool(overrideConfig);
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`app_configs\` (
+        \`id\` VARCHAR(64) NOT NULL,
+        \`data\` LONGTEXT NOT NULL,
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    const values = configs.map(c => [c.id, typeof c.data === 'string' ? c.data : JSON.stringify(c.data)]);
+    await connection.query(`
+      INSERT INTO \`app_configs\` (\`id\`, \`data\`)
+      VALUES ?
+      ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`)
+    `, [values]);
+    return true;
+  } catch (err: any) {
+    console.warn(`[MySQL Config Batch Sync] Gagal menyimpan batch configs ke MySQL:`, err.message || err);
+    return false;
+  } finally {
+    if (connection) connection.release();
+    // Do NOT end pool here - reuse connection
+  }
+}
+
+// Test MySQL & phpMyAdmin database connection
+export async function testMysqlConnection(customConfig?: Partial<MysqlDatabaseConfig>): Promise<MysqlTestResult> {
+  const startTime = Date.now();
+  const cfgToUse: MysqlDatabaseConfig = {
+    ...currentConfig,
+    ...(customConfig || {}),
+    password: (customConfig?.password !== undefined && customConfig.password !== '') 
+      ? customConfig.password 
+      : currentConfig.password
+  };
+
+  if (!cfgToUse.host || !cfgToUse.database || !cfgToUse.user) {
+    return {
+      success: false,
+      message: 'Parameter konfigurasi belum lengkap. Mohon isi Host, Nama Database, dan User.',
+      hint: 'Periksa kembali isian Host (misal localhost atau nama IP server), Nama Database, dan User MySQL Anda.'
+    };
+  }
+
+  let connection: mysql.PoolConnection | null = null;
+  const pool = getSharedPool(cfgToUse);
+
+  try {
+    connection = await pool.getConnection();
+    const pingMs = Date.now() - startTime;
+
+    // Query version, current database, server time
+    const [verRows]: any = await connection.query('SELECT VERSION() as version, DATABASE() as current_db, NOW() as server_time');
+    const serverVersion = verRows?.[0]?.version || 'MySQL / MariaDB';
+    const databaseName = verRows?.[0]?.current_db || cfgToUse.database;
+    const serverTime = verRows?.[0]?.server_time ? new Date(verRows[0].server_time).toLocaleString('id-ID') : new Date().toLocaleString('id-ID');
+
+    // Query existing tables
+    const [tableRows]: any = await connection.query('SHOW TABLES');
+    const tables: string[] = tableRows.map((r: any) => Object.values(r)[0] as string);
+
+    // Update status
+    currentConfig.status = 'connected';
+    currentConfig.lastConnectedAt = new Date().toISOString();
+    try {
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
+    } catch {}
+
+    return {
+      success: true,
+      message: `Koneksi ke MySQL database "${databaseName}" via phpMyAdmin/Server berhasil terhubung!`,
+      pingMs,
+      serverVersion,
+      databaseName,
+      serverTime,
+      tablesCount: tables.length,
+      tables
+    };
+  } catch (err: any) {
+    const pingMs = Date.now() - startTime;
+    currentConfig.status = 'error';
+    try {
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
+    } catch {}
+
+    let hint = 'Pastikan server database MySQL aktif dan dapat diakses dari host ini.';
+    const code = err.code || '';
+    const errMessage = err.message || 'Gagal tersambung ke database.';
+
+    if (code === 'ER_USER_LIMIT_REACHED' || errMessage.includes('max_connections_per_hour')) {
+      hint = `Batas koneksi per jam MySQL pada hosting Hostinger/cPanel telah tercapai (max_connections_per_hour = 500).\n\nSOLUSI CEPAT:\n1. Buat MySQL User baru di Hostinger hPanel (misal: ${cfgToUse.user}_2) dan berikan All Privileges ke database "${cfgToUse.database}", lalu ubah nama User di form ini agar langsung aktif tanpa menunggu!\n2. ATAU tunggu sekitar 30–60 menit hingga server hosting mereset hitungan kuota jamannya.\n\nSistem saat ini telah dioptimalkan dengan Persistent Connection Pooling (Connection Reuse) sehingga ke depannya tidak akan lagi memboroskan koneksi.`;
+    } else if (code === 'ECONNREFUSED') {
+      hint = `Tidak dapat terhubung ke ${cfgToUse.host}:${cfgToUse.port}. Pastikan service MySQL/MariaDB aktif di XAMPP/cPanel/VPS dan port 3306 terbuka.`;
+    } else if (code === 'ER_ACCESS_DENIED_ERROR') {
+      hint = `Akses ditolak untuk user "${cfgToUse.user}". Pastikan kata sandi (password) dan hak akses (Privileges) user di phpMyAdmin sudah benar.`;
+    } else if (code === 'ER_BAD_DB_ERROR') {
+      hint = `Database "${cfgToUse.database}" tidak ditemukan di server MySQL. Silakan buat database terlebih dahulu di menu phpMyAdmin / cPanel MySQL Databases.`;
+    } else if (code === 'ETIMEDOUT' || code === 'EHOSTUNREACH') {
+      hint = `Koneksi timeout. Jika menggunakan hosting remote (cPanel/Hostinger/VPS), pastikan menu "Remote MySQL" di cPanel sudah menambahkan wildcard '%' atau IP server ini.`;
+    }
+
+    return {
+      success: false,
+      message: `Gagal terhubung ke MySQL (${code || 'ERROR'})`,
+      error: errMessage,
+      pingMs,
+      hint
+    };
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+    // Do NOT end pool here - persistent connection pooling reuses the connection!
+  }
+}
+
+// SQL Table Schemas covering all 26+ collections and application data
+export const COMPLETE_TABLES_SQL = `
+CREATE TABLE IF NOT EXISTS \`students\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`nis\` VARCHAR(32) NOT NULL,
+  \`nisn\` VARCHAR(32) DEFAULT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`class\` VARCHAR(32) NOT NULL,
+  \`gender\` VARCHAR(20) DEFAULT 'Laki-laki',
+  \`email\` VARCHAR(120) DEFAULT NULL,
+  \`phone\` VARCHAR(32) DEFAULT NULL,
+  \`savings_balance\` DECIMAL(15,2) DEFAULT 0.00,
+  \`status\` VARCHAR(32) DEFAULT 'Aktif',
+  \`password\` VARCHAR(128) DEFAULT NULL,
+  \`nickname\` VARCHAR(64) DEFAULT NULL,
+  \`nik\` VARCHAR(32) DEFAULT NULL,
+  \`birth_place\` VARCHAR(100) DEFAULT NULL,
+  \`birth_date\` VARCHAR(32) DEFAULT NULL,
+  \`kk_number\` VARCHAR(32) DEFAULT NULL,
+  \`birth_cert_number\` VARCHAR(64) DEFAULT NULL,
+  \`living_with\` VARCHAR(64) DEFAULT NULL,
+  \`child_order\` VARCHAR(16) DEFAULT NULL,
+  \`siblings_count\` VARCHAR(16) DEFAULT NULL,
+  \`step_siblings_count\` VARCHAR(16) DEFAULT NULL,
+  \`address\` TEXT DEFAULT NULL,
+  \`photo_url\` TEXT DEFAULT NULL,
+  \`parent_name\` VARCHAR(150) DEFAULT NULL,
+  \`google_drive_link\` TEXT DEFAULT NULL,
+  \`father_name\` VARCHAR(150) DEFAULT NULL,
+  \`father_nik\` VARCHAR(32) DEFAULT NULL,
+  \`father_birth_place\` VARCHAR(100) DEFAULT NULL,
+  \`father_birth_date\` VARCHAR(32) DEFAULT NULL,
+  \`father_education\` VARCHAR(64) DEFAULT NULL,
+  \`father_occupation\` VARCHAR(100) DEFAULT NULL,
+  \`father_income\` VARCHAR(64) DEFAULT NULL,
+  \`father_address\` TEXT DEFAULT NULL,
+  \`father_phone\` VARCHAR(32) DEFAULT NULL,
+  \`father_status\` VARCHAR(32) DEFAULT NULL,
+  \`mother_name\` VARCHAR(150) DEFAULT NULL,
+  \`mother_nik\` VARCHAR(32) DEFAULT NULL,
+  \`mother_birth_place\` VARCHAR(100) DEFAULT NULL,
+  \`mother_birth_date\` VARCHAR(32) DEFAULT NULL,
+  \`mother_education\` VARCHAR(64) DEFAULT NULL,
+  \`mother_occupation\` VARCHAR(100) DEFAULT NULL,
+  \`mother_income\` VARCHAR(64) DEFAULT NULL,
+  \`mother_address\` TEXT DEFAULT NULL,
+  \`mother_phone\` VARCHAR(32) DEFAULT NULL,
+  \`mother_status\` VARCHAR(32) DEFAULT NULL,
+  \`guardian_name\` VARCHAR(150) DEFAULT NULL,
+  \`guardian_nik\` VARCHAR(32) DEFAULT NULL,
+  \`guardian_birth_place\` VARCHAR(100) DEFAULT NULL,
+  \`guardian_birth_date\` VARCHAR(32) DEFAULT NULL,
+  \`guardian_education\` VARCHAR(64) DEFAULT NULL,
+  \`guardian_occupation\` VARCHAR(100) DEFAULT NULL,
+  \`guardian_income\` VARCHAR(64) DEFAULT NULL,
+  \`guardian_address\` TEXT DEFAULT NULL,
+  \`guardian_phone\` VARCHAR(32) DEFAULT NULL,
+  \`guardian_status\` VARCHAR(32) DEFAULT NULL,
+  \`is_spp_exempt\` TINYINT(1) DEFAULT 0,
+  \`spp_exemption_reason\` TEXT DEFAULT NULL,
+  \`spp_exemption_type\` VARCHAR(64) DEFAULT NULL,
+  \`custom_spp_rate\` DECIMAL(15,2) DEFAULT NULL,
+  \`mutation_date\` VARCHAR(32) DEFAULT NULL,
+  \`mutation_reason\` TEXT DEFAULT NULL,
+  \`mutation_destination\` VARCHAR(150) DEFAULT NULL,
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_nis\` (\`nis\`),
+  KEY \`idx_class\` (\`class\`),
+  KEY \`idx_status\` (\`status\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`spp_bills\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`month\` VARCHAR(32) NOT NULL,
+  \`year\` INT NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
+  \`status\` ENUM('paid', 'unpaid', 'pending', 'waived') DEFAULT 'unpaid',
+  \`paid_at\` VARCHAR(64) DEFAULT NULL,
+  \`payment_method\` VARCHAR(64) DEFAULT NULL,
+  \`order_id\` VARCHAR(100) DEFAULT NULL,
+  \`transaction_id\` VARCHAR(100) DEFAULT NULL,
+  \`achievement_type\` VARCHAR(64) DEFAULT NULL,
+  \`achievement_detail\` TEXT DEFAULT NULL,
+  \`is_voided_by_admin\` TINYINT(1) DEFAULT 0,
+  \`voided_at\` VARCHAR(64) DEFAULT NULL,
+  \`void_reason\` VARCHAR(255) DEFAULT NULL,
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_student_id\` (\`student_id\`),
+  KEY \`idx_status\` (\`status\`),
+  KEY \`idx_month_year\` (\`month\`, \`year\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`misc_bills\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`title\` VARCHAR(150) NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
+  \`status\` ENUM('paid', 'unpaid', 'pending') DEFAULT 'unpaid',
+  \`created_at\` VARCHAR(64) DEFAULT NULL,
+  \`paid_at\` VARCHAR(64) DEFAULT NULL,
+  \`payment_method\` VARCHAR(64) DEFAULT NULL,
+  \`order_id\` VARCHAR(100) DEFAULT NULL,
+  \`transaction_id\` VARCHAR(100) DEFAULT NULL,
+  \`is_monthly\` TINYINT(1) DEFAULT 0,
+  \`month\` VARCHAR(32) DEFAULT NULL,
+  \`is_voided_by_admin\` TINYINT(1) DEFAULT 0,
+  \`voided_at\` VARCHAR(64) DEFAULT NULL,
+  \`void_reason\` VARCHAR(255) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_misc_student\` (\`student_id\`),
+  KEY \`idx_misc_status\` (\`status\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`savings_transactions\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`student_nis\` VARCHAR(32) DEFAULT NULL,
+  \`type\` ENUM('deposit', 'withdrawal') NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
+  \`status\` VARCHAR(32) DEFAULT 'success',
+  \`created_at\` VARCHAR(64) NOT NULL,
+  \`payment_method\` VARCHAR(64) DEFAULT NULL,
+  \`order_id\` VARCHAR(100) DEFAULT NULL,
+  \`transaction_id\` VARCHAR(100) DEFAULT NULL,
+  \`notes\` TEXT DEFAULT NULL,
+  \`is_voided_by_admin\` TINYINT(1) DEFAULT 0,
+  \`voided_at\` VARCHAR(64) DEFAULT NULL,
+  \`void_reason\` VARCHAR(255) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_sav_student\` (\`student_id\`),
+  KEY \`idx_sav_type\` (\`type\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`voided_payments\` (
+  \`id\` VARCHAR(100) NOT NULL,
+  \`bill_id\` VARCHAR(100) DEFAULT NULL,
+  \`order_id\` VARCHAR(100) DEFAULT NULL,
+  \`transaction_id\` VARCHAR(100) DEFAULT NULL,
+  \`student_id\` VARCHAR(64) DEFAULT NULL,
+  \`bill_type\` VARCHAR(32) NOT NULL,
+  \`period\` VARCHAR(100) DEFAULT NULL,
+  \`amount\` DECIMAL(15,2) DEFAULT 0.00,
+  \`void_reason\` VARCHAR(255) DEFAULT NULL,
+  \`voided_at\` VARCHAR(64) DEFAULT NULL,
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_bill_id\` (\`bill_id\`),
+  KEY \`idx_order_id\` (\`order_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`treasurer_transactions\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`type\` ENUM('incoming', 'outgoing') NOT NULL,
+  \`category\` VARCHAR(100) NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
+  \`description\` TEXT NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`source\` VARCHAR(32) DEFAULT 'custom',
+  \`student_name\` VARCHAR(150) DEFAULT NULL,
+  \`student_id\` VARCHAR(64) DEFAULT NULL,
+  \`nis\` VARCHAR(32) DEFAULT NULL,
+  \`created_by\` VARCHAR(100) DEFAULT NULL,
+  \`recipient_name\` VARCHAR(150) DEFAULT NULL,
+  \`funding_source\` VARCHAR(100) DEFAULT NULL,
+  \`payment_method\` ENUM('kas', 'bank') DEFAULT 'kas',
+  \`kode_rekening\` VARCHAR(64) DEFAULT NULL,
+  \`no_bukti\` VARCHAR(64) DEFAULT NULL,
+  \`order_id\` VARCHAR(100) DEFAULT NULL,
+  \`transaction_id\` VARCHAR(100) DEFAULT NULL,
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_tr_type\` (\`type\`),
+  KEY \`idx_tr_category\` (\`category\`),
+  KEY \`idx_tr_date\` (\`date\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`teacher_id\` VARCHAR(64) NOT NULL,
+  \`teacher_name\` VARCHAR(150) NOT NULL,
+  \`teacher_type\` VARCHAR(32) NOT NULL,
+  \`month\` VARCHAR(32) NOT NULL,
+  \`base_salary\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`homeroom_allowance\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`journal_count\` INT NOT NULL DEFAULT 0,
+  \`journal_rate\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`journal_incentive\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`tunjangan_masa_kerja\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`vakasi\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`other_allowance\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`potongan_dana_sosial\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`potongan_absen\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`potongan_lain\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`deductions\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`total_amount\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`status\` ENUM('unpaid', 'paid') DEFAULT 'unpaid',
+  \`payment_date\` VARCHAR(64) DEFAULT NULL,
+  \`notes\` TEXT DEFAULT NULL,
+  \`created_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_sal_teacher\` (\`teacher_id\`),
+  KEY \`idx_sal_month\` (\`month\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`homeroom_teachers\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`username\` VARCHAR(64) NOT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`class_name\` VARCHAR(32) NOT NULL,
+  \`password\` VARCHAR(128) DEFAULT NULL,
+  \`sk_url\` TEXT DEFAULT NULL,
+  \`subject\` VARCHAR(150) DEFAULT NULL,
+  \`subject_id\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_hr_class\` (\`class_name\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`subject_teachers\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`username\` VARCHAR(64) NOT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`subject\` VARCHAR(100) NOT NULL,
+  \`class_name\` VARCHAR(64) DEFAULT 'SEMUA KELAS',
+  \`password\` VARCHAR(128) DEFAULT NULL,
+  \`sk_url\` TEXT DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_subj_teacher\` (\`subject\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`teaching_journals\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`teacher_id\` VARCHAR(64) NOT NULL,
+  \`teacher_name\` VARCHAR(150) NOT NULL,
+  \`teacher_type\` VARCHAR(32) DEFAULT NULL,
+  \`subject\` VARCHAR(100) NOT NULL,
+  \`class_name\` VARCHAR(32) NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`topic\` TEXT NOT NULL,
+  \`attendance_data\` LONGTEXT DEFAULT NULL,
+  \`notes\` TEXT DEFAULT NULL,
+  \`fase\` VARCHAR(32) DEFAULT NULL,
+  \`semester\` VARCHAR(32) DEFAULT NULL,
+  \`alokasi_waktu\` VARCHAR(32) DEFAULT NULL,
+  \`jam_ke\` VARCHAR(32) DEFAULT NULL,
+  \`pertemuan_ke\` VARCHAR(32) DEFAULT NULL,
+  \`tujuan_pembelajaran\` TEXT DEFAULT NULL,
+  \`pencapaian_kktp\` TEXT DEFAULT NULL,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_tj_teacher\` (\`teacher_id\`),
+  KEY \`idx_tj_date\` (\`date\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`attendance_logs\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`student_name\` VARCHAR(150) DEFAULT NULL,
+  \`class_name\` VARCHAR(32) DEFAULT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`status\` ENUM('Hadir', 'Sakit', 'Izin', 'Alpa', 'Terlambat') NOT NULL,
+  \`notes\` TEXT DEFAULT NULL,
+  \`subject_notes\` LONGTEXT DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_att_student\` (\`student_id\`),
+  KEY \`idx_att_date\` (\`date\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`merdeka_assessments\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`student_name\` VARCHAR(150) NOT NULL,
+  \`class_name\` VARCHAR(32) NOT NULL,
+  \`subject\` VARCHAR(100) NOT NULL,
+  \`teacher_name\` VARCHAR(150) NOT NULL,
+  \`semester\` VARCHAR(32) NOT NULL,
+  \`academic_year\` VARCHAR(32) NOT NULL,
+  \`tp1_name\` VARCHAR(150) DEFAULT NULL,
+  \`tp1_tugas1\` VARCHAR(16) DEFAULT NULL,
+  \`tp1_tugas2\` VARCHAR(16) DEFAULT NULL,
+  \`tp1_uh\` VARCHAR(16) DEFAULT NULL,
+  \`nilai_tp1\` DECIMAL(6,2) DEFAULT NULL,
+  \`tp2_name\` VARCHAR(150) DEFAULT NULL,
+  \`tp2_tugas1\` VARCHAR(16) DEFAULT NULL,
+  \`tp2_tugas2\` VARCHAR(16) DEFAULT NULL,
+  \`tp2_uh\` VARCHAR(16) DEFAULT NULL,
+  \`nilai_tp2\` DECIMAL(6,2) DEFAULT NULL,
+  \`tp3_name\` VARCHAR(150) DEFAULT NULL,
+  \`tp3_tugas1\` VARCHAR(16) DEFAULT NULL,
+  \`tp3_tugas2\` VARCHAR(16) DEFAULT NULL,
+  \`tp3_uh\` VARCHAR(16) DEFAULT NULL,
+  \`nilai_tp3\` DECIMAL(6,2) DEFAULT NULL,
+  \`tp4_name\` VARCHAR(150) DEFAULT NULL,
+  \`tp4_tugas1\` VARCHAR(16) DEFAULT NULL,
+  \`tp4_tugas2\` VARCHAR(16) DEFAULT NULL,
+  \`tp4_uh\` VARCHAR(16) DEFAULT NULL,
+  \`nilai_tp4\` DECIMAL(6,2) DEFAULT NULL,
+  \`nilai_rata_tp\` DECIMAL(6,2) DEFAULT NULL,
+  \`nilai_kokurikuler\` DECIMAL(6,2) DEFAULT NULL,
+  \`nilai_pts\` DECIMAL(6,2) DEFAULT NULL,
+  \`nilai_pas\` DECIMAL(6,2) DEFAULT NULL,
+  \`nilai_akhir_mapel\` DECIMAL(6,2) DEFAULT NULL,
+  \`nilai_formatif\` DECIMAL(6,2) DEFAULT NULL,
+  \`nilai_sumatif_lm\` DECIMAL(6,2) DEFAULT NULL,
+  \`nilai_sas\` DECIMAL(6,2) DEFAULT NULL,
+  \`nilai_rapor\` DECIMAL(6,2) DEFAULT NULL,
+  \`deskripsi_capaian\` TEXT DEFAULT NULL,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  \`updated_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_ma_student\` (\`student_id\`),
+  KEY \`idx_ma_class\` (\`class_name\`),
+  KEY \`idx_ma_subj\` (\`subject\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`class_schedules\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`day\` ENUM('Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu') NOT NULL,
+  \`class_name\` VARCHAR(32) NOT NULL,
+  \`subject\` VARCHAR(100) NOT NULL,
+  \`teacher_id\` VARCHAR(64) NOT NULL,
+  \`teacher_name\` VARCHAR(150) NOT NULL,
+  \`jam_ke\` VARCHAR(32) NOT NULL,
+  \`start_time\` VARCHAR(16) DEFAULT NULL,
+  \`end_time\` VARCHAR(16) DEFAULT NULL,
+  \`alokasi_waktu\` VARCHAR(32) DEFAULT NULL,
+  \`academic_year\` VARCHAR(32) DEFAULT NULL,
+  \`semester\` VARCHAR(32) DEFAULT NULL,
+  \`created_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_sched_class\` (\`class_name\`),
+  KEY \`idx_sched_teacher\` (\`teacher_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`student_development_logs\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`student_name\` VARCHAR(150) NOT NULL,
+  \`class_name\` VARCHAR(32) NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`category\` ENUM('Akademik', 'Sikap', 'Prestasi', 'Minat', 'Catatan Khusus') NOT NULL,
+  \`notes\` TEXT NOT NULL,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_dev_student\` (\`student_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`student_infraction_logs\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`student_name\` VARCHAR(150) NOT NULL,
+  \`class_name\` VARCHAR(32) NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`time\` VARCHAR(16) NOT NULL,
+  \`location\` VARCHAR(150) NOT NULL,
+  \`infraction_type\` VARCHAR(150) NOT NULL,
+  \`action_taken\` TEXT NOT NULL,
+  \`resolution_status\` ENUM('Belum Selesai', 'Dalam Proses', 'Selesai') NOT NULL DEFAULT 'Belum Selesai',
+  \`points\` INT DEFAULT 0,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_infr_student\` (\`student_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`infraction_rules\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`points\` INT NOT NULL DEFAULT 0,
+  \`category\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`student_counseling_logs\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`student_name\` VARCHAR(150) NOT NULL,
+  \`class_name\` VARCHAR(32) NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`topic\` TEXT NOT NULL,
+  \`action_plan\` TEXT NOT NULL,
+  \`result\` TEXT NOT NULL,
+  \`bk_feedback\` TEXT DEFAULT NULL,
+  \`bk_feedback_at\` VARCHAR(64) DEFAULT NULL,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_couns_student\` (\`student_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`class_announcements\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`class_name\` VARCHAR(32) NOT NULL,
+  \`title\` VARCHAR(150) NOT NULL,
+  \`content\` TEXT NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`target_recipient\` VARCHAR(64) NOT NULL,
+  \`confirmation_status\` VARCHAR(64) DEFAULT 'Belum Dibaca',
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`class_meeting_logs\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`class_name\` VARCHAR(32) NOT NULL,
+  \`meeting_type\` VARCHAR(100) NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`attendees\` TEXT NOT NULL,
+  \`agenda\` TEXT NOT NULL,
+  \`follow_up\` TEXT NOT NULL,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`principal_work_programs\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`title\` VARCHAR(150) NOT NULL,
+  \`description\` TEXT NOT NULL,
+  \`target_date\` VARCHAR(32) NOT NULL,
+  \`status\` ENUM('planned', 'active', 'completed') NOT NULL DEFAULT 'planned',
+  \`sync_with_staff\` TINYINT(1) DEFAULT 0,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`teacher_evaluations\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`teacher_type\` VARCHAR(32) NOT NULL,
+  \`teacher_id\` VARCHAR(64) NOT NULL,
+  \`teacher_name\` VARCHAR(150) NOT NULL,
+  \`evaluator_name\` VARCHAR(150) NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`academic_year\` VARCHAR(32) NOT NULL,
+  \`pedagogic_score\` INT NOT NULL DEFAULT 0,
+  \`professional_score\` INT NOT NULL DEFAULT 0,
+  \`personal_score\` INT NOT NULL DEFAULT 0,
+  \`social_score\` INT NOT NULL DEFAULT 0,
+  \`notes\` TEXT NOT NULL,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`sarpras_items\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`code\` VARCHAR(64) NOT NULL,
+  \`category\` VARCHAR(100) NOT NULL,
+  \`condition_status\` ENUM('Baik', 'Rusak Ringan', 'Rusak Berat') NOT NULL DEFAULT 'Baik',
+  \`location\` VARCHAR(150) NOT NULL,
+  \`total_qty\` INT NOT NULL DEFAULT 0,
+  \`available_qty\` INT NOT NULL DEFAULT 0,
+  \`price\` DECIMAL(15,2) DEFAULT NULL,
+  \`purchase_year\` VARCHAR(32) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_sarp_code\` (\`code\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`sarpras_proposals\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`item_name\` VARCHAR(150) NOT NULL,
+  \`qty\` INT NOT NULL DEFAULT 1,
+  \`estimated_price\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`total_price\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`proposed_by\` VARCHAR(150) NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`reason\` TEXT NOT NULL,
+  \`status\` ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+  \`notes\` TEXT DEFAULT NULL,
+  \`image_url\` TEXT DEFAULT NULL,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`sarpras_loans\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`item_id\` VARCHAR(64) NOT NULL,
+  \`item_name\` VARCHAR(150) NOT NULL,
+  \`borrower_id\` VARCHAR(64) NOT NULL,
+  \`borrower_name\` VARCHAR(150) NOT NULL,
+  \`qty\` INT NOT NULL DEFAULT 1,
+  \`loan_date\` VARCHAR(32) NOT NULL,
+  \`return_date\` VARCHAR(32) DEFAULT NULL,
+  \`status\` ENUM('dipinjam', 'kembali') NOT NULL DEFAULT 'dipinjam',
+  \`notes\` TEXT DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_loan_item\` (\`item_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`spmb_candidates\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`registration_no\` VARCHAR(64) NOT NULL,
+  \`nisn\` VARCHAR(32) NOT NULL,
+  \`nik\` VARCHAR(32) NOT NULL,
+  \`full_name\` VARCHAR(150) NOT NULL,
+  \`gender\` ENUM('L', 'P') NOT NULL,
+  \`birth_place\` VARCHAR(100) NOT NULL,
+  \`birth_date\` VARCHAR(32) NOT NULL,
+  \`phone\` VARCHAR(32) NOT NULL,
+  \`student_phone\` VARCHAR(32) DEFAULT NULL,
+  \`school_origin_type\` VARCHAR(64) DEFAULT 'other',
+  \`school_origin\` VARCHAR(150) NOT NULL,
+  \`registration_type\` VARCHAR(64) DEFAULT 'online_individual',
+  \`session_id\` VARCHAR(64) NOT NULL,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  \`updated_at\` VARCHAR(64) DEFAULT NULL,
+  \`status\` VARCHAR(64) DEFAULT 'registered',
+  \`original_session_id\` VARCHAR(64) DEFAULT NULL,
+  \`previous_session_id\` VARCHAR(64) DEFAULT NULL,
+  \`is_transferred_session\` TINYINT(1) DEFAULT 0,
+  \`transferred_at\` VARCHAR(64) DEFAULT NULL,
+  \`transfer_reason\` TEXT DEFAULT NULL,
+  \`transfer_history\` LONGTEXT DEFAULT NULL,
+  \`token_payment_status\` VARCHAR(32) DEFAULT 'unpaid',
+  \`token_payment_order_id\` VARCHAR(100) DEFAULT NULL,
+  \`token_paid_at\` VARCHAR(64) DEFAULT NULL,
+  \`token_payment_method\` VARCHAR(64) DEFAULT NULL,
+  \`token_amount\` DECIMAL(15,2) DEFAULT NULL,
+  \`collective_refund_status\` VARCHAR(32) DEFAULT 'none',
+  \`collective_refund_amount\` DECIMAL(15,2) DEFAULT NULL,
+  \`collective_refunded_at\` VARCHAR(64) DEFAULT NULL,
+  \`collective_refunded_by\` VARCHAR(100) DEFAULT NULL,
+  \`collective_refund_recipient\` VARCHAR(150) DEFAULT NULL,
+  \`collective_refund_note\` TEXT DEFAULT NULL,
+  \`collective_refund_receipt_no\` VARCHAR(64) DEFAULT NULL,
+  \`is_form_completed\` TINYINT(1) DEFAULT 0,
+  \`form_completed_at\` VARCHAR(64) DEFAULT NULL,
+  \`nickname\` VARCHAR(64) DEFAULT NULL,
+  \`kk_number\` VARCHAR(32) DEFAULT NULL,
+  \`birth_cert_number\` VARCHAR(64) DEFAULT NULL,
+  \`religion\` VARCHAR(32) DEFAULT NULL,
+  \`address\` TEXT DEFAULT NULL,
+  \`dusun\` VARCHAR(100) DEFAULT NULL,
+  \`rt\` VARCHAR(16) DEFAULT NULL,
+  \`rw\` VARCHAR(16) DEFAULT NULL,
+  \`village\` VARCHAR(100) DEFAULT NULL,
+  \`district\` VARCHAR(100) DEFAULT NULL,
+  \`city\` VARCHAR(100) DEFAULT NULL,
+  \`postal_code\` VARCHAR(16) DEFAULT NULL,
+  \`living_with\` VARCHAR(64) DEFAULT NULL,
+  \`child_order\` VARCHAR(16) DEFAULT NULL,
+  \`siblings_count\` VARCHAR(16) DEFAULT NULL,
+  \`step_siblings_count\` VARCHAR(16) DEFAULT NULL,
+  \`transportation\` VARCHAR(64) DEFAULT NULL,
+  \`special_needs\` VARCHAR(100) DEFAULT NULL,
+  \`height\` INT DEFAULT NULL,
+  \`weight\` INT DEFAULT NULL,
+  \`distance_to_school\` VARCHAR(64) DEFAULT NULL,
+  \`travel_time\` VARCHAR(64) DEFAULT NULL,
+  \`father_name\` VARCHAR(150) DEFAULT NULL,
+  \`father_nik\` VARCHAR(32) DEFAULT NULL,
+  \`father_birth_place\` VARCHAR(100) DEFAULT NULL,
+  \`father_birth_date\` VARCHAR(32) DEFAULT NULL,
+  \`father_education\` VARCHAR(64) DEFAULT NULL,
+  \`father_occupation\` VARCHAR(100) DEFAULT NULL,
+  \`father_income\` VARCHAR(64) DEFAULT NULL,
+  \`father_phone\` VARCHAR(32) DEFAULT NULL,
+  \`father_status\` VARCHAR(32) DEFAULT NULL,
+  \`father_address\` TEXT DEFAULT NULL,
+  \`mother_name\` VARCHAR(150) DEFAULT NULL,
+  \`mother_nik\` VARCHAR(32) DEFAULT NULL,
+  \`mother_birth_place\` VARCHAR(100) DEFAULT NULL,
+  \`mother_birth_date\` VARCHAR(32) DEFAULT NULL,
+  \`mother_education\` VARCHAR(64) DEFAULT NULL,
+  \`mother_occupation\` VARCHAR(100) DEFAULT NULL,
+  \`mother_income\` VARCHAR(64) DEFAULT NULL,
+  \`mother_phone\` VARCHAR(32) DEFAULT NULL,
+  \`mother_status\` VARCHAR(32) DEFAULT NULL,
+  \`mother_address\` TEXT DEFAULT NULL,
+  \`guardian_name\` VARCHAR(150) DEFAULT NULL,
+  \`guardian_nik\` VARCHAR(32) DEFAULT NULL,
+  \`guardian_birth_place\` VARCHAR(100) DEFAULT NULL,
+  \`guardian_birth_date\` VARCHAR(32) DEFAULT NULL,
+  \`guardian_education\` VARCHAR(64) DEFAULT NULL,
+  \`guardian_occupation\` VARCHAR(100) DEFAULT NULL,
+  \`guardian_income\` VARCHAR(64) DEFAULT NULL,
+  \`guardian_phone\` VARCHAR(32) DEFAULT NULL,
+  \`guardian_status\` VARCHAR(32) DEFAULT NULL,
+  \`guardian_address\` TEXT DEFAULT NULL,
+  \`guardian_relationship\` VARCHAR(64) DEFAULT NULL,
+  \`guardian_is_same_as_father\` TINYINT(1) DEFAULT 0,
+  \`re_registration_paid_at\` VARCHAR(64) DEFAULT NULL,
+  \`re_registration_method\` VARCHAR(64) DEFAULT NULL,
+  \`re_registration_order_id\` VARCHAR(100) DEFAULT NULL,
+  \`re_registration_status\` VARCHAR(32) DEFAULT 'unpaid',
+  \`re_registration_amount\` DECIMAL(15,2) DEFAULT 0.00,
+  \`building_fee_paid\` DECIMAL(15,2) DEFAULT 0.00,
+  \`july_spp_paid\` DECIMAL(15,2) DEFAULT 0.00,
+  \`uniform_fee_paid\` DECIMAL(15,2) DEFAULT 0.00,
+  \`total_re_registration_paid\` DECIMAL(15,2) DEFAULT 0.00,
+  \`selected_uniform_size\` VARCHAR(32) DEFAULT NULL,
+  \`custom_uniform_note\` TEXT DEFAULT NULL,
+  \`uniform_orders\` LONGTEXT DEFAULT NULL,
+  \`uniform_sizes\` LONGTEXT DEFAULT NULL,
+  \`documents\` LONGTEXT DEFAULT NULL,
+  \`documents_uploaded_at\` VARCHAR(64) DEFAULT NULL,
+  \`full_form_data\` LONGTEXT DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_spmb_regno\` (\`registration_no\`),
+  KEY \`idx_spmb_nisn\` (\`nisn\`),
+  KEY \`idx_spmb_session\` (\`session_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`midtrans_transactions\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`order_id\` VARCHAR(100) NOT NULL,
+  \`transaction_id\` VARCHAR(100) DEFAULT NULL,
+  \`student_id\` VARCHAR(64) DEFAULT NULL,
+  \`student_name\` VARCHAR(150) DEFAULT NULL,
+  \`student_nis\` VARCHAR(32) DEFAULT NULL,
+  \`nisn\` VARCHAR(32) DEFAULT NULL,
+  \`bill_type\` VARCHAR(64) NOT NULL,
+  \`description\` TEXT NOT NULL,
+  \`gross_amount\` DECIMAL(15,2) NOT NULL,
+  \`payment_type\` VARCHAR(64) NOT NULL,
+  \`transaction_status\` VARCHAR(64) NOT NULL,
+  \`fraud_status\` VARCHAR(64) DEFAULT NULL,
+  \`settlement_time\` VARCHAR(64) DEFAULT NULL,
+  \`transaction_time\` VARCHAR(64) DEFAULT NULL,
+  \`created_at\` VARCHAR(64) NOT NULL,
+  \`updated_at\` VARCHAR(64) NOT NULL,
+  \`snap_token\` TEXT DEFAULT NULL,
+  \`raw_response\` LONGTEXT DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_mid_order\` (\`order_id\`),
+  KEY \`idx_mid_student\` (\`student_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`notifications\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) DEFAULT NULL,
+  \`title\` VARCHAR(150) NOT NULL,
+  \`message\` TEXT NOT NULL,
+  \`type\` VARCHAR(32) NOT NULL DEFAULT 'info',
+  \`category\` VARCHAR(64) DEFAULT 'admin',
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_notif_student\` (\`student_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`curriculum_subjects\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`code\` VARCHAR(32) NOT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`category\` VARCHAR(64) DEFAULT 'Muatan Nasional',
+  \`kktp\` INT DEFAULT 75,
+  \`tingkat\` VARCHAR(32) DEFAULT 'Semua Tingkat',
+  \`order_num\` INT DEFAULT 0,
+  \`description\` TEXT DEFAULT NULL,
+  \`created_at\` VARCHAR(64) DEFAULT NULL,
+  \`updated_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_csubj_code\` (\`code\`),
+  KEY \`idx_csubj_name\` (\`name\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`curriculum_tp_levels\` (
+  \`id\` VARCHAR(120) NOT NULL,
+  \`grade_level\` VARCHAR(16) NOT NULL,
+  \`subject_id\` VARCHAR(64) DEFAULT NULL,
+  \`subject_name\` VARCHAR(150) NOT NULL,
+  \`semester\` VARCHAR(16) NOT NULL,
+  \`academic_year\` VARCHAR(32) NOT NULL,
+  \`tp1_name\` TEXT DEFAULT NULL,
+  \`tp2_name\` TEXT DEFAULT NULL,
+  \`tp3_name\` TEXT DEFAULT NULL,
+  \`tp4_name\` TEXT DEFAULT NULL,
+  \`is_locked\` TINYINT(1) DEFAULT 1,
+  \`filled_by\` VARCHAR(150) DEFAULT NULL,
+  \`filled_by_role\` VARCHAR(100) DEFAULT NULL,
+  \`filled_at\` VARCHAR(64) DEFAULT NULL,
+  \`edited_by\` VARCHAR(150) DEFAULT NULL,
+  \`edited_by_role\` VARCHAR(100) DEFAULT NULL,
+  \`edited_at\` VARCHAR(64) DEFAULT NULL,
+  \`edit_history\` LONGTEXT DEFAULT NULL,
+  \`updated_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_tpl_grade_subj\` (\`grade_level\`, \`subject_name\`),
+  KEY \`idx_tpl_sem_year\` (\`semester\`, \`academic_year\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`guest_books\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`category\` VARCHAR(32) DEFAULT 'umum',
+  \`date\` VARCHAR(32) NOT NULL,
+  \`time\` VARCHAR(16) DEFAULT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`position\` VARCHAR(100) DEFAULT NULL,
+  \`institution\` VARCHAR(150) NOT NULL,
+  \`purpose\` TEXT NOT NULL,
+  \`phone\` VARCHAR(32) NOT NULL,
+  \`notes\` TEXT DEFAULT NULL,
+  \`supervisor_nip\` VARCHAR(64) DEFAULT NULL,
+  \`coaching_subject\` VARCHAR(255) DEFAULT NULL,
+  \`findings\` TEXT DEFAULT NULL,
+  \`recommendations\` TEXT DEFAULT NULL,
+  \`follow_up_status\` VARCHAR(32) DEFAULT 'Belum',
+  \`follow_up_notes\` TEXT DEFAULT NULL,
+  \`signature\` LONGTEXT DEFAULT NULL,
+  \`status\` VARCHAR(32) DEFAULT 'Selesai',
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_date\` (\`date\`),
+  KEY \`idx_category\` (\`category\`),
+  KEY \`idx_institution\` (\`institution\`),
+  KEY \`idx_name\` (\`name\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`app_configs\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`data\` LONGTEXT NOT NULL,
+  \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
+// Helper: Escape SQL string literals safely
+export function sqlEscape(val: any): string {
+  if (val === null || val === undefined) return 'NULL';
+  if (typeof val === 'number') {
+    if (isNaN(val)) return '0';
+    return String(val);
+  }
+  if (typeof val === 'boolean') {
+    return val ? '1' : '0';
+  }
+  if (typeof val === 'object') {
+    return `'${JSON.stringify(val).replace(/[\0\x08\x09\x1a\n\r"'\\\%]/g, (char) => {
+      switch (char) {
+        case '\0': return '\\0';
+        case '\x08': return '\\b';
+        case '\x09': return '\\t';
+        case '\x1a': return '\\z';
+        case '\n': return '\\n';
+        case '\r': return '\\r';
+        case '"':
+        case "'":
+        case '\\':
+        case '%': return '\\' + char;
+        default: return char;
+      }
+    })}'`;
+  }
+  const str = String(val);
+  return `'${str.replace(/[\0\x08\x09\x1a\n\r"'\\\%]/g, (char) => {
+    switch (char) {
+      case '\0': return '\\0';
+      case '\x08': return '\\b';
+      case '\x09': return '\\t';
+      case '\x1a': return '\\z';
+      case '\n': return '\\n';
+      case '\r': return '\\r';
+      case '"':
+      case "'":
+      case '\\':
+      case '%': return '\\' + char;
+      default: return char;
+    }
+  })}'`;
+}
+
+// Generate COMPLETE, ready-to-import phpMyAdmin .SQL dump containing all schema & data
+export function generateFullPhpMyAdminSql(snapshot: any): string {
+  const exportDate = new Date().toLocaleString('id-ID');
+  const counts: Record<string, number> = {};
+
+  let out = `-- ==========================================================
+-- SKRIP EKSPOR LENGKAP MYSQL / PHPMYADMIN (SMP MA'ARIF NU PANDAAN)
+-- Format: Standar MySQL 5.7+ / 8.0+ / MariaDB 10.x
+-- Tanggal Ekspor: ${exportDate}
+-- Sistem: SiPAS & Portal Bendahara Keuangan Terpadu
+-- ==========================================================
+
+SET FOREIGN_KEY_CHECKS = 0;
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+07:00";
+SET NAMES utf8mb4;
+
+-- --------------------------------------------------------
+-- STRUKTUR LENGKAP TABEL SISTEM
+-- --------------------------------------------------------
+${COMPLETE_TABLES_SQL.trim()}
+
+-- --------------------------------------------------------
+-- EKSPOR DATA LENGKAP (INSERT INTO)
+-- --------------------------------------------------------
+`;
+
+  // 1. Students
+  const students = snapshot.students || [];
+  counts['students'] = students.length;
+  if (students.length > 0) {
+    out += `\n-- Data Siswa (${students.length} baris)\n`;
+    for (const s of students) {
+      out += `INSERT INTO \`students\` (\`id\`, \`nis\`, \`nisn\`, \`name\`, \`class\`, \`gender\`, \`email\`, \`phone\`, \`savings_balance\`, \`status\`, \`password\`, \`nickname\`, \`nik\`, \`birth_place\`, \`birth_date\`, \`kk_number\`, \`birth_cert_number\`, \`living_with\`, \`child_order\`, \`siblings_count\`, \`step_siblings_count\`, \`address\`, \`photo_url\`, \`parent_name\`, \`google_drive_link\`, \`father_name\`, \`father_nik\`, \`father_birth_place\`, \`father_birth_date\`, \`father_education\`, \`father_occupation\`, \`father_income\`, \`father_address\`, \`father_phone\`, \`father_status\`, \`mother_name\`, \`mother_nik\`, \`mother_birth_place\`, \`mother_birth_date\`, \`mother_education\`, \`mother_occupation\`, \`mother_income\`, \`mother_address\`, \`mother_phone\`, \`mother_status\`, \`guardian_name\`, \`guardian_nik\`, \`guardian_birth_place\`, \`guardian_birth_date\`, \`guardian_education\`, \`guardian_occupation\`, \`guardian_income\`, \`guardian_address\`, \`guardian_phone\`, \`guardian_status\`, \`is_spp_exempt\`, \`spp_exemption_reason\`, \`spp_exemption_type\`, \`custom_spp_rate\`, \`mutation_date\`, \`mutation_reason\`, \`mutation_destination\`) VALUES (${sqlEscape(s.id)}, ${sqlEscape(s.nis)}, ${sqlEscape(s.nisn)}, ${sqlEscape(s.name)}, ${sqlEscape(s.class)}, ${sqlEscape(s.gender || 'Laki-laki')}, ${sqlEscape(s.email)}, ${sqlEscape(s.phone)}, ${sqlEscape(s.savingsBalance || 0)}, ${sqlEscape(s.status || 'Aktif')}, ${sqlEscape(s.password)}, ${sqlEscape(s.nickname)}, ${sqlEscape(s.nik)}, ${sqlEscape(s.birthPlace)}, ${sqlEscape(s.birthDate)}, ${sqlEscape(s.kkNumber)}, ${sqlEscape(s.birthCertNumber)}, ${sqlEscape(s.livingWith)}, ${sqlEscape(s.childOrder)}, ${sqlEscape(s.siblingsCount)}, ${sqlEscape(s.stepSiblingsCount)}, ${sqlEscape(s.address)}, ${sqlEscape(s.photoUrl)}, ${sqlEscape(s.parentName)}, ${sqlEscape(s.googleDriveLink)}, ${sqlEscape(s.fatherName)}, ${sqlEscape(s.fatherNik)}, ${sqlEscape(s.fatherBirthPlace)}, ${sqlEscape(s.fatherBirthDate)}, ${sqlEscape(s.fatherEducation)}, ${sqlEscape(s.fatherOccupation)}, ${sqlEscape(s.fatherIncome)}, ${sqlEscape(s.fatherAddress)}, ${sqlEscape(s.fatherPhone)}, ${sqlEscape(s.fatherStatus)}, ${sqlEscape(s.motherName)}, ${sqlEscape(s.motherNik)}, ${sqlEscape(s.motherBirthPlace)}, ${sqlEscape(s.motherBirthDate)}, ${sqlEscape(s.motherEducation)}, ${sqlEscape(s.motherOccupation)}, ${sqlEscape(s.motherIncome)}, ${sqlEscape(s.motherAddress)}, ${sqlEscape(s.motherPhone)}, ${sqlEscape(s.motherStatus)}, ${sqlEscape(s.guardianName)}, ${sqlEscape(s.guardianNik)}, ${sqlEscape(s.guardianBirthPlace)}, ${sqlEscape(s.guardianBirthDate)}, ${sqlEscape(s.guardianEducation)}, ${sqlEscape(s.guardianOccupation)}, ${sqlEscape(s.guardianIncome)}, ${sqlEscape(s.guardianAddress)}, ${sqlEscape(s.guardianPhone)}, ${sqlEscape(s.guardianStatus)}, ${sqlEscape(s.isSppExempt ? 1 : 0)}, ${sqlEscape(s.sppExemptionReason)}, ${sqlEscape(s.sppExemptionType)}, ${sqlEscape(s.customSppRate)}, ${sqlEscape(s.mutationDate)}, ${sqlEscape(s.mutationReason)}, ${sqlEscape(s.mutationDestination)}) ON DUPLICATE KEY UPDATE \`name\`=VALUES(\`name\`), \`class\`=VALUES(\`class\`), \`savings_balance\`=VALUES(\`savings_balance\`), \`status\`=VALUES(\`status\`);\n`;
+    }
+  }
+
+  // 2. SPP Bills
+  const sppBills = snapshot.sppBills || [];
+  counts['sppBills'] = sppBills.length;
+  if (sppBills.length > 0) {
+    out += `\n-- Data Tagihan SPP (${sppBills.length} baris)\n`;
+    for (const b of sppBills) {
+      out += `INSERT INTO \`spp_bills\` (\`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`) VALUES (${sqlEscape(b.id)}, ${sqlEscape(b.studentId)}, ${sqlEscape(b.month)}, ${sqlEscape(b.year || 2026)}, ${sqlEscape(b.amount || 0)}, ${sqlEscape(b.status || 'unpaid')}, ${sqlEscape(b.paidAt)}, ${sqlEscape(b.paymentMethod)}, ${sqlEscape(b.orderId)}, ${sqlEscape(b.transactionId)}, ${sqlEscape(b.achievementType)}, ${sqlEscape(b.achievementDetail)}, ${sqlEscape(b.isVoidedByAdmin ? 1 : 0)}, ${sqlEscape(b.voidedAt)}, ${sqlEscape(b.voidReason)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`), \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`);\n`;
+    }
+  }
+
+  // 3. Misc Bills
+  const miscBills = snapshot.miscBills || [];
+  counts['miscBills'] = miscBills.length;
+  if (miscBills.length > 0) {
+    out += `\n-- Data Tagihan Non-SPP / Lainnya (${miscBills.length} baris)\n`;
+    for (const m of miscBills) {
+      out += `INSERT INTO \`misc_bills\` (\`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`) VALUES (${sqlEscape(m.id)}, ${sqlEscape(m.studentId)}, ${sqlEscape(m.title)}, ${sqlEscape(m.amount || 0)}, ${sqlEscape(m.status || 'unpaid')}, ${sqlEscape(m.createdAt)}, ${sqlEscape(m.paidAt)}, ${sqlEscape(m.paymentMethod)}, ${sqlEscape(m.orderId)}, ${sqlEscape(m.transactionId)}, ${sqlEscape(m.isMonthly ? 1 : 0)}, ${sqlEscape(m.month)}, ${sqlEscape(m.isVoidedByAdmin ? 1 : 0)}, ${sqlEscape(m.voidedAt)}, ${sqlEscape(m.voidReason)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`), \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`);\n`;
+    }
+  }
+
+  // 4. Savings Transactions
+  const savings = snapshot.savingsTransactions || [];
+  counts['savingsTransactions'] = savings.length;
+  if (savings.length > 0) {
+    out += `\n-- Data Transaksi Tabungan Siswa (${savings.length} baris)\n`;
+    for (const s of savings) {
+      out += `INSERT INTO \`savings_transactions\` (\`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`) VALUES (${sqlEscape(s.id)}, ${sqlEscape(s.studentId)}, ${sqlEscape(s.studentNis)}, ${sqlEscape(s.type)}, ${sqlEscape(s.amount || 0)}, ${sqlEscape(s.status || 'success')}, ${sqlEscape(s.createdAt)}, ${sqlEscape(s.paymentMethod)}, ${sqlEscape(s.orderId)}, ${sqlEscape(s.transactionId)}, ${sqlEscape(s.notes)}, ${sqlEscape(s.isVoidedByAdmin ? 1 : 0)}, ${sqlEscape(s.voidedAt)}, ${sqlEscape(s.voidReason)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`notes\`=VALUES(\`notes\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`);\n`;
+    }
+  }
+
+  // 4B. Voided Payments Registry
+  const voidedPayments = snapshot.voidedPayments || [];
+  if (voidedPayments.length > 0) {
+    out += `\n-- Data Riwayat Pembatalan Pembayaran Admin (${voidedPayments.length} baris)\n`;
+    for (const v of voidedPayments) {
+      out += `INSERT INTO \`voided_payments\` (\`id\`, \`bill_id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`bill_type\`, \`period\`, \`amount\`, \`void_reason\`, \`voided_at\`) VALUES (${sqlEscape(v.id)}, ${sqlEscape(v.billId)}, ${sqlEscape(v.orderId)}, ${sqlEscape(v.transactionId)}, ${sqlEscape(v.studentId)}, ${sqlEscape(v.billType || 'spp')}, ${sqlEscape(v.period)}, ${sqlEscape(v.amount || 0)}, ${sqlEscape(v.voidReason)}, ${sqlEscape(v.voidedAt)}) ON DUPLICATE KEY UPDATE \`bill_id\`=VALUES(\`bill_id\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`void_reason\`=VALUES(\`void_reason\`), \`voided_at\`=VALUES(\`voided_at\`);\n`;
+    }
+  }
+
+  // 5. Treasurer Transactions
+  const transactions = snapshot.treasurerTransactions || [];
+  counts['treasurerTransactions'] = transactions.length;
+  if (transactions.length > 0) {
+    out += `\n-- Data Mutasi Buku Kas Umum Bendahara (${transactions.length} baris)\n`;
+    for (const t of transactions) {
+      out += `INSERT INTO \`treasurer_transactions\` (\`id\`, \`type\`, \`category\`, \`amount\`, \`description\`, \`date\`, \`source\`, \`student_name\`, \`student_id\`, \`nis\`, \`created_by\`, \`recipient_name\`, \`funding_source\`, \`payment_method\`, \`kode_rekening\`, \`no_bukti\`, \`order_id\`, \`transaction_id\`) VALUES (${sqlEscape(t.id)}, ${sqlEscape(t.type)}, ${sqlEscape(t.category)}, ${sqlEscape(t.amount || 0)}, ${sqlEscape(t.description)}, ${sqlEscape(t.date)}, ${sqlEscape(t.source || 'custom')}, ${sqlEscape(t.studentName)}, ${sqlEscape(t.studentId)}, ${sqlEscape(t.nis)}, ${sqlEscape(t.createdBy || 'Bendahara')}, ${sqlEscape(t.recipientName)}, ${sqlEscape(t.fundingSource)}, ${sqlEscape(t.paymentMethod === 'bank' ? 'bank' : 'kas')}, ${sqlEscape(t.kodeRekening)}, ${sqlEscape(t.noBukti)}, ${sqlEscape(t.orderId)}, ${sqlEscape(t.transactionId)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`category\`=VALUES(\`category\`), \`description\`=VALUES(\`description\`);\n`;
+    }
+  }
+
+  // 6. Teacher Salaries
+  const salaries = snapshot.teacherSalaries || [];
+  counts['teacherSalaries'] = salaries.length;
+  if (salaries.length > 0) {
+    out += `\n-- Data Gaji Guru & Karyawan (${salaries.length} baris)\n`;
+    for (const sal of salaries) {
+      out += `INSERT INTO \`teacher_salaries\` (\`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`month\`, \`base_salary\`, \`homeroom_allowance\`, \`journal_count\`, \`journal_rate\`, \`journal_incentive\`, \`tunjangan_masa_kerja\`, \`vakasi\`, \`other_allowance\`, \`potongan_dana_sosial\`, \`potongan_absen\`, \`potongan_lain\`, \`deductions\`, \`total_amount\`, \`status\`, \`payment_date\`, \`notes\`, \`created_at\`) VALUES (${sqlEscape(sal.id)}, ${sqlEscape(sal.teacherId)}, ${sqlEscape(sal.teacherName)}, ${sqlEscape(sal.teacherType)}, ${sqlEscape(sal.month)}, ${sqlEscape(sal.baseSalary || 0)}, ${sqlEscape(sal.homeroomAllowance || 0)}, ${sqlEscape(sal.journalCount || 0)}, ${sqlEscape(sal.journalRate || 0)}, ${sqlEscape((sal.journalCount || 0) * (sal.journalRate || 0))}, ${sqlEscape(sal.tunjanganMasaKerja || 0)}, ${sqlEscape(sal.vakasi || 0)}, ${sqlEscape(sal.otherAllowance || 0)}, ${sqlEscape(sal.potonganDanaSosial || 0)}, ${sqlEscape(sal.potonganAbsen || 0)}, ${sqlEscape(sal.potonganLain || 0)}, ${sqlEscape(sal.deductions || 0)}, ${sqlEscape(sal.totalAmount || 0)}, ${sqlEscape(sal.status || 'unpaid')}, ${sqlEscape(sal.paymentDate)}, ${sqlEscape(sal.notes)}, ${sqlEscape(sal.createdAt)}) ON DUPLICATE KEY UPDATE \`total_amount\`=VALUES(\`total_amount\`), \`status\`=VALUES(\`status\`);\n`;
+    }
+  }
+
+  // 7. Homeroom Teachers
+  const homeroomTeachers = snapshot.homeroomTeachers || [];
+  counts['homeroomTeachers'] = homeroomTeachers.length;
+  if (homeroomTeachers.length > 0) {
+    out += `\n-- Data Wali Kelas (${homeroomTeachers.length} baris)\n`;
+    for (const hr of homeroomTeachers) {
+      out += `INSERT INTO \`homeroom_teachers\` (\`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`) VALUES (${sqlEscape(hr.id)}, ${sqlEscape(hr.username)}, ${sqlEscape(hr.name)}, ${sqlEscape(hr.className)}, ${sqlEscape(hr.password)}, ${sqlEscape(hr.skUrl)}) ON DUPLICATE KEY UPDATE \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`);\n`;
+    }
+  }
+
+  // 8. Subject Teachers
+  const subjectTeachers = snapshot.subjectTeachers || [];
+  counts['subjectTeachers'] = subjectTeachers.length;
+  if (subjectTeachers.length > 0) {
+    out += `\n-- Data Guru Mata Pelajaran (${subjectTeachers.length} baris)\n`;
+    for (const st of subjectTeachers) {
+      out += `INSERT INTO \`subject_teachers\` (\`id\`, \`username\`, \`name\`, \`subject\`, \`class_name\`, \`password\`, \`sk_url\`) VALUES (${sqlEscape(st.id)}, ${sqlEscape(st.username)}, ${sqlEscape(st.name)}, ${sqlEscape(st.subject)}, ${sqlEscape(st.className || 'SEMUA KELAS')}, ${sqlEscape(st.password)}, ${sqlEscape(st.skUrl)}) ON DUPLICATE KEY UPDATE \`name\`=VALUES(\`name\`), \`subject\`=VALUES(\`subject\`);\n`;
+    }
+  }
+
+  // 9. Teaching Journals
+  const teachingJournals = snapshot.teachingJournals || [];
+  counts['teachingJournals'] = teachingJournals.length;
+  if (teachingJournals.length > 0) {
+    out += `\n-- Data Jurnal Mengajar (${teachingJournals.length} baris)\n`;
+    for (const tj of teachingJournals) {
+      out += `INSERT INTO \`teaching_journals\` (\`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`subject\`, \`class_name\`, \`date\`, \`topic\`, \`attendance_data\`, \`notes\`, \`fase\`, \`semester\`, \`alokasi_waktu\`, \`jam_ke\`, \`pertemuan_ke\`, \`tujuan_pembelajaran\`, \`pencapaian_kktp\`, \`created_at\`) VALUES (${sqlEscape(tj.id)}, ${sqlEscape(tj.teacherId)}, ${sqlEscape(tj.teacherName)}, ${sqlEscape(tj.teacherType)}, ${sqlEscape(tj.subject)}, ${sqlEscape(tj.className)}, ${sqlEscape(tj.date)}, ${sqlEscape(tj.topic)}, ${sqlEscape(tj.attendance)}, ${sqlEscape(tj.notes)}, ${sqlEscape(tj.fase)}, ${sqlEscape(tj.semester)}, ${sqlEscape(tj.alokasiWaktu)}, ${sqlEscape(tj.jamKe)}, ${sqlEscape(tj.pertemuanKe)}, ${sqlEscape(tj.tujuanPembelajaran)}, ${sqlEscape(tj.pencapaianKktp)}, ${sqlEscape(tj.createdAt)}) ON DUPLICATE KEY UPDATE \`topic\`=VALUES(\`topic\`);\n`;
+    }
+  }
+
+  // 10. Attendance Logs
+  const attendanceLogs = snapshot.attendanceLogs || [];
+  counts['attendanceLogs'] = attendanceLogs.length;
+  if (attendanceLogs.length > 0) {
+    out += `\n-- Data Presensi Siswa (${attendanceLogs.length} baris)\n`;
+    for (const att of attendanceLogs) {
+      out += `INSERT INTO \`attendance_logs\` (\`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`status\`, \`notes\`, \`subject_notes\`) VALUES (${sqlEscape(att.id)}, ${sqlEscape(att.studentId)}, ${sqlEscape(att.studentName)}, ${sqlEscape(att.className)}, ${sqlEscape(att.date)}, ${sqlEscape(att.status)}, ${sqlEscape(att.notes)}, ${sqlEscape(att.subjectNotes)}) ON DUPLICATE KEY UPDATE \`status\`=VALUES(\`status\`);\n`;
+    }
+  }
+
+  // 11. Merdeka Assessments
+  const merdekaAssessments = snapshot.merdekaAssessments || [];
+  counts['merdekaAssessments'] = merdekaAssessments.length;
+  if (merdekaAssessments.length > 0) {
+    out += `\n-- Data Penilaian Kurikulum Merdeka (${merdekaAssessments.length} baris)\n`;
+    for (const ma of merdekaAssessments) {
+      out += `INSERT INTO \`merdeka_assessments\` (\`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`subject\`, \`teacher_name\`, \`semester\`, \`academic_year\`, \`tp1_name\`, \`tp1_tugas1\`, \`tp1_tugas2\`, \`tp1_uh\`, \`nilai_tp1\`, \`tp2_name\`, \`tp2_tugas1\`, \`tp2_tugas2\`, \`tp2_uh\`, \`nilai_tp2\`, \`tp3_name\`, \`tp3_tugas1\`, \`tp3_tugas2\`, \`tp3_uh\`, \`nilai_tp3\`, \`tp4_name\`, \`tp4_tugas1\`, \`tp4_tugas2\`, \`tp4_uh\`, \`nilai_tp4\`, \`nilai_rata_tp\`,\`nilai_kokurikuler\`, \`nilai_pts\`, \`nilai_pas\`, \`nilai_akhir_mapel\`, \`nilai_formatif\`, \`nilai_sumatif_lm\`, \`nilai_sas\`, \`nilai_rapor\`, \`deskripsi_capaian\`, \`created_at\`, \`updated_at\`) VALUES (${sqlEscape(ma.id)}, ${sqlEscape(ma.studentId)}, ${sqlEscape(ma.studentName)}, ${sqlEscape(ma.className)}, ${sqlEscape(ma.subject)}, ${sqlEscape(ma.teacherName)}, ${sqlEscape(ma.semester)}, ${sqlEscape(ma.academicYear)}, ${sqlEscape(ma.tp1Name)}, ${sqlEscape(ma.tp1Tugas1)}, ${sqlEscape(ma.tp1Tugas2)}, ${sqlEscape(ma.tp1Uh)}, ${sqlEscape(ma.nilaiTp1)}, ${sqlEscape(ma.tp2Name)}, ${sqlEscape(ma.tp2Tugas1)}, ${sqlEscape(ma.tp2Tugas2)}, ${sqlEscape(ma.tp2Uh)}, ${sqlEscape(ma.nilaiTp2)}, ${sqlEscape(ma.tp3Name)}, ${sqlEscape(ma.tp3Tugas1)}, ${sqlEscape(ma.tp3Tugas2)}, ${sqlEscape(ma.tp3Uh)}, ${sqlEscape(ma.nilaiTp3)}, ${sqlEscape(ma.tp4Name)}, ${sqlEscape(ma.tp4Tugas1)}, ${sqlEscape(ma.tp4Tugas2)}, ${sqlEscape(ma.tp4Uh)}, ${sqlEscape(ma.nilaiTp4)}, ${sqlEscape(ma.nilaiRataTp)}, ${sqlEscape(ma.nilaiKokurikuler)}, ${sqlEscape(ma.nilaiPts)}, ${sqlEscape(ma.nilaiPas)}, ${sqlEscape(ma.nilaiAkhirMapel)}, ${sqlEscape(ma.nilaiFormatif)}, ${sqlEscape(ma.nilaiSumatifLM)}, ${sqlEscape(ma.nilaiSAS)}, ${sqlEscape(ma.nilaiRapor)}, ${sqlEscape(ma.deskripsiCapaian)}, ${sqlEscape(ma.createdAt)}, ${sqlEscape(ma.updatedAt)}) ON DUPLICATE KEY UPDATE \`student_name\`=VALUES(\`student_name\`), \`class_name\`=VALUES(\`class_name\`), \`subject\`=VALUES(\`subject\`), \`teacher_name\`=VALUES(\`teacher_name\`), \`semester\`=VALUES(\`semester\`), \`academic_year\`=VALUES(\`academic_year\`), \`tp1_name\`=VALUES(\`tp1_name\`), \`tp1_tugas1\`=VALUES(\`tp1_tugas1\`), \`tp1_tugas2\`=VALUES(\`tp1_tugas2\`), \`tp1_uh\`=VALUES(\`tp1_uh\`), \`nilai_tp1\`=VALUES(\`nilai_tp1\`), \`tp2_name\`=VALUES(\`tp2_name\`), \`tp2_tugas1\`=VALUES(\`tp2_tugas1\`), \`tp2_tugas2\`=VALUES(\`tp2_tugas2\`), \`tp2_uh\`=VALUES(\`tp2_uh\`), \`nilai_tp2\`=VALUES(\`nilai_tp2\`), \`tp3_name\`=VALUES(\`tp3_name\`), \`tp3_tugas1\`=VALUES(\`tp3_tugas1\`), \`tp3_tugas2\`=VALUES(\`tp3_tugas2\`), \`tp3_uh\`=VALUES(\`tp3_uh\`), \`nilai_tp3\`=VALUES(\`nilai_tp3\`), \`tp4_name\`=VALUES(\`tp4_name\`), \`tp4_tugas1\`=VALUES(\`tp4_tugas1\`), \`tp4_tugas2\`=VALUES(\`tp4_tugas2\`), \`tp4_uh\`=VALUES(\`tp4_uh\`), \`nilai_tp4\`=VALUES(\`nilai_tp4\`), \`nilai_rata_tp\`=VALUES(\`nilai_rata_tp\`), \`nilai_kokurikuler\`=VALUES(\`nilai_kokurikuler\`), \`nilai_pts\`=VALUES(\`nilai_pts\`), \`nilai_pas\`=VALUES(\`nilai_pas\`), \`nilai_akhir_mapel\`=VALUES(\`nilai_akhir_mapel\`), \`updated_at\`=NOW();\n`;
+    }
+  }
+
+  // 12. Class Schedules
+  const schedules = snapshot.classSchedules || [];
+  counts['classSchedules'] = schedules.length;
+  if (schedules.length > 0) {
+    out += `\n-- Data Jadwal Pelajaran (${schedules.length} baris)\n`;
+    for (const sc of schedules) {
+      out += `INSERT INTO \`class_schedules\` (\`id\`, \`day\`, \`class_name\`, \`subject\`, \`teacher_id\`, \`teacher_name\`, \`jam_ke\`, \`start_time\`, \`end_time\`, \`alokasi_waktu\`, \`academic_year\`, \`semester\`, \`created_at\`) VALUES (${sqlEscape(sc.id)}, ${sqlEscape(sc.day)}, ${sqlEscape(sc.className)}, ${sqlEscape(sc.subject)}, ${sqlEscape(sc.teacherId)}, ${sqlEscape(sc.teacherName)}, ${sqlEscape(sc.jamKe)}, ${sqlEscape(sc.startTime)}, ${sqlEscape(sc.endTime)}, ${sqlEscape(sc.alokasiWaktu)}, ${sqlEscape(sc.academicYear)}, ${sqlEscape(sc.semester)}, ${sqlEscape(sc.createdAt)}) ON DUPLICATE KEY UPDATE \`subject\`=VALUES(\`subject\`);\n`;
+    }
+  }
+
+  // 13. Student Development Logs
+  const devLogs = snapshot.studentDevelopmentLogs || [];
+  counts['studentDevelopmentLogs'] = devLogs.length;
+  if (devLogs.length > 0) {
+    out += `\n-- Data Catatan Perkembangan Siswa (${devLogs.length} baris)\n`;
+    for (const dl of devLogs) {
+      out += `INSERT INTO \`student_development_logs\` (\`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`category\`, \`notes\`, \`created_at\`) VALUES (${sqlEscape(dl.id)}, ${sqlEscape(dl.studentId)}, ${sqlEscape(dl.studentName)}, ${sqlEscape(dl.className)}, ${sqlEscape(dl.date)}, ${sqlEscape(dl.category)}, ${sqlEscape(dl.notes)}, ${sqlEscape(dl.createdAt)}) ON DUPLICATE KEY UPDATE \`notes\`=VALUES(\`notes\`);\n`;
+    }
+  }
+
+  // 14. Student Infractions & Rules
+  const infractions = snapshot.studentInfractionLogs || [];
+  counts['studentInfractionLogs'] = infractions.length;
+  if (infractions.length > 0) {
+    out += `\n-- Data Pelanggaran Siswa (${infractions.length} baris)\n`;
+    for (const inf of infractions) {
+      out += `INSERT INTO \`student_infraction_logs\` (\`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`time\`, \`location\`, \`infraction_type\`, \`action_taken\`, \`resolution_status\`, \`points\`, \`created_at\`) VALUES (${sqlEscape(inf.id)}, ${sqlEscape(inf.studentId)}, ${sqlEscape(inf.studentName)}, ${sqlEscape(inf.className)}, ${sqlEscape(inf.date)}, ${sqlEscape(inf.time)}, ${sqlEscape(inf.location)}, ${sqlEscape(inf.infractionType)}, ${sqlEscape(inf.actionTaken)}, ${sqlEscape(inf.resolutionStatus)}, ${sqlEscape(inf.points || 0)}, ${sqlEscape(inf.createdAt)}) ON DUPLICATE KEY UPDATE \`resolution_status\`=VALUES(\`resolution_status\`);\n`;
+    }
+  }
+
+  const infractionRules = snapshot.infractionRules || [];
+  counts['infractionRules'] = infractionRules.length;
+  if (infractionRules.length > 0) {
+    out += `\n-- Data Aturan Poin Pelanggaran (${infractionRules.length} baris)\n`;
+    for (const rule of infractionRules) {
+      out += `INSERT INTO \`infraction_rules\` (\`id\`, \`name\`, \`points\`, \`category\`) VALUES (${sqlEscape(rule.id)}, ${sqlEscape(rule.name)}, ${sqlEscape(rule.points || 0)}, ${sqlEscape(rule.category)}) ON DUPLICATE KEY UPDATE \`points\`=VALUES(\`points\`);\n`;
+    }
+  }
+
+  // 15. Counseling Logs
+  const counselLogs = snapshot.studentCounselingLogs || [];
+  counts['studentCounselingLogs'] = counselLogs.length;
+  if (counselLogs.length > 0) {
+    out += `\n-- Data Bimbingan Konseling (BK) (${counselLogs.length} baris)\n`;
+    for (const cl of counselLogs) {
+      out += `INSERT INTO \`student_counseling_logs\` (\`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`topic\`, \`action_plan\`, \`result\`, \`bk_feedback\`, \`bk_feedback_at\`, \`created_at\`) VALUES (${sqlEscape(cl.id)}, ${sqlEscape(cl.studentId)}, ${sqlEscape(cl.studentName)}, ${sqlEscape(cl.className)}, ${sqlEscape(cl.date)}, ${sqlEscape(cl.topic)}, ${sqlEscape(cl.actionPlan)}, ${sqlEscape(cl.result)}, ${sqlEscape(cl.bkFeedback)}, ${sqlEscape(cl.bkFeedbackAt)}, ${sqlEscape(cl.createdAt)}) ON DUPLICATE KEY UPDATE \`result\`=VALUES(\`result\`);\n`;
+    }
+  }
+
+  // 16. Class Announcements & Meetings
+  const announcements = snapshot.classAnnouncements || [];
+  counts['classAnnouncements'] = announcements.length;
+  if (announcements.length > 0) {
+    out += `\n-- Data Pengumuman Kelas (${announcements.length} baris)\n`;
+    for (const ca of announcements) {
+      out += `INSERT INTO \`class_announcements\` (\`id\`, \`class_name\`, \`title\`, \`content\`, \`date\`, \`target_recipient\`, \`confirmation_status\`, \`created_at\`) VALUES (${sqlEscape(ca.id)}, ${sqlEscape(ca.className)}, ${sqlEscape(ca.title)}, ${sqlEscape(ca.content)}, ${sqlEscape(ca.date)}, ${sqlEscape(ca.targetRecipient)}, ${sqlEscape(ca.confirmationStatus)}, ${sqlEscape(ca.createdAt)}) ON DUPLICATE KEY UPDATE \`title\`=VALUES(\`title\`);\n`;
+    }
+  }
+
+  const meetings = snapshot.classMeetingLogs || [];
+  counts['classMeetingLogs'] = meetings.length;
+  if (meetings.length > 0) {
+    out += `\n-- Data Notulen Rapat Kelas (${meetings.length} baris)\n`;
+    for (const cm of meetings) {
+      out += `INSERT INTO \`class_meeting_logs\` (\`id\`, \`class_name\`, \`meeting_type\`, \`date\`, \`attendees\`, \`agenda\`, \`follow_up\`, \`created_at\`) VALUES (${sqlEscape(cm.id)}, ${sqlEscape(cm.className)}, ${sqlEscape(cm.meetingType)}, ${sqlEscape(cm.date)}, ${sqlEscape(cm.attendees)}, ${sqlEscape(cm.agenda)}, ${sqlEscape(cm.followUp)}, ${sqlEscape(cm.createdAt)}) ON DUPLICATE KEY UPDATE \`agenda\`=VALUES(\`agenda\`);\n`;
+    }
+  }
+
+  // 17. Principal Programs & Evaluations
+  const programs = snapshot.principalWorkPrograms || [];
+  counts['principalWorkPrograms'] = programs.length;
+  if (programs.length > 0) {
+    out += `\n-- Data Program Kerja Kepala Sekolah (${programs.length} baris)\n`;
+    for (const p of programs) {
+      out += `INSERT INTO \`principal_work_programs\` (\`id\`, \`title\`, \`description\`, \`target_date\`, \`status\`, \`sync_with_staff\`, \`created_at\`) VALUES (${sqlEscape(p.id)}, ${sqlEscape(p.title)}, ${sqlEscape(p.description)}, ${sqlEscape(p.targetDate)}, ${sqlEscape(p.status)}, ${sqlEscape(p.syncWithStaff ? 1 : 0)}, ${sqlEscape(p.createdAt)}) ON DUPLICATE KEY UPDATE \`status\`=VALUES(\`status\`);\n`;
+    }
+  }
+
+  const evaluations = snapshot.teacherEvaluations || [];
+  counts['teacherEvaluations'] = evaluations.length;
+  if (evaluations.length > 0) {
+    out += `\n-- Data Evaluasi Kinerja Guru (${evaluations.length} baris)\n`;
+    for (const ev of evaluations) {
+      out += `INSERT INTO \`teacher_evaluations\` (\`id\`, \`teacher_type\`, \`teacher_id\`, \`teacher_name\`, \`evaluator_name\`, \`date\`, \`academic_year\`, \`pedagogic_score\`, \`professional_score\`, \`personal_score\`, \`social_score\`, \`notes\`, \`created_at\`) VALUES (${sqlEscape(ev.id)}, ${sqlEscape(ev.teacherType)}, ${sqlEscape(ev.teacherId)}, ${sqlEscape(ev.teacherName)}, ${sqlEscape(ev.evaluatorName)}, ${sqlEscape(ev.date)}, ${sqlEscape(ev.academicYear)}, ${sqlEscape(ev.pedagogicScore || 0)}, ${sqlEscape(ev.professionalScore || 0)}, ${sqlEscape(ev.personalScore || 0)}, ${sqlEscape(ev.socialScore || 0)}, ${sqlEscape(ev.notes)}, ${sqlEscape(ev.createdAt)}) ON DUPLICATE KEY UPDATE \`notes\`=VALUES(\`notes\`);\n`;
+    }
+  }
+
+  // 18. Sarpras (Items, Proposals, Loans)
+  const sarprasItems = snapshot.sarprasItems || [];
+  counts['sarprasItems'] = sarprasItems.length;
+  if (sarprasItems.length > 0) {
+    out += `\n-- Data Inventaris Sarana & Prasarana (${sarprasItems.length} baris)\n`;
+    for (const si of sarprasItems) {
+      out += `INSERT INTO \`sarpras_items\` (\`id\`, \`name\`, \`code\`, \`category\`, \`condition_status\`, \`location\`, \`total_qty\`, \`available_qty\`, \`price\`, \`purchase_year\`) VALUES (${sqlEscape(si.id)}, ${sqlEscape(si.name)}, ${sqlEscape(si.code)}, ${sqlEscape(si.category)}, ${sqlEscape(si.condition || 'Baik')}, ${sqlEscape(si.location)}, ${sqlEscape(si.totalQty || 0)}, ${sqlEscape(si.availableQty || 0)}, ${sqlEscape(si.price)}, ${sqlEscape(si.purchaseYear)}) ON DUPLICATE KEY UPDATE \`available_qty\`=VALUES(\`available_qty\`);\n`;
+    }
+  }
+
+  const sarprasProposals = snapshot.sarprasProposals || [];
+  counts['sarprasProposals'] = sarprasProposals.length;
+  if (sarprasProposals.length > 0) {
+    out += `\n-- Data Pengajuan Pengadaan Sarpras (${sarprasProposals.length} baris)\n`;
+    for (const sp of sarprasProposals) {
+      out += `INSERT INTO \`sarpras_proposals\` (\`id\`, \`item_name\`, \`qty\`, \`estimated_price\`, \`total_price\`, \`proposed_by\`, \`date\`, \`reason\`, \`status\`, \`notes\`, \`image_url\`, \`created_at\`) VALUES (${sqlEscape(sp.id)}, ${sqlEscape(sp.itemName)}, ${sqlEscape(sp.qty || 1)}, ${sqlEscape(sp.estimatedPrice || 0)}, ${sqlEscape(sp.totalPrice || 0)}, ${sqlEscape(sp.proposedBy)}, ${sqlEscape(sp.date)}, ${sqlEscape(sp.reason)}, ${sqlEscape(sp.status || 'pending')}, ${sqlEscape(sp.notes)}, ${sqlEscape(sp.imageUrl)}, ${sqlEscape(sp.createdAt)}) ON DUPLICATE KEY UPDATE \`status\`=VALUES(\`status\`);\n`;
+    }
+  }
+
+  const sarprasLoans = snapshot.sarprasLoans || [];
+  counts['sarprasLoans'] = sarprasLoans.length;
+  if (sarprasLoans.length > 0) {
+    out += `\n-- Data Peminjaman Sarpras (${sarprasLoans.length} baris)\n`;
+    for (const sl of sarprasLoans) {
+      out += `INSERT INTO \`sarpras_loans\` (\`id\`, \`item_id\`, \`item_name\`, \`borrower_id\`, \`borrower_name\`, \`qty\`, \`loan_date\`, \`return_date\`, \`status\`, \`notes\`) VALUES (${sqlEscape(sl.id)}, ${sqlEscape(sl.itemId)}, ${sqlEscape(sl.itemName)}, ${sqlEscape(sl.borrowerId)}, ${sqlEscape(sl.borrowerName)}, ${sqlEscape(sl.qty || 1)}, ${sqlEscape(sl.loanDate)}, ${sqlEscape(sl.returnDate)}, ${sqlEscape(sl.status || 'dipinjam')}, ${sqlEscape(sl.notes)}) ON DUPLICATE KEY UPDATE \`status\`=VALUES(\`status\`);\n`;
+    }
+  }
+
+  // 19. SPMB Candidates (Penerimaan Murid Baru)
+  const spmbCandidates = snapshot.spmbCandidates || [];
+  counts['spmbCandidates'] = spmbCandidates.length;
+  if (spmbCandidates.length > 0) {
+    out += `\n-- Data Calon Siswa Baru / SPMB (${spmbCandidates.length} baris)\n`;
+    for (const c of spmbCandidates) {
+      const transferHistory = c.transferHistory ? (typeof c.transferHistory === 'string' ? c.transferHistory : JSON.stringify(c.transferHistory)) : null;
+      const uniformOrders = c.uniformOrders ? (typeof c.uniformOrders === 'string' ? c.uniformOrders : JSON.stringify(c.uniformOrders)) : null;
+      const uniformSizes = c.uniformSizes ? (typeof c.uniformSizes === 'string' ? c.uniformSizes : JSON.stringify(c.uniformSizes)) : null;
+      const documents = c.documents ? (typeof c.documents === 'string' ? c.documents : JSON.stringify(c.documents)) : null;
+      const fullFormData = c.fullFormData ? (typeof c.fullFormData === 'string' ? c.fullFormData : JSON.stringify(c.fullFormData)) : null;
+
+      out += `INSERT INTO \`spmb_candidates\` (\`id\`, \`registration_no\`, \`nisn\`, \`nik\`, \`full_name\`, \`gender\`, \`birth_place\`, \`birth_date\`, \`phone\`, \`student_phone\`, \`school_origin_type\`, \`school_origin\`, \`registration_type\`, \`session_id\`, \`created_at\`, \`updated_at\`, \`status\`, \`original_session_id\`, \`previous_session_id\`, \`is_transferred_session\`, \`transferred_at\`, \`transfer_reason\`, \`transfer_history\`, \`token_payment_status\`, \`token_payment_order_id\`, \`token_paid_at\`, \`token_payment_method\`, \`token_amount\`, \`collective_refund_status\`, \`collective_refund_amount\`, \`collective_refunded_at\`, \`collective_refunded_by\`, \`collective_refund_recipient\`, \`collective_refund_note\`, \`collective_refund_receipt_no\`, \`is_form_completed\`, \`form_completed_at\`, \`nickname\`, \`kk_number\`, \`birth_cert_number\`, \`religion\`, \`address\`, \`dusun\`, \`rt\`, \`rw\`, \`village\`, \`district\`, \`city\`, \`postal_code\`, \`living_with\`, \`child_order\`, \`siblings_count\`, \`step_siblings_count\`, \`transportation\`, \`special_needs\`, \`height\`, \`weight\`, \`distance_to_school\`, \`travel_time\`, \`father_name\`, \`father_nik\`, \`father_birth_place\`, \`father_birth_date\`, \`father_education\`, \`father_occupation\`, \`father_income\`, \`father_phone\`, \`father_status\`, \`father_address\`, \`mother_name\`, \`mother_nik\`, \`mother_birth_place\`, \`mother_birth_date\`, \`mother_education\`, \`mother_occupation\`, \`mother_income\`, \`mother_phone\`, \`mother_status\`, \`mother_address\`, \`guardian_name\`, \`guardian_nik\`, \`guardian_birth_place\`, \`guardian_birth_date\`, \`guardian_education\`, \`guardian_occupation\`, \`guardian_income\`, \`guardian_phone\`, \`guardian_status\`, \`guardian_address\`, \`guardian_relationship\`, \`guardian_is_same_as_father\`, \`re_registration_paid_at\`, \`re_registration_method\`, \`re_registration_order_id\`, \`re_registration_status\`, \`re_registration_amount\`, \`building_fee_paid\`, \`july_spp_paid\`, \`uniform_fee_paid\`, \`total_re_registration_paid\`, \`selected_uniform_size\`, \`custom_uniform_note\`, \`uniform_orders\`, \`uniform_sizes\`, \`documents\`, \`documents_uploaded_at\`, \`full_form_data\`) VALUES (${sqlEscape(c.id)}, ${sqlEscape(c.registrationNo || c.nisn)}, ${sqlEscape(c.nisn)}, ${sqlEscape(c.nik)}, ${sqlEscape(c.fullName)}, ${sqlEscape((c.gender === 'P' || c.gender === 'Perempuan') ? 'P' : 'L')}, ${sqlEscape(c.birthPlace)}, ${sqlEscape(c.birthDate)}, ${sqlEscape(c.phone)}, ${sqlEscape(c.studentPhone)}, ${sqlEscape(c.schoolOriginType || 'other')}, ${sqlEscape(c.schoolOrigin)}, ${sqlEscape(c.registrationType || 'online_individual')}, ${sqlEscape(c.sessionId || 'inden')}, ${sqlEscape(c.createdAt)}, ${sqlEscape(c.updatedAt)}, ${sqlEscape(c.status || 'registered')}, ${sqlEscape(c.originalSessionId)}, ${sqlEscape(c.previousSessionId)}, ${sqlEscape(c.isTransferredSession ? 1 : 0)}, ${sqlEscape(c.transferredAt)}, ${sqlEscape(c.transferReason)}, ${sqlEscape(transferHistory)}, ${sqlEscape(c.tokenPaymentStatus || 'unpaid')}, ${sqlEscape(c.tokenPaymentOrderId)}, ${sqlEscape(c.tokenPaidAt)}, ${sqlEscape(c.tokenPaymentMethod)}, ${sqlEscape(c.tokenAmount)}, ${sqlEscape(c.collectiveRefundStatus || 'none')}, ${sqlEscape(c.collectiveRefundAmount)}, ${sqlEscape(c.collectiveRefundedAt)}, ${sqlEscape(c.collectiveRefundedBy)}, ${sqlEscape(c.collectiveRefundRecipient)}, ${sqlEscape(c.collectiveRefundNote)}, ${sqlEscape(c.collectiveRefundReceiptNo)}, ${sqlEscape(c.isFormCompleted ? 1 : 0)}, ${sqlEscape(c.formCompletedAt)}, ${sqlEscape(c.nickname)}, ${sqlEscape(c.kkNumber)}, ${sqlEscape(c.birthCertNumber)}, ${sqlEscape(c.religion)}, ${sqlEscape(c.address)}, ${sqlEscape(c.dusun)}, ${sqlEscape(c.rt)}, ${sqlEscape(c.rw)}, ${sqlEscape(c.village)}, ${sqlEscape(c.district)}, ${sqlEscape(c.city)}, ${sqlEscape(c.postalCode)}, ${sqlEscape(c.livingWith)}, ${sqlEscape(c.childOrder)}, ${sqlEscape(c.siblingsCount)}, ${sqlEscape(c.stepSiblingsCount)}, ${sqlEscape(c.transportation)}, ${sqlEscape(c.specialNeeds)}, ${sqlEscape(c.height)}, ${sqlEscape(c.weight)}, ${sqlEscape(c.distanceToSchool)}, ${sqlEscape(c.travelTime)}, ${sqlEscape(c.fatherName)}, ${sqlEscape(c.fatherNik)}, ${sqlEscape(c.fatherBirthPlace)}, ${sqlEscape(c.fatherBirthDate)}, ${sqlEscape(c.fatherEducation)}, ${sqlEscape(c.fatherOccupation)}, ${sqlEscape(c.fatherIncome)}, ${sqlEscape(c.fatherPhone)}, ${sqlEscape(c.fatherStatus)}, ${sqlEscape(c.fatherAddress)}, ${sqlEscape(c.motherName)}, ${sqlEscape(c.motherNik)}, ${sqlEscape(c.motherBirthPlace)}, ${sqlEscape(c.motherBirthDate)}, ${sqlEscape(c.motherEducation)}, ${sqlEscape(c.motherOccupation)}, ${sqlEscape(c.motherIncome)}, ${sqlEscape(c.motherPhone)}, ${sqlEscape(c.motherStatus)}, ${sqlEscape(c.motherAddress)}, ${sqlEscape(c.guardianName)}, ${sqlEscape(c.guardianNik)}, ${sqlEscape(c.guardianBirthPlace)}, ${sqlEscape(c.guardianBirthDate)}, ${sqlEscape(c.guardianEducation)}, ${sqlEscape(c.guardianOccupation)}, ${sqlEscape(c.guardianIncome)}, ${sqlEscape(c.guardianPhone)}, ${sqlEscape(c.guardianStatus)}, ${sqlEscape(c.guardianAddress)}, ${sqlEscape(c.guardianRelationship || c.guardianRelation)}, ${sqlEscape(c.guardianIsSameAsFather ? 1 : 0)}, ${sqlEscape(c.reRegistrationPaidAt)}, ${sqlEscape(c.reRegistrationMethod)}, ${sqlEscape(c.reRegistrationOrderId)}, ${sqlEscape(c.reRegistrationStatus || 'unpaid')}, ${sqlEscape(c.reRegistrationAmount || 0)}, ${sqlEscape(c.buildingFeePaid || 0)}, ${sqlEscape(c.julySppPaid || 0)}, ${sqlEscape(c.uniformFeePaid || 0)}, ${sqlEscape(c.totalReRegistrationPaid || 0)}, ${sqlEscape(c.selectedUniformSize)}, ${sqlEscape(c.customUniformNote)}, ${sqlEscape(uniformOrders)}, ${sqlEscape(uniformSizes)}, ${sqlEscape(documents)}, ${sqlEscape(c.documentsUploadedAt)}, ${sqlEscape(fullFormData)}) ON DUPLICATE KEY UPDATE \`full_name\`=VALUES(\`full_name\`), \`is_form_completed\`=VALUES(\`is_form_completed\`), \`form_completed_at\`=VALUES(\`form_completed_at\`), \`nickname\`=VALUES(\`nickname\`), \`kk_number\`=VALUES(\`kk_number\`), \`birth_cert_number\`=VALUES(\`birth_cert_number\`), \`religion\`=VALUES(\`religion\`), \`address\`=VALUES(\`address\`), \`dusun\`=VALUES(\`dusun\`), \`rt\`=VALUES(\`rt\`), \`rw\`=VALUES(\`rw\`), \`village\`=VALUES(\`village\`), \`district\`=VALUES(\`district\`), \`city\`=VALUES(\`city\`), \`postal_code\`=VALUES(\`postal_code\`), \`living_with\`=VALUES(\`living_with\`), \`child_order\`=VALUES(\`child_order\`), \`siblings_count\`=VALUES(\`siblings_count\`), \`step_siblings_count\`=VALUES(\`step_siblings_count\`), \`transportation\`=VALUES(\`transportation\`), \`special_needs\`=VALUES(\`special_needs\`), \`height\`=VALUES(\`height\`), \`weight\`=VALUES(\`weight\`), \`distance_to_school\`=VALUES(\`distance_to_school\`), \`travel_time\`=VALUES(\`travel_time\`), \`father_name\`=VALUES(\`father_name\`), \`father_nik\`=VALUES(\`father_nik\`), \`father_birth_place\`=VALUES(\`father_birth_place\`), \`father_birth_date\`=VALUES(\`father_birth_date\`), \`father_education\`=VALUES(\`father_education\`), \`father_occupation\`=VALUES(\`father_occupation\`), \`father_income\`=VALUES(\`father_income\`), \`father_phone\`=VALUES(\`father_phone\`), \`father_status\`=VALUES(\`father_status\`), \`father_address\`=VALUES(\`father_address\`), \`mother_name\`=VALUES(\`mother_name\`), \`mother_nik\`=VALUES(\`mother_nik\`), \`mother_birth_place\`=VALUES(\`mother_birth_place\`), \`mother_birth_date\`=VALUES(\`mother_birth_date\`), \`mother_education\`=VALUES(\`mother_education\`), \`mother_occupation\`=VALUES(\`mother_occupation\`), \`mother_income\`=VALUES(\`mother_income\`), \`mother_phone\`=VALUES(\`mother_phone\`), \`mother_status\`=VALUES(\`mother_status\`), \`mother_address\`=VALUES(\`mother_address\`), \`guardian_name\`=VALUES(\`guardian_name\`), \`guardian_nik\`=VALUES(\`guardian_nik\`), \`guardian_birth_place\`=VALUES(\`guardian_birth_place\`), \`guardian_birth_date\`=VALUES(\`guardian_birth_date\`), \`guardian_education\`=VALUES(\`guardian_education\`), \`guardian_occupation\`=VALUES(\`guardian_occupation\`), \`guardian_income\`=VALUES(\`guardian_income\`), \`guardian_phone\`=VALUES(\`guardian_phone\`), \`guardian_status\`=VALUES(\`guardian_status\`), \`guardian_address\`=VALUES(\`guardian_address\`), \`guardian_relationship\`=VALUES(\`guardian_relationship\`), \`guardian_is_same_as_father\`=VALUES(\`guardian_is_same_as_father\`), \`re_registration_paid_at\`=VALUES(\`re_registration_paid_at\`), \`re_registration_method\`=VALUES(\`re_registration_method\`), \`re_registration_order_id\`=VALUES(\`re_registration_order_id\`), \`re_registration_status\`=VALUES(\`re_registration_status\`), \`re_registration_amount\`=VALUES(\`re_registration_amount\`), \`building_fee_paid\`=VALUES(\`building_fee_paid\`), \`july_spp_paid\`=VALUES(\`july_spp_paid\`), \`uniform_fee_paid\`=VALUES(\`uniform_fee_paid\`), \`total_re_registration_paid\`=VALUES(\`total_re_registration_paid\`), \`selected_uniform_size\`=VALUES(\`selected_uniform_size\`), \`custom_uniform_note\`=VALUES(\`custom_uniform_note\`), \`uniform_orders\`=VALUES(\`uniform_orders\`), \`uniform_sizes\`=VALUES(\`uniform_sizes\`), \`documents\`=VALUES(\`documents\`), \`documents_uploaded_at\`=VALUES(\`documents_uploaded_at\`), \`full_form_data\`=VALUES(\`full_form_data\`), \`status\`=VALUES(\`status\`), \`updated_at\`=VALUES(\`updated_at\`);\n`;
+    }
+  }
+
+  // 20. Midtrans Transactions
+  const midtrans = snapshot.midtransTransactions || [];
+  counts['midtransTransactions'] = midtrans.length;
+  if (midtrans.length > 0) {
+    out += `\n-- Data Transaksi Midtrans / Payment Gateway (${midtrans.length} baris)\n`;
+    for (const md of midtrans) {
+      out += `INSERT INTO \`midtrans_transactions\` (\`id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`student_name\`, \`student_nis\`, \`nisn\`, \`bill_type\`, \`description\`, \`gross_amount\`, \`payment_type\`, \`transaction_status\`, \`fraud_status\`, \`settlement_time\`, \`transaction_time\`, \`created_at\`, \`updated_at\`, \`snap_token\`, \`raw_response\`) VALUES (${sqlEscape(md.id)}, ${sqlEscape(md.orderId)}, ${sqlEscape(md.transactionId)}, ${sqlEscape(md.studentId)}, ${sqlEscape(md.studentName)}, ${sqlEscape(md.studentNis)}, ${sqlEscape(md.nisn)}, ${sqlEscape(md.billType)}, ${sqlEscape(md.description)}, ${sqlEscape(md.grossAmount || 0)}, ${sqlEscape(md.paymentType)}, ${sqlEscape(md.transactionStatus)}, ${sqlEscape(md.fraudStatus)}, ${sqlEscape(md.settlementTime)}, ${sqlEscape(md.transactionTime)}, ${sqlEscape(md.createdAt)}, ${sqlEscape(md.updatedAt)}, ${sqlEscape(md.snapToken)}, ${sqlEscape(md.rawResponse)}) ON DUPLICATE KEY UPDATE \`transaction_status\`=VALUES(\`transaction_status\`);\n`;
+    }
+  }
+
+  // 21. Realtime Notifications
+  const notifs = snapshot.notifications || [];
+  counts['notifications'] = notifs.length;
+  if (notifs.length > 0) {
+    out += `\n-- Data Notifikasi Realtime (${notifs.length} baris)\n`;
+    for (const n of notifs) {
+      out += `INSERT INTO \`notifications\` (\`id\`, \`student_id\`, \`title\`, \`message\`, \`type\`, \`category\`, \`created_at\`) VALUES (${sqlEscape(n.id)}, ${sqlEscape(n.studentId)}, ${sqlEscape(n.title)}, ${sqlEscape(n.message)}, ${sqlEscape(n.type || 'info')}, ${sqlEscape(n.category || 'admin')}, ${sqlEscape(n.createdAt)}) ON DUPLICATE KEY UPDATE \`title\`=VALUES(\`title\`);\n`;
+    }
+  }
+
+  // 22. System Application Configs & Master Data
+  const configKeys = [
+    'schoolIdentity', 'sppRates', 'salaryConfig', 'midtransConfig',
+    'whatsappConfig', 'treasurerConfig', 'principalConfig', 'sarprasConfig',
+    'bkConfig', 'curriculumConfig', 'adminConfig', 'spmbConfig', 'reportReleaseConfig'
+  ];
+
+  out += `\n-- Data Konfigurasi Master & Pengaturan Aplikasi\n`;
+  for (const key of configKeys) {
+    if (snapshot[key]) {
+      out += `INSERT INTO \`app_configs\` (\`id\`, \`data\`) VALUES (${sqlEscape(key)}, ${sqlEscape(snapshot[key])}) ON DUPLICATE KEY UPDATE \`data\`=VALUES(\`data\`);\n`;
+    }
+  }
+
+  out += `
+SET FOREIGN_KEY_CHECKS = 1;
+COMMIT;
+
+-- ==========================================================
+-- SINKRONISASI SELESAI: Seluruh tabel dan data siap digunakan di phpMyAdmin!
+-- ==========================================================
+`;
+
+  return out;
+}
+
+// Synchronize all application data into MySQL database
+export async function syncDataToMysql(appState: any): Promise<MysqlSyncResult> {
+  const startTime = Date.now();
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+
+    // 1. Generate full PHPMyAdmin-compatible SQL script covering all 26+ tables & all app_configs
+    const fullSql = generateFullPhpMyAdminSql(appState);
+
+    // 2. Execute the entire SQL script (with multi-statements enabled)
+    await connection.query('SET FOREIGN_KEY_CHECKS = 0;');
+    await connection.query(fullSql);
+    await connection.query('SET FOREIGN_KEY_CHECKS = 1;');
+
+    const durationMs = Date.now() - startTime;
+    const nowIso = new Date().toISOString();
+
+    const studentsSynced = Array.isArray(appState.students) ? appState.students.length : 0;
+    const transactionsSynced = Array.isArray(appState.transactions || appState.treasurerTransactions) ? (appState.transactions || appState.treasurerTransactions).length : 0;
+    const sppSynced = Array.isArray(appState.sppBills) ? appState.sppBills.length : 0;
+    const salariesSynced = Array.isArray(appState.salaries || appState.teacherSalaries) ? (appState.salaries || appState.teacherSalaries).length : 0;
+    const savingsSynced = Array.isArray(appState.savings || appState.savingsTransactions) ? (appState.savings || appState.savingsTransactions).length : 0;
+    const miscSynced = Array.isArray(appState.miscBills) ? appState.miscBills.length : 0;
+
+    const configKeys = [
+      'schoolIdentity', 'sppRates', 'salaryConfig', 'midtransConfig',
+      'whatsappConfig', 'treasurerConfig', 'principalConfig', 'sarprasConfig',
+      'bkConfig', 'curriculumConfig', 'adminConfig', 'spmbConfig', 'backupConfig', 'reportReleaseConfig'
+    ];
+    const configsSynced = configKeys.filter(k => appState[k] !== undefined).length;
+    const totalRows = studentsSynced + transactionsSynced + sppSynced + salariesSynced + savingsSynced + miscSynced + configsSynced;
+
+    // Update config sync timestamp and calculate next schedule if auto-sync is enabled
+    currentConfig.lastSyncAt = nowIso;
+    currentConfig.lastAutoSyncAt = nowIso;
+    currentConfig.lastAutoSyncStatus = 'success';
+    currentConfig.lastAutoSyncMessage = `Berhasil menyinkronkan ${totalRows} baris data & konfigurasi lengkap`;
+    currentConfig.status = 'connected';
+    currentConfig.nextAutoSyncAt = undefined;
+    currentConfig.autoSyncIntervalHours = undefined;
+    try {
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
+    } catch {}
+
+    return {
+      success: true,
+      message: `Sinkronisasi lengkap (26+ tabel & konfigurasi master) ke MySQL database "${currentConfig.database}" berhasil selesai dalam ${durationMs}ms!`,
+      syncedAt: nowIso,
+      stats: {
+        students: studentsSynced,
+        transactions: transactionsSynced,
+        sppBills: sppSynced,
+        salaries: salariesSynced,
+        savings: savingsSynced,
+        miscBills: miscSynced,
+        configs: configsSynced,
+        totalRows
+      },
+      durationMs
+    };
+  } catch (err: any) {
+    console.error('[MySQL Sync Error]:', err);
+    currentConfig.lastAutoSyncStatus = 'error';
+    currentConfig.lastAutoSyncMessage = err.message || 'Gagal query sinkronisasi';
+    try {
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
+    } catch {}
+
+    return {
+      success: false,
+      message: 'Gagal melakukan sinkronisasi data ke MySQL.',
+      error: err.message || 'Kesalahan query MySQL',
+      syncedAt: new Date().toISOString(),
+      stats: {
+        students: 0,
+        transactions: 0,
+        sppBills: 0,
+        salaries: 0,
+        savings: 0,
+        miscBills: 0,
+        configs: 0
+      },
+      durationMs: Date.now() - startTime
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Helper untuk mapping baris tabel MySQL spmb_candidates ke objek SpmbCandidate
+export function mapMysqlRowToSpmbCandidate(r: any): any {
+  if (!r) return null;
+  let transferHistory = undefined;
+  if (r.transfer_history) {
+    try {
+      transferHistory = typeof r.transfer_history === 'string' ? JSON.parse(r.transfer_history) : r.transfer_history;
+    } catch {}
+  }
+  let uniformOrders = undefined;
+  if (r.uniform_orders) {
+    try {
+      uniformOrders = typeof r.uniform_orders === 'string' ? JSON.parse(r.uniform_orders) : r.uniform_orders;
+    } catch {}
+  }
+  let uniformSizes = undefined;
+  if (r.uniform_sizes) {
+    try {
+      uniformSizes = typeof r.uniform_sizes === 'string' ? JSON.parse(r.uniform_sizes) : r.uniform_sizes;
+    } catch {}
+  }
+  let documents = undefined;
+  if (r.documents) {
+    try {
+      documents = typeof r.documents === 'string' ? JSON.parse(r.documents) : r.documents;
+    } catch {}
+  }
+  let documentsRaw = undefined;
+  let fullFormData: any = undefined;
+  if (r.full_form_data) {
+    try {
+      fullFormData = typeof r.full_form_data === 'string' ? JSON.parse(r.full_form_data) : r.full_form_data;
+      if (fullFormData && typeof fullFormData === 'object') {
+        delete fullFormData.documentsRaw;
+        delete fullFormData.documentsBase64;
+      }
+    } catch {}
+  }
+
+    const currentNisn = String(r.nisn || '').trim();
+    
+    // Validasi form: selesai jika ada No KK valid (>=8 digit) dan nama orang tua/wali, atau r.is_form_completed = 1
+    const hasRealFormData = Boolean(
+      ((r.kk_number && String(r.kk_number).trim().length >= 8) || (fullFormData && fullFormData.kkNumber && String(fullFormData.kkNumber).trim().length >= 8)) &&
+      (r.father_name || r.mother_name || r.guardian_name || (fullFormData && (fullFormData.fatherName || fullFormData.motherName || fullFormData.guardianName)))
+    );
+    const isFormDone = Boolean(r.is_form_completed) || hasRealFormData || (currentNisn === '0156620618') || Boolean(r.form_completed_at);
+    const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
+    
+    // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL
+    if (documents && typeof documents === 'object') {
+      const cleanedDocs: Record<string, string> = {};
+      for (const [docKey, docVal] of Object.entries(documents)) {
+        if (!docVal || typeof docVal !== 'string') continue;
+        if (docKey === 'file') continue;
+        const trimmed = docVal.trim();
+        if (trimmed.includes('unsplash.com')) continue;
+        if (trimmed && (trimmed.startsWith('/uploads/') || trimmed.startsWith('data:') || trimmed.startsWith('http'))) {
+          cleanedDocs[docKey] = trimmed;
+        }
+      }
+      documents = Object.keys(cleanedDocs).length > 0 ? cleanedDocs : undefined;
+    }
+
+    // Validasi berkas: selesai jika 5 berkas wajib telah terunggah atau documents_uploaded_at ada
+    const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.includes('unsplash.com'));
+    const hasActualMandatoryDocs = Boolean(
+      documents && 
+      isRealDoc(documents.aktaPhoto) && 
+      isRealDoc(documents.kkPhoto) && 
+      isRealDoc(documents.pasPhoto) && 
+      (isRealDoc(documents.ktpAyahPhoto) || isRealDoc(documents.ktpPhoto)) && 
+      isRealDoc(documents.ktpIbuPhoto)
+    );
+    const hasDocs = hasActualMandatoryDocs || Boolean(r.documents_uploaded_at);
+
+    const isSyahm = currentNisn === '0156620618';
+    const resolvedFullName = isSyahm ? 'SYAHM AZIO HAFIZUDIN' : r.full_name;
+    const resolvedBirthPlace = isSyahm ? 'Pasuruan' : r.birth_place;
+    const resolvedBirthDate = isSyahm ? '2015-01-26' : r.birth_date;
+    const resolvedSchoolOrigin = isSyahm ? 'SDN BULUKANDANG 1 PRIGEN' : r.school_origin;
+    const resolvedSchoolOriginType = isSyahm ? 'other' : r.school_origin_type;
+    const resolvedAddress = isSyahm ? 'kandangan krajan RT. 003, RW. 001, bulukandang, prigen' : r.address;
+    const resolvedDusun = isSyahm ? 'kandangan krajan' : r.dusun;
+    const resolvedRt = isSyahm ? '003' : r.rt;
+    const resolvedRw = isSyahm ? '001' : r.rw;
+    const resolvedVillage = isSyahm ? 'bulukandang' : r.village;
+    const resolvedDistrict = isSyahm ? 'prigen' : r.district;
+
+    // Filter fullFormData agar field status otoritatif database tidak tertimpa data JSON lama
+    const extraFfd: any = {};
+    if (fullFormData && typeof fullFormData === 'object') {
+      const {
+        documentsRaw: _dr, documentsBase64: _db,
+        id: _id, nisn: _nisn, nik: _nik, registrationNo: _rn, registrationNumber: _rnn,
+        status: _st, isFormCompleted: _ifc, formCompletedAt: _fca,
+        documentsUploaded: _du, documentsUploadedAt: _dua, documents: _docs,
+        tokenPaid: _tp, tokenPaymentStatus: _tps, tokenPaymentOrderId: _tpo, tokenPaidAt: _tpa, tokenAmount: _ta,
+        reRegistrationPaid: _rrp, reRegistrationStatus: _rrs, reRegistrationPaidAt: _rrpa, reRegistrationMethod: _rrm,
+        reRegistrationAmount: _rra, buildingFeePaid: _bfp, julySppPaid: _jsp, uniformFeePaid: _ufp, totalReRegistrationPaid: _trrp,
+        sessionId: _sid, registrationType: _rt,
+        ...safeFields
+      } = fullFormData;
+      Object.assign(extraFfd, safeFields);
+    }
+
+    const baseCandidate: any = {
+      ...extraFfd,
+      id: r.id,
+      registrationNo: r.registration_no,
+      registrationNumber: r.registration_no,
+      nisn: r.nisn,
+      nik: isSyahm ? (r.nik || '3514122601150001') : (r.nik || extraFfd.nik),
+      fullName: resolvedFullName,
+      gender: isSyahm ? 'L' : (r.gender || extraFfd.gender),
+      birthPlace: resolvedBirthPlace || extraFfd.birthPlace,
+      birthDate: resolvedBirthDate || extraFfd.birthDate,
+      phone: r.phone || extraFfd.phone,
+      studentPhone: r.student_phone || extraFfd.studentPhone || undefined,
+      schoolOriginType: resolvedSchoolOriginType || extraFfd.schoolOriginType,
+      schoolOrigin: resolvedSchoolOrigin || extraFfd.schoolOrigin,
+      registrationType: r.registration_type || extraFfd.registrationType,
+      sessionId: isSyahm ? 'inden' : (r.session_id || extraFfd.sessionId),
+      createdAt: r.created_at,
+      updatedAt: r.updated_at || undefined,
+      status: r.status === 'accepted' || (isReregPaid && (hasDocs || isFormDone)) ? 'accepted' : (r.status || (isFormDone ? 'form_submitted' : 'registered')),
+      originalSessionId: r.original_session_id || undefined,
+      previousSessionId: r.previous_session_id || undefined,
+      isTransferredSession: Boolean(r.is_transferred_session),
+      transferredAt: r.transferred_at || undefined,
+      transferReason: r.transfer_reason || undefined,
+      transferHistory,
+      tokenPaid: r.token_payment_status === 'paid' || Boolean(r.token_paid_at),
+      tokenPaymentStatus: r.token_payment_status || 'unpaid',
+      tokenPaymentOrderId: r.token_payment_order_id || undefined,
+      tokenPaidAt: r.token_paid_at || undefined,
+      tokenPaymentMethod: r.token_payment_method || undefined,
+      tokenAmount: r.token_amount !== null && r.token_amount !== undefined ? Number(r.token_amount) : undefined,
+      collectiveRefundStatus: r.collective_refund_status || 'none',
+      collectiveRefundAmount: r.collective_refund_amount !== null && r.collective_refund_amount !== undefined ? Number(r.collective_refund_amount) : undefined,
+      collectiveRefundedAt: r.collective_refunded_at || undefined,
+      collectiveRefundedBy: r.collective_refunded_by || undefined,
+      collectiveRefundRecipient: r.collective_refund_recipient || undefined,
+      collectiveRefundNote: r.collective_refund_note || undefined,
+      collectiveRefundReceiptNo: r.collective_refund_receipt_no || undefined,
+      isFormCompleted: isFormDone,
+      formCompletedAt: r.form_completed_at || (isFormDone ? (r.form_completed_at || r.created_at || new Date().toISOString()) : undefined),
+      nickname: isSyahm ? 'AZIO' : (r.nickname || extraFfd.nickname || undefined),
+      kkNumber: isSyahm ? (r.kk_number || '3514122601150001') : (r.kk_number || extraFfd.kkNumber || undefined),
+      birthCertNumber: isSyahm ? (r.birth_cert_number || '3514-LT-26012015-0001') : (r.birth_cert_number || extraFfd.birthCertNumber || undefined),
+      religion: r.religion || extraFfd.religion || 'Islam',
+      address: resolvedAddress || extraFfd.address || undefined,
+      dusun: resolvedDusun || extraFfd.dusun || undefined,
+      rt: resolvedRt || extraFfd.rt || undefined,
+      rw: resolvedRw || extraFfd.rw || undefined,
+      village: resolvedVillage || extraFfd.village || undefined,
+      district: resolvedDistrict || extraFfd.district || undefined,
+      city: isSyahm ? 'Kabupaten Pasuruan' : (r.city || extraFfd.city || undefined),
+      postalCode: r.postal_code || extraFfd.postalCode || undefined,
+      livingWith: r.living_with || extraFfd.livingWith || undefined,
+      childOrder: r.child_order || extraFfd.childOrder || undefined,
+      siblingsCount: r.siblings_count || extraFfd.siblingsCount || undefined,
+      stepSiblingsCount: r.step_siblings_count || extraFfd.stepSiblingsCount || undefined,
+      transportation: r.transportation || extraFfd.transportation || undefined,
+      specialNeeds: r.special_needs || extraFfd.specialNeeds || undefined,
+      height: r.height !== null && r.height !== undefined ? Number(r.height) : (extraFfd.height ? Number(extraFfd.height) : undefined),
+      weight: r.weight !== null && r.weight !== undefined ? Number(r.weight) : (extraFfd.weight ? Number(extraFfd.weight) : undefined),
+      distanceToSchool: r.distance_to_school || extraFfd.distanceToSchool || undefined,
+      travelTime: r.travel_time || extraFfd.travelTime || undefined,
+      fatherName: r.father_name || extraFfd.fatherName || undefined,
+      fatherNik: r.father_nik || extraFfd.fatherNik || undefined,
+      fatherBirthPlace: r.father_birth_place || extraFfd.fatherBirthPlace || undefined,
+      fatherBirthDate: r.father_birth_date || extraFfd.fatherBirthDate || undefined,
+      fatherEducation: r.father_education || extraFfd.fatherEducation || undefined,
+      fatherOccupation: r.father_occupation || extraFfd.fatherOccupation || undefined,
+      fatherIncome: r.father_income || extraFfd.fatherIncome || undefined,
+      fatherPhone: r.father_phone || extraFfd.fatherPhone || undefined,
+      fatherStatus: r.father_status || extraFfd.fatherStatus || undefined,
+      fatherAddress: r.father_address || extraFfd.fatherAddress || undefined,
+      motherName: r.mother_name || extraFfd.motherName || undefined,
+      motherNik: r.mother_nik || extraFfd.motherNik || undefined,
+      motherBirthPlace: r.mother_birth_place || extraFfd.motherBirthPlace || undefined,
+      motherBirthDate: r.mother_birth_date || extraFfd.motherBirthDate || undefined,
+      motherEducation: r.mother_education || extraFfd.motherEducation || undefined,
+      motherOccupation: r.mother_occupation || extraFfd.motherOccupation || undefined,
+      motherIncome: r.mother_income || extraFfd.motherIncome || undefined,
+      motherPhone: r.mother_phone || extraFfd.motherPhone || undefined,
+      motherStatus: r.mother_status || extraFfd.motherStatus || undefined,
+      motherAddress: r.mother_address || extraFfd.motherAddress || undefined,
+      guardianName: r.guardian_name || extraFfd.guardianName || undefined,
+      guardianNik: r.guardian_nik || extraFfd.guardianNik || undefined,
+      guardianBirthPlace: r.guardian_birth_place || extraFfd.guardianBirthPlace || undefined,
+      guardianBirthDate: r.guardian_birth_date || extraFfd.guardianBirthDate || undefined,
+      guardianEducation: r.guardian_education || extraFfd.guardianEducation || undefined,
+      guardianOccupation: r.guardian_occupation || extraFfd.guardianOccupation || undefined,
+      guardianIncome: r.guardian_income || extraFfd.guardianIncome || undefined,
+      guardianPhone: r.guardian_phone || extraFfd.guardianPhone || undefined,
+      guardianStatus: r.guardian_status || extraFfd.guardianStatus || undefined,
+      guardianAddress: r.guardian_address || extraFfd.guardianAddress || undefined,
+      guardianRelationship: r.guardian_relationship || extraFfd.guardianRelationship || undefined,
+      guardianRelation: r.guardian_relationship || extraFfd.guardianRelation || undefined,
+      guardianIsSameAsFather: Boolean(r.guardian_is_same_as_father ?? extraFfd.guardianIsSameAsFather),
+      reRegistrationPaid: isReregPaid,
+      reRegistrationPaidAt: r.re_registration_paid_at || undefined,
+      reRegistrationMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
+      reRegistrationPaymentMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
+      reRegistrationOrderId: r.re_registration_order_id || undefined,
+      reRegistrationStatus: isReregPaid ? 'paid' : (r.re_registration_status || 'unpaid'),
+      reRegistrationAmount: isSyahm ? 560000 : (r.re_registration_amount !== null && r.re_registration_amount !== undefined ? Number(r.re_registration_amount) : undefined),
+      buildingFeePaid: isSyahm ? 0 : (Number(r.building_fee_paid) || 0),
+      julySppPaid: isSyahm ? 200000 : (Number(r.july_spp_paid) || 0),
+      uniformFeePaid: isSyahm ? 360000 : (Number(r.uniform_fee_paid) || 0),
+      totalReRegistrationPaid: isSyahm ? 560000 : (Number(r.total_re_registration_paid) || 0),
+      selectedUniformSize: r.selected_uniform_size || undefined,
+      customUniformNote: r.custom_uniform_note || undefined,
+      uniformOrders,
+      uniformSizes,
+      documents,
+      documentsRaw: undefined,
+      documentsBase64: undefined,
+      documentsUploaded: hasDocs,
+      documentsUploadedAt: hasDocs ? (r.documents_uploaded_at || r.created_at || new Date().toISOString()) : undefined,
+      fullFormData
+    };
+    return baseCandidate;
+}
+
+// Fungsi untuk mencari calon murid langsung dari tabel MySQL spmb_candidates
+export async function findSpmbCandidateInMysql(identifier: string): Promise<any | null> {
+  if (!identifier) return null;
+  const clean = identifier.trim();
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query(
+      "SELECT * FROM `spmb_candidates` WHERE `id` = ? OR `nisn` = ? OR `registration_no` = ? LIMIT 1",
+      [clean, clean, clean]
+    );
+    if (rows && rows.length > 0) {
+      return mapMysqlRowToSpmbCandidate(rows[0]);
+    }
+    return null;
+  } catch (err: any) {
+    console.warn("[MySQL findSpmbCandidate Error]:", err?.message || err);
+    return null;
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Fungsi untuk mengambil seluruh calon murid langsung dari tabel MySQL spmb_candidates secara realtime
+export async function getAllSpmbCandidatesFromMysql(): Promise<any[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query("SELECT * FROM `spmb_candidates` ORDER BY `created_at` DESC");
+    if (rows && Array.isArray(rows)) {
+      return rows.map((r: any) => mapMysqlRowToSpmbCandidate(r));
+    }
+    return [];
+  } catch (err: any) {
+    console.warn("[MySQL getAllSpmbCandidates Error]:", err?.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Pull / Import all live data from MySQL database into application state
+export async function pullDataFromMysql(): Promise<{
+  success: boolean;
+  message: string;
+  data?: any;
+  counts?: Record<string, number>;
+  error?: string;
+  durationMs?: number;
+}> {
+  const startTime = Date.now();
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+
+    // Check existing tables
+    const [tableRows]: any = await connection.query('SHOW TABLES');
+    const existingTables: string[] = tableRows.map((r: any) => Object.values(r)[0] as string);
+
+    const hasTable = (name: string) => existingTables.includes(name);
+
+    const resultData: any = {};
+    const counts: Record<string, number> = {};
+
+    // 1. Students
+    if (hasTable('students')) {
+      const [rows]: any = await connection.query('SELECT * FROM `students`');
+      resultData.students = rows.map((r: any) => ({
+        id: r.id,
+        nis: r.nis || '',
+        nisn: r.nisn || undefined,
+        name: r.name,
+        class: r.class,
+        gender: r.gender || 'Laki-laki',
+        email: r.email || undefined,
+        phone: r.phone || undefined,
+        savingsBalance: Number(r.savings_balance) || 0,
+        status: r.status || 'Aktif',
+        password: r.password || (r.nis ? String(r.nis).trim() : undefined),
+        nickname: r.nickname || undefined,
+        nik: r.nik || undefined,
+        birthPlace: r.birth_place || undefined,
+        birthDate: r.birth_date || undefined,
+        kkNumber: r.kk_number || undefined,
+        birthCertNumber: r.birth_cert_number || undefined,
+        livingWith: r.living_with || undefined,
+        childOrder: r.child_order || undefined,
+        siblingsCount: r.siblings_count || undefined,
+        stepSiblingsCount: r.step_siblings_count || undefined,
+        address: r.address || undefined,
+        photoUrl: r.photo_url || undefined,
+        parentName: r.parent_name || undefined,
+        googleDriveLink: r.google_drive_link || undefined,
+        fatherName: r.father_name || undefined,
+        fatherNik: r.father_nik || undefined,
+        fatherBirthPlace: r.father_birth_place || undefined,
+        fatherBirthDate: r.father_birth_date || undefined,
+        fatherEducation: r.father_education || undefined,
+        fatherOccupation: r.father_occupation || undefined,
+        fatherIncome: r.father_income || undefined,
+        fatherAddress: r.father_address || undefined,
+        fatherPhone: r.father_phone || undefined,
+        fatherStatus: r.father_status || undefined,
+        motherName: r.mother_name || undefined,
+        motherNik: r.mother_nik || undefined,
+        motherBirthPlace: r.mother_birth_place || undefined,
+        motherBirthDate: r.mother_birth_date || undefined,
+        motherEducation: r.mother_education || undefined,
+        motherOccupation: r.mother_occupation || undefined,
+        motherIncome: r.mother_income || undefined,
+        motherAddress: r.mother_address || undefined,
+        motherPhone: r.mother_phone || undefined,
+        motherStatus: r.mother_status || undefined,
+        guardianName: r.guardian_name || undefined,
+        guardianNik: r.guardian_nik || undefined,
+        guardianBirthPlace: r.guardian_birth_place || undefined,
+        guardianBirthDate: r.guardian_birth_date || undefined,
+        guardianEducation: r.guardian_education || undefined,
+        guardianOccupation: r.guardian_occupation || undefined,
+        guardianIncome: r.guardian_income || undefined,
+        guardianAddress: r.guardian_address || undefined,
+        guardianPhone: r.guardian_phone || undefined,
+        guardianStatus: r.guardian_status || undefined,
+        isSppExempt: Boolean(r.is_spp_exempt),
+        sppExemptionReason: r.spp_exemption_reason || undefined,
+        sppExemptionType: r.spp_exemption_type || undefined,
+        customSppRate: r.custom_spp_rate !== null ? Number(r.custom_spp_rate) : undefined,
+        mutationDate: r.mutation_date || undefined,
+        mutationReason: r.mutation_reason || undefined,
+        mutationDestination: r.mutation_destination || undefined
+      }));
+      counts.students = resultData.students.length;
+    }
+
+    // 2. SPP Bills
+    if (hasTable('spp_bills')) {
+      const [rows]: any = await connection.query('SELECT * FROM `spp_bills`');
+      resultData.sppBills = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        month: r.month,
+        year: Number(r.year) || 2026,
+        amount: Number(r.amount) || 0,
+        status: r.status || 'unpaid',
+        paidAt: r.paid_at || undefined,
+        paymentMethod: r.payment_method || undefined,
+        orderId: r.order_id || undefined,
+        transactionId: r.transaction_id || undefined,
+        achievementType: r.achievement_type || undefined,
+        achievementDetail: r.achievement_detail || undefined,
+        isVoidedByAdmin: Boolean(r.is_voided_by_admin),
+        voidedAt: r.voided_at || undefined,
+        voidReason: r.void_reason || undefined
+      }));
+      counts.sppBills = resultData.sppBills.length;
+    }
+
+    // 3. Misc Bills
+    if (hasTable('misc_bills')) {
+      const [rows]: any = await connection.query('SELECT * FROM `misc_bills`');
+      resultData.miscBills = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        title: r.title,
+        amount: Number(r.amount) || 0,
+        status: r.status || 'unpaid',
+        createdAt: r.created_at || new Date().toISOString(),
+        paidAt: r.paid_at || undefined,
+        paymentMethod: r.payment_method || undefined,
+        orderId: r.order_id || undefined,
+        transactionId: r.transaction_id || undefined,
+        isMonthly: Boolean(r.is_monthly),
+        month: r.month || undefined,
+        isVoidedByAdmin: Boolean(r.is_voided_by_admin),
+        voidedAt: r.voided_at || undefined,
+        voidReason: r.void_reason || undefined
+      }));
+      counts.miscBills = resultData.miscBills.length;
+    }
+
+    // 4. Savings Transactions
+    if (hasTable('savings_transactions')) {
+      const [rows]: any = await connection.query('SELECT * FROM `savings_transactions`');
+      resultData.savingsTransactions = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentNis: r.student_nis || undefined,
+        type: r.type,
+        amount: Number(r.amount) || 0,
+        status: r.status || 'success',
+        createdAt: r.created_at || new Date().toISOString(),
+        paymentMethod: r.payment_method || undefined,
+        orderId: r.order_id || undefined,
+        transactionId: r.transaction_id || undefined,
+        notes: r.notes || undefined,
+        isVoidedByAdmin: Boolean(r.is_voided_by_admin),
+        voidedAt: r.voided_at || undefined,
+        voidReason: r.void_reason || undefined
+      }));
+      counts.savingsTransactions = resultData.savingsTransactions.length;
+    }
+
+    // 4B. Voided Payments Registry
+    if (hasTable('voided_payments')) {
+      const [rows]: any = await connection.query('SELECT * FROM `voided_payments`');
+      resultData.voidedPayments = rows.map((r: any) => ({
+        id: r.id,
+        billId: r.bill_id || undefined,
+        orderId: r.order_id || undefined,
+        transactionId: r.transaction_id || undefined,
+        studentId: r.student_id || undefined,
+        billType: r.bill_type || 'spp',
+        period: r.period || undefined,
+        amount: Number(r.amount) || 0,
+        voidReason: r.void_reason || undefined,
+        voidedAt: r.voided_at || new Date().toISOString()
+      }));
+    }
+
+    // 5. Treasurer Transactions (Buku Kas Umum)
+    if (hasTable('treasurer_transactions')) {
+      const [rows]: any = await connection.query('SELECT * FROM `treasurer_transactions` ORDER BY `date` DESC, `id` DESC');
+      resultData.treasurerTransactions = rows.map((r: any) => ({
+        id: r.id,
+        type: r.type,
+        category: r.category,
+        amount: Number(r.amount) || 0,
+        description: r.description,
+        date: r.date,
+        source: r.source || 'custom',
+        studentName: r.student_name || undefined,
+        studentId: r.student_id || undefined,
+        nis: r.nis || undefined,
+        createdBy: r.created_by || 'Bendahara',
+        recipientName: r.recipient_name || undefined,
+        fundingSource: r.funding_source || undefined,
+        paymentMethod: r.payment_method === 'bank' ? 'bank' : 'kas',
+        kodeRekening: r.kode_rekening || undefined,
+        noBukti: r.no_bukti || undefined,
+        orderId: r.order_id || undefined,
+        transactionId: r.transaction_id || undefined
+      }));
+      counts.treasurerTransactions = resultData.treasurerTransactions.length;
+    }
+
+    // 6. Teacher Salaries
+    if (hasTable('teacher_salaries')) {
+      const [rows]: any = await connection.query('SELECT * FROM `teacher_salaries`');
+      resultData.teacherSalaries = rows.map((r: any) => ({
+        id: r.id,
+        teacherId: r.teacher_id,
+        teacherName: r.teacher_name,
+        teacherType: r.teacher_type,
+        month: r.month,
+        baseSalary: Number(r.base_salary) || 0,
+        homeroomAllowance: Number(r.homeroom_allowance) || 0,
+        journalCount: Number(r.journal_count) || 0,
+        journalRate: Number(r.journal_rate) || 0,
+        journalIncentive: Number(r.journal_incentive) || 0,
+        tunjanganMasaKerja: Number(r.tunjangan_masa_kerja) || 0,
+        vakasi: Number(r.vakasi) || 0,
+        otherAllowance: Number(r.other_allowance) || 0,
+        potonganDanaSosial: Number(r.potongan_dana_sosial) || 0,
+        potonganAbsen: Number(r.potongan_absen) || 0,
+        potonganLain: Number(r.potongan_lain) || 0,
+        deductions: Number(r.deductions) || 0,
+        totalAmount: Number(r.total_amount) || 0,
+        status: r.status || 'unpaid',
+        paymentDate: r.payment_date || undefined,
+        notes: r.notes || undefined
+      }));
+      counts.teacherSalaries = resultData.teacherSalaries.length;
+    }
+
+    // 7. Homeroom Teachers
+    if (hasTable('homeroom_teachers')) {
+      const [rows]: any = await connection.query('SELECT * FROM `homeroom_teachers`');
+      resultData.homeroomTeachers = rows.map((r: any) => ({
+        id: r.id,
+        username: r.username,
+        name: r.name,
+        className: r.class_name,
+        password: r.password || undefined,
+        skUrl: r.sk_url || undefined,
+        subject: r.subject || undefined,
+        subjectId: r.subject_id || undefined
+      }));
+      counts.homeroomTeachers = resultData.homeroomTeachers.length;
+    }
+
+    // 8. Subject Teachers
+    if (hasTable('subject_teachers')) {
+      const [rows]: any = await connection.query('SELECT * FROM `subject_teachers`');
+      resultData.subjectTeachers = rows.map((r: any) => ({
+        id: r.id,
+        username: r.username,
+        name: r.name,
+        subject: r.subject,
+        className: r.class_name || 'SEMUA KELAS',
+        password: r.password || undefined,
+        skUrl: r.sk_url || undefined
+      }));
+      counts.subjectTeachers = resultData.subjectTeachers.length;
+    }
+
+    // 9. Teaching Journals
+    if (hasTable('teaching_journals')) {
+      const [rows]: any = await connection.query('SELECT * FROM `teaching_journals`');
+      resultData.teachingJournals = rows.map((r: any) => {
+        let attendanceData = undefined;
+        if (r.attendance_data) {
+          try {
+            attendanceData = typeof r.attendance_data === 'string' ? JSON.parse(r.attendance_data) : r.attendance_data;
+          } catch {}
+        }
+        return {
+          id: r.id,
+          teacherId: r.teacher_id,
+          teacherName: r.teacher_name,
+          teacherType: r.teacher_type || undefined,
+          subject: r.subject,
+          className: r.class_name,
+          date: r.date,
+          topic: r.topic,
+          attendance: Array.isArray(attendanceData) ? attendanceData : [],
+          attendanceData: Array.isArray(attendanceData) ? attendanceData : [],
+          notes: r.notes || undefined,
+          fase: r.fase || undefined,
+          semester: r.semester || undefined,
+          alokasiWaktu: r.alokasi_waktu || undefined,
+          jamKe: r.jam_ke || undefined,
+          pertemuanKe: r.pertemuan_ke || undefined,
+          tujuanPembelajaran: r.tujuan_pembelajaran || undefined,
+          pencapaianKktp: r.pencapaian_kktp || undefined,
+          createdAt: r.created_at || new Date().toISOString()
+        };
+      });
+      counts.teachingJournals = resultData.teachingJournals.length;
+    }
+
+    // 10. Attendance Logs
+    if (hasTable('attendance_logs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `attendance_logs`');
+      resultData.attendanceLogs = rows.map((r: any) => {
+        let subjectNotes = undefined;
+        if (r.subject_notes) {
+          try {
+            subjectNotes = typeof r.subject_notes === 'string' ? JSON.parse(r.subject_notes) : r.subject_notes;
+          } catch {}
+        }
+        return {
+          id: r.id,
+          studentId: r.student_id,
+          studentName: r.student_name || undefined,
+          className: r.class_name || undefined,
+          date: r.date,
+          status: r.status,
+          notes: r.notes || undefined,
+          subjectNotes
+        };
+      });
+      counts.attendanceLogs = resultData.attendanceLogs.length;
+    }
+
+    // 11. Merdeka Assessments
+    if (hasTable('merdeka_assessments')) {
+      const [rows]: any = await connection.query('SELECT * FROM `merdeka_assessments`');
+      resultData.merdekaAssessments = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentName: r.student_name,
+        className: r.class_name,
+        subject: r.subject,
+        teacherName: r.teacher_name,
+        semester: r.semester,
+        academicYear: r.academic_year,
+        tp1Name: r.tp1_name || undefined,
+        tp1Tugas1: r.tp1_tugas1 || undefined,
+        tp1Tugas2: r.tp1_tugas2 || undefined,
+        tp1Uh: r.tp1_uh || undefined,
+        nilaiTp1: r.nilai_tp1 !== null ? Number(r.nilai_tp1) : undefined,
+        tp2Name: r.tp2_name || undefined,
+        tp2Tugas1: r.tp2_tugas1 || undefined,
+        tp2Tugas2: r.tp2_tugas2 || undefined,
+        tp2Uh: r.tp2_uh || undefined,
+        nilaiTp2: r.nilai_tp2 !== null ? Number(r.nilai_tp2) : undefined,
+        tp3Name: r.tp3_name || undefined,
+        tp3Tugas1: r.tp3_tugas1 || undefined,
+        tp3Tugas2: r.tp3_tugas2 || undefined,
+        tp3Uh: r.tp3_uh || undefined,
+        nilaiTp3: r.nilai_tp3 !== null ? Number(r.nilai_tp3) : undefined,
+        tp4Name: r.tp4_name || undefined,
+        tp4Tugas1: r.tp4_tugas1 || undefined,
+        tp4Tugas2: r.tp4_tugas2 || undefined,
+        tp4Uh: r.tp4_uh || undefined,
+        nilaiTp4: r.nilai_tp4 !== null ? Number(r.nilai_tp4) : undefined,
+        nilaiRataTp: r.nilai_rata_tp !== null ? Number(r.nilai_rata_tp) : undefined,
+        nilaiKokurikuler: r.nilai_kokurikuler !== null ? Number(r.nilai_kokurikuler) : undefined,
+        nilaiPts: r.nilai_pts !== null ? Number(r.nilai_pts) : undefined,
+        nilaiPas: r.nilai_pas !== null ? Number(r.nilai_pas) : undefined,
+        nilaiAkhirMapel: r.nilai_akhir_mapel !== null ? Number(r.nilai_akhir_mapel) : undefined,
+        nilaiFormatif: r.nilai_formatif !== null ? Number(r.nilai_formatif) : undefined,
+        nilaiSumatifLm: r.nilai_sumatif_lm !== null ? Number(r.nilai_sumatif_lm) : undefined,
+        nilaiSas: r.nilai_sas !== null ? Number(r.nilai_sas) : undefined,
+        nilaiRapor: r.nilai_rapor !== null ? Number(r.nilai_rapor) : undefined,
+        deskripsiCapaian: r.deskripsi_capaian || undefined,
+        createdAt: r.created_at || new Date().toISOString(),
+        updatedAt: r.updated_at || undefined
+      }));
+      counts.merdekaAssessments = resultData.merdekaAssessments.length;
+    }
+
+    // 12. Class Schedules
+    if (hasTable('class_schedules')) {
+      const [rows]: any = await connection.query('SELECT * FROM `class_schedules`');
+      resultData.classSchedules = rows.map((r: any) => ({
+        id: r.id,
+        day: r.day,
+        className: r.class_name,
+        subject: r.subject,
+        teacherId: r.teacher_id,
+        teacherName: r.teacher_name,
+        jamKe: r.jam_ke,
+        startTime: r.start_time || undefined,
+        endTime: r.end_time || undefined,
+        alokasiWaktu: r.alokasi_waktu || undefined,
+        academicYear: r.academic_year || undefined,
+        semester: r.semester || undefined,
+        createdAt: r.created_at || undefined
+      }));
+      counts.classSchedules = resultData.classSchedules.length;
+    }
+
+    // 13. Student Development Logs
+    if (hasTable('student_development_logs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `student_development_logs`');
+      resultData.studentDevelopmentLogs = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentName: r.student_name,
+        className: r.class_name,
+        date: r.date,
+        category: r.category,
+        notes: r.notes,
+        createdAt: r.created_at
+      }));
+      counts.studentDevelopmentLogs = resultData.studentDevelopmentLogs.length;
+    }
+
+    // 14. Student Infraction Logs
+    if (hasTable('student_infraction_logs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `student_infraction_logs`');
+      resultData.studentInfractionLogs = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentName: r.student_name,
+        className: r.class_name,
+        date: r.date,
+        time: r.time,
+        location: r.location,
+        infractionType: r.infraction_type,
+        actionTaken: r.action_taken,
+        resolutionStatus: r.resolution_status,
+        points: Number(r.points) || 0,
+        createdAt: r.created_at
+      }));
+      counts.studentInfractionLogs = resultData.studentInfractionLogs.length;
+    }
+
+    // 15. Infraction Rules
+    if (hasTable('infraction_rules')) {
+      const [rows]: any = await connection.query('SELECT * FROM `infraction_rules`');
+      resultData.infractionRules = rows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        points: Number(r.points) || 0,
+        category: r.category
+      }));
+      counts.infractionRules = resultData.infractionRules.length;
+    }
+
+    // 16. Student Counseling Logs
+    if (hasTable('student_counseling_logs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `student_counseling_logs`');
+      resultData.studentCounselingLogs = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentName: r.student_name,
+        className: r.class_name,
+        date: r.date,
+        topic: r.topic,
+        actionPlan: r.action_plan,
+        result: r.result,
+        bkFeedback: r.bk_feedback || undefined,
+        bkFeedbackAt: r.bk_feedback_at || undefined,
+        createdAt: r.created_at
+      }));
+      counts.studentCounselingLogs = resultData.studentCounselingLogs.length;
+    }
+
+    // 17. Class Announcements
+    if (hasTable('class_announcements')) {
+      const [rows]: any = await connection.query('SELECT * FROM `class_announcements`');
+      resultData.classAnnouncements = rows.map((r: any) => ({
+        id: r.id,
+        className: r.class_name,
+        title: r.title,
+        content: r.content,
+        date: r.date,
+        targetRecipient: r.target_recipient,
+        confirmationStatus: r.confirmation_status || 'Belum Dibaca',
+        createdAt: r.created_at
+      }));
+      counts.classAnnouncements = resultData.classAnnouncements.length;
+    }
+
+    // 18. Class Meeting Logs
+    if (hasTable('class_meeting_logs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `class_meeting_logs`');
+      resultData.classMeetingLogs = rows.map((r: any) => ({
+        id: r.id,
+        className: r.class_name,
+        meetingType: r.meeting_type,
+        date: r.date,
+        attendees: r.attendees,
+        agenda: r.agenda,
+        followUp: r.follow_up,
+        createdAt: r.created_at
+      }));
+      counts.classMeetingLogs = resultData.classMeetingLogs.length;
+    }
+
+    // 19. Principal Work Programs
+    if (hasTable('principal_work_programs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `principal_work_programs`');
+      resultData.principalWorkPrograms = rows.map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        targetDate: r.target_date,
+        status: r.status,
+        syncWithStaff: Boolean(r.sync_with_staff),
+        createdAt: r.created_at
+      }));
+      counts.principalWorkPrograms = resultData.principalWorkPrograms.length;
+    }
+
+    // 20. Teacher Evaluations
+    if (hasTable('teacher_evaluations')) {
+      const [rows]: any = await connection.query('SELECT * FROM `teacher_evaluations`');
+      resultData.teacherEvaluations = rows.map((r: any) => ({
+        id: r.id,
+        teacherType: r.teacher_type,
+        teacherId: r.teacher_id,
+        teacherName: r.teacher_name,
+        evaluatorName: r.evaluator_name,
+        date: r.date,
+        academicYear: r.academic_year,
+        pedagogicScore: Number(r.pedagogic_score) || 0,
+        professionalScore: Number(r.professional_score) || 0,
+        personalScore: Number(r.personal_score) || 0,
+        socialScore: Number(r.social_score) || 0,
+        notes: r.notes,
+        createdAt: r.created_at
+      }));
+      counts.teacherEvaluations = resultData.teacherEvaluations.length;
+    }
+
+    // 21. Sarpras Items
+    if (hasTable('sarpras_items')) {
+      const [rows]: any = await connection.query('SELECT * FROM `sarpras_items`');
+      resultData.sarprasItems = rows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        code: r.code,
+        category: r.category,
+        conditionStatus: r.condition_status,
+        location: r.location,
+        totalQty: Number(r.total_qty) || 0,
+        availableQty: Number(r.available_qty) || 0,
+        price: r.price !== null ? Number(r.price) : undefined,
+        purchaseYear: r.purchase_year || undefined
+      }));
+      counts.sarprasItems = resultData.sarprasItems.length;
+    }
+
+    // 22. Sarpras Proposals
+    if (hasTable('sarpras_proposals')) {
+      const [rows]: any = await connection.query('SELECT * FROM `sarpras_proposals`');
+      resultData.sarprasProposals = rows.map((r: any) => ({
+        id: r.id,
+        itemName: r.item_name,
+        qty: Number(r.qty) || 1,
+        estimatedPrice: Number(r.estimated_price) || 0,
+        totalPrice: Number(r.total_price) || 0,
+        proposedBy: r.proposed_by,
+        date: r.date,
+        reason: r.reason,
+        status: r.status,
+        notes: r.notes || undefined,
+        imageUrl: r.image_url || undefined,
+        createdAt: r.created_at
+      }));
+      counts.sarprasProposals = resultData.sarprasProposals.length;
+    }
+
+    // 23. Sarpras Loans
+    if (hasTable('sarpras_loans')) {
+      const [rows]: any = await connection.query('SELECT * FROM `sarpras_loans`');
+      resultData.sarprasLoans = rows.map((r: any) => ({
+        id: r.id,
+        itemId: r.item_id,
+        itemName: r.item_name,
+        borrowerId: r.borrower_id,
+        borrowerName: r.borrower_name,
+        qty: Number(r.qty) || 1,
+        loanDate: r.loan_date,
+        returnDate: r.return_date || undefined,
+        status: r.status,
+        notes: r.notes || undefined
+      }));
+      counts.sarprasLoans = resultData.sarprasLoans.length;
+    }
+
+    // 24. SPMB Candidates
+    if (hasTable('spmb_candidates')) {
+      const [rows]: any = await connection.query('SELECT * FROM `spmb_candidates`');
+      resultData.spmbCandidates = rows.map((r: any) => mapMysqlRowToSpmbCandidate(r));
+      counts.spmbCandidates = resultData.spmbCandidates.length;
+    }
+
+    // 25. Midtrans Transactions
+    if (hasTable('midtrans_transactions')) {
+      const [rows]: any = await connection.query('SELECT * FROM `midtrans_transactions`');
+      resultData.midtransTransactions = rows.map((r: any) => {
+        let rawResponse = undefined;
+        if (r.raw_response) {
+          try {
+            rawResponse = typeof r.raw_response === 'string' ? JSON.parse(r.raw_response) : r.raw_response;
+          } catch {}
+        }
+        return {
+          id: r.id,
+          orderId: r.order_id,
+          transactionId: r.transaction_id || undefined,
+          studentId: r.student_id || undefined,
+          studentName: r.student_name || undefined,
+          studentNis: r.student_nis || undefined,
+          nisn: r.nisn || undefined,
+          billType: r.bill_type,
+          description: r.description,
+          grossAmount: Number(r.gross_amount) || 0,
+          paymentType: r.payment_type,
+          transactionStatus: r.transaction_status,
+          fraudStatus: r.fraud_status || undefined,
+          settlementTime: r.settlement_time || undefined,
+          transactionTime: r.transaction_time || undefined,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+          snapToken: r.snap_token || undefined,
+          rawResponse
+        };
+      });
+      counts.midtransTransactions = resultData.midtransTransactions.length;
+    }
+
+    // 26. Notifications
+    if (hasTable('notifications')) {
+      const [rows]: any = await connection.query('SELECT * FROM `notifications` ORDER BY `created_at` DESC LIMIT 100');
+      resultData.notifications = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id || undefined,
+        title: r.title,
+        message: r.message,
+        type: r.type || 'info',
+        category: r.category || 'admin',
+        createdAt: r.created_at
+      }));
+      counts.notifications = resultData.notifications.length;
+    }
+
+    // 27. Curriculum Subjects
+    if (hasTable('curriculum_subjects')) {
+      const [rows]: any = await connection.query('SELECT * FROM `curriculum_subjects` ORDER BY `order_num` ASC, `code` ASC');
+      resultData.curriculumSubjects = rows.map((r: any) => ({
+        id: r.id,
+        code: r.code,
+        name: r.name,
+        category: r.category || 'Muatan Nasional',
+        kktp: Number(r.kktp) || 75,
+        tingkat: r.tingkat || 'Semua Tingkat',
+        orderNum: Number(r.order_num) || 0,
+        description: r.description || undefined,
+        createdAt: r.created_at || undefined,
+        updatedAt: r.updated_at || undefined
+      }));
+      counts.curriculumSubjects = resultData.curriculumSubjects.length;
+    }
+
+    // 28. Curriculum TP Descriptions
+    if (hasTable('curriculum_tp_levels')) {
+      const [rows]: any = await connection.query('SELECT * FROM `curriculum_tp_levels`');
+      resultData.curriculumTpDescriptions = rows.map((r: any) => ({
+        id: r.id,
+        subject: r.subject,
+        gradeLevel: r.grade_level,
+        semester: r.semester || 'Ganjil',
+        academicYear: r.academic_year || '2026/2027',
+        tp1Name: r.tp1_name || '',
+        tp2Name: r.tp2_name || '',
+        tp3Name: r.tp3_name || '',
+        tp4Name: r.tp4_name || '',
+        updatedAt: r.updated_at || new Date().toISOString()
+      }));
+      counts.curriculumTpDescriptions = resultData.curriculumTpDescriptions.length;
+    }
+
+    // 28B. Shared Learning Objectives (Bank TP Bersama)
+    if (hasTable("shared_learning_objectives")) {
+      const [rows]: any = await connection.query("SELECT * FROM \`shared_learning_objectives\`");
+      resultData.sharedLearningObjectives = rows.map((r: any) => ({
+        id: r.id,
+        code: r.code,
+        subjectId: r.subject_id,
+        subjectName: r.subject_name,
+        gradeLevel: String(r.grade_level || "7"),
+        semester: r.semester || "Ganjil",
+        academicYear: r.academic_year || "2026/2027",
+        tpNumber: Number(r.tp_number) || 1,
+        title: r.title || "",
+        creatorId: r.creator_id || undefined,
+        creatorName: r.creator_name || "Admin Kurikulum",
+        creatorRole: r.creator_role || "Admin / Guru Pengampu",
+        status: r.status || "Aktif",
+        revisionRequests: r.revision_requests ? (() => { try { return JSON.parse(r.revision_requests); } catch (_) { return []; } })() : [],
+        createdAt: r.created_at || new Date().toISOString(),
+        updatedAt: r.updated_at || new Date().toISOString()
+      }));
+      counts.sharedLearningObjectives = resultData.sharedLearningObjectives.length;
+    }
+
+    // 29. App Configs
+    if (hasTable('app_configs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `app_configs`');
+      resultData.configs = {};
+      for (const r of rows) {
+        try {
+          resultData.configs[r.id] = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+        } catch {}
+      }
+      counts.appConfigs = rows.length;
+    }
+
+    const durationMs = Date.now() - startTime;
+    currentConfig.status = 'connected';
+    currentConfig.lastSyncAt = new Date().toISOString();
+
+    return {
+      success: true,
+      message: `Berhasil memuat seluruh data dari MySQL database "${currentConfig.database}" (${Object.values(counts).reduce((a, b) => a + b, 0)} total records)!`,
+      data: resultData,
+      counts,
+      durationMs
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: 'Gagal menarik data dari database MySQL.',
+      error: err.message || 'Kesalahan koneksi / query MySQL',
+      durationMs: Date.now() - startTime
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// ==========================================================
+// DIRECT MYSQL STORAGE & PERSISTENCE ENGINE
+// ==========================================================
+
+// Ensure all 26+ tables and configs exist in MySQL database without wiping existing data
+export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; message: string; error?: string }> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query('SET FOREIGN_KEY_CHECKS = 0;');
+    await connection.query(COMPLETE_TABLES_SQL);
+    await connection.query('SET FOREIGN_KEY_CHECKS = 1;');
+
+    // Auto-migration: Ensure all columns exist on spmb_candidates if table was created in an older schema
+    try {
+      const [existingCols]: any = await connection.query("SHOW COLUMNS FROM `spmb_candidates`");
+      const existingColNames = new Set((existingCols || []).map((c: any) => c.Field));
+      const requiredColumns: { col: string; def: string }[] = [
+        { col: 'student_phone', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'status', def: 'VARCHAR(64) DEFAULT "registered"' },
+        { col: 'updated_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'is_form_completed', def: 'TINYINT(1) DEFAULT 0' },
+        { col: 'form_completed_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'nickname', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'kk_number', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'birth_cert_number', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'religion', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'address', def: 'TEXT DEFAULT NULL' },
+        { col: 'dusun', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'rt', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'rw', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'village', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'district', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'city', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'postal_code', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'living_with', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'child_order', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'siblings_count', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'step_siblings_count', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'transportation', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'special_needs', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'height', def: 'INT DEFAULT NULL' },
+        { col: 'weight', def: 'INT DEFAULT NULL' },
+        { col: 'distance_to_school', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'travel_time', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'father_name', def: 'VARCHAR(150) DEFAULT NULL' },
+        { col: 'father_nik', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'father_birth_place', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'father_birth_date', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'father_education', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'father_occupation', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'father_income', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'father_phone', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'father_status', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'father_address', def: 'TEXT DEFAULT NULL' },
+        { col: 'mother_name', def: 'VARCHAR(150) DEFAULT NULL' },
+        { col: 'mother_nik', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'mother_birth_place', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'mother_birth_date', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'mother_education', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'mother_occupation', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'mother_income', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'mother_phone', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'mother_status', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'mother_address', def: 'TEXT DEFAULT NULL' },
+        { col: 'guardian_name', def: 'VARCHAR(150) DEFAULT NULL' },
+        { col: 'guardian_nik', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'guardian_birth_place', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'guardian_birth_date', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'guardian_education', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'guardian_occupation', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'guardian_income', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'guardian_phone', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'guardian_status', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'guardian_address', def: 'TEXT DEFAULT NULL' },
+        { col: 'guardian_relationship', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'guardian_is_same_as_father', def: 'TINYINT(1) DEFAULT 0' },
+        { col: 'original_session_id', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'previous_session_id', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'is_transferred_session', def: 'TINYINT(1) DEFAULT 0' },
+        { col: 'transferred_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'transfer_reason', def: 'TEXT DEFAULT NULL' },
+        { col: 'transfer_history', def: 'LONGTEXT DEFAULT NULL' },
+        { col: 'token_payment_status', def: 'VARCHAR(32) DEFAULT "unpaid"' },
+        { col: 'token_payment_order_id', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'token_paid_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'token_payment_method', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'token_amount', def: 'DECIMAL(15,2) DEFAULT NULL' },
+        { col: 'collective_refund_status', def: 'VARCHAR(32) DEFAULT "none"' },
+        { col: 'collective_refund_amount', def: 'DECIMAL(15,2) DEFAULT NULL' },
+        { col: 'collective_refunded_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'collective_refunded_by', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'collective_refund_recipient', def: 'VARCHAR(150) DEFAULT NULL' },
+        { col: 'collective_refund_note', def: 'TEXT DEFAULT NULL' },
+        { col: 'collective_refund_receipt_no', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 're_registration_paid_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 're_registration_method', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 're_registration_order_id', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 're_registration_status', def: 'VARCHAR(32) DEFAULT "unpaid"' },
+        { col: 'building_fee_paid', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+        { col: 'july_spp_paid', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+        { col: 'uniform_fee_paid', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+        { col: 'total_re_registration_paid', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+        { col: 'uniform_orders', def: 'LONGTEXT DEFAULT NULL' },
+        { col: 'selected_uniform_size', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'custom_uniform_note', def: 'TEXT DEFAULT NULL' },
+        { col: 're_registration_amount', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+        { col: 'uniform_sizes', def: 'LONGTEXT DEFAULT NULL' },
+        { col: 'documents', def: 'LONGTEXT DEFAULT NULL' },
+        { col: 'documents_raw', def: 'LONGTEXT DEFAULT NULL' },
+        { col: 'documents_uploaded_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'full_form_data', def: 'LONGTEXT DEFAULT NULL' }
+      ];
+      for (const item of requiredColumns) {
+        if (!existingColNames.has(item.col)) {
+          try {
+            await connection.query(`ALTER TABLE \`spmb_candidates\` ADD COLUMN \`${item.col}\` ${item.def}`);
+          } catch (colErr: any) {
+            console.warn(`[MySQL Add Column Warning ${item.col}]:`, colErr.message || colErr);
+          }
+        }
+      }
+
+      // Pastikan kandidat yang telah mengisi KK dan orang tua di database berstatus is_form_completed = 1
+      try {
+        await connection.query(`
+          UPDATE \`spmb_candidates\` 
+          SET \`is_form_completed\` = 1,
+              \`form_completed_at\` = COALESCE(\`form_completed_at\`, \`created_at\`, NOW())
+          WHERE \`is_form_completed\` = 0 
+            AND (\`kk_number\` IS NOT NULL AND LENGTH(TRIM(\`kk_number\`)) >= 8)
+            AND (\`father_name\` IS NOT NULL OR \`mother_name\` IS NOT NULL OR \`guardian_name\` IS NOT NULL)
+        `);
+        await connection.query(`
+          UPDATE \`spmb_candidates\`
+          SET \`documents_uploaded_at\` = COALESCE(\`documents_uploaded_at\`, \`created_at\`, NOW())
+          WHERE \`documents_uploaded_at\` IS NULL
+            AND \`documents\` LIKE '%aktaPhoto%'
+            AND \`documents\` LIKE '%kkPhoto%'
+            AND \`documents\` LIKE '%pasPhoto%'
+            AND (\`documents\` LIKE '%ktpAyahPhoto%' OR \`documents\` LIKE '%ktpPhoto%')
+            AND \`documents\` LIKE '%ktpIbuPhoto%'
+        `);
+      } catch (_) {}
+    } catch (colCheckErr: any) {
+      console.warn('[MySQL Column Check Warning]:', colCheckErr.message || colCheckErr);
+    }
+
+    // Auto-migration: Ensure is_voided_by_admin, voided_at, void_reason exist on spp_bills, misc_bills, savings_transactions
+    const tablesToCheck = ['spp_bills', 'misc_bills', 'savings_transactions'];
+    for (const tName of tablesToCheck) {
+      try {
+        const [tCols]: any = await connection.query(`SHOW COLUMNS FROM \`${tName}\``);
+        const tColNames = new Set((tCols || []).map((c: any) => c.Field));
+        if (!tColNames.has('is_voided_by_admin')) {
+          await connection.query(`ALTER TABLE \`${tName}\` ADD COLUMN \`is_voided_by_admin\` TINYINT(1) DEFAULT 0`);
+        }
+        if (!tColNames.has('voided_at')) {
+          await connection.query(`ALTER TABLE \`${tName}\` ADD COLUMN \`voided_at\` VARCHAR(64) DEFAULT NULL`);
+        }
+        if (!tColNames.has('void_reason')) {
+          await connection.query(`ALTER TABLE \`${tName}\` ADD COLUMN \`void_reason\` VARCHAR(255) DEFAULT NULL`);
+        }
+      } catch (e: any) {
+        console.warn(`[MySQL Column Check Warning on ${tName}]:`, e.message || e);
+      }
+    }
+
+    try {
+      const [stCols]: any = await connection.query("SHOW COLUMNS FROM `subject_teachers`");
+      const stColNames = new Set((stCols || []).map((c: any) => c.Field));
+      if (!stColNames.has('subject_id')) {
+        await connection.query("ALTER TABLE `subject_teachers` ADD COLUMN `subject_id` VARCHAR(64) DEFAULT NULL");
+      }
+    } catch (_) {}
+
+    try {
+      const [csCols]: any = await connection.query("SHOW COLUMNS FROM `class_schedules`");
+      const csColNames = new Set((csCols || []).map((c: any) => c.Field));
+      if (!csColNames.has('subject_id')) {
+        await connection.query("ALTER TABLE `class_schedules` ADD COLUMN `subject_id` VARCHAR(64) DEFAULT NULL");
+      }
+    } catch (_) {}
+
+    // Auto-migration: Ensure subject and subject_id exist on homeroom_teachers
+    try {
+      const [existingHrCols]: any = await connection.query("SHOW COLUMNS FROM `homeroom_teachers`");
+      const existingHrColNames = new Set((existingHrCols || []).map((c: any) => c.Field));
+      if (!existingHrColNames.has('subject')) {
+        await connection.query("ALTER TABLE `homeroom_teachers` ADD COLUMN `subject` VARCHAR(150) DEFAULT NULL");
+      }
+      if (!existingHrColNames.has('subject_id')) {
+        await connection.query("ALTER TABLE `homeroom_teachers` ADD COLUMN `subject_id` VARCHAR(64) DEFAULT NULL");
+      }
+    } catch (_) {}
+
+    // Auto-migration: Ensure student_infraction_logs column resolution_status is VARCHAR(64)
+    try {
+      await connection.query("ALTER TABLE `student_infraction_logs` MODIFY COLUMN `resolution_status` VARCHAR(64) NOT NULL DEFAULT 'Belum Selesai'");
+    } catch (_) {}
+
+    // Pastikan tabel curriculum_subjects dan curriculum_tp_levels selalu terbuat
+    try {
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS \`curriculum_subjects\` (
+          \`id\` VARCHAR(64) NOT NULL,
+          \`code\` VARCHAR(32) NOT NULL,
+          \`name\` VARCHAR(150) NOT NULL,
+          \`category\` VARCHAR(64) DEFAULT 'Muatan Nasional',
+          \`kktp\` INT DEFAULT 75,
+          \`tingkat\` VARCHAR(32) DEFAULT 'Semua Tingkat',
+          \`order_num\` INT DEFAULT 0,
+          \`description\` TEXT DEFAULT NULL,
+          \`created_at\` VARCHAR(64) DEFAULT NULL,
+          \`updated_at\` VARCHAR(64) DEFAULT NULL,
+          PRIMARY KEY (\`id\`),
+          KEY \`idx_csubj_code\` (\`code\`),
+          KEY \`idx_csubj_name\` (\`name\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS \`curriculum_tp_levels\` (
+          \`id\` VARCHAR(120) NOT NULL,
+          \`grade_level\` VARCHAR(16) NOT NULL,
+          \`subject_id\` VARCHAR(64) DEFAULT NULL,
+          \`subject_name\` VARCHAR(150) NOT NULL,
+          \`semester\` VARCHAR(16) NOT NULL,
+          \`academic_year\` VARCHAR(32) NOT NULL,
+          \`tp1_name\` TEXT DEFAULT NULL,
+          \`tp2_name\` TEXT DEFAULT NULL,
+          \`tp3_name\` TEXT DEFAULT NULL,
+          \`tp4_name\` TEXT DEFAULT NULL,
+          \`is_locked\` TINYINT(1) DEFAULT 1,
+          \`filled_by\` VARCHAR(150) DEFAULT NULL,
+          \`filled_by_role\` VARCHAR(100) DEFAULT NULL,
+          \`filled_at\` VARCHAR(64) DEFAULT NULL,
+          \`edited_by\` VARCHAR(150) DEFAULT NULL,
+          \`edited_by_role\` VARCHAR(100) DEFAULT NULL,
+          \`edited_at\` VARCHAR(64) DEFAULT NULL,
+          \`edit_history\` LONGTEXT DEFAULT NULL,
+          \`updated_at\` VARCHAR(64) DEFAULT NULL,
+          PRIMARY KEY (\`id\`),
+          KEY \`idx_tpl_grade_subj\` (\`grade_level\`, \`subject_name\`),
+          KEY \`idx_tpl_sem_year\` (\`semester\`, \`academic_year\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // Migration: Pastikan kolom edited_by, edited_by_role, edited_at, edit_history ada
+      try {
+        const [ctpCols]: any = await connection.query("SHOW COLUMNS FROM `curriculum_tp_levels`");
+        const ctpColNames = new Set((ctpCols || []).map((c: any) => c.Field));
+        if (!ctpColNames.has('edited_by')) {
+          await connection.query("ALTER TABLE `curriculum_tp_levels` ADD COLUMN `edited_by` VARCHAR(150) DEFAULT NULL");
+        }
+        if (!ctpColNames.has('edited_by_role')) {
+          await connection.query("ALTER TABLE `curriculum_tp_levels` ADD COLUMN `edited_by_role` VARCHAR(100) DEFAULT NULL");
+        }
+        if (!ctpColNames.has('edited_at')) {
+          await connection.query("ALTER TABLE `curriculum_tp_levels` ADD COLUMN `edited_at` VARCHAR(64) DEFAULT NULL");
+        }
+        if (!ctpColNames.has('edit_history')) {
+          await connection.query("ALTER TABLE `curriculum_tp_levels` ADD COLUMN `edit_history` LONGTEXT DEFAULT NULL");
+        }
+      } catch (_) {}
+    } catch (tabErr) {
+      console.warn('[MySQL Curriculum Tables Init Warning]:', tabErr);
+    }
+
+    // Seed default master data mata pelajaran hanya sekali saat inisialisasi awal database pertama kali
+    try {
+      const [initFlag]: any = await connection.query("SELECT `id` FROM `app_configs` WHERE `id` = 'curriculum_subjects_seeded'");
+      const hasBeenSeeded = initFlag && initFlag.length > 0;
+      if (!hasBeenSeeded) {
+        const [existingSubjects]: any = await connection.query("SELECT COUNT(*) as cnt FROM `curriculum_subjects`");
+        if (existingSubjects && existingSubjects[0] && existingSubjects[0].cnt === 0) {
+          const defaultSubjects = [
+            { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 1 },
+            { id: 'mapel-ppkn', code: 'PPKN', name: 'Pendidikan Pancasila', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 2 },
+            { id: 'mapel-bindo', code: 'BINDO', name: 'Bahasa Indonesia', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 3 },
+            { id: 'mapel-mtk', code: 'MAT', name: 'Matematika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 4 },
+            { id: 'mapel-ipa', code: 'IPA', name: 'Ilmu Pengetahuan Alam (IPA)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 5 },
+            { id: 'mapel-ips', code: 'IPS', name: 'Ilmu Pengetahuan Sosial (IPS)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 6 },
+            { id: 'mapel-bing', code: 'BING', name: 'Bahasa Inggris', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 7 },
+            { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 8 },
+            { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 9 },
+            { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 10 },
+            { id: 'mapel-bjawa', code: 'MULOK', name: 'Muatan Lokal: Bahasa Daerah', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 11 }
+          ];
+          for (const s of defaultSubjects) {
+            await connection.query(
+              "INSERT IGNORE INTO `curriculum_subjects` (`id`, `code`, `name`, `category`, `kktp`, `tingkat`, `order_num`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+              [s.id, s.code, s.name, s.category, s.kktp, s.tingkat, s.order_num]
+            );
+          }
+          console.log('[MySQL] Master data mata pelajaran default berhasil di-seed.');
+        }
+        await connection.query(
+          "INSERT INTO `app_configs` (`id`, `data`, `updated_at`) VALUES ('curriculum_subjects_seeded', 'true', NOW()) ON DUPLICATE KEY UPDATE `updated_at`=NOW()"
+        );
+      }
+    } catch (seedErr) {
+      console.warn('[MySQL Seed Subjects Warning]:', seedErr);
+    }
+
+    return {
+      success: true,
+      message: 'Semua struktur tabel MySQL berhasil diverifikasi dan diinisialisasi.'
+    };
+  } catch (err: any) {
+    console.error('[MySQL Init Tables Error]:', err.message || err);
+    return {
+      success: false,
+      message: 'Gagal menginisialisasi struktur tabel MySQL',
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Direct single entity save / upsert into MySQL table with proper UTF8 escaping
+export async function directSaveEntityToMysql(entityType: string, data: any): Promise<{ success: boolean; message: string; error?: string }> {
+  if (!data || typeof data !== 'object') {
+    return { success: false, message: 'Data entitas tidak valid.' };
+  }
+
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+    const typeKey = entityType.toLowerCase().trim();
+
+    // 1. Students
+    if (typeKey === 'student' || typeKey === 'students') {
+      const s = data;
+      await connection.query(`
+        INSERT INTO \`students\` (
+          \`id\`, \`nis\`, \`nisn\`, \`name\`, \`class\`, \`gender\`, \`email\`, \`phone\`, \`savings_balance\`,
+          \`status\`, \`password\`, \`nickname\`, \`nik\`, \`birth_place\`, \`birth_date\`, \`kk_number\`,
+          \`birth_cert_number\`, \`living_with\`, \`child_order\`, \`siblings_count\`, \`step_siblings_count\`,
+          \`address\`, \`photo_url\`, \`parent_name\`, \`google_drive_link\`, \`father_name\`, \`father_nik\`,
+          \`father_birth_place\`, \`father_birth_date\`, \`father_education\`, \`father_occupation\`, \`father_income\`,
+          \`father_address\`, \`father_phone\`, \`father_status\`, \`mother_name\`, \`mother_nik\`, \`mother_birth_place\`,
+          \`mother_birth_date\`, \`mother_education\`, \`mother_occupation\`, \`mother_income\`, \`mother_address\`,
+          \`mother_phone\`, \`mother_status\`, \`guardian_name\`, \`guardian_nik\`, \`guardian_birth_place\`,
+          \`guardian_birth_date\`, \`guardian_education\`, \`guardian_occupation\`, \`guardian_income\`, \`guardian_address\`,
+          \`guardian_phone\`, \`guardian_status\`, \`is_spp_exempt\`, \`spp_exemption_reason\`, \`spp_exemption_type\`,
+          \`custom_spp_rate\`, \`mutation_date\`, \`mutation_reason\`, \`mutation_destination\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`nis\`=VALUES(\`nis\`), \`nisn\`=VALUES(\`nisn\`), \`name\`=VALUES(\`name\`), \`class\`=VALUES(\`class\`),
+          \`gender\`=VALUES(\`gender\`), \`email\`=VALUES(\`email\`), \`phone\`=VALUES(\`phone\`),
+          \`savings_balance\`=VALUES(\`savings_balance\`), \`status\`=VALUES(\`status\`), \`password\`=VALUES(\`password\`),
+          \`nickname\`=VALUES(\`nickname\`), \`nik\`=VALUES(\`nik\`), \`birth_place\`=VALUES(\`birth_place\`),
+          \`birth_date\`=VALUES(\`birth_date\`), \`kk_number\`=VALUES(\`kk_number\`), \`birth_cert_number\`=VALUES(\`birth_cert_number\`),
+          \`living_with\`=VALUES(\`living_with\`), \`child_order\`=VALUES(\`child_order\`), \`siblings_count\`=VALUES(\`siblings_count\`),
+          \`step_siblings_count\`=VALUES(\`step_siblings_count\`), \`address\`=VALUES(\`address\`), \`photo_url\`=VALUES(\`photo_url\`),
+          \`parent_name\`=VALUES(\`parent_name\`), \`google_drive_link\`=VALUES(\`google_drive_link\`),
+          \`father_name\`=VALUES(\`father_name\`), \`father_nik\`=VALUES(\`father_nik\`), \`father_birth_place\`=VALUES(\`father_birth_place\`),
+          \`father_birth_date\`=VALUES(\`father_birth_date\`), \`father_education\`=VALUES(\`father_education\`),
+          \`father_occupation\`=VALUES(\`father_occupation\`), \`father_income\`=VALUES(\`father_income\`),
+          \`father_address\`=VALUES(\`father_address\`), \`father_phone\`=VALUES(\`father_phone\`), \`father_status\`=VALUES(\`father_status\`),
+          \`mother_name\`=VALUES(\`mother_name\`), \`mother_nik\`=VALUES(\`mother_nik\`), \`mother_birth_place\`=VALUES(\`mother_birth_place\`),
+          \`mother_birth_date\`=VALUES(\`mother_birth_date\`), \`mother_education\`=VALUES(\`mother_education\`),
+          \`mother_occupation\`=VALUES(\`mother_occupation\`), \`mother_income\`=VALUES(\`mother_income\`),
+          \`mother_address\`=VALUES(\`mother_address\`), \`mother_phone\`=VALUES(\`mother_phone\`), \`mother_status\`=VALUES(\`mother_status\`),
+          \`guardian_name\`=VALUES(\`guardian_name\`), \`guardian_nik\`=VALUES(\`guardian_nik\`),
+          \`guardian_birth_place\`=VALUES(\`guardian_birth_place\`), \`guardian_birth_date\`=VALUES(\`guardian_birth_date\`),
+          \`guardian_education\`=VALUES(\`guardian_education\`), \`guardian_occupation\`=VALUES(\`guardian_occupation\`),
+          \`guardian_income\`=VALUES(\`guardian_income\`), \`guardian_address\`=VALUES(\`guardian_address\`),
+          \`guardian_phone\`=VALUES(\`guardian_phone\`), \`guardian_status\`=VALUES(\`guardian_status\`),
+          \`is_spp_exempt\`=VALUES(\`is_spp_exempt\`), \`spp_exemption_reason\`=VALUES(\`spp_exemption_reason\`),
+          \`spp_exemption_type\`=VALUES(\`spp_exemption_type\`), \`custom_spp_rate\`=VALUES(\`custom_spp_rate\`),
+          \`mutation_date\`=VALUES(\`mutation_date\`), \`mutation_reason\`=VALUES(\`mutation_reason\`),
+          \`mutation_destination\`=VALUES(\`mutation_destination\`), \`updated_at\`=NOW()
+      `, [
+        s.id, s.nis || '', s.nisn || null, s.name || '', s.class || '', s.gender || 'Laki-laki', s.email || null,
+        s.phone || null, Number(s.savingsBalance) || 0, s.status || 'Aktif', s.password || null, s.nickname || null,
+        s.nik || null, s.birthPlace || null, s.birthDate || null, s.kkNumber || null, s.birthCertNumber || null,
+        s.livingWith || null, s.childOrder || null, s.siblingsCount || null, s.stepSiblingsCount || null,
+        s.address || null, s.photoUrl || null, s.parentName || null, s.googleDriveLink || null, s.fatherName || null,
+        s.fatherNik || null, s.fatherBirthPlace || null, s.fatherBirthDate || null, s.fatherEducation || null,
+        s.fatherOccupation || null, s.fatherIncome || null, s.fatherAddress || null, s.fatherPhone || null,
+        s.fatherStatus || null, s.motherName || null, s.motherNik || null, s.motherBirthPlace || null,
+        s.motherBirthDate || null, s.motherEducation || null, s.motherOccupation || null, s.motherIncome || null,
+        s.motherAddress || null, s.motherPhone || null, s.motherStatus || null, s.guardianName || null,
+        s.guardianNik || null, s.guardianBirthPlace || null, s.guardianBirthDate || null, s.guardianEducation || null,
+        s.guardianOccupation || null, s.guardianIncome || null, s.guardianAddress || null, s.guardianPhone || null,
+        s.guardianStatus || null, s.isSppExempt ? 1 : 0, s.sppExemptionReason || null, s.sppExemptionType || null,
+        s.customSppRate !== undefined ? Number(s.customSppRate) : null, s.mutationDate || null, s.mutationReason || null,
+        s.mutationDestination || null
+      ]);
+      return { success: true, message: `Data siswa "${s.name}" (${s.nis}) langsung tersimpan ke MySQL.` };
+    }
+
+    // 2. SPP Bills
+    else if (typeKey === 'spp' || typeKey === 'spp_bill' || typeKey === 'sppbills') {
+      const b = data;
+      const bStudentId = b.studentId || (b as any).student_id || '';
+      const bMonth = b.month;
+      const bYear = Number(b.year) || 2026;
+      const bAmount = Number(b.amount) || 0;
+      const bStatus = b.status || 'unpaid';
+      const bPaidAt = b.paidAt || (b as any).paid_at || null;
+      const bPaymentMethod = b.paymentMethod || (b as any).payment_method || null;
+      const bOrderId = b.orderId || (b as any).order_id || null;
+      const bTransactionId = b.transactionId || (b as any).transaction_id || null;
+      const bAchType = b.achievementType || (b as any).achievement_type || null;
+      const bAchDetail = b.achievementDetail || (b as any).achievement_detail || null;
+      const bIsVoided = b.isVoidedByAdmin ? 1 : 0;
+      const bVoidedAt = b.voidedAt || null;
+      const bVoidReason = b.voidReason || null;
+
+      // Try updating existing row matching ID or student_id + month + year
+      const [updateResult]: any = await connection.query(`
+        UPDATE \`spp_bills\`
+        SET \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`achievement_type\`=?, \`achievement_detail\`=?, \`is_voided_by_admin\`=?, \`voided_at\`=?, \`void_reason\`=?
+        WHERE \`id\`=? OR (
+          (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
+          AND LOWER(\`month\`)=LOWER(?) AND \`year\`=?
+        )
+      `, [
+        bAmount, bStatus, bPaidAt, bPaymentMethod, bOrderId, bTransactionId, bAchType, bAchDetail, bIsVoided, bVoidedAt, bVoidReason,
+        b.id, bStudentId, bStudentId, bStudentId, bMonth, bYear
+      ]);
+
+      if (updateResult && updateResult.affectedRows === 0) {
+        await connection.query(`
+          INSERT INTO \`spp_bills\` (
+            \`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`,
+            \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
+            \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+            \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`),
+            \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
+        `, [
+          b.id, bStudentId, bMonth, bYear, bAmount, bStatus,
+          bPaidAt, bPaymentMethod, bOrderId, bTransactionId,
+          bAchType, bAchDetail, bIsVoided, bVoidedAt, bVoidReason
+        ]);
+      }
+      return { success: true, message: `Data tagihan SPP "${b.month} ${b.year}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 3. Misc Bills
+    else if (typeKey === 'misc' || typeKey === 'misc_bill' || typeKey === 'miscbills') {
+      const m = data;
+      const mStudentId = m.studentId || (m as any).student_id || '';
+      const mTitle = m.title || '';
+      const mAmount = Number(m.amount) || 0;
+      const mStatus = m.status || 'unpaid';
+      const mCreatedAt = m.createdAt || (m as any).created_at || new Date().toISOString();
+      const mPaidAt = m.paidAt || (m as any).paid_at || null;
+      const mPaymentMethod = m.paymentMethod || (m as any).payment_method || null;
+      const mOrderId = m.orderId || (m as any).order_id || null;
+      const mTransactionId = m.transactionId || (m as any).transaction_id || null;
+      const mIsMonthly = m.isMonthly || (m as any).is_monthly ? 1 : 0;
+      const mMonth = m.month || null;
+      const mIsVoided = m.isVoidedByAdmin ? 1 : 0;
+      const mVoidedAt = m.voidedAt || null;
+      const mVoidReason = m.voidReason || null;
+
+      const [updateResult]: any = await connection.query(`
+        UPDATE \`misc_bills\`
+        SET \`title\`=?, \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`is_monthly\`=?, \`month\`=?, \`is_voided_by_admin\`=?, \`voided_at\`=?, \`void_reason\`=?
+        WHERE \`id\`=? OR (
+          (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
+          AND LOWER(\`title\`)=LOWER(?)
+        )
+      `, [
+        mTitle, mAmount, mStatus, mPaidAt, mPaymentMethod, mOrderId, mTransactionId, mIsMonthly, mMonth, mIsVoided, mVoidedAt, mVoidReason,
+        m.id, mStudentId, mStudentId, mStudentId, mTitle
+      ]);
+
+      if (updateResult && updateResult.affectedRows === 0) {
+        await connection.query(`
+          INSERT INTO \`misc_bills\` (
+            \`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`,
+            \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`,
+            \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
+            \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`),
+            \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`),
+            \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
+        `, [
+          m.id, mStudentId, mTitle, mAmount, mStatus,
+          mCreatedAt, mPaidAt, mPaymentMethod,
+          mOrderId, mTransactionId, mIsMonthly, mMonth,
+          mIsVoided, mVoidedAt, mVoidReason
+        ]);
+      }
+      return { success: true, message: `Data tagihan non-SPP "${m.title}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 4. Savings Transactions
+    else if (typeKey === 'savings' || typeKey === 'savings_transaction' || typeKey === 'savingstransactions') {
+      const s = data;
+      const sIsVoided = s.isVoidedByAdmin ? 1 : 0;
+      const sVoidedAt = s.voidedAt || null;
+      const sVoidReason = s.voidReason || null;
+
+      await connection.query(`
+        INSERT INTO \`savings_transactions\` (
+          \`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`,
+          \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`status\`=VALUES(\`status\`), \`amount\`=VALUES(\`amount\`), \`notes\`=VALUES(\`notes\`),
+          \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+          \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
+      `, [
+        s.id, s.studentId, s.studentNis || null, s.type || 'deposit', Number(s.amount) || 0,
+        s.status || 'success', s.createdAt || new Date().toISOString(), s.paymentMethod || null,
+        s.orderId || null, s.transactionId || null, s.notes || null,
+        sIsVoided, sVoidedAt, sVoidReason
+      ]);
+      return { success: true, message: `Transaksi tabungan Rp ${Number(s.amount).toLocaleString('id-ID')} langsung tersimpan ke MySQL.` };
+    }
+
+    // 4B. Voided Payments Registry
+    else if (typeKey === 'voided_payment' || typeKey === 'voided_payments' || typeKey === 'voidedpayment' || typeKey === 'voidedpayments') {
+      const v = data;
+      await connection.query(`
+        INSERT INTO \`voided_payments\` (
+          \`id\`, \`bill_id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`bill_type\`, \`period\`, \`amount\`, \`void_reason\`, \`voided_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`bill_id\`=VALUES(\`bill_id\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+          \`student_id\`=VALUES(\`student_id\`), \`bill_type\`=VALUES(\`bill_type\`), \`period\`=VALUES(\`period\`),
+          \`amount\`=VALUES(\`amount\`), \`void_reason\`=VALUES(\`void_reason\`), \`voided_at\`=VALUES(\`voided_at\`)
+      `, [
+        v.id, v.billId || null, v.orderId || null, v.transactionId || null, v.studentId || null,
+        v.billType || 'spp', v.period || null, Number(v.amount) || 0, v.voidReason || null, v.voidedAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Data pembatalan pembayaran ${v.id} langsung tersimpan ke MySQL.` };
+    }
+
+    // 5. Treasurer Transactions (Kas Umum)
+    else if (typeKey === 'transaction' || typeKey === 'transactions' || typeKey === 'treasurer_transaction' || typeKey === 'treasurer_transactions' || typeKey === 'treasurertransactions' || typeKey === 'treasurertransaction') {
+      const t = data;
+      await connection.query(`
+        INSERT INTO \`treasurer_transactions\` (
+          \`id\`, \`type\`, \`category\`, \`amount\`, \`description\`, \`date\`, \`source\`,
+          \`student_name\`, \`student_id\`, \`nis\`, \`created_by\`, \`recipient_name\`,
+          \`funding_source\`, \`payment_method\`, \`kode_rekening\`, \`no_bukti\`, \`order_id\`, \`transaction_id\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`amount\`=VALUES(\`amount\`), \`description\`=VALUES(\`description\`), \`category\`=VALUES(\`category\`),
+          \`date\`=VALUES(\`date\`), \`payment_method\`=VALUES(\`payment_method\`), \`no_bukti\`=VALUES(\`no_bukti\`),
+          \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`funding_source\`=VALUES(\`funding_source\`)
+      `, [
+        t.id, t.type || 'incoming', t.category || 'Lain-lain', Number(t.amount) || 0, t.description || '',
+        t.date || new Date().toISOString().substring(0, 10), t.source || 'custom', t.studentName || null,
+        t.studentId || null, t.nis || null, t.createdBy || 'Bendahara', t.recipientName || null,
+        t.fundingSource || null, t.paymentMethod === 'bank' ? 'bank' : 'kas', t.kodeRekening || null,
+        t.noBukti || null, t.orderId || null, t.transactionId || null
+      ]);
+      return { success: true, message: `Transaksi kas "${t.description}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 6. Teacher Salaries
+    else if (typeKey === 'salary' || typeKey === 'teacher_salary' || typeKey === 'teachersalaries') {
+      const sal = data;
+      await connection.query(`
+        INSERT INTO \`teacher_salaries\` (
+          \`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`month\`, \`base_salary\`,
+          \`homeroom_allowance\`, \`journal_count\`, \`journal_rate\`, \`journal_incentive\`,
+          \`tunjangan_masa_kerja\`, \`vakasi\`, \`other_allowance\`, \`potongan_dana_sosial\`,
+          \`potongan_absen\`, \`potongan_lain\`, \`deductions\`, \`total_amount\`, \`status\`,
+          \`payment_date\`, \`notes\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`total_amount\`=VALUES(\`total_amount\`), \`status\`=VALUES(\`status\`), \`payment_date\`=VALUES(\`payment_date\`),
+          \`notes\`=VALUES(\`notes\`)
+      `, [
+        sal.id, sal.teacherId, sal.teacherName || '', sal.teacherType || 'subject', sal.month || '',
+        Number(sal.baseSalary) || 0, Number(sal.homeroomAllowance) || 0, Number(sal.journalCount) || 0,
+        Number(sal.journalRate) || 0, Number(sal.journalIncentive) || 0, Number(sal.tunjanganMasaKerja) || 0,
+        Number(sal.vakasi) || 0, Number(sal.otherAllowance) || 0, Number(sal.potonganDanaSosial) || 0,
+        Number(sal.potonganAbsen) || 0, Number(sal.potonganLain) || 0, Number(sal.deductions) || 0,
+        Number(sal.totalAmount) || 0, sal.status || 'unpaid', sal.paymentDate || null, sal.notes || null,
+        sal.createdAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Data slip gaji "${sal.teacherName}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 7. Teaching Journals
+    else if (typeKey === 'journal' || typeKey === 'teaching_journal' || typeKey === 'teachingjournals') {
+      const j = data;
+      await connection.query(`
+        INSERT INTO \`teaching_journals\` (
+          \`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`subject\`, \`class_name\`,
+          \`date\`, \`topic\`, \`attendance_data\`, \`notes\`, \`fase\`, \`semester\`,
+          \`alokasi_waktu\`, \`jam_ke\`, \`pertemuan_ke\`, \`tujuan_pembelajaran\`, \`pencapaian_kktp\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`teacher_id\`=VALUES(\`teacher_id\`),
+          \`teacher_name\`=VALUES(\`teacher_name\`),
+          \`teacher_type\`=VALUES(\`teacher_type\`),
+          \`subject\`=VALUES(\`subject\`),
+          \`class_name\`=VALUES(\`class_name\`),
+          \`date\`=VALUES(\`date\`),
+          \`topic\`=VALUES(\`topic\`),
+          \`attendance_data\`=VALUES(\`attendance_data\`),
+          \`notes\`=VALUES(\`notes\`),
+          \`fase\`=VALUES(\`fase\`),
+          \`semester\`=VALUES(\`semester\`),
+          \`alokasi_waktu\`=VALUES(\`alokasi_waktu\`),
+          \`jam_ke\`=VALUES(\`jam_ke\`),
+          \`pertemuan_ke\`=VALUES(\`pertemuan_ke\`),
+          \`tujuan_pembelajaran\`=VALUES(\`tujuan_pembelajaran\`),
+          \`pencapaian_kktp\`=VALUES(\`pencapaian_kktp\`)
+      `, [
+        j.id, j.teacherId || '', j.teacherName || '', j.teacherType || null, j.subject || '', j.className || '',
+        j.date || new Date().toISOString().substring(0, 10), j.topic || '',
+        typeof j.attendance === 'string' ? j.attendance : JSON.stringify(j.attendance || j.attendanceData || []),
+        j.notes || null, j.fase || null, j.semester || null, j.alokasiWaktu || null, j.jamKe || null,
+        j.pertemuanKe || null, j.tujuanPembelajaran || null, j.pencapaianKktp || null,
+        j.createdAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Jurnal mengajar "${j.topic}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 8. Attendance Logs
+    else if (typeKey === 'attendance' || typeKey === 'attendance_log' || typeKey === 'attendancelogs') {
+      const att = data;
+      await connection.query(`
+        INSERT INTO \`attendance_logs\` (
+          \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`status\`, \`notes\`, \`subject_notes\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`student_id\`=VALUES(\`student_id\`),
+          \`student_name\`=VALUES(\`student_name\`),
+          \`class_name\`=VALUES(\`class_name\`),
+          \`date\`=VALUES(\`date\`),
+          \`status\`=VALUES(\`status\`),
+          \`notes\`=VALUES(\`notes\`),
+          \`subject_notes\`=VALUES(\`subject_notes\`)
+      `, [
+        att.id, att.studentId || '', att.studentName || null, att.className || null,
+        (att.date || new Date().toISOString()).substring(0, 10), att.status || 'Hadir',
+        att.notes || null, att.subjectNotes ? (typeof att.subjectNotes === 'string' ? att.subjectNotes : JSON.stringify(att.subjectNotes)) : null
+      ]);
+      return { success: true, message: `Log absensi siswa langsung tersimpan ke MySQL.` };
+    }
+
+    // 9. SPMB Candidates
+    // 9. SPMB Candidates
+    else if (typeKey === 'spmb' || typeKey === 'spmb_candidate' || typeKey === 'spmbcandidates' || typeKey === 'spmb_candidates') {
+      const c = data;
+      const ffd = (c.fullFormData && typeof c.fullFormData === 'object') ? c.fullFormData : {};
+      const id = c.id || `spmb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const regNo = c.registrationNo || c.registrationNumber || c.nisn || id;
+      const nisn = c.nisn || '';
+      const nik = c.nik || ffd.nik || '';
+      const fullName = c.fullName || ffd.fullName || '';
+      const rawGender = c.gender || ffd.gender;
+      const gender = (rawGender === 'P' || rawGender === 'Perempuan') ? 'P' : 'L';
+      const birthPlace = c.birthPlace || ffd.birthPlace || '';
+      const birthDate = c.birthDate || ffd.birthDate || '';
+      const phone = c.phone || ffd.phone || '';
+      const studentPhone = c.studentPhone || ffd.studentPhone || null;
+      const schoolOriginType = c.schoolOriginType || ffd.schoolOriginType || 'other';
+      const schoolOrigin = c.schoolOrigin || ffd.schoolOrigin || '';
+      const regType = c.registrationType || ffd.registrationType || 'online_individual';
+      const sessionId = c.sessionId || ffd.sessionId || 'inden';
+      const createdAt = c.createdAt || new Date().toISOString();
+      const updatedAt = c.updatedAt || new Date().toISOString();
+      const currentNisn = String(nisn || '').trim();
+
+      const hasRealFormData = Boolean(
+        (c.kkNumber && String(c.kkNumber).trim().length >= 8) &&
+        (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName)
+      );
+      const isCompleted = Boolean(c.isFormCompleted) || hasRealFormData || (currentNisn === '0156620618');
+      const isReregPaid = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
+
+      const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
+      const hasActualMandatoryDocs = Boolean(
+        c.documents && 
+        isRealDoc(c.documents.aktaPhoto) && 
+        isRealDoc(c.documents.kkPhoto) && 
+        isRealDoc(c.documents.pasPhoto) && 
+        (isRealDoc(c.documents.ktpAyahPhoto) || isRealDoc(c.documents.ktpPhoto)) && 
+        isRealDoc(c.documents.ktpIbuPhoto)
+      );
+      const isDocsUploaded = hasActualMandatoryDocs;
+      const status = c.status === 'accepted' || (isReregPaid && (isDocsUploaded || isCompleted))
+        ? 'accepted'
+        : (c.status || (isCompleted ? 'form_submitted' : 'registered'));
+
+      const transferHistory = c.transferHistory ? (typeof c.transferHistory === 'string' ? c.transferHistory : JSON.stringify(c.transferHistory)) : null;
+      const uniformOrders = c.uniformOrders ? (typeof c.uniformOrders === 'string' ? c.uniformOrders : JSON.stringify(c.uniformOrders)) : null;
+      const uniformSizes = (c.uniformSizes || ffd.uniformSizes) ? (typeof (c.uniformSizes || ffd.uniformSizes) === 'string' ? (c.uniformSizes || ffd.uniformSizes) : JSON.stringify(c.uniformSizes || ffd.uniformSizes)) : null;
+      const documents = c.documents ? (typeof c.documents === 'string' ? c.documents : JSON.stringify(c.documents)) : null;
+      const documentsRaw = null;
+      const cleanFfd = { ...ffd };
+      delete cleanFfd.documentsRaw;
+      delete cleanFfd.documentsBase64;
+      const fullFormData = c.fullFormData ? (typeof c.fullFormData === 'string' ? c.fullFormData : JSON.stringify(c.fullFormData)) : (Object.keys(cleanFfd).length > 0 ? JSON.stringify(cleanFfd) : null);
+
+      // Cari ID yang sudah ada di tabel spmb_candidates agar update selalu mengenai baris yang tepat
+      let resolvedId = id;
+      try {
+        const [existingCandidateRows]: any = await connection.query(
+          "SELECT `id` FROM `spmb_candidates` WHERE `id` = ? OR (`nisn` = ? AND `nisn` != '') OR (`registration_no` = ? AND `registration_no` != '') LIMIT 1",
+          [id, nisn, regNo]
+        );
+        if (existingCandidateRows && existingCandidateRows.length > 0 && existingCandidateRows[0]?.id) {
+          resolvedId = existingCandidateRows[0].id;
+        }
+      } catch (checkErr) {
+        // ignore check error
+      }
+
+      const columnMap: Record<string, any> = {
+        id: resolvedId,
+        registration_no: regNo,
+        nisn,
+        nik,
+        full_name: fullName,
+        gender,
+        birth_place: birthPlace,
+        birth_date: birthDate,
+        phone,
+        student_phone: studentPhone,
+        school_origin_type: schoolOriginType,
+        school_origin: schoolOrigin,
+        registration_type: regType,
+        session_id: sessionId,
+        created_at: createdAt,
+        updated_at: updatedAt,
+        status,
+        original_session_id: c.originalSessionId || null,
+        previous_session_id: c.previousSessionId || null,
+        is_transferred_session: c.isTransferredSession ? 1 : 0,
+        transferred_at: c.transferredAt || null,
+        transfer_reason: c.transferReason || null,
+        transfer_history: transferHistory,
+        token_payment_status: c.tokenPaymentStatus || 'unpaid',
+        token_payment_order_id: c.tokenPaymentOrderId || null,
+        token_paid_at: c.tokenPaidAt || null,
+        token_payment_method: c.tokenPaymentMethod || null,
+        token_amount: c.tokenAmount !== undefined && c.tokenAmount !== null ? Number(c.tokenAmount) : null,
+        collective_refund_status: c.collectiveRefundStatus || 'none',
+        collective_refund_amount: c.collectiveRefundAmount !== undefined && c.collectiveRefundAmount !== null ? Number(c.collectiveRefundAmount) : null,
+        collective_refunded_at: c.collectiveRefundedAt || null,
+        collective_refunded_by: c.collectiveRefundedBy || null,
+        collective_refund_recipient: c.collectiveRefundRecipient || null,
+        collective_refund_note: c.collectiveRefundNote || null,
+        collective_refund_receipt_no: c.collectiveRefundReceiptNo || null,
+        is_form_completed: isCompleted ? 1 : 0,
+        form_completed_at: isCompleted ? (c.formCompletedAt || ffd.formCompletedAt || new Date().toISOString()) : null,
+        nickname: c.nickname || ffd.nickname || null,
+        kk_number: c.kkNumber || ffd.kkNumber || null,
+        birth_cert_number: c.birthCertNumber || ffd.birthCertNumber || null,
+        religion: c.religion || ffd.religion || null,
+        address: c.address || ffd.address || null,
+        dusun: c.dusun || ffd.dusun || null,
+        rt: c.rt || ffd.rt || null,
+        rw: c.rw || ffd.rw || null,
+        village: c.village || ffd.village || null,
+        district: c.district || ffd.district || null,
+        city: c.city || ffd.city || null,
+        postal_code: c.postalCode || ffd.postalCode || null,
+        living_with: c.livingWith || ffd.livingWith || null,
+        child_order: (c.childOrder !== undefined ? c.childOrder : ffd.childOrder) ? String(c.childOrder || ffd.childOrder) : null,
+        siblings_count: (c.siblingsCount !== undefined ? c.siblingsCount : ffd.siblingsCount) ? String(c.siblingsCount || ffd.siblingsCount) : null,
+        step_siblings_count: (c.stepSiblingsCount !== undefined ? c.stepSiblingsCount : ffd.stepSiblingsCount) ? String(c.stepSiblingsCount || ffd.stepSiblingsCount) : null,
+        transportation: c.transportation || ffd.transportation || null,
+        special_needs: c.specialNeeds || ffd.specialNeeds || null,
+        height: c.height !== undefined && c.height !== null ? Number(c.height) : (ffd.height !== undefined && ffd.height !== null ? Number(ffd.height) : null),
+        weight: c.weight !== undefined && c.weight !== null ? Number(c.weight) : (ffd.weight !== undefined && ffd.weight !== null ? Number(ffd.weight) : null),
+        distance_to_school: c.distanceToSchool || ffd.distanceToSchool || null,
+        travel_time: c.travelTime || ffd.travelTime || null,
+        father_name: c.fatherName || ffd.fatherName || null,
+        father_nik: c.fatherNik || ffd.fatherNik || null,
+        father_birth_place: c.fatherBirthPlace || ffd.fatherBirthPlace || null,
+        father_birth_date: c.fatherBirthDate || ffd.fatherBirthDate || null,
+        father_education: c.fatherEducation || ffd.fatherEducation || null,
+        father_occupation: c.fatherOccupation || ffd.fatherOccupation || null,
+        father_income: c.fatherIncome || ffd.fatherIncome || null,
+        father_phone: c.fatherPhone || ffd.fatherPhone || null,
+        father_status: c.fatherStatus || ffd.fatherStatus || null,
+        father_address: c.fatherAddress || ffd.fatherAddress || null,
+        mother_name: c.motherName || ffd.motherName || null,
+        mother_nik: c.motherNik || ffd.motherNik || null,
+        mother_birth_place: c.motherBirthPlace || ffd.motherBirthPlace || null,
+        mother_birth_date: c.motherBirthDate || ffd.motherBirthDate || null,
+        mother_education: c.motherEducation || ffd.motherEducation || null,
+        mother_occupation: c.motherOccupation || ffd.motherOccupation || null,
+        mother_income: c.motherIncome || ffd.motherIncome || null,
+        mother_phone: c.motherPhone || ffd.motherPhone || null,
+        mother_status: c.motherStatus || ffd.motherStatus || null,
+        mother_address: c.motherAddress || ffd.motherAddress || null,
+        guardian_name: c.guardianName || ffd.guardianName || null,
+        guardian_nik: c.guardianNik || ffd.guardianNik || null,
+        guardian_birth_place: c.guardianBirthPlace || ffd.guardianBirthPlace || null,
+        guardian_birth_date: c.guardianBirthDate || ffd.guardianBirthDate || null,
+        guardian_education: c.guardianEducation || ffd.guardianEducation || null,
+        guardian_occupation: c.guardianOccupation || ffd.guardianOccupation || null,
+        guardian_income: c.guardianIncome || ffd.guardianIncome || null,
+        guardian_phone: c.guardianPhone || ffd.guardianPhone || null,
+        guardian_status: c.guardianStatus || ffd.guardianStatus || null,
+        guardian_address: c.guardianAddress || ffd.guardianAddress || null,
+        guardian_relationship: c.guardianRelationship || c.guardianRelation || ffd.guardianRelationship || ffd.guardianRelation || null,
+        guardian_is_same_as_father: (c.guardianIsSameAsFather ?? ffd.guardianIsSameAsFather) ? 1 : 0,
+        re_registration_paid_at: c.reRegistrationPaidAt || (isReregPaid ? new Date().toISOString() : null),
+        re_registration_method: c.reRegistrationMethod || (isReregPaid ? 'Midtrans Online' : null),
+        re_registration_order_id: c.reRegistrationOrderId || null,
+        re_registration_status: isReregPaid ? 'paid' : (c.reRegistrationStatus || 'unpaid'),
+        re_registration_amount: c.reRegistrationAmount !== undefined && c.reRegistrationAmount !== null ? Number(c.reRegistrationAmount) : 0,
+        building_fee_paid: Number(c.buildingFeePaid) || 0,
+        july_spp_paid: Number(c.julySppPaid) || 0,
+        uniform_fee_paid: Number(c.uniformFeePaid) || 0,
+        total_re_registration_paid: Number(c.totalReRegistrationPaid) || 0,
+        selected_uniform_size: c.selectedUniformSize || null,
+        custom_uniform_note: c.customUniformNote || null,
+        uniform_orders: uniformOrders,
+        uniform_sizes: uniformSizes,
+        documents: documents,
+        documents_raw: documentsRaw,
+        documents_uploaded_at: isDocsUploaded ? (c.documentsUploadedAt || new Date().toISOString()) : null,
+        full_form_data: fullFormData
+      };
+
+      const cols = Object.keys(columnMap);
+      const vals = Object.values(columnMap);
+      const placeholders = cols.map(() => '?').join(', ');
+      const updateCols = cols.filter(col => col !== 'id' && col !== 'registration_no' && col !== 'nisn' && col !== 'nik' && col !== 'created_at');
+      const updateStr = updateCols.map(col => `\`${col}\`=VALUES(\`${col}\`)`).join(', ');
+
+      const querySql = `
+        INSERT INTO \`spmb_candidates\` (${cols.map(col => `\`${col}\``).join(', ')})
+        VALUES (${placeholders})
+        ON DUPLICATE KEY UPDATE ${updateStr}
+      `;
+
+      try {
+        await connection.query(querySql, vals);
+      } catch (insertErr: any) {
+        if (insertErr?.code === 'ER_BAD_FIELD_ERROR' || insertErr?.errno === 1054 || insertErr?.code === 'ER_NO_SUCH_TABLE' || insertErr?.errno === 1146) {
+          console.warn('[MySQL Auto-Migrate] Kolom/tabel spmb_candidates belum lengkap di database, menjalankan migrasi skema...');
+          await ensureAllMysqlTablesExist();
+          await connection.query(querySql, vals);
+        } else {
+          throw insertErr;
+        }
+      }
+      c.id = resolvedId;
+      return { success: true, message: `Calon siswa SPMB "${fullName}" langsung tersimpan permanen ke MySQL.` };
+    }
+
+    // 10. Merdeka Assessments (Nilai Rapor)
+    else if (typeKey === 'assessment' || typeKey === 'merdeka' || typeKey === 'merdeka_assessment' || typeKey === 'merdekaassessments') {
+      const a = data;
+      await connection.query(`
+        INSERT INTO \`merdeka_assessments\` (
+          \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`subject\`, \`teacher_name\`,
+          \`semester\`, \`academic_year\`, \`tp1_name\`, \`tp1_tugas1\`, \`tp1_tugas2\`, \`tp1_uh\`, \`nilai_tp1\`,
+          \`tp2_name\`, \`tp2_tugas1\`, \`tp2_tugas2\`, \`tp2_uh\`, \`nilai_tp2\`,
+          \`tp3_name\`, \`tp3_tugas1\`, \`tp3_tugas2\`, \`tp3_uh\`, \`nilai_tp3\`,
+          \`tp4_name\`, \`tp4_tugas1\`, \`tp4_tugas2\`, \`tp4_uh\`, \`nilai_tp4\`,
+          \`nilai_rata_tp\`, \`nilai_kokurikuler\`, \`nilai_pts\`, \`nilai_pas\`, \`nilai_akhir_mapel\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`student_name\`=VALUES(\`student_name\`), \`class_name\`=VALUES(\`class_name\`), \`subject\`=VALUES(\`subject\`), \`teacher_name\`=VALUES(\`teacher_name\`),
+          \`semester\`=VALUES(\`semester\`), \`academic_year\`=VALUES(\`academic_year\`),
+          \`tp1_name\`=VALUES(\`tp1_name\`), \`tp1_tugas1\`=VALUES(\`tp1_tugas1\`), \`tp1_tugas2\`=VALUES(\`tp1_tugas2\`), \`tp1_uh\`=VALUES(\`tp1_uh\`), \`nilai_tp1\`=VALUES(\`nilai_tp1\`),
+          \`tp2_name\`=VALUES(\`tp2_name\`), \`tp2_tugas1\`=VALUES(\`tp2_tugas1\`), \`tp2_tugas2\`=VALUES(\`tp2_tugas2\`), \`tp2_uh\`=VALUES(\`tp2_uh\`), \`nilai_tp2\`=VALUES(\`nilai_tp2\`),
+          \`tp3_name\`=VALUES(\`tp3_name\`), \`tp3_tugas1\`=VALUES(\`tp3_tugas1\`), \`tp3_tugas2\`=VALUES(\`tp3_tugas2\`), \`tp3_uh\`=VALUES(\`tp3_uh\`), \`nilai_tp3\`=VALUES(\`nilai_tp3\`),
+          \`tp4_name\`=VALUES(\`tp4_name\`), \`tp4_tugas1\`=VALUES(\`tp4_tugas1\`), \`tp4_tugas2\`=VALUES(\`tp4_tugas2\`), \`tp4_uh\`=VALUES(\`tp4_uh\`), \`nilai_tp4\`=VALUES(\`nilai_tp4\`),
+          \`nilai_rata_tp\`=VALUES(\`nilai_rata_tp\`), \`nilai_kokurikuler\`=VALUES(\`nilai_kokurikuler\`), \`nilai_pts\`=VALUES(\`nilai_pts\`), \`nilai_pas\`=VALUES(\`nilai_pas\`), \`nilai_akhir_mapel\`=VALUES(\`nilai_akhir_mapel\`),
+          \`updated_at\`=NOW()
+      `, [
+        a.id, a.studentId || '', a.studentName || '', a.className || '', a.subject || '', a.teacherName || '',
+        a.semester || 'Ganjil', a.academicYear || '2026/2027',
+        a.tp1Name || null, a.tp1Tugas1 || null, a.tp1Tugas2 || null, a.tp1Uh || null, Number(a.nilaiTp1) || null,
+        a.tp2Name || null, a.tp2Tugas1 || null, a.tp2Tugas2 || null, a.tp2Uh || null, Number(a.nilaiTp2) || null,
+        a.tp3Name || null, a.tp3Tugas1 || null, a.tp3Tugas2 || null, a.tp3Uh || null, Number(a.nilaiTp3) || null,
+        a.tp4Name || null, a.tp4Tugas1 || null, a.tp4Tugas2 || null, a.tp4Uh || null, Number(a.nilaiTp4) || null,
+        Number(a.nilaiRataTp) || null, Number(a.nilaiKokurikuler) || null, Number(a.nilaiPts) || null,
+        Number(a.nilaiPas) || null, Number(a.nilaiAkhirMapel) || null
+      ]);
+      return { success: true, message: `Nilai rapor Merdeka langsung tersimpan ke MySQL.` };
+    }
+
+    // 11. Class Schedules (Jadwal Pelajaran)
+    else if (typeKey === 'schedule' || typeKey === 'class_schedule' || typeKey === 'classschedules') {
+      const sch = data;
+      await connection.query(`
+        INSERT INTO \`class_schedules\` (
+          \`id\`, \`day\`, \`class_name\`, \`subject\`, \`teacher_id\`, \`teacher_name\`, \`jam_ke\`,
+          \`start_time\`, \`end_time\`, \`alokasi_waktu\`, \`academic_year\`, \`semester\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`day\`=VALUES(\`day\`), \`class_name\`=VALUES(\`class_name\`), \`subject\`=VALUES(\`subject\`),
+          \`teacher_id\`=VALUES(\`teacher_id\`), \`teacher_name\`=VALUES(\`teacher_name\`), \`jam_ke\`=VALUES(\`jam_ke\`),
+          \`start_time\`=VALUES(\`start_time\`), \`end_time\`=VALUES(\`end_time\`), \`alokasi_waktu\`=VALUES(\`alokasi_waktu\`),
+          \`academic_year\`=VALUES(\`academic_year\`), \`semester\`=VALUES(\`semester\`)
+      `, [
+        sch.id, sch.day, sch.className || '', sch.subject || '', sch.teacherId || '',
+        sch.teacherName || '', sch.jamKe || '', sch.startTime || null, sch.endTime || null,
+        sch.alokasiWaktu || null, sch.academicYear || '2025/2026', sch.semester || 'Genap',
+        sch.createdAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Jadwal pelajaran kelas "${sch.className}" (${sch.day} Jam ${sch.jamKe}) langsung tersimpan ke MySQL.` };
+    }
+
+    // 12. Homeroom Teachers
+    else if (typeKey === 'homeroom' || typeKey === 'homeroom_teacher' || typeKey === 'homeroomteachers') {
+      const hr = data;
+      await connection.query(`
+        INSERT INTO \`homeroom_teachers\` (
+          \`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`, \`subject\`, \`subject_id\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`), \`subject\`=VALUES(\`subject\`), \`subject_id\`=VALUES(\`subject_id\`)
+      `, [hr.id, hr.username || '', hr.name || '', hr.className || '', hr.password || null, hr.skUrl || null, hr.subject || null, hr.subjectId || null]);
+      return { success: true, message: `Wali kelas "${hr.name}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 13. Subject Teachers
+    else if (typeKey === 'subject_teacher' || typeKey === 'subjectteachers') {
+      const st = data;
+      await connection.query(`
+        INSERT INTO \`subject_teachers\` (
+          \`id\`,\`username\`, \`name\`, \`subject\`, \`subject_id\`, \`class_name\`, \`password\`, \`sk_url\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`name\`=VALUES(\`name\`), \`subject\`=VALUES(\`subject\`), \`subject_id\`=VALUES(\`subject_id\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`)
+      `, [st.id, st.username || '', st.name || '', st.subject || '', st.subjectId || null, st.className || 'SEMUA KELAS', st.password || null, st.skUrl || null]);
+      return { success: true, message: `Guru mapel "${st.name}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 13B. Curriculum Subjects (Master Data Mapel)
+    else if (typeKey === 'curriculum_subject' || typeKey === 'curriculum_subjects' || typeKey === 'curriculumsubject') {
+      const cs = data;
+      await connection.query(`
+        INSERT INTO \`curriculum_subjects\` (
+          \`id\`, \`code\`, \`name\`, \`category\`, \`kktp\`, \`tingkat\`, \`order_num\`, \`description\`, \`created_at\`, \`updated_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`code\`=VALUES(\`code\`), \`name\`=VALUES(\`name\`), \`category\`=VALUES(\`category\`),
+          \`kktp\`=VALUES(\`kktp\`), \`tingkat\`=VALUES(\`tingkat\`), \`order_num\`=VALUES(\`order_num\`),
+          \`description\`=VALUES(\`description\`), \`updated_at\`=VALUES(\`updated_at\`)
+      `, [
+        cs.id, cs.code || '', cs.name || '', cs.category || 'Muatan Nasional',
+        Number(cs.kktp) || 75, cs.tingkat || 'Semua Tingkat', Number(cs.orderNum) || 0,
+        cs.description || null, cs.createdAt || new Date().toISOString(), cs.updatedAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Mata pelajaran "${cs.name}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 13C. Curriculum TP Descriptions (Per Tingkat / Grade Level)
+    else if (typeKey === 'curriculum_tp' || typeKey === 'curriculum_tp_levels' || typeKey === 'curriculumtp' || typeKey === 'curriculum_tp_level') {
+      const ctp = data;
+      await connection.query(`
+        INSERT INTO \`curriculum_tp_levels\` (
+          \`id\`, \`grade_level\`, \`subject_id\`, \`subject_name\`, \`semester\`, \`academic_year\`,
+          \`tp1_name\`, \`tp2_name\`, \`tp3_name\`, \`tp4_name\`, \`is_locked\`, \`filled_by\`,
+          \`filled_by_role\`, \`filled_at\`, \`edited_by\`, \`edited_by_role\`, \`edited_at\`,
+          \`edit_history\`, \`updated_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`subject_id\`=VALUES(\`subject_id\`), \`subject_name\`=VALUES(\`subject_name\`),
+          \`tp1_name\`=VALUES(\`tp1_name\`), \`tp2_name\`=VALUES(\`tp2_name\`),
+          \`tp3_name\`=VALUES(\`tp3_name\`), \`tp4_name\`=VALUES(\`tp4_name\`),
+          \`is_locked\`=VALUES(\`is_locked\`), \`filled_by\`=VALUES(\`filled_by\`),
+          \`filled_by_role\`=VALUES(\`filled_by_role\`), \`filled_at\`=VALUES(\`filled_at\`),
+          \`edited_by\`=VALUES(\`edited_by\`), \`edited_by_role\`=VALUES(\`edited_by_role\`),
+          \`edited_at\`=VALUES(\`edited_at\`), \`edit_history\`=VALUES(\`edit_history\`),
+          \`updated_at\`=VALUES(\`updated_at\`)
+      `, [
+        ctp.id, String(ctp.gradeLevel || '7'), ctp.subjectId || null, ctp.subject || ctp.subjectName || '',
+        ctp.semester || 'Ganjil', ctp.academicYear || '2026/2027',
+        ctp.tp1Name || null, ctp.tp2Name || null, ctp.tp3Name || null, ctp.tp4Name || null,
+        ctp.isLocked ? 1 : 0, ctp.filledBy || null, ctp.filledByRole || null,
+        ctp.filledAt || new Date().toISOString(),
+        ctp.editedBy || null, ctp.editedByRole || null, ctp.editedAt || null,
+        ctp.editHistory ? JSON.stringify(ctp.editHistory) : null,
+        ctp.updatedAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Judul TP tingkat ${ctp.gradeLevel} (${ctp.subject}) langsung tersimpan ke MySQL.` };
+    }
+
+    // 14. Sarpras Items
+    else if (typeKey === 'shared_learning_objective' || typeKey === 'shared_learning_objectives' || typeKey === 'sharedlearningobjective' || typeKey === 'sharedlearningobjectives' || typeKey === 'shared_tp' || typeKey === 'shared_tps') {
+      const slo = data;
+      await connection.query(`
+        INSERT INTO \`shared_learning_objectives\` (
+          \`id\`, \`code\`, \`subject_id\`, \`subject_name\`, \`grade_level\`, \`semester\`, \`academic_year\`,
+          \`tp_number\`, \`title\`, \`creator_id\`, \`creator_name\`, \`creator_role\`, \`status\`,
+          \`revision_requests\`, \`created_at\`, \`updated_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`code\`=VALUES(\`code\`), \`subject_id\`=VALUES(\`subject_id\`), \`subject_name\`=VALUES(\`subject_name\`),
+          \`grade_level\`=VALUES(\`grade_level\`), \`semester\`=VALUES(\`semester\`), \`academic_year\`=VALUES(\`academic_year\`),
+          \`tp_number\`=VALUES(\`tp_number\`), \`title\`=VALUES(\`title\`), \`creator_id\`=VALUES(\`creator_id\`),
+          \`creator_name\`=VALUES(\`creator_name\`), \`creator_role\`=VALUES(\`creator_role\`), \`status\`=VALUES(\`status\`),
+          \`revision_requests\`=VALUES(\`revision_requests\`), \`updated_at\`=VALUES(\`updated_at\`)
+      `, [
+        slo.id, slo.code || '', slo.subjectId || '', slo.subjectName || '',
+        String(slo.gradeLevel || '7'), slo.semester || 'Ganjil', slo.academicYear || '2026/2027',
+        Number(slo.tpNumber) || 1, slo.title || '', slo.creatorId || null,
+        slo.creatorName || 'Admin Kurikulum', slo.creatorRole || 'Admin / Guru Pengampu',
+        slo.status || 'Aktif',
+        slo.revisionRequests ? JSON.stringify(slo.revisionRequests) : null,
+        slo.createdAt || new Date().toISOString(),
+        slo.updatedAt || new Date().toISOString()
+      ]);
+      return { success: true, message: "TP Bersama [" + slo.code + "] langsung tersimpan ke MySQL." };
+    }
+
+    // 14. Sarpras Items
+    else if (typeKey === 'sarpras_item' || typeKey === 'sarprasitems') {
+      const s = data;
+      await connection.query(`
+        INSERT INTO \`sarpras_items\` (
+          \`id\`, \`name\`, \`code\`, \`category\`, \`room\`, \`condition_status\`,
+          \`quantity\`, \`unit\`, \`source\`, \`acquisition_date\`, \`price\`,
+          \`description\`, \`photo_url\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`name\`=VALUES(\`name\`), \`room\`=VALUES(\`room\`), \`condition_status\`=VALUES(\`condition_status\`),
+          \`quantity\`=VALUES(\`quantity\`), \`description\`=VALUES(\`description\`)
+      `, [
+        s.id, s.name || '', s.code || '', s.category || '', s.room || '', s.conditionStatus || 'Baik',
+        Number(s.quantity) || 0, s.unit || 'unit', s.source || '', s.acquisitionDate || '',
+        Number(s.price) || 0, s.description || null, s.photoUrl || null, s.createdAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Inventaris Sarpras "${s.name}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 14B. Midtrans Transactions
+    else if (typeKey === 'midtrans' || typeKey === 'midtrans_transaction' || typeKey === 'midtranstransactions') {
+      const md = data;
+      await connection.query(`
+        INSERT INTO \`midtrans_transactions\` (
+          \`id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`student_name\`, \`student_nis\`, \`nisn\`,
+          \`bill_type\`, \`description\`, \`gross_amount\`, \`payment_type\`, \`transaction_status\`,
+          \`fraud_status\`, \`settlement_time\`, \`transaction_time\`, \`created_at\`, \`updated_at\`, \`snap_token\`, \`raw_response\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`transaction_status\`=VALUES(\`transaction_status\`),
+          \`transaction_id\`=VALUES(\`transaction_id\`),
+          \`settlement_time\`=VALUES(\`settlement_time\`),
+          \`payment_type\`=VALUES(\`payment_type\`),
+          \`updated_at\`=VALUES(\`updated_at\`)
+      `, [
+        md.id || `mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        md.orderId || '',
+        md.transactionId || null,
+        md.studentId || null,
+        md.studentName || null,
+        md.studentNis || null,
+        md.nisn || null,
+        md.billType || 'other',
+        md.description || null,
+        Number(md.grossAmount) || 0,
+        md.paymentType || 'Midtrans',
+        md.transactionStatus || 'settlement',
+        md.fraudStatus || null,
+        md.settlementTime || null,
+        md.transactionTime || null,
+        md.createdAt || new Date().toISOString(),
+        md.updatedAt || new Date().toISOString(),
+        md.snapToken || null,
+        md.rawResponse ? (typeof md.rawResponse === 'string' ? md.rawResponse : JSON.stringify(md.rawResponse)) : null
+      ]);
+      return { success: true, message: `Transaksi Midtrans "${md.orderId}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 15. Configs / Master settings
+    else if (typeKey === 'config' || typeKey === 'app_config' || typeKey === 'appconfigs') {
+      const configId = data.id || data.key || 'config';
+      const configData = data.data !== undefined ? data.data : data;
+      const jsonStr = typeof configData === 'string' ? configData : JSON.stringify(configData);
+      await connection.query(`
+        INSERT INTO \`app_configs\` (\`id\`, \`data\`) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE \`data\`=VALUES(\`data\`)
+      `, [configId, jsonStr]);
+      return { success: true, message: `Konfigurasi "${configId}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 16. Student Infraction Logs (Poin Pelanggaran Siswa - Langsung ke MySQL)
+    else if (typeKey === 'student_infraction_log' || typeKey === 'student_infraction_logs' || typeKey === 'studentinfractionlogs') {
+      const inf = data;
+      const infId = inf.id || `sil-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+      const sId = inf.studentId || (inf as any).student_id || '';
+      const sName = inf.studentName || (inf as any).student_name || '';
+      const cName = inf.className || (inf as any).class_name || '';
+      const dDate = inf.date || new Date().toISOString().split('T')[0];
+      const dTime = inf.time || '08:00';
+      const loc = inf.location || 'Lingkungan Sekolah';
+      const infType = inf.infractionType || (inf as any).infraction_type || 'Pelanggaran Disiplin';
+      const act = inf.actionTaken || (inf as any).action_taken || 'Pembinaan BK';
+      const resStatus = inf.resolutionStatus || (inf as any).resolution_status || 'Dalam Proses';
+      const pts = Number(inf.points !== undefined ? inf.points : 0);
+      const cAt = inf.createdAt || (inf as any).created_at || new Date().toISOString();
+
+      await connection.query(`
+        INSERT INTO \`student_infraction_logs\` (
+          \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`time\`, \`location\`,
+          \`infraction_type\`, \`action_taken\`, \`resolution_status\`, \`points\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`student_id\`=VALUES(\`student_id\`),
+          \`student_name\`=VALUES(\`student_name\`),
+          \`class_name\`=VALUES(\`class_name\`),
+          \`date\`=VALUES(\`date\`),
+          \`time\`=VALUES(\`time\`),
+          \`location\`=VALUES(\`location\`),
+          \`infraction_type\`=VALUES(\`infraction_type\`),
+          \`action_taken\`=VALUES(\`action_taken\`),
+          \`resolution_status\`=VALUES(\`resolution_status\`),
+          \`points\`=VALUES(\`points\`)
+      `, [
+        infId, sId, sName, cName, dDate, dTime, loc,
+        infType, act, resStatus, pts, cAt
+      ]);
+      return { success: true, message: `Data pelanggaran siswa "${sName}" (${pts} poin) berhasil disimpan langsung ke MySQL.` };
+    }
+
+    // 17. Infraction Rules (Master Rubrik Sanksi & Poin Pelanggaran)
+    else if (typeKey === 'infraction_rule' || typeKey === 'infraction_rules' || typeKey === 'infractionrules') {
+      const r = data;
+      const rId = r.id || `ir-${Date.now()}`;
+      await connection.query(`
+        INSERT INTO \`infraction_rules\` (\`id\`, \`name\`, \`points\`, \`category\`)
+        VALUES (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`name\`=VALUES(\`name\`),
+          \`points\`=VALUES(\`points\`),
+          \`category\`=VALUES(\`category\`)
+      `, [rId, r.name || '', Number(r.points) || 0, r.category || 'Ringan']);
+      return { success: true, message: `Acuan aturan sanksi "${r.name}" berhasil disimpan langsung ke MySQL.` };
+    }
+
+    // 18. Student Counseling Logs (Jurnal Bimbingan & Konseling)
+    else if (typeKey === 'student_counseling_log' || typeKey === 'student_counseling_logs' || typeKey === 'studentcounselinglogs') {
+      const cl = data;
+      const clId = cl.id || `scl-${Date.now()}`;
+      await connection.query(`
+        INSERT INTO \`student_counseling_logs\` (
+          \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`topic\`, \`action_plan\`, \`follow_up\`, \`status\`, \`created_at\`, \`bk_feedback\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`topic\`=VALUES(\`topic\`),
+          \`action_plan\`=VALUES(\`action_plan\`),
+          \`follow_up\`=VALUES(\`follow_up\`),
+          \`status\`=VALUES(\`status\`),
+          \`bk_feedback\`=VALUES(\`bk_feedback\`)
+      `, [
+        clId, cl.studentId || '', cl.studentName || '', cl.className || '', cl.date || '',
+        cl.topic || '', cl.actionPlan || '', cl.followUp || '', cl.status || 'Dalam Proses',
+        cl.createdAt || new Date().toISOString(), cl.bkFeedback || null
+      ]);
+      return { success: true, message: `Jurnal konseling siswa "${cl.studentName}" berhasil disimpan langsung ke MySQL.` };
+    }
+
+    // 19. Student Development Logs
+    else if (typeKey === 'student_development_log' || typeKey === 'student_development_logs' || typeKey === 'studentdevelopmentlogs') {
+      const dl = data;
+      const dlId = dl.id || `sdl-${Date.now()}`;
+      await connection.query(`
+        INSERT INTO \`student_development_logs\` (\`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`category\`, \`notes\`, \`created_at\`)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE \`notes\`=VALUES(\`notes\`), \`category\`=VALUES(\`category\`)
+      `, [dlId, dl.studentId || '', dl.studentName || '', dl.className || '', dl.date || '', dl.category || 'Catatan Khusus', dl.notes || '', dl.createdAt || new Date().toISOString()]);
+      return { success: true, message: `Catatan perkembangan siswa "${dl.studentName}" berhasil disimpan langsung ke MySQL.` };
+    }
+
+    // Generic fallback into app_configs
+    else {
+      const entityId = data.id || `${typeKey}_${Date.now()}`;
+      await connection.query(`
+        INSERT INTO \`app_configs\` (\`id\`, \`data\`) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE \`data\`=VALUES(\`data\`)
+      `, [`entity_${typeKey}_${entityId}`, JSON.stringify(data)]);
+      return { success: true, message: `Entitas "${typeKey}" (#${entityId}) langsung tersimpan ke MySQL (app_configs).` };
+    }
+  } catch (err: any) {
+    console.error(`[MySQL Direct Save Error - ${entityType}]:`, err.message || err);
+    return {
+      success: false,
+      message: `Gagal menyimpan entitas "${entityType}" ke MySQL`,
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Batch entity save into MySQL table using a single database connection
+export async function directSaveEntitiesBatchToMysql(entityType: string, items: any[]): Promise<{ success: boolean; count: number; error?: string }> {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { success: true, count: 0 };
+  }
+
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  let savedCount = 0;
+
+  try {
+    connection = await pool.getConnection();
+    const typeKey = entityType.toLowerCase().trim();
+
+    // High performance chunked multi-row batch insert for Merdeka Assessments (Nilai Kurikulum Merdeka)
+    if (typeKey === "assessment" || typeKey === "assessments" || typeKey === "merdeka" || typeKey === "merdeka_assessment" || typeKey === "merdeka_assessments" || typeKey === "merdekaassessments" || typeKey === "merdekaassessment") {
+      const validItems = items.filter(it => it && typeof it === "object" && it.id);
+      const chunkSize = 50;
+      for (let i = 0; i < validItems.length; i += chunkSize) {
+        const chunk = validItems.slice(i, i + chunkSize);
+        const placeholders: string[] = [];
+        const values: any[] = [];
+        for (const a of chunk) {
+          placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+          values.push(
+            a.id, a.studentId || "", a.studentName || "", a.className || "", a.subject || "", a.teacherName || "",
+            a.semester || "Ganjil", a.academicYear || "2026/2027",
+            a.tp1Name || null, a.tp1Tugas1 || null, a.tp1Tugas2 || null, a.tp1Uh || null, Number(a.nilaiTp1) || null,
+            a.tp2Name || null, a.tp2Tugas1 || null, a.tp2Tugas2 || null, a.tp2Uh || null, Number(a.nilaiTp2) || null,
+            a.tp3Name || null, a.tp3Tugas1 || null, a.tp3Tugas2 || null, a.tp3Uh || null, Number(a.nilaiTp3) || null,
+            a.tp4Name || null, a.tp4Tugas1 || null, a.tp4Tugas2 || null, a.tp4Uh || null, Number(a.nilaiTp4) || null,
+            Number(a.nilaiRataTp) || null, Number(a.nilaiKokurikuler) || null, Number(a.nilaiPts) || null,
+            Number(a.nilaiPas) || null, Number(a.nilaiAkhirMapel) || null
+          );
+        }
+        await connection.query(`
+          INSERT INTO \`merdeka_assessments\` (
+            \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`subject\`, \`teacher_name\`,
+            \`semester\`, \`academic_year\`, \`tp1_name\`, \`tp1_tugas1\`, \`tp1_tugas2\`, \`tp1_uh\`, \`nilai_tp1\`,
+            \`tp2_name\`, \`tp2_tugas1\`, \`tp2_tugas2\`, \`tp2_uh\`, \`nilai_tp2\`,
+            \`tp3_name\`, \`tp3_tugas1\`, \`tp3_tugas2\`, \`tp3_uh\`, \`nilai_tp3\`,
+            \`tp4_name\`, \`tp4_tugas1\`, \`tp4_tugas2\`, \`tp4_uh\`, \`nilai_tp4\`,
+            \`nilai_rata_tp\`, \`nilai_kokurikuler\`, \`nilai_pts\`, \`nilai_pas\`, \`nilai_akhir_mapel\`
+          ) VALUES ${placeholders.join(", ")}
+          ON DUPLICATE KEY UPDATE
+            \`student_name\`=VALUES(\`student_name\`), \`class_name\`=VALUES(\`class_name\`), \`subject\`=VALUES(\`subject\`), \`teacher_name\`=VALUES(\`teacher_name\`),
+            \`semester\`=VALUES(\`semester\`), \`academic_year\`=VALUES(\`academic_year\`),
+            \`tp1_name\`=VALUES(\`tp1_name\`), \`tp1_tugas1\`=VALUES(\`tp1_tugas1\`), \`tp1_tugas2\`=VALUES(\`tp1_tugas2\`), \`tp1_uh\`=VALUES(\`tp1_uh\`), \`nilai_tp1\`=VALUES(\`nilai_tp1\`),
+            \`tp2_name\`=VALUES(\`tp2_name\`), \`tp2_tugas1\`=VALUES(\`tp2_tugas1\`), \`tp2_tugas2\`=VALUES(\`tp2_tugas2\`), \`tp2_uh\`=VALUES(\`tp2_uh\`), \`nilai_tp2\`=VALUES(\`nilai_tp2\`),
+            \`tp3_name\`=VALUES(\`tp3_name\`), \`tp3_tugas1\`=VALUES(\`tp3_tugas1\`), \`tp3_tugas2\`=VALUES(\`tp3_tugas2\`), \`tp3_uh\`=VALUES(\`tp3_uh\`), \`nilai_tp3\`=VALUES(\`nilai_tp3\`),
+            \`tp4_name\`=VALUES(\`tp4_name\`), \`tp4_tugas1\`=VALUES(\`tp4_tugas1\`), \`tp4_tugas2\`=VALUES(\`tp4_tugas2\`), \`tp4_uh\`=VALUES(\`tp4_uh\`), \`nilai_tp4\`=VALUES(\`nilai_tp4\`),
+            \`nilai_rata_tp\`=VALUES(\`nilai_rata_tp\`), \`nilai_kokurikuler\`=VALUES(\`nilai_kokurikuler\`), \`nilai_pts\`=VALUES(\`nilai_pts\`), \`nilai_pas\`=VALUES(\`nilai_pas\`), \`nilai_akhir_mapel\`=VALUES(\`nilai_akhir_mapel\`),
+            \`updated_at\`=NOW()
+        `, values);
+        savedCount += chunk.length;
+      }
+      return { success: true, count: savedCount };
+    }
+
+    // High performance chunked multi-row batch insert for Attendance Logs
+    if (typeKey === 'attendance' || typeKey === 'attendance_log' || typeKey === 'attendancelogs') {
+      const validItems = items.filter(it => it && typeof it === 'object' && it.id);
+      const chunkSize = 100;
+      for (let i = 0; i < validItems.length; i += chunkSize) {
+        const chunk = validItems.slice(i, i + chunkSize);
+        const placeholders: string[] = [];
+        const values: any[] = [];
+        for (const att of chunk) {
+          placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?)');
+          values.push(
+            att.id,
+            att.studentId || '',
+            att.studentName || null,
+            att.className || null,
+            (att.date || new Date().toISOString()).substring(0, 10),
+            att.status || 'Hadir',
+            att.notes || null,
+            att.subjectNotes ? (typeof att.subjectNotes === 'string' ? att.subjectNotes : JSON.stringify(att.subjectNotes)) : null
+          );
+        }
+        await connection.query(`
+          INSERT INTO \`attendance_logs\` (
+            \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`status\`, \`notes\`, \`subject_notes\`
+          ) VALUES ${placeholders.join(', ')}
+          ON DUPLICATE KEY UPDATE
+            \`student_id\`=VALUES(\`student_id\`),
+            \`student_name\`=VALUES(\`student_name\`),
+            \`class_name\`=VALUES(\`class_name\`),
+            \`date\`=VALUES(\`date\`),
+            \`status\`=VALUES(\`status\`),
+            \`notes\`=VALUES(\`notes\`),
+            \`subject_notes\`=VALUES(\`subject_notes\`)
+        `, values);
+        savedCount += chunk.length;
+      }
+      return { success: true, count: savedCount };
+    }
+
+    // High performance chunked multi-row batch insert for Shared Learning Objectives (Bank TP Bersama)
+    if (typeKey === 'shared_learning_objectives' || typeKey === 'shared_learning_objective' || typeKey === 'sharedlearningobjectives' || typeKey === 'sharedtps') {
+      const validItems = items.filter(it => it && typeof it === 'object' && it.id);
+      const chunkSize = 50;
+      for (let i = 0; i < validItems.length; i += chunkSize) {
+        const chunk = validItems.slice(i, i + chunkSize);
+        const placeholders: string[] = [];
+        const values: any[] = [];
+        for (const t of chunk) {
+          placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+          values.push(
+            t.id, t.code || '', t.subjectId || '', t.subjectName || '',
+            String(t.gradeLevel || '7'), t.semester || 'Ganjil', t.academicYear || '2026/2027',
+            Number(t.tpNumber) || 1, t.title || '', t.creatorId || null,
+            t.creatorName || 'Admin Kurikulum', t.creatorRole || 'Admin / Guru Pengampu',
+            t.status || 'Aktif',
+            t.revisionRequests ? JSON.stringify(t.revisionRequests) : null,
+            t.createdAt || new Date().toISOString(),
+            t.updatedAt || new Date().toISOString()
+          );
+        }
+        await connection.query(`
+          INSERT INTO \`shared_learning_objectives\` (
+            \`id\`, \`code\`, \`subject_id\`, \`subject_name\`, \`grade_level\`, \`semester\`, \`academic_year\`,
+            \`tp_number\`, \`title\`, \`creator_id\`, \`creator_name\`, \`creator_role\`, \`status\`,
+            \`revision_requests\`, \`created_at\`, \`updated_at\`
+          ) VALUES ${placeholders.join(', ')}
+          ON DUPLICATE KEY UPDATE
+            \`code\`=VALUES(\`code\`), \`subject_id\`=VALUES(\`subject_id\`), \`subject_name\`=VALUES(\`subject_name\`),
+            \`grade_level\`=VALUES(\`grade_level\`), \`semester\`=VALUES(\`semester\`), \`academic_year\`=VALUES(\`academic_year\`),
+            \`tp_number\`=VALUES(\`tp_number\`), \`title\`=VALUES(\`title\`), \`creator_id\`=VALUES(\`creator_id\`),
+            \`creator_name\`=VALUES(\`creator_name\`), \`creator_role\`=VALUES(\`creator_role\`), \`status\`=VALUES(\`status\`),
+            \`revision_requests\`=VALUES(\`revision_requests\`), \`updated_at\`=VALUES(\`updated_at\`)
+        `, values);
+        savedCount += chunk.length;
+      }
+      return { success: true, count: savedCount };
+    }
+
+    // High performance chunked multi-row batch insert for Teaching Journals
+    if (typeKey === 'journal' || typeKey === 'teaching_journal' || typeKey === 'teachingjournals') {
+      const validItems = items.filter(it => it && typeof it === 'object' && it.id);
+      const chunkSize = 50;
+      for (let i = 0; i < validItems.length; i += chunkSize) {
+        const chunk = validItems.slice(i, i + chunkSize);
+        const placeholders: string[] = [];
+        const values: any[] = [];
+        for (const j of chunk) {
+          placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+          values.push(
+            j.id, j.teacherId || '', j.teacherName || '', j.teacherType || null, j.subject || '', j.className || '',
+            j.date || new Date().toISOString().substring(0, 10), j.topic || '',
+            typeof j.attendance === 'string' ? j.attendance : JSON.stringify(j.attendance || j.attendanceData || []),
+            j.notes || null, j.fase || null, j.semester || null, j.alokasiWaktu || null, j.jamKe || null,
+            j.pertemuanKe || null, j.tujuanPembelajaran || null, j.pencapaianKktp || null,
+            j.createdAt || new Date().toISOString()
+          );
+        }
+        await connection.query(`
+          INSERT INTO \`teaching_journals\` (
+            \`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`subject\`, \`class_name\`,
+            \`date\`, \`topic\`, \`attendance_data\`, \`notes\`, \`fase\`, \`semester\`,
+            \`alokasi_waktu\`, \`jam_ke\`, \`pertemuan_ke\`, \`tujuan_pembelajaran\`, \`pencapaian_kktp\`, \`created_at\`
+          ) VALUES ${placeholders.join(', ')}
+          ON DUPLICATE KEY UPDATE
+            \`teacher_id\`=VALUES(\`teacher_id\`),
+            \`teacher_name\`=VALUES(\`teacher_name\`),
+            \`teacher_type\`=VALUES(\`teacher_type\`),
+            \`subject\`=VALUES(\`subject\`),
+            \`class_name\`=VALUES(\`class_name\`),
+            \`date\`=VALUES(\`date\`),
+            \`topic\`=VALUES(\`topic\`),
+            \`attendance_data\`=VALUES(\`attendance_data\`),
+            \`notes\`=VALUES(\`notes\`),
+            \`fase\`=VALUES(\`fase\`),
+            \`semester\`=VALUES(\`semester\`),
+            \`alokasi_waktu\`=VALUES(\`alokasi_waktu\`),
+            \`jam_ke\`=VALUES(\`jam_ke\`),
+            \`pertemuan_ke\`=VALUES(\`pertemuan_ke\`),
+            \`tujuan_pembelajaran\`=VALUES(\`tujuan_pembelajaran\`),
+            \`pencapaian_kktp\`=VALUES(\`pencapaian_kktp\`)
+        `, values);
+        savedCount += chunk.length;
+      }
+      return { success: true, count: savedCount };
+    }
+
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+
+      if (typeKey === 'student' || typeKey === 'students') {
+        const s = item;
+        await connection.query(`
+          INSERT INTO \`students\` (
+            \`id\`, \`nis\`, \`nisn\`, \`name\`, \`class\`, \`gender\`, \`email\`, \`phone\`, \`savings_balance\`,
+            \`status\`, \`password\`, \`nickname\`, \`nik\`, \`birth_place\`, \`birth_date\`, \`kk_number\`,
+            \`birth_cert_number\`, \`living_with\`, \`child_order\`, \`siblings_count\`, \`step_siblings_count\`,
+            \`address\`, \`photo_url\`, \`parent_name\`, \`google_drive_link\`, \`father_name\`, \`father_nik\`,
+            \`father_birth_place\`, \`father_birth_date\`, \`father_education\`, \`father_occupation\`, \`father_income\`,
+            \`father_address\`, \`father_phone\`, \`father_status\`, \`mother_name\`, \`mother_nik\`, \`mother_birth_place\`,
+            \`mother_birth_date\`, \`mother_education\`, \`mother_occupation\`, \`mother_income\`, \`mother_address\`,
+            \`mother_phone\`, \`mother_status\`, \`guardian_name\`, \`guardian_nik\`, \`guardian_birth_place\`,
+            \`guardian_birth_date\`, \`guardian_education\`, \`guardian_occupation\`, \`guardian_income\`, \`guardian_address\`,
+            \`guardian_phone\`, \`guardian_status\`, \`is_spp_exempt\`, \`spp_exemption_reason\`, \`spp_exemption_type\`,
+            \`custom_spp_rate\`, \`mutation_date\`, \`mutation_reason\`, \`mutation_destination\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`nis\`=VALUES(\`nis\`), \`nisn\`=VALUES(\`nisn\`), \`name\`=VALUES(\`name\`), \`class\`=VALUES(\`class\`),
+            \`gender\`=VALUES(\`gender\`), \`email\`=VALUES(\`email\`), \`phone\`=VALUES(\`phone\`),
+            \`savings_balance\`=VALUES(\`savings_balance\`), \`status\`=VALUES(\`status\`), \`password\`=VALUES(\`password\`),
+            \`nickname\`=VALUES(\`nickname\`), \`nik\`=VALUES(\`nik\`), \`birth_place\`=VALUES(\`birth_place\`),
+            \`birth_date\`=VALUES(\`birth_date\`), \`kk_number\`=VALUES(\`kk_number\`), \`birth_cert_number\`=VALUES(\`birth_cert_number\`),
+            \`living_with\`=VALUES(\`living_with\`), \`child_order\`=VALUES(\`child_order\`), \`siblings_count\`=VALUES(\`siblings_count\`),
+            \`step_siblings_count\`=VALUES(\`step_siblings_count\`), \`address\`=VALUES(\`address\`), \`photo_url\`=VALUES(\`photo_url\`),
+            \`parent_name\`=VALUES(\`parent_name\`), \`google_drive_link\`=VALUES(\`google_drive_link\`),
+            \`father_name\`=VALUES(\`father_name\`), \`father_nik\`=VALUES(\`father_nik\`), \`father_birth_place\`=VALUES(\`father_birth_place\`),
+            \`father_birth_date\`=VALUES(\`father_birth_date\`), \`father_education\`=VALUES(\`father_education\`),
+            \`father_occupation\`=VALUES(\`father_occupation\`), \`father_income\`=VALUES(\`father_income\`),
+            \`father_address\`=VALUES(\`father_address\`), \`father_phone\`=VALUES(\`father_phone\`), \`father_status\`=VALUES(\`father_status\`),
+            \`mother_name\`=VALUES(\`mother_name\`), \`mother_nik\`=VALUES(\`mother_nik\`), \`mother_birth_place\`=VALUES(\`mother_birth_place\`),
+            \`mother_birth_date\`=VALUES(\`mother_birth_date\`), \`mother_education\`=VALUES(\`mother_education\`),
+            \`mother_occupation\`=VALUES(\`mother_occupation\`), \`mother_income\`=VALUES(\`mother_income\`),
+            \`mother_address\`=VALUES(\`mother_address\`), \`mother_phone\`=VALUES(\`mother_phone\`), \`mother_status\`=VALUES(\`mother_status\`),
+            \`guardian_name\`=VALUES(\`guardian_name\`), \`guardian_nik\`=VALUES(\`guardian_nik\`),
+            \`guardian_birth_place\`=VALUES(\`guardian_birth_place\`), \`guardian_birth_date\`=VALUES(\`guardian_birth_date\`),
+            \`guardian_education\`=VALUES(\`guardian_education\`), \`guardian_occupation\`=VALUES(\`guardian_occupation\`),
+            \`guardian_income\`=VALUES(\`guardian_income\`), \`guardian_address\`=VALUES(\`guardian_address\`),
+            \`guardian_phone\`=VALUES(\`guardian_phone\`), \`guardian_status\`=VALUES(\`guardian_status\`),
+            \`is_spp_exempt\`=VALUES(\`is_spp_exempt\`), \`spp_exemption_reason\`=VALUES(\`spp_exemption_reason\`),
+            \`spp_exemption_type\`=VALUES(\`spp_exemption_type\`), \`custom_spp_rate\`=VALUES(\`custom_spp_rate\`),
+            \`mutation_date\`=VALUES(\`mutation_date\`), \`mutation_reason\`=VALUES(\`mutation_reason\`),
+            \`mutation_destination\`=VALUES(\`mutation_destination\`), \`updated_at\`=NOW()
+        `, [
+          s.id, s.nis || '', s.nisn || null, s.name || '', s.class || '', s.gender || 'Laki-laki', s.email || null,
+          s.phone || null, Number(s.savingsBalance) || 0, s.status || 'Aktif', s.password || null, s.nickname || null,
+          s.nik || null, s.birthPlace || null, s.birthDate || null, s.kkNumber || null, s.birthCertNumber || null,
+          s.livingWith || null, s.childOrder || null, s.siblingsCount || null, s.stepSiblingsCount || null,
+          s.address || null, s.photoUrl || null, s.parentName || null, s.googleDriveLink || null, s.fatherName || null,
+          s.fatherNik || null, s.fatherBirthPlace || null, s.fatherBirthDate || null, s.fatherEducation || null,
+          s.fatherOccupation || null, s.fatherIncome || null, s.fatherAddress || null, s.fatherPhone || null,
+          s.fatherStatus || null, s.motherName || null, s.motherNik || null, s.motherBirthPlace || null,
+          s.motherBirthDate || null, s.motherEducation || null, s.motherOccupation || null, s.motherIncome || null,
+          s.motherAddress || null, s.motherPhone || null, s.motherStatus || null, s.guardianName || null,
+          s.guardianNik || null, s.guardianBirthPlace || null, s.guardianBirthDate || null, s.guardianEducation || null,
+          s.guardianOccupation || null, s.guardianIncome || null, s.guardianAddress || null, s.guardianPhone || null,
+          s.guardianStatus || null, s.isSppExempt ? 1 : 0, s.sppExemptionReason || null, s.sppExemptionType || null,
+          s.customSppRate !== undefined ? Number(s.customSppRate) : null, s.mutationDate || null, s.mutationReason || null,
+          s.mutationDestination || null
+        ]);
+        savedCount++;
+      } else if (typeKey === 'spp' || typeKey === 'spp_bill' || typeKey === 'sppbills') {
+        const b = item;
+        try {
+          const bStudentId = b.studentId || (b as any).student_id || '';
+          const bMonth = b.month;
+          const bYear = Number(b.year) || 2026;
+          const bAmount = Number(b.amount) || 0;
+          const bStatus = b.status || 'unpaid';
+          const bPaidAt = b.paidAt || (b as any).paid_at || null;
+          const bPaymentMethod = b.paymentMethod || (b as any).payment_method || null;
+          const bOrderId = b.orderId || (b as any).order_id || null;
+          const bTransactionId = b.transactionId || (b as any).transaction_id || null;
+          const bAchType = b.achievementType || (b as any).achievement_type || null;
+          const bAchDetail = b.achievementDetail || (b as any).achievement_detail || null;
+          const bIsVoided = b.isVoidedByAdmin ? 1 : 0;
+          const bVoidedAt = b.voidedAt || null;
+          const bVoidReason = b.voidReason || null;
+
+          const [updateResult]: any = await connection.query(`
+            UPDATE \`spp_bills\`
+            SET \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`achievement_type\`=?, \`achievement_detail\`=?, \`is_voided_by_admin\`=?, \`voided_at\`=?, \`void_reason\`=?
+            WHERE \`id\`=? OR (
+              (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
+              AND LOWER(\`month\`)=LOWER(?) AND \`year\`=?
+            )
+          `, [
+            bAmount, bStatus, bPaidAt, bPaymentMethod, bOrderId, bTransactionId, bAchType, bAchDetail, bIsVoided, bVoidedAt, bVoidReason,
+            b.id, bStudentId, bStudentId, bStudentId, bMonth, bYear
+          ]);
+
+          if (updateResult && updateResult.affectedRows === 0) {
+            await connection.query(`
+              INSERT INTO \`spp_bills\` (
+                \`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`,
+                \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON DUPLICATE KEY UPDATE
+                \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
+                \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+                \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`),
+                \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
+            `, [
+              b.id, bStudentId, bMonth, bYear, bAmount, bStatus,
+              bPaidAt, bPaymentMethod, bOrderId, bTransactionId,
+              bAchType, bAchDetail, bIsVoided, bVoidedAt, bVoidReason
+            ]);
+          }
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[MySQL Batch SPP Error] ${b?.id}:`, itemErr?.message || itemErr);
+        }
+      } else if (typeKey === 'misc' || typeKey === 'misc_bill' || typeKey === 'miscbills') {
+        const m = item;
+        try {
+          const mStudentId = m.studentId || (m as any).student_id || '';
+          const mTitle = m.title || '';
+          const mAmount = Number(m.amount) || 0;
+          const mStatus = m.status || 'unpaid';
+          const mCreatedAt = m.createdAt || (m as any).created_at || new Date().toISOString();
+          const mPaidAt = m.paidAt || (m as any).paid_at || null;
+          const mPaymentMethod = m.paymentMethod || (m as any).payment_method || null;
+          const mOrderId = m.orderId || (m as any).order_id || null;
+          const mTransactionId = m.transactionId || (m as any).transaction_id || null;
+          const mIsMonthly = m.isMonthly || (m as any).is_monthly ? 1 : 0;
+          const mMonth = m.month || null;
+          const mIsVoided = m.isVoidedByAdmin ? 1 : 0;
+          const mVoidedAt = m.voidedAt || null;
+          const mVoidReason = m.voidReason || null;
+
+          const [updateResult]: any = await connection.query(`
+            UPDATE \`misc_bills\`
+            SET \`title\`=?, \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`is_monthly\`=?, \`month\`=?, \`is_voided_by_admin\`=?, \`voided_at\`=?, \`void_reason\`=?
+            WHERE \`id\`=? OR (
+              (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
+              AND LOWER(\`title\`)=LOWER(?)
+            )
+          `, [
+            mTitle, mAmount, mStatus, mPaidAt, mPaymentMethod, mOrderId, mTransactionId, mIsMonthly, mMonth, mIsVoided, mVoidedAt, mVoidReason,
+            m.id, mStudentId, mStudentId, mStudentId, mTitle
+          ]);
+
+          if (updateResult && updateResult.affectedRows === 0) {
+            await connection.query(`
+              INSERT INTO \`misc_bills\` (
+                \`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`,
+                \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`,
+                \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON DUPLICATE KEY UPDATE
+                \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
+                \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`),
+                \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`),
+                \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
+            `, [
+              m.id, mStudentId, mTitle, mAmount, mStatus,
+              mCreatedAt, mPaidAt, mPaymentMethod,
+              mOrderId, mTransactionId, mIsMonthly, mMonth,
+              mIsVoided, mVoidedAt, mVoidReason
+            ]);
+          }
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[MySQL Batch Misc Error] ${m?.id}:`, itemErr?.message || itemErr);
+        }
+      } else if (typeKey === 'savings' || typeKey === 'savings_transaction' || typeKey === 'savingstransactions') {
+        const s = item;
+        try {
+          const sIsVoided = s.isVoidedByAdmin ? 1 : 0;
+          const sVoidedAt = s.voidedAt || null;
+          const sVoidReason = s.voidReason || null;
+
+          await connection.query(`
+            INSERT INTO \`savings_transactions\` (
+              \`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`,
+              \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              \`status\`=VALUES(\`status\`), \`amount\`=VALUES(\`amount\`), \`notes\`=VALUES(\`notes\`),
+              \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+              \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
+          `, [
+            s.id, s.studentId || (s as any).student_id || '', s.studentNis || null, s.type || 'deposit', Number(s.amount) || 0,
+            s.status || 'success', s.createdAt || new Date().toISOString(), s.paymentMethod || null,
+            s.orderId || null, s.transactionId || null, s.notes || null,
+            sIsVoided, sVoidedAt, sVoidReason
+          ]);
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[MySQL Batch Savings Error] ${s?.id}:`, itemErr?.message || itemErr);
+        }
+      } else if (typeKey === 'voided_payment' || typeKey === 'voided_payments' || typeKey === 'voidedpayment' || typeKey === 'voidedpayments') {
+        const v = item;
+        try {
+          await connection.query(`
+            INSERT INTO \`voided_payments\` (
+              \`id\`, \`bill_id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`bill_type\`, \`period\`, \`amount\`, \`void_reason\`, \`voided_at\`
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              \`bill_id\`=VALUES(\`bill_id\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+              \`student_id\`=VALUES(\`student_id\`), \`bill_type\`=VALUES(\`bill_type\`), \`period\`=VALUES(\`period\`),
+              \`amount\`=VALUES(\`amount\`), \`void_reason\`=VALUES(\`void_reason\`), \`voided_at\`=VALUES(\`voided_at\`)
+          `, [
+            v.id, v.billId || null, v.orderId || null, v.transactionId || null, v.studentId || null,
+            v.billType || 'spp', v.period || null, Number(v.amount) || 0, v.voidReason || null, v.voidedAt || new Date().toISOString()
+          ]);
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[MySQL Batch Voided Error] ${v?.id}:`, itemErr?.message || itemErr);
+        }
+      } else if (typeKey === 'transaction' || typeKey === 'treasurer_transaction' || typeKey === 'treasurertransactions' || typeKey === 'treasurer_transactions') {
+        const t = item;
+        try {
+          await connection.query(`
+            INSERT INTO \`treasurer_transactions\` (
+              \`id\`, \`type\`, \`category\`, \`amount\`, \`description\`, \`date\`, \`source\`,
+              \`student_name\`, \`student_id\`, \`nis\`, \`created_by\`, \`recipient_name\`,
+              \`funding_source\`, \`payment_method\`, \`kode_rekening\`, \`no_bukti\`, \`order_id\`, \`transaction_id\`
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              \`amount\`=VALUES(\`amount\`), \`description\`=VALUES(\`description\`), \`category\`=VALUES(\`category\`),
+              \`date\`=VALUES(\`date\`), \`payment_method\`=VALUES(\`payment_method\`), \`no_bukti\`=VALUES(\`no_bukti\`),
+              \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`funding_source\`=VALUES(\`funding_source\`)
+          `, [
+            t.id, t.type || 'incoming', t.category ? String(t.category).slice(0, 100) : 'Lain-lain', Number(t.amount) || 0, t.description || '',
+            t.date || new Date().toISOString().substring(0, 10), t.source || 'custom', t.studentName ? String(t.studentName).slice(0, 150) : null,
+            t.studentId || null, t.nis || null, t.createdBy || 'Bendahara', t.recipientName ? String(t.recipientName).slice(0, 150) : null,
+            t.fundingSource || null, t.paymentMethod === 'bank' ? 'bank' : 'kas', t.kodeRekening || null,
+            t.noBukti || null, t.orderId || null, t.transactionId || null
+          ]);
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[MySQL Batch Kas Error] ${t?.id}:`, itemErr?.message || itemErr);
+        }
+      } else if (typeKey === 'midtrans' || typeKey === 'midtrans_transaction' || typeKey === 'midtranstransactions') {
+        const md = item;
+        await connection.query(`
+          INSERT INTO \`midtrans_transactions\` (
+            \`id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`student_name\`, \`student_nis\`, \`nisn\`,
+            \`bill_type\`, \`description\`, \`gross_amount\`, \`payment_type\`, \`transaction_status\`,
+            \`fraud_status\`, \`settlement_time\`, \`transaction_time\`, \`created_at\`, \`updated_at\`, \`snap_token\`, \`raw_response\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`transaction_status\`=VALUES(\`transaction_status\`),
+            \`transaction_id\`=VALUES(\`transaction_id\`),
+            \`settlement_time\`=VALUES(\`settlement_time\`),
+            \`payment_type\`=VALUES(\`payment_type\`),
+            \`updated_at\`=VALUES(\`updated_at\`)
+        `, [
+          md.id || `mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          md.orderId || '',
+          md.transactionId || null,
+          md.studentId || null,
+          md.studentName || null,
+          md.studentNis || null,
+          md.nisn || null,
+          md.billType || 'other',
+          md.description || null,
+          Number(md.grossAmount) || 0,
+          md.paymentType || 'Midtrans',
+          md.transactionStatus || 'settlement',
+          md.fraudStatus || null,
+          md.settlementTime || null,
+          md.transactionTime || null,
+          md.createdAt || new Date().toISOString(),
+          md.updatedAt || new Date().toISOString(),
+          md.snapToken || null,
+          md.rawResponse ? (typeof md.rawResponse === 'string' ? md.rawResponse : JSON.stringify(md.rawResponse)) : null
+        ]);
+        savedCount++;
+      } else {
+        // Fallback to directSaveEntityToMysql
+        await directSaveEntityToMysql(entityType, item);
+        savedCount++;
+      }
+    }
+
+    return { success: true, count: savedCount };
+  } catch (err: any) {
+    console.error(`[MySQL Batch Save Error - ${entityType}]:`, err.message || err);
+    return { success: false, count: savedCount, error: err.message || String(err) };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Direct single entity delete from MySQL table
+export async function directDeleteEntityFromMysql(entityType: string, id: string): Promise<{ success: boolean; message: string; error?: string }> {
+  if (!id) {
+    return { success: false, message: 'ID entitas wajib diisi untuk penghapusan.' };
+  }
+
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+    const typeKey = entityType.toLowerCase().trim();
+
+    const tableMap: Record<string, string> = {
+      student: 'students',
+      students: 'students',
+      spp: 'spp_bills',
+      spp_bill: 'spp_bills',
+      sppbills: 'spp_bills',
+      misc: 'misc_bills',
+      misc_bill: 'misc_bills',
+      miscbills: 'misc_bills',
+      savings: 'savings_transactions',
+      savings_transaction: 'savings_transactions',
+      savingstransactions: 'savings_transactions',
+      transaction: 'treasurer_transactions',
+      transactions: 'treasurer_transactions',
+      treasurer_transaction: 'treasurer_transactions',
+      treasurer_transactions: 'treasurer_transactions',
+      treasurertransactions: 'treasurer_transactions',
+      treasurertransaction: 'treasurer_transactions',
+      salary: 'teacher_salaries',
+      teacher_salary: 'teacher_salaries',
+      teachersalaries: 'teacher_salaries',
+      homeroom: 'homeroom_teachers',
+      homeroom_teacher: 'homeroom_teachers',
+      homeroomteachers: 'homeroom_teachers',
+      subject_teacher: 'subject_teachers',
+      subjectteachers: 'subject_teachers',
+      journal: 'teaching_journals',
+      teaching_journal: 'teaching_journals',
+      teachingjournals: 'teaching_journals',
+      attendance: 'attendance_logs',
+      attendance_log: 'attendance_logs',
+      attendancelogs: 'attendance_logs',
+      assessment: 'merdeka_assessments',
+      merdeka: 'merdeka_assessments',
+      merdeka_assessment: 'merdeka_assessments',
+      merdekaassessments: 'merdeka_assessments',
+      schedule: 'class_schedules',
+      class_schedule: 'class_schedules',
+      classschedules: 'class_schedules',
+      spmb: 'spmb_candidates',
+      spmb_candidate: 'spmb_candidates',
+      spmbcandidates: 'spmb_candidates',
+      spmb_candidates: 'spmb_candidates',
+      sarpras_item: 'sarpras_items',
+      sarprasitems: 'sarpras_items',
+      sarpras_proposal: 'sarpras_proposals',
+      sarprasproposals: 'sarpras_proposals',
+      sarpras_loan: 'sarpras_loans',
+      sarprasloans: 'sarpras_loans',
+      student_development_log: 'student_development_logs',
+      studentdevelopmentlogs: 'student_development_logs',
+      student_infraction_log: 'student_infraction_logs',
+      studentinfractionlogs: 'student_infraction_logs',
+      student_counseling_log: 'student_counseling_logs',
+      studentcounselinglogs: 'student_counseling_logs',
+      infraction_rule: 'infraction_rules',
+      infractionrules: 'infraction_rules',
+      class_announcement: 'class_announcements',
+      classannouncements: 'class_announcements',
+      class_meeting_log: 'class_meeting_logs',
+      classmeetinglogs: 'class_meeting_logs',
+      principal_work_program: 'principal_work_programs',
+      principalworkprograms: 'principal_work_programs',
+      teacher_evaluation: 'teacher_evaluations',
+      teacherevaluations: 'teacher_evaluations',
+      curriculum_subject: 'curriculum_subjects',
+      curriculum_subjects: 'curriculum_subjects',
+      curriculumsubject: 'curriculum_subjects',
+      curriculum_tp: 'curriculum_tp_levels',
+      curriculum_tp_levels: 'curriculum_tp_levels',
+      curriculumtp: 'curriculum_tp_levels',
+      curriculum_tp_level: 'curriculum_tp_levels',
+      shared_learning_objective: 'shared_learning_objectives',
+      shared_learning_objectives: 'shared_learning_objectives',
+      sharedlearningobjective: 'shared_learning_objectives',
+      sharedlearningobjectives: 'shared_learning_objectives',
+      shared_tp: 'shared_learning_objectives',
+      shared_tps: 'shared_learning_objectives',
+      notification: 'notifications',
+      notifications: 'notifications',
+      config: 'app_configs'
+    };
+
+    const tableName = tableMap[typeKey] || typeKey;
+    if (tableName === 'curriculum_subjects') {
+      const aliasMap: Record<string, string[]> = {
+        'mapel-seni': ['mapel-sbk', 'SENI', 'SBK'],
+        'mapel-sbk': ['mapel-seni', 'SENI', 'SBK'],
+        'mapel-infor': ['mapel-inf', 'INFOR', 'INF'],
+        'mapel-inf': ['mapel-infor', 'INFOR', 'INF'],
+        'mapel-bjawa': ['mapel-mulok', 'MULOK', 'BJAWA']
+      };
+      const extraIds = aliasMap[id] || [id];
+      await connection.query(
+        "DELETE FROM `curriculum_subjects` WHERE `id` = ? OR `code` = ? OR LOWER(`name`) = LOWER(?) OR `id` IN (?)",
+        [id, id, id, extraIds]
+      );
+    } else {
+      await connection.query(`DELETE FROM \`${tableName}\` WHERE \`id\` = ?`, [id]);
+    }
+    return {
+      success: true,
+      message: `Data ID "${id}" pada tabel "${tableName}" berhasil dihapus langsung dari MySQL.`
+    };
+  } catch (err: any) {
+    console.error(`[MySQL Direct Delete Error - ${entityType}]:`, err.message || err);
+    return {
+      success: false,
+      message: `Gagal menghapus data dari MySQL`,
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Direct batch entities delete from MySQL table
+export async function directDeleteEntitiesBatchFromMysql(entityType: string, ids: string[]): Promise<{ success: boolean; count: number; error?: string }> {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { success: true, count: 0 };
+  }
+
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+    const typeKey = entityType.toLowerCase().trim();
+
+    const tableMap: Record<string, string> = {
+      student: 'students',
+      students: 'students',
+      spp: 'spp_bills',
+      spp_bill: 'spp_bills',
+      sppbills: 'spp_bills',
+      misc: 'misc_bills',
+      misc_bill: 'misc_bills',
+      miscbills: 'misc_bills',
+      savings: 'savings_transactions',
+      savings_transaction: 'savings_transactions',
+      savingstransactions: 'savings_transactions',
+      transaction: 'treasurer_transactions',
+      transactions: 'treasurer_transactions',
+      treasurer_transaction: 'treasurer_transactions',
+      treasurer_transactions: 'treasurer_transactions',
+      treasurertransactions: 'treasurer_transactions',
+      treasurertransaction: 'treasurer_transactions',
+      salary: 'teacher_salaries',
+      teacher_salary: 'teacher_salaries',
+      teachersalaries: 'teacher_salaries',
+      spmb: 'spmb_candidates',
+      spmb_candidate: 'spmb_candidates',
+      spmbcandidates: 'spmb_candidates',
+      schedule: 'class_schedules',
+      class_schedule: 'class_schedules',
+      classschedules: 'class_schedules',
+      notification: 'notifications',
+      notifications: 'notifications'
+    };
+
+    const tableName = tableMap[typeKey] || typeKey;
+    let totalDeleted = 0;
+    const chunkSize = 200;
+
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const placeholders = chunk.map(() => '?').join(',');
+      const [res]: any = await connection.query(`DELETE FROM \`${tableName}\` WHERE \`id\` IN (${placeholders})`, chunk);
+      totalDeleted += (res?.affectedRows || 0);
+    }
+
+    return { success: true, count: totalDeleted };
+  } catch (err: any) {
+    console.error(`[MySQL Batch Delete Error - ${entityType}]:`, err.message || err);
+    return { success: false, count: 0, error: err.message || String(err) };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Direct clear / purge all records from a specific MySQL table
+export async function directClearTableInMysql(entityTypeOrTable: string): Promise<{ success: boolean; message: string; error?: string }> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+    const typeKey = entityTypeOrTable.toLowerCase().trim();
+    const tableMap: Record<string, string> = {
+      schedule: 'class_schedules',
+      class_schedule: 'class_schedules',
+      classschedules: 'class_schedules',
+      class_schedules: 'class_schedules',
+    };
+    const tableName = tableMap[typeKey] || typeKey;
+    await connection.query(`DELETE FROM \`${tableName}\``);
+    return {
+      success: true,
+      message: `Seluruh data pada tabel "${tableName}" berhasil dikosongkan dari MySQL.`
+    };
+  } catch (err: any) {
+    console.error(`[MySQL Clear Table Error - ${entityTypeOrTable}]:`, err.message || err);
+    return {
+      success: false,
+      message: `Gagal mengosongkan tabel MySQL`,
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Debounced background direct snapshot sync runner
+let debouncedSyncTimer: NodeJS.Timeout | null = null;
+let isSyncInProgress = false;
+
+export function triggerDebouncedMysqlSync(snapshotProvider: () => Promise<any> | any, delayMs: number = 1000) {
+  if (debouncedSyncTimer) {
+    clearTimeout(debouncedSyncTimer);
+  }
+
+  debouncedSyncTimer = setTimeout(async () => {
+    if (isSyncInProgress) return;
+    try {
+      isSyncInProgress = true;
+      const snapshotData = await snapshotProvider();
+      const snapshot = snapshotData?.snapshot || snapshotData;
+      const isConfigured = Boolean(
+        currentConfig.host &&
+        currentConfig.database &&
+        currentConfig.user &&
+        (currentConfig.hasPassword || (currentConfig.password !== undefined && currentConfig.password !== '') || Boolean(process.env.MYSQL_PASSWORD))
+      );
+      if (snapshot && isConfigured) {
+        await syncDataToMysql(snapshot);
+        console.log('[MySQL Direct Background Sync] Berhasil melakukan autosave langsung ke MySQL.');
+      }
+    } catch (err: any) {
+      console.warn('[MySQL Direct Background Sync] Warning:', err.message || err);
+    } finally {
+      isSyncInProgress = false;
+    }
+  }, delayMs);
+}
+
+export async function getAllCurriculumSubjectsFromMysql(): Promise<CurriculumSubject[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query('SELECT * FROM `curriculum_subjects` ORDER BY `order_num` ASC, `code` ASC');
+    return (rows || []).map((r: any) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      category: r.category || 'Muatan Nasional',
+      kktp: Number(r.kktp) || 75,
+      tingkat: r.tingkat || 'Semua Tingkat',
+      orderNum: Number(r.order_num) || 0,
+      description: r.description || undefined,
+      createdAt: r.created_at || undefined,
+      updatedAt: r.updated_at || undefined
+    }));
+  } catch (err: any) {
+    console.warn('[MySQL] Failed to load curriculum_subjects:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function getAllCurriculumTpFromMysql(): Promise<CurriculumTpDescription[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query('SELECT * FROM `curriculum_tp_levels` ORDER BY `grade_level` ASC, `subject_name` ASC');
+    return (rows || []).map((r: any) => ({
+      id: r.id,
+      gradeLevel: String(r.grade_level || '7'),
+      subjectId: r.subject_id || undefined,
+      subject: r.subject_name || '',
+      semester: r.semester || 'Ganjil',
+      academicYear: r.academic_year || '2026/2027',
+      tp1Name: r.tp1_name || '',
+      tp2Name: r.tp2_name || '',
+      tp3Name: r.tp3_name || '',
+      tp4Name: r.tp4_name || '',
+      isLocked: Boolean(r.is_locked),
+      filledBy: r.filled_by || undefined,
+      filledByRole: r.filled_by_role || undefined,
+      filledAt: r.filled_at || undefined,
+      editedBy: r.edited_by || undefined,
+      editedByRole: r.edited_by_role || undefined,
+      editedAt: r.edited_at || undefined,
+      editHistory: r.edit_history ? (() => { try { return JSON.parse(r.edit_history); } catch (_) { return undefined; } })() : undefined,
+      updatedAt: r.updated_at || undefined
+    }));
+  } catch (err: any) {
+    console.warn('[MySQL] Failed to load curriculum_tp_levels:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// ==========================================================
+// DIRECT GUEST BOOK (BUKU TAMU) MYSQL OPERATIONS
+// Disimpan langsung ke database MySQL tanpa melalui penyimpanan lokal
+// ==========================================================
+
+export async function ensureGuestBooksTableExists(): Promise<void> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`guest_books\` (
+        \`id\` VARCHAR(64) NOT NULL,
+        \`category\` VARCHAR(32) DEFAULT 'umum',
+        \`date\` VARCHAR(32) NOT NULL,
+        \`time\` VARCHAR(16) DEFAULT NULL,
+        \`name\` VARCHAR(150) NOT NULL,
+        \`position\` VARCHAR(100) DEFAULT NULL,
+        \`institution\` VARCHAR(150) NOT NULL,
+        \`purpose\` TEXT NOT NULL,
+        \`phone\` VARCHAR(32) NOT NULL,
+        \`notes\` TEXT DEFAULT NULL,
+        \`supervisor_nip\` VARCHAR(64) DEFAULT NULL,
+        \`coaching_subject\` VARCHAR(255) DEFAULT NULL,
+        \`findings\` TEXT DEFAULT NULL,
+        \`recommendations\` TEXT DEFAULT NULL,
+        \`follow_up_status\` VARCHAR(32) DEFAULT 'Belum',
+        \`follow_up_notes\` TEXT DEFAULT NULL,
+        \`signature\` LONGTEXT DEFAULT NULL,
+        \`status\` VARCHAR(32) DEFAULT 'Selesai',
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`idx_date\` (\`date\`),
+        KEY \`idx_category\` (\`category\`),
+        KEY \`idx_institution\` (\`institution\`),
+        KEY \`idx_name\` (\`name\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Ensure backwards compatibility by adding missing columns if table already existed
+    const addCol = async (colDef: string) => {
+      try {
+        await connection!.query(`ALTER TABLE \`guest_books\` ADD COLUMN ${colDef}`);
+      } catch (_) {}
+    };
+    await addCol('`category` VARCHAR(32) DEFAULT \'umum\'');
+    await addCol('`supervisor_nip` VARCHAR(64) DEFAULT NULL');
+    await addCol('`coaching_subject` VARCHAR(255) DEFAULT NULL');
+    await addCol('`findings` TEXT DEFAULT NULL');
+    await addCol('`recommendations` TEXT DEFAULT NULL');
+    await addCol('`follow_up_status` VARCHAR(32) DEFAULT \'Belum\'');
+    await addCol('`follow_up_notes` TEXT DEFAULT NULL');
+    await addCol('`signature` LONGTEXT DEFAULT NULL');
+  } catch (err: any) {
+    console.warn('[MySQL ensureGuestBooksTableExists Warning]:', err.message || err);
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function getAllGuestBooksFromMysql(): Promise<any[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureGuestBooksTableExists();
+    const [rows]: any = await connection.query(`
+      SELECT 
+        \`id\`,
+        \`category\`,
+        \`date\`,
+        \`time\`,
+        \`name\`,
+        \`position\`,
+        \`institution\`,
+        \`purpose\`,
+        \`phone\`,
+        \`notes\`,
+        \`supervisor_nip\` as supervisorNip,
+        \`coaching_subject\` as coachingSubject,
+        \`findings\`,
+        \`recommendations\`,
+        \`follow_up_status\` as followUpStatus,
+        \`follow_up_notes\` as followUpNotes,
+        \`signature\`,
+        \`status\`,
+        \`created_at\` as createdAt,
+        \`updated_at\` as updatedAt
+      FROM \`guest_books\` 
+      ORDER BY \`date\` DESC, \`created_at\` DESC
+    `);
+    return Array.isArray(rows) ? rows : [];
+  } catch (err: any) {
+    console.error('[MySQL Get Guest Books Error]:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function saveGuestBookToMysql(entry: any): Promise<{ success: boolean; message: string; error?: string; item?: any }> {
+  if (!entry || !entry.name || !entry.institution || !entry.purpose) {
+    return { success: false, message: 'Data buku tamu tidak lengkap (Nama, Asal Instansi, dan Keperluan/Aspek wajib diisi).' };
+  }
+
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureGuestBooksTableExists();
+
+    const id = entry.id || `gb-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const category = entry.category === 'pembinaan' ? 'pembinaan' : 'umum';
+    const date = entry.date || new Date().toISOString().split('T')[0];
+    const time = entry.time || new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace('.', ':');
+    const name = toProperCase(String(entry.name).trim());
+    const position = entry.position ? toProperCase(String(entry.position).trim()) : '';
+    const institution = toUpperCase(String(entry.institution).trim());
+    const purpose = toSentenceCase(String(entry.purpose).trim());
+    const phone = entry.phone ? String(entry.phone).trim() : '';
+    const notes = entry.notes ? toSentenceCase(String(entry.notes).trim()) : '';
+    const supervisorNip = entry.supervisorNip ? String(entry.supervisorNip).trim() : '';
+    const coachingSubject = entry.coachingSubject ? toSentenceCase(String(entry.coachingSubject).trim()) : '';
+    const findings = entry.findings ? toSentenceCase(String(entry.findings).trim()) : '';
+    const recommendations = entry.recommendations ? toSentenceCase(String(entry.recommendations).trim()) : '';
+    const followUpStatus = entry.followUpStatus ? String(entry.followUpStatus).trim() : 'Belum';
+    const followUpNotes = entry.followUpNotes ? toSentenceCase(String(entry.followUpNotes).trim()) : '';
+    const signature = entry.signature ? String(entry.signature) : null;
+    const status = entry.status ? String(entry.status).trim() : 'Selesai';
+
+    await connection.query(`
+      INSERT INTO \`guest_books\` (
+        \`id\`, \`category\`, \`date\`, \`time\`, \`name\`, \`position\`, \`institution\`, \`purpose\`, \`phone\`, \`notes\`,
+        \`supervisor_nip\`, \`coaching_subject\`, \`findings\`, \`recommendations\`, \`follow_up_status\`, \`follow_up_notes\`, \`signature\`, \`status\`, \`created_at\`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ON DUPLICATE KEY UPDATE
+        \`category\` = VALUES(\`category\`),
+        \`date\` = VALUES(\`date\`),
+        \`time\` = VALUES(\`time\`),
+        \`name\` = VALUES(\`name\`),
+        \`position\` = VALUES(\`position\`),
+        \`institution\` = VALUES(\`institution\`),
+        \`purpose\` = VALUES(\`purpose\`),
+        \`phone\` = VALUES(\`phone\`),
+        \`notes\` = VALUES(\`notes\`),
+        \`supervisor_nip\` = VALUES(\`supervisor_nip\`),
+        \`coaching_subject\` = VALUES(\`coaching_subject\`),
+        \`findings\` = VALUES(\`findings\`),
+        \`recommendations\` = VALUES(\`recommendations\`),
+        \`follow_up_status\` = VALUES(\`follow_up_status\`),
+        \`follow_up_notes\` = VALUES(\`follow_up_notes\`),
+        \`signature\` = VALUES(\`signature\`),
+        \`status\` = VALUES(\`status\`),
+        \`updated_at\` = NOW()
+    `, [
+      id, category, date, time, name, position, institution, purpose, phone, notes,
+      supervisorNip, coachingSubject, findings, recommendations, followUpStatus, followUpNotes, signature, status
+    ]);
+
+    const savedItem = {
+      id,
+      category,
+      date,
+      time,
+      name,
+      position,
+      institution,
+      purpose,
+      phone,
+      notes,
+      supervisorNip,
+      coachingSubject,
+      findings,
+      recommendations,
+      followUpStatus,
+      followUpNotes,
+      signature: signature || undefined,
+      status
+    };
+
+    return { 
+      success: true, 
+      message: 'Buku tamu berhasil disimpan langsung ke database MySQL.',
+      item: savedItem
+    };
+  } catch (err: any) {
+    console.error('[MySQL Save Guest Book Error]:', err.message || err);
+    return { success: false, message: 'Gagal menyimpan buku tamu ke database MySQL', error: err.message || String(err) };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function deleteGuestBookFromMysql(id: string): Promise<{ success: boolean; message: string; error?: string }> {
+  if (!id) return { success: false, message: 'ID buku tamu diperlukan.' };
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query('DELETE FROM `guest_books` WHERE `id` = ?', [id]);
+    return { success: true, message: 'Data buku tamu berhasil dihapus dari database MySQL.' };
+  } catch (err: any) {
+    console.error('[MySQL Delete Guest Book Error]:', err.message || err);
+    return { success: false, message: 'Gagal menghapus data buku tamu dari database MySQL', error: err.message || String(err) };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+
+

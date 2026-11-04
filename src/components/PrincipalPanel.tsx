@@ -12,8 +12,15 @@ import {
   TeachingJournal,
   StudentCounselingLog,
   StudentInfractionLog,
-  isSppBillOverdue
+  isSppBillOverdue,
+  sortSppBills,
+  ClassSchedule,
+  GuestBookEntry
 } from '../types';
+import QRCode from 'qrcode';
+import ScheduleView from './ScheduleView';
+import { DigitalSignaturePad } from './DigitalSignaturePad';
+import { toProperCase, formatProperWhileTyping, toUpperCase, toSentenceCase } from '../utils/textFormatters';
 import { 
   BarChart, 
   Bar, 
@@ -58,7 +65,16 @@ import {
   LayoutGrid,
   Home,
   Smartphone,
-  Apple
+  Apple,
+  Download,
+  ArrowUpDown,
+  Building2,
+  QrCode,
+  Phone,
+  Briefcase,
+  Copy,
+  ExternalLink,
+  Share2
 } from 'lucide-react';
 
 interface PrincipalPanelProps {
@@ -72,6 +88,7 @@ interface PrincipalPanelProps {
   onLogout: () => void;
   onRefresh: () => void;
   isLoading?: boolean;
+  classSchedules?: ClassSchedule[];
 }
 
 export default function PrincipalPanel({
@@ -84,11 +101,231 @@ export default function PrincipalPanel({
   onUpdateSchoolIdentity,
   onLogout,
   onRefresh,
-  isLoading
+  isLoading,
+  classSchedules = []
 }: PrincipalPanelProps) {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'work_programs' | 'evaluations' | 'journals' | 'bk_monitoring' | 'finance_monitoring' | 'school_profile' | 'sarpras_monitoring'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'work_programs' | 'evaluations' | 'journals' | 'bk_monitoring' | 'attendance_recap' | 'finance_monitoring' | 'school_profile' | 'sarpras_monitoring' | 'jadwal' | 'buku_tamu'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+
+  // Guest Book (Buku Tamu) State
+  const [guestBooks, setGuestBooks] = useState<GuestBookEntry[]>([]);
+  const [loadingGuestBooks, setLoadingGuestBooks] = useState<boolean>(false);
+  const [guestBookSearch, setGuestBookSearch] = useState<string>('');
+  const [guestBookDateFilter, setGuestBookDateFilter] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'custom'>('all');
+  const [guestBookStartDate, setGuestBookStartDate] = useState<string>('');
+  const [guestBookEndDate, setGuestBookEndDate] = useState<string>('');
+  const [guestBookStatusFilter, setGuestBookStatusFilter] = useState<string>('all');
+  const [guestBookCategoryTab, setGuestBookCategoryTab] = useState<'all' | 'umum' | 'pembinaan'>('all');
+  
+  // Modals for Guest Book
+  const [isQrModalOpen, setIsQrModalOpen] = useState<boolean>(false);
+  const [qrTypeSelection, setQrTypeSelection] = useState<'all' | 'umum' | 'pembinaan'>('all');
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+  const [isCopiedQrLink, setIsCopiedQrLink] = useState<boolean>(false);
+  const [isGuestBookModalOpen, setIsGuestBookModalOpen] = useState<boolean>(false);
+  const [selectedGuestBookForDetail, setSelectedGuestBookForDetail] = useState<GuestBookEntry | null>(null);
+  const [editingGuestBook, setEditingGuestBook] = useState<GuestBookEntry | null>(null);
+  const [guestBookFormCategory, setGuestBookFormCategory] = useState<'umum' | 'pembinaan'>('umum');
+  const [guestBookFormDate, setGuestBookFormDate] = useState<string>('');
+  const [guestBookFormTime, setGuestBookFormTime] = useState<string>('');
+  const [guestBookFormName, setGuestBookFormName] = useState<string>('');
+  const [guestBookFormPosition, setGuestBookFormPosition] = useState<string>('');
+  const [guestBookFormInstitution, setGuestBookFormInstitution] = useState<string>('');
+  const [guestBookFormPurpose, setGuestBookFormPurpose] = useState<string>('');
+  const [guestBookFormPhone, setGuestBookFormPhone] = useState<string>('');
+  const [guestBookFormNotes, setGuestBookFormNotes] = useState<string>('');
+  const [guestBookFormSupervisorNip, setGuestBookFormSupervisorNip] = useState<string>('');
+  const [guestBookFormCoachingSubject, setGuestBookFormCoachingSubject] = useState<string>('');
+  const [guestBookFormFindings, setGuestBookFormFindings] = useState<string>('');
+  const [guestBookFormRecommendations, setGuestBookFormRecommendations] = useState<string>('');
+  const [guestBookFormFollowUpStatus, setGuestBookFormFollowUpStatus] = useState<string>('Belum');
+  const [guestBookFormFollowUpNotes, setGuestBookFormFollowUpNotes] = useState<string>('');
+  const [guestBookFormSignature, setGuestBookFormSignature] = useState<string>('');
+  const [guestBookFormStatus, setGuestBookFormStatus] = useState<string>('Selesai');
+  const [isSavingGuestBook, setIsSavingGuestBook] = useState<boolean>(false);
+
+  const fetchGuestBooks = async () => {
+    setLoadingGuestBooks(true);
+    try {
+      const res = await fetch('/api/guest-book');
+      if (res.ok) {
+        const data = await res.json();
+        setGuestBooks(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Failed to load guest books from MySQL:', err);
+    } finally {
+      setLoadingGuestBooks(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGuestBooks();
+  }, []);
+
+  // Live QR Code Generator for Front Desk (with dynamic category parameter)
+  useEffect(() => {
+    if (isQrModalOpen) {
+      const param = qrTypeSelection === 'all' ? '' : `&type=${qrTypeSelection}`;
+      const targetUrl = `${window.location.origin}/?page=bukutamu${param}`;
+      QRCode.toDataURL(targetUrl, {
+        width: 400,
+        margin: 2,
+        color: {
+          dark: '#0f172a',
+          light: '#ffffff'
+        }
+      }).then(url => {
+        setQrDataUrl(url);
+      }).catch(err => {
+        console.error('Failed to generate QR code for Guest Book:', err);
+      });
+    }
+  }, [isQrModalOpen, qrTypeSelection]);
+
+  // Open Add/Edit Guest Book Modal
+  const handleOpenAddGuestBook = (defaultCategory: 'umum' | 'pembinaan' = 'umum') => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+
+    setEditingGuestBook(null);
+    setGuestBookFormCategory(defaultCategory);
+    setGuestBookFormDate(`${y}-${m}-${day}`);
+    setGuestBookFormTime(`${h}:${min}`);
+    setGuestBookFormName('');
+    setGuestBookFormPosition('');
+    setGuestBookFormInstitution('');
+    setGuestBookFormPurpose('');
+    setGuestBookFormPhone('');
+    setGuestBookFormNotes('');
+    setGuestBookFormSupervisorNip('');
+    setGuestBookFormCoachingSubject('');
+    setGuestBookFormFindings('');
+    setGuestBookFormRecommendations('');
+    setGuestBookFormFollowUpStatus('Belum');
+    setGuestBookFormFollowUpNotes('');
+    setGuestBookFormSignature('');
+    setGuestBookFormStatus('Selesai');
+    setIsGuestBookModalOpen(true);
+  };
+
+  const handleOpenEditGuestBook = (entry: GuestBookEntry) => {
+    setEditingGuestBook(entry);
+    setGuestBookFormCategory(entry.category === 'pembinaan' ? 'pembinaan' : 'umum');
+    setGuestBookFormDate(entry.date || '');
+    setGuestBookFormTime(entry.time || '');
+    setGuestBookFormName(entry.name || '');
+    setGuestBookFormPosition(entry.position || '');
+    setGuestBookFormInstitution(entry.institution || '');
+    setGuestBookFormPurpose(entry.purpose || '');
+    setGuestBookFormPhone(entry.phone || '');
+    setGuestBookFormNotes(entry.notes || '');
+    setGuestBookFormSupervisorNip(entry.supervisorNip || '');
+    setGuestBookFormCoachingSubject(entry.coachingSubject || '');
+    setGuestBookFormFindings(entry.findings || '');
+    setGuestBookFormRecommendations(entry.recommendations || '');
+    setGuestBookFormFollowUpStatus(entry.followUpStatus || 'Belum');
+    setGuestBookFormFollowUpNotes(entry.followUpNotes || '');
+    setGuestBookFormSignature(entry.signature || '');
+    setGuestBookFormStatus(entry.status || 'Selesai');
+    setIsGuestBookModalOpen(true);
+  };
+
+  const handleSaveGuestBook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!guestBookFormName.trim() || !guestBookFormInstitution.trim()) {
+      alert('Nama dan Asal Instansi wajib diisi.');
+      return;
+    }
+    if (guestBookFormCategory === 'umum' && !guestBookFormPurpose.trim()) {
+      alert('Keperluan Kunjungan wajib diisi untuk Buku Tamu Umum.');
+      return;
+    }
+    if (guestBookFormCategory === 'pembinaan' && !guestBookFormCoachingSubject.trim()) {
+      alert('Aspek/Materi Pembinaan wajib diisi untuk Buku Tamu Pembinaan.');
+      return;
+    }
+
+    setIsSavingGuestBook(true);
+    try {
+      const payload: Partial<GuestBookEntry> = {
+        category: guestBookFormCategory,
+        date: guestBookFormDate,
+        time: guestBookFormTime,
+        name: toProperCase(guestBookFormName.trim()),
+        position: toProperCase(guestBookFormPosition.trim()),
+        institution: toUpperCase(guestBookFormInstitution.trim()),
+        purpose: toSentenceCase(guestBookFormCategory === 'pembinaan' ? (guestBookFormPurpose.trim() || guestBookFormCoachingSubject.trim()) : guestBookFormPurpose.trim()),
+        phone: guestBookFormPhone.trim(),
+        notes: toSentenceCase(guestBookFormNotes.trim()),
+        supervisorNip: guestBookFormSupervisorNip.trim(),
+        coachingSubject: toSentenceCase(guestBookFormCoachingSubject.trim()),
+        findings: toSentenceCase(guestBookFormFindings.trim()),
+        recommendations: toSentenceCase(guestBookFormRecommendations.trim()),
+        followUpStatus: guestBookFormFollowUpStatus,
+        followUpNotes: toSentenceCase(guestBookFormFollowUpNotes.trim()),
+        signature: guestBookFormSignature || undefined,
+        status: guestBookFormStatus
+      };
+
+      let res: Response;
+      if (editingGuestBook) {
+        res = await fetch(`/api/guest-book/${editingGuestBook.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        res = await fetch('/api/guest-book', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Gagal menyimpan ke database MySQL.');
+      }
+
+      await fetchGuestBooks();
+      setIsGuestBookModalOpen(false);
+      setNotifMsg({ 
+        type: 'success', 
+        text: `Data ${guestBookFormCategory === 'pembinaan' ? 'Buku Tamu Pembinaan' : 'Buku Tamu Umum'} berhasil disimpan langsung ke database MySQL!` 
+      });
+    } catch (err: any) {
+      console.error('Error saving guest book to MySQL:', err);
+      alert(err.message || 'Gagal menyimpan data buku tamu.');
+    } finally {
+      setIsSavingGuestBook(false);
+    }
+  };
+
+  const handleDeleteGuestBook = async (id: string) => {
+    if (!window.confirm('Apakah Anda yakin ingin menghapus catatan tamu ini dari database MySQL?')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/guest-book/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Gagal menghapus dari MySQL.');
+      }
+
+      setGuestBooks(prev => prev.filter(g => g.id !== id));
+      setNotifMsg({ type: 'success', text: 'Catatan buku tamu berhasil dihapus dari database MySQL!' });
+    } catch (err: any) {
+      console.error('Error deleting guest book from MySQL:', err);
+      alert(err.message || 'Gagal menghapus data.');
+    }
+  };
 
   // Local state for Principal endpoints
   const [workPrograms, setWorkPrograms] = useState<PrincipalWorkProgram[]>([]);
@@ -98,19 +335,106 @@ export default function PrincipalPanel({
 
   // Additional data fetched from endpoints
   const [journals, setJournals] = useState<TeachingJournal[]>([]);
-  const [journalFilter, setJournalFilter] = useState<'all' | 'subject' | 'homeroom'>('all');
+  const [journalFilter, setJournalFilter] = useState<'all' | 'subject' | 'homeroom' | 'absent'>('all');
+  const [isSyncingAbsentJournals, setIsSyncingAbsentJournals] = useState(false);
+  const [selectedSubjectTeacherFilter, setSelectedSubjectTeacherFilter] = useState<string>('all');
+  const [selectedHomeroomTeacherFilter, setSelectedHomeroomTeacherFilter] = useState<string>('all');
+  const [journalClassFilter, setJournalClassFilter] = useState<string>('all');
+  const [journalSearchQuery, setJournalSearchQuery] = useState<string>('');
+  const [journalStartDate, setJournalStartDate] = useState<string>('');
+  const [journalEndDate, setJournalEndDate] = useState<string>('');
+
+  // Extract unique subject teachers
+  const uniqueSubjectTeacherNames = useMemo(() => {
+    const set = new Set<string>();
+    if (subjectTeachers) {
+      subjectTeachers.forEach(st => { if (st.name) set.add(st.name); });
+    }
+    journals.forEach(j => {
+      if ((j.teacherType === 'subject_teacher' || !j.teacherType) && j.teacherName) {
+        set.add(j.teacherName);
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [subjectTeachers, journals]);
+
+  // Extract unique homeroom teachers
+  const uniqueHomeroomTeacherList = useMemo(() => {
+    const map = new Map<string, { name: string; className?: string; label: string }>();
+    if (homerooms) {
+      homerooms.forEach(ht => {
+        if (ht.name) {
+          const label = ht.className ? `${ht.name} (Wali Kelas ${ht.className})` : ht.name;
+          map.set(ht.name, { name: ht.name, className: ht.className, label });
+        }
+      });
+    }
+    journals.forEach(j => {
+      if (j.teacherType === 'homeroom' && j.teacherName) {
+        if (!map.has(j.teacherName)) {
+          const label = j.className ? `${j.teacherName} (Wali Kelas ${j.className})` : j.teacherName;
+          map.set(j.teacherName, { name: j.teacherName, className: j.className, label });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [homerooms, journals]);
+
+  // Extract unique classes
+  const uniqueJournalClasses = useMemo(() => {
+    const set = new Set<string>();
+    journals.forEach(j => {
+      if (j.className) set.add(j.className);
+    });
+    return Array.from(set).sort();
+  }, [journals]);
 
   const filteredJournals = useMemo(() => {
     return journals.filter(j => {
-      if (journalFilter === 'subject') {
-        return j.teacherType === 'subject_teacher' || !j.teacherType;
+      const isAbsent = (j.topic || '').includes('Tidak Hadir') || (j.notes || '') === 'Tidak Hadir';
+      if (journalFilter === 'subject' && (j.teacherType === 'homeroom' || isAbsent)) return false;
+      if (journalFilter === 'homeroom' && j.teacherType !== 'homeroom') return false;
+      if (journalFilter === 'absent' && !isAbsent) return false;
+
+      // Subject Teacher Filter
+      if (selectedSubjectTeacherFilter !== 'all' && j.teacherName !== selectedSubjectTeacherFilter) return false;
+
+      // Homeroom Teacher Filter
+      if (selectedHomeroomTeacherFilter !== 'all' && j.teacherName !== selectedHomeroomTeacherFilter) return false;
+
+      // Class Filter
+      if (journalClassFilter !== 'all' && j.className !== journalClassFilter) return false;
+
+      // Search Query
+      if (journalSearchQuery.trim()) {
+        const q = journalSearchQuery.toLowerCase();
+        const matchTopic = (j.topic || '').toLowerCase().includes(q);
+        const matchTeacher = (j.teacherName || '').toLowerCase().includes(q);
+        const matchSubject = (j.subject || '').toLowerCase().includes(q);
+        const matchNotes = (j.notes || '').toLowerCase().includes(q);
+        const matchClass = (j.className || '').toLowerCase().includes(q);
+        if (!matchTopic && !matchTeacher && !matchSubject && !matchNotes && !matchClass) return false;
       }
-      if (journalFilter === 'homeroom') {
-        return j.teacherType === 'homeroom';
+
+      // Date Range Filter
+      if (journalStartDate || journalEndDate) {
+        const d = j.date ? j.date.substring(0, 10) : "";
+        if (journalStartDate && d < journalStartDate) return false;
+        if (journalEndDate && d > journalEndDate) return false;
       }
+
       return true;
     });
-  }, [journals, journalFilter]);
+  }, [
+    journals, 
+    journalFilter, 
+    selectedSubjectTeacherFilter, 
+    selectedHomeroomTeacherFilter, 
+    journalClassFilter, 
+    journalSearchQuery, 
+    journalStartDate, 
+    journalEndDate
+  ]);
   const [counselingLogs, setCounselingLogs] = useState<StudentCounselingLog[]>([]);
   const [infractionLogs, setInfractionLogs] = useState<StudentInfractionLog[]>([]);
   const [loadingSecondaryData, setLoadingSecondaryData] = useState(false);
@@ -207,8 +531,14 @@ export default function PrincipalPanel({
   const [evalPersonal, setEvalPersonal] = useState(85);
   const [evalSocial, setEvalSocial] = useState(85);
   const [evalNotes, setEvalNotes] = useState('');
-  const [evalAcademicYear, setEvalAcademicYear] = useState('2025/2026');
+  const [evalAcademicYear, setEvalAcademicYear] = useState(schoolIdentity?.activeAcademicYear || '2026/2027');
   const [evalDate, setEvalDate] = useState(new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear) {
+      setEvalAcademicYear(schoolIdentity.activeAcademicYear);
+    }
+  }, [schoolIdentity?.activeAcademicYear]);
 
   // Student specific inspection state (Lookup Roster)
   const [searchStudentQuery, setSearchStudentQuery] = useState('');
@@ -291,6 +621,28 @@ export default function PrincipalPanel({
       console.error("Gagal menjaring data pelengkap monitoring:", e);
     } finally {
       setLoadingSecondaryData(false);
+    }
+  };
+
+  const handleSyncAbsentJournals = async () => {
+    setIsSyncingAbsentJournals(true);
+    try {
+      const res = await fetch('/api/curriculum/restore-missing-data-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate: '2026-09-11', endDate: '2026-09-19' })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message || 'Sinkronisasi berhasil dijalankan.');
+        await fetchSecondaryMonitoringData();
+      } else {
+        alert(data.error || 'Gagal melakukan sinkronisasi data.');
+      }
+    } catch (e: any) {
+      alert('Kesalahan koneksi: ' + (e?.message || e));
+    } finally {
+      setIsSyncingAbsentJournals(false);
     }
   };
 
@@ -517,15 +869,24 @@ export default function PrincipalPanel({
     }
   };
 
+  // Active students excluding mutasi and alumni
+  const activeStudents = useMemo(() => {
+    return students.filter(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      return !isMut && !isLulus;
+    });
+  }, [students]);
+
   // Global statistics and metrics calculations
-  const totalStudents = students.length;
+  const totalStudents = activeStudents.length;
 
   // Gender stats
   const genderStats = useMemo(() => {
     let laki = 0;
     let perempuan = 0;
     let unspecified = 0;
-    students.forEach(s => {
+    activeStudents.forEach(s => {
       const g = (s.gender || '').trim().toLowerCase();
       if (g === 'laki-laki' || g === 'l' || g.startsWith('laki') || g === 'laki laki') {
         laki++;
@@ -536,12 +897,12 @@ export default function PrincipalPanel({
       }
     });
     return { laki, perempuan, unspecified };
-  }, [students]);
+  }, [activeStudents]);
 
   // Class stats
   const classStats = useMemo(() => {
     const counts: { [className: string]: { total: number; laki: number; perempuan: number } } = {};
-    students.forEach(s => {
+    activeStudents.forEach(s => {
       const cls = s.class || 'Tanpa Kelas';
       if (!counts[cls]) {
         counts[cls] = { total: 0, laki: 0, perempuan: 0 };
@@ -556,14 +917,14 @@ export default function PrincipalPanel({
     });
 
     // Sort classes
-    const sortedClasses = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+    const sortedClasses = Object.keys(counts).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
     return sortedClasses.map(className => ({
       class: className,
       total: counts[className].total,
       laki: counts[className].laki,
       perempuan: counts[className].perempuan
     }));
-  }, [students]);
+  }, [activeStudents]);
   
   // SPP statistics
   const sppTotalInvoiced = bills.length;
@@ -578,8 +939,8 @@ export default function PrincipalPanel({
 
   // Student savings metrics
   const totalSavingsBalance = useMemo(() => {
-    return students.reduce((sum, s) => sum + (Number(s.savingsBalance) || 0), 0);
-  }, [students]);
+    return activeStudents.reduce((sum, s) => sum + (Number(s.savingsBalance) || 0), 0);
+  }, [activeStudents]);
 
   // Attendance metrics
   const attendanceRate = useMemo(() => {
@@ -641,7 +1002,7 @@ export default function PrincipalPanel({
 
   const inspectedStudentBills = useMemo(() => {
     if (!inspectedStudent) return [];
-    return bills.filter(b => b.studentId === inspectedStudent.id);
+    return sortSppBills(bills.filter(b => b.studentId === inspectedStudent.id));
   }, [inspectedStudent, bills]);
 
   const inspectedStudentAttendance = useMemo(() => {
@@ -682,6 +1043,988 @@ export default function PrincipalPanel({
   // Format Helper
   const formatIDR = (val: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
+  };
+
+  // Attendance Recap State for Principal
+  const [rekapStartDate, setRekapStartDate] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}-01`;
+  });
+  const [rekapEndDate, setRekapEndDate] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [rekapClassFilter, setRekapClassFilter] = useState<string>('all');
+  const [rekapSearchQuery, setRekapSearchQuery] = useState<string>('');
+  const [rekapStatusFilter, setRekapStatusFilter] = useState<string>('all');
+  const [rekapSortBy, setRekapSortBy] = useState<'name' | 'class' | 'hadir' | 'sakit' | 'izin' | 'alpha' | 'terlambat' | 'pct'>('class');
+  const [rekapSortOrder, setRekapSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const availableClassesForPrincipal = useMemo(() => {
+    const set = new Set<string>();
+    (homerooms || []).forEach(h => { if (h.className) set.add(h.className.trim()); });
+    (students || []).forEach(s => { if (s.class) set.add(s.class.trim()); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
+  }, [homerooms, students]);
+
+  const filteredRekapLogsPrincipal = useMemo(() => {
+    return (attendanceLogs || []).filter(l => {
+      if (!l) return false;
+      let logDate = l.date ? l.date.substring(0, 10) : '';
+      if (logDate.includes('/')) {
+        const parts = logDate.split('/');
+        if (parts.length === 3 && parts[2].length === 4) {
+          logDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+      if (rekapStartDate && logDate < rekapStartDate) return false;
+      if (rekapEndDate && logDate > rekapEndDate) return false;
+      return true;
+    });
+  }, [attendanceLogs, rekapStartDate, rekapEndDate]);
+
+  const rekapSiswaPrincipalList = useMemo(() => {
+    if (!students || !Array.isArray(students)) return [];
+
+    const logsByStudentMap = new Map<string, AttendanceLog[]>();
+    filteredRekapLogsPrincipal.forEach(log => {
+      if (!log.studentId) return;
+      const key = log.studentId.trim().toLowerCase();
+      if (!logsByStudentMap.has(key)) {
+        logsByStudentMap.set(key, []);
+      }
+      logsByStudentMap.get(key)!.push(log);
+    });
+
+    const list = students.filter(s => {
+      if (!s || s.status === 'Lulus' || s.status === 'Keluar' || s.status === 'Mutasi') return false;
+      if (rekapClassFilter !== 'all') {
+        const sClass = (s.class || '').trim().toLowerCase();
+        const targetClass = rekapClassFilter.trim().toLowerCase();
+        if (sClass !== targetClass) return false;
+      }
+      if (rekapSearchQuery.trim()) {
+        const q = rekapSearchQuery.toLowerCase();
+        const matchName = (s.name || '').toLowerCase().includes(q);
+        const matchNis = (s.nis || '').toLowerCase().includes(q);
+        if (!matchName && !matchNis) return false;
+      }
+      return true;
+    }).map(student => {
+      const sId = (student.id || '').trim().toLowerCase();
+      const sNis = (student.nis || '').trim().toLowerCase();
+
+      const logs = [
+        ...(logsByStudentMap.get(sId) || []),
+        ...(sNis && sNis !== sId ? (logsByStudentMap.get(sNis) || []) : [])
+      ];
+
+      let hadir = 0;
+      let sakit = 0;
+      let izin = 0;
+      let alpha = 0;
+      let terlambat = 0;
+
+      const dateSeen = new Set<string>();
+      logs.forEach(l => {
+        const d = l.date ? l.date.substring(0, 10) : '';
+        if (d && dateSeen.has(d)) return;
+        if (d) dateSeen.add(d);
+
+        const st = (l.status || '').toLowerCase();
+        if (st.includes('hadir') || st === 'h') {
+          hadir++;
+        } else if (st.includes('sakit') || st === 's') {
+          sakit++;
+        } else if (st.includes('izin') || st === 'i') {
+          izin++;
+        } else if (st.includes('alpha') || st.includes('alpa') || st === 'a') {
+          alpha++;
+        } else if (st.includes('terlambat') || st === 't') {
+          terlambat++;
+        } else {
+          hadir++;
+        }
+      });
+
+      const totalHari = hadir + sakit + izin + alpha + terlambat;
+      const totalHadirEffective = hadir + terlambat;
+      const pct = totalHari > 0 ? Math.round((totalHadirEffective / totalHari) * 100) : 100;
+
+      return {
+        student,
+        hadir,
+        sakit,
+        izin,
+        alpha,
+        terlambat,
+        totalHari,
+        pct
+      };
+    });
+
+    let filtered = list;
+    if (rekapStatusFilter === 'Hadir') filtered = list.filter(r => r.hadir > 0);
+    else if (rekapStatusFilter === 'Sakit') filtered = list.filter(r => r.sakit > 0);
+    else if (rekapStatusFilter === 'Izin') filtered = list.filter(r => r.izin > 0);
+    else if (rekapStatusFilter === 'Alpha') filtered = list.filter(r => r.alpha > 0);
+    else if (rekapStatusFilter === 'Terlambat') filtered = list.filter(r => r.terlambat > 0);
+
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      if (rekapSortBy === 'name') {
+        cmp = (a.student.name || '').localeCompare(b.student.name || '');
+      } else if (rekapSortBy === 'class') {
+        cmp = (a.student.class || '').localeCompare(b.student.class || '', 'id', { numeric: true });
+        if (cmp === 0) cmp = (a.student.name || '').localeCompare(b.student.name || '');
+      } else if (rekapSortBy === 'hadir') {
+        cmp = a.hadir - b.hadir;
+      } else if (rekapSortBy === 'sakit') {
+        cmp = a.sakit - b.sakit;
+      } else if (rekapSortBy === 'izin') {
+        cmp = a.izin - b.izin;
+      } else if (rekapSortBy === 'alpha') {
+        cmp = a.alpha - b.alpha;
+      } else if (rekapSortBy === 'terlambat') {
+        cmp = a.terlambat - b.terlambat;
+      } else if (rekapSortBy === 'pct') {
+        cmp = a.pct - b.pct;
+      }
+      return rekapSortOrder === 'asc' ? cmp : -cmp;
+    });
+  }, [students, filteredRekapLogsPrincipal, rekapClassFilter, rekapSearchQuery, rekapStatusFilter, rekapSortBy, rekapSortOrder]);
+
+  const totalRekapHadir = useMemo(() => rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.hadir, 0), [rekapSiswaPrincipalList]);
+  const totalRekapSakit = useMemo(() => rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.sakit, 0), [rekapSiswaPrincipalList]);
+  const totalRekapIzin = useMemo(() => rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.izin, 0), [rekapSiswaPrincipalList]);
+  const totalRekapAlpha = useMemo(() => rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.alpha, 0), [rekapSiswaPrincipalList]);
+  const totalRekapTerlambat = useMemo(() => rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.terlambat, 0), [rekapSiswaPrincipalList]);
+  const avgPctKehadiran = rekapSiswaPrincipalList.length > 0
+    ? Math.round(rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.pct, 0) / rekapSiswaPrincipalList.length)
+    : 100;
+
+  const rekapPerKelasSummary = useMemo(() => {
+    const map = new Map<string, { className: string; waliKelas: string; totalSiswa: number; hadir: number; sakit: number; izin: number; alpha: number; terlambat: number }>();
+
+    availableClassesForPrincipal.forEach(cls => {
+      const ht = homerooms?.find(h => (h.className || '').trim().toLowerCase() === cls.trim().toLowerCase());
+      map.set(cls, {
+        className: cls,
+        waliKelas: ht?.name || '-',
+        totalSiswa: 0,
+        hadir: 0,
+        sakit: 0,
+        izin: 0,
+        alpha: 0,
+        terlambat: 0
+      });
+    });
+
+    rekapSiswaPrincipalList.forEach(item => {
+      const cls = item.student.class || 'Lainnya';
+      if (!map.has(cls)) {
+        map.set(cls, {
+          className: cls,
+          waliKelas: '-',
+          totalSiswa: 0,
+          hadir: 0,
+          sakit: 0,
+          izin: 0,
+          alpha: 0,
+          terlambat: 0
+        });
+      }
+      const entry = map.get(cls)!;
+      entry.totalSiswa += 1;
+      entry.hadir += item.hadir;
+      entry.sakit += item.sakit;
+      entry.izin += item.izin;
+      entry.alpha += item.alpha;
+      entry.terlambat += item.terlambat;
+    });
+
+    return Array.from(map.values()).filter(c => c.totalSiswa > 0 || rekapClassFilter === 'all').sort((a, b) => a.className.localeCompare(b.className, 'id', { numeric: true }));
+  }, [availableClassesForPrincipal, homerooms, rekapSiswaPrincipalList, rekapClassFilter]);
+
+  const handlePrintPdfPrincipalAttendance = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Popup diblokir oleh browser. Izinkan popup untuk mencetak laporan.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP Maarif";
+    const schoolAddress = schoolIdentity?.address || "";
+    const principalName = schoolIdentity?.principal || "Kepala Sekolah";
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Rekapitulasi Presensi Siswa - ${schoolName}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; font-size: 11px; color: #1e293b; }
+            .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 15px; }
+            .header h2 { margin: 0; font-size: 16px; text-transform: uppercase; color: #0f172a; }
+            .header p { margin: 2px 0; font-size: 11px; color: #64748b; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
+            th { background-color: #f1f5f9; font-weight: bold; text-align: center; font-size: 10px; text-transform: uppercase; }
+            .text-center { text-align: center; }
+            .footer { margin-top: 30px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .signature-box { text-align: center; width: 220px; }
+            @media print {
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <div class="header">
+              <h2>${schoolName}</h2>
+              <p>${schoolAddress}</p>
+            </div>
+          `}
+          <h3 style="text-align: center; margin-top: 8px; font-size: 13px; font-weight: bold; text-transform: uppercase;">REKAPITULASI PRESENSI & KEHADIRAN SISWA</h3>
+          <p style="text-align: center;">Periode: ${rekapStartDate} s.d. ${rekapEndDate} ${rekapClassFilter !== 'all' ? `| Kelas: ${rekapClassFilter}` : '| Semua Kelas'}</p>
+
+          <div style="margin-bottom: 10px; font-weight: bold; font-size: 11px;">
+            Ringkasan: Total Siswa (${rekapSiswaPrincipalList.length}) | Total Hadir (${totalRekapHadir}) | Sakit (${totalRekapSakit}) | Izin (${totalRekapIzin}) | Alpha (${totalRekapAlpha}) | Terlambat (${totalRekapTerlambat}) | Rata-rata Kehadiran (${avgPctKehadiran}%)
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 30px;">No</th>
+                <th style="width: 80px;">NIS</th>
+                <th>Nama Siswa</th>
+                <th style="width: 60px;">Kelas</th>
+                <th style="width: 45px;">Hadir</th>
+                <th style="width: 45px;">Sakit</th>
+                <th style="width: 45px;">Izin</th>
+                <th style="width: 45px;">Alpha</th>
+                <th style="width: 45px;">Terlambat</th>
+                <th style="width: 60px;">Total Hari</th>
+                <th style="width: 60px;">% Hadir</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rekapSiswaPrincipalList.map((item, idx) => `
+                <tr>
+                  <td class="text-center">${idx + 1}</td>
+                  <td class="text-center">${item.student.nis || '-'}</td>
+                  <td><strong>${item.student.name}</strong></td>
+                  <td class="text-center">${item.student.class || '-'}</td>
+                  <td class="text-center" style="color: #059669; font-weight: bold;">${item.hadir}</td>
+                  <td class="text-center" style="color: #2563eb;">${item.sakit}</td>
+                  <td class="text-center" style="color: #d97706;">${item.izin}</td>
+                  <td class="text-center" style="color: #dc2626; font-weight: bold;">${item.alpha}</td>
+                  <td class="text-center" style="color: #7c3aed;">${item.terlambat}</td>
+                  <td class="text-center">${item.totalHari}</td>
+                  <td class="text-center" style="font-weight: bold;">${item.pct}%</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <div></div>
+            <div class="signature-box">
+              <p>Dicetak pada: ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <p style="margin-bottom: 60px;">Kepala Sekolah</p>
+              <p><strong>${principalName}</strong></p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  };
+
+  const handleDownloadPrincipalAttendanceXLS = () => {
+    let content = "No\tNIS\tNama Siswa\tKelas\tHadir\tSakit\tIzin\tAlpha\tTerlambat\tTotal Hari\t% Kehadiran\n";
+    rekapSiswaPrincipalList.forEach((item, idx) => {
+      content += `${idx + 1}\t${item.student.nis || '-'}\t${item.student.name}\t${item.student.class || '-'}\t${item.hadir}\t${item.sakit}\t${item.izin}\t${item.alpha}\t${item.terlambat}\t${item.totalHari}\t${item.pct}%\n`;
+    });
+
+    const blob = new Blob([content], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Rekap_Presensi_KepalaSekolah_${rekapStartDate}_to_${rekapEndDate}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Filtered guest book entries
+  const filteredGuestBooks = useMemo(() => {
+    return guestBooks.filter(item => {
+      // 0. Category filter
+      if (guestBookCategoryTab !== 'all') {
+        const itemCat = item.category || 'umum';
+        if (itemCat !== guestBookCategoryTab) return false;
+      }
+
+      // 1. Search Query
+      if (guestBookSearch.trim()) {
+        const q = guestBookSearch.toLowerCase();
+        const matchName = (item.name || '').toLowerCase().includes(q);
+        const matchInst = (item.institution || '').toLowerCase().includes(q);
+        const matchPurp = (item.purpose || '').toLowerCase().includes(q);
+        const matchPos = (item.position || '').toLowerCase().includes(q);
+        const matchPhone = (item.phone || '').toLowerCase().includes(q);
+        const matchSubj = (item.coachingSubject || '').toLowerCase().includes(q);
+        const matchFindings = (item.findings || '').toLowerCase().includes(q);
+        const matchRecom = (item.recommendations || '').toLowerCase().includes(q);
+        if (!matchName && !matchInst && !matchPurp && !matchPos && !matchPhone && !matchSubj && !matchFindings && !matchRecom) {
+          return false;
+        }
+      }
+
+      // 2. Status Filter
+      if (guestBookStatusFilter !== 'all' && item.status !== guestBookStatusFilter) {
+        return false;
+      }
+
+      // 3. Date Filter
+      if (guestBookDateFilter === 'today') {
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (item.date !== todayStr) return false;
+      } else if (guestBookDateFilter === 'this_week') {
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        if (item.date < sevenDaysAgo) return false;
+      } else if (guestBookDateFilter === 'this_month') {
+        const now = new Date();
+        const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        if (!item.date.startsWith(monthPrefix)) return false;
+      } else if (guestBookDateFilter === 'custom') {
+        if (guestBookStartDate && item.date < guestBookStartDate) return false;
+        if (guestBookEndDate && item.date > guestBookEndDate) return false;
+      }
+
+      return true;
+    });
+  }, [guestBooks, guestBookCategoryTab, guestBookSearch, guestBookStatusFilter, guestBookDateFilter, guestBookStartDate, guestBookEndDate]);
+
+  // Cetak Laporan Rekapitulasi Buku Tamu PDF (Umum, Pembinaan, atau Semua)
+  const handlePrintGuestBookReport = (categoryOverride?: 'umum' | 'pembinaan' | 'all') => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Popup diblokir oleh browser. Izinkan popup untuk mencetak laporan buku tamu.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const schoolAddress = schoolIdentity?.address || "Jl. Raya Kasri No. 19 Pandaan, Pasuruan";
+    const principalName = schoolIdentity?.principal || "H. Ahmad Fuad, S.Pd, M.PdI";
+
+    const activeCat = categoryOverride || guestBookCategoryTab;
+
+    // Filter items according to target category
+    const entriesToPrint = guestBooks.filter(item => {
+      if (activeCat !== 'all') {
+        const itemCat = item.category || 'umum';
+        if (itemCat !== activeCat) return false;
+      }
+      // Apply date filter
+      if (guestBookDateFilter === 'today') {
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (item.date !== todayStr) return false;
+      } else if (guestBookDateFilter === 'this_week') {
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        if (item.date < sevenDaysAgo) return false;
+      } else if (guestBookDateFilter === 'this_month') {
+        const now = new Date();
+        const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        if (!item.date.startsWith(monthPrefix)) return false;
+      } else if (guestBookDateFilter === 'custom') {
+        if (guestBookStartDate && item.date < guestBookStartDate) return false;
+        if (guestBookEndDate && item.date > guestBookEndDate) return false;
+      }
+      return true;
+    });
+
+    let periodLabel = "Semua Riwayat Kunjungan";
+    if (guestBookDateFilter === 'today') periodLabel = `Hari Ini (${new Date().toLocaleDateString('id-ID', { dateStyle: 'full' })})`;
+    else if (guestBookDateFilter === 'this_week') periodLabel = "7 Hari Terakhir";
+    else if (guestBookDateFilter === 'this_month') periodLabel = `Bulan ${new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}`;
+    else if (guestBookDateFilter === 'custom') periodLabel = `Periode: ${guestBookStartDate || 'Awal'} s.d. ${guestBookEndDate || 'Sekarang'}`;
+
+    const dateTodayFormatted = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    let reportTitle = "LAPORAN REKAPITULASI BUKU TAMU KUNJUNGAN SEKOLAH";
+    if (activeCat === 'pembinaan') {
+      reportTitle = "BUKU CATATAN PEMBINAAN & SUPERVISI KEPALA SEKOLAH";
+    } else if (activeCat === 'umum') {
+      reportTitle = "BUKU TAMU UMUM KUNJUNGAN SEKOLAH";
+    }
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${reportTitle} - ${schoolName}</title>
+          <style>
+            @page {
+              size: A4 landscape;
+              margin: 10mm;
+            }
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              margin: 0;
+              padding: 0;
+              font-size: 10.5px;
+              color: #0f172a;
+              background: #fff;
+            }
+            .header-kop {
+              width: 100%;
+              text-align: center;
+              margin: 0 0 12px 0;
+              padding: 0;
+            }
+            .header-kop img.kop-img {
+              width: 100% !important;
+              max-width: 100% !important;
+              height: auto !important;
+              max-height: none !important;
+              display: block !important;
+              margin: 0 auto !important;
+              border: none !important;
+            }
+            .kop-text-box {
+              width: 100%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 16px;
+              border-bottom: 3.5px double #0f172a;
+              padding-bottom: 8px;
+              margin-bottom: 12px;
+            }
+            .kop-text-box h2 {
+              margin: 0;
+              font-size: 16px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .kop-text-box p {
+              margin: 2px 0 0 0;
+              font-size: 11px;
+              color: #334155;
+            }
+            .report-title {
+              text-align: center;
+              margin: 10px 0 6px 0;
+            }
+            .report-title h3 {
+              margin: 0;
+              font-size: 13.5px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .report-title p {
+              margin: 3px 0 0 0;
+              font-size: 10.5px;
+              color: #475569;
+              font-weight: 600;
+            }
+            .meta-bar {
+              display: flex;
+              justify-content: space-between;
+              margin: 10px 0 6px 0;
+              font-size: 10px;
+              color: #334155;
+              border-bottom: 1px solid #cbd5e1;
+              padding-bottom: 4px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 6px;
+              font-size: 9.5px;
+            }
+            th, td {
+              border: 1px solid #94a3b8;
+              padding: 5px 6px;
+              text-align: left;
+              vertical-align: top;
+            }
+            th {
+              background-color: #f1f5f9;
+              font-weight: 800;
+              text-align: center;
+              text-transform: uppercase;
+              font-size: 9px;
+              color: #0f172a;
+            }
+            tr:nth-child(even) {
+              background-color: #f8fafc;
+            }
+            .text-center { text-align: center; }
+            .badge-cat {
+              display: inline-block;
+              padding: 2px 5px;
+              border-radius: 4px;
+              font-weight: bold;
+              font-size: 8.5px;
+              text-transform: uppercase;
+            }
+            .badge-pembinaan { background: #fef3c7; color: #92400e; }
+            .badge-umum { background: #e0e7ff; color: #3730a3; }
+            .signature-section {
+              margin-top: 25px;
+              display: flex;
+              justify-content: space-between;
+              page-break-inside: avoid;
+            }
+            .signature-box {
+              text-align: center;
+              width: 260px;
+              font-size: 10.5px;
+            }
+            .signature-space {
+              height: 60px;
+            }
+            .signature-name {
+              font-weight: 900;
+              text-decoration: underline;
+              font-size: 11px;
+            }
+            @media print {
+              body { padding: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header-kop">
+            ${schoolIdentity?.letterhead ? `
+              <img class="kop-img" src="${schoolIdentity.letterhead}" alt="KOP Sekolah" />
+            ` : `
+              <div class="kop-text-box">
+                ${schoolIdentity?.logo ? `<img src="${schoolIdentity.logo}" style="width: 65px; height: 65px; object-fit: contain;" />` : ''}
+                <div style="text-align: center; flex: 1;">
+                  <h2>${schoolName}</h2>
+                  <p>${schoolAddress}</p>
+                  <p style="font-size: 10px; color: #64748b;">NPSN: ${schoolIdentity?.npsn || '20519300'} • Status: ${schoolIdentity?.accreditation || 'Terakreditasi A'}</p>
+                </div>
+              </div>
+            `}
+          </div>
+
+          <div class="report-title">
+            <h3>${reportTitle}</h3>
+            <p>Periode: ${periodLabel} | Total: ${entriesToPrint.length} Data Terdaftar</p>
+          </div>
+
+          <div class="meta-bar">
+            <span><strong>Dicetak pada:</strong> ${dateTodayFormatted}</span>
+            <span><strong>Sistem Informasi:</strong> Database MySQL (Tersimpan Permanen)</span>
+          </div>
+
+          ${activeCat === 'pembinaan' ? `
+            <!-- TABEL KHUSUS BUKU TAMU PEMBINAAN -->
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25px;">No</th>
+                  <th style="width: 80px;">Hari/Tanggal &amp; Waktu</th>
+                  <th style="width: 140px;">Nama &amp; NIP Pembina</th>
+                  <th style="width: 120px;">Jabatan &amp; Instansi</th>
+                  <th style="width: 140px;">Aspek / Materi Pembinaan</th>
+                  <th>Temuan &amp; Catatan Pembinaan</th>
+                  <th>Saran &amp; Rekomendasi Tindak Lanjut</th>
+                  <th style="width: 85px;">Tindak Lanjut Sekolah</th>
+                  <th style="width: 60px;">Paraf</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${entriesToPrint.length === 0 ? `
+                  <tr>
+                    <td colspan="9" class="text-center" style="padding: 20px; color: #64748b;">
+                      Tidak ada catatan buku tamu pembinaan pada periode ini.
+                    </td>
+                  </tr>
+                ` : entriesToPrint.map((item, idx) => `
+                  <tr>
+                    <td class="text-center">${idx + 1}</td>
+                    <td class="text-center">
+                      <strong>${item.date}</strong><br/>
+                      <span style="color: #64748b; font-size: 8.5px;">${item.time || '-'} WIB</span>
+                    </td>
+                    <td>
+                      <strong>${item.name}</strong>
+                      ${item.supervisorNip ? `<br/><span style="color: #475569; font-size: 8.5px; font-family: monospace;">NIP. ${item.supervisorNip}</span>` : ''}
+                      ${item.phone ? `<br/><span style="color: #059669; font-size: 8px;">WA: ${item.phone}</span>` : ''}
+                    </td>
+                    <td>
+                      <strong>${item.position || 'Pembina / Pengawas'}</strong><br/>
+                      <span>${item.institution}</span>
+                    </td>
+                    <td>
+                      <strong style="color: #92400e;">${item.coachingSubject || item.purpose}</strong>
+                    </td>
+                    <td>${item.findings || item.notes || '-'}</td>
+                    <td>${item.recommendations || '-'}</td>
+                    <td class="text-center">
+                      <span style="font-weight: bold; color: ${item.followUpStatus === 'Selesai' ? '#059669' : item.followUpStatus === 'Proses' ? '#d97706' : '#dc2626'};">
+                        ${item.followUpStatus || 'Belum'}
+                      </span>
+                      ${item.followUpNotes ? `<br/><span style="font-size: 8px; color: #475569;">${item.followUpNotes}</span>` : ''}
+                    </td>
+                    <td class="text-center" style="height: 35px; padding: 2px;">
+                      ${item.signature ? `<img src="${item.signature}" style="max-height: 34px; max-width: 60px; object-fit: contain;" />` : ''}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : activeCat === 'umum' ? `
+            <!-- TABEL KHUSUS BUKU TAMU UMUM -->
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 28px;">No</th>
+                  <th style="width: 90px;">Tanggal &amp; Waktu</th>
+                  <th style="width: 150px;">Nama Lengkap Tamu</th>
+                  <th style="width: 120px;">Jabatan / Profesi</th>
+                  <th style="width: 140px;">Asal Instansi</th>
+                  <th>Keperluan Kunjungan</th>
+                  <th style="width: 95px;">No. WhatsApp</th>
+                  <th style="width: 70px;">Status</th>
+                  <th style="width: 70px;">Tanda Tangan</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${entriesToPrint.length === 0 ? `
+                  <tr>
+                    <td colspan="9" class="text-center" style="padding: 20px; color: #64748b;">
+                      Tidak ada data buku tamu umum pada periode ini.
+                    </td>
+                  </tr>
+                ` : entriesToPrint.map((item, idx) => `
+                  <tr>
+                    <td class="text-center">${idx + 1}</td>
+                    <td class="text-center">
+                      <strong>${item.date}</strong><br/>
+                      <span style="color: #64748b; font-size: 9px;">${item.time || '-'} WIB</span>
+                    </td>
+                    <td>
+                      <strong>${item.name}</strong>
+                      ${item.notes ? `<br/><span style="color: #64748b; font-size: 8.5px;">Ket: ${item.notes}</span>` : ''}
+                    </td>
+                    <td>${item.position || '-'}</td>
+                    <td><strong>${item.institution}</strong></td>
+                    <td>${item.purpose}</td>
+                    <td class="text-center font-mono">${item.phone}</td>
+                    <td class="text-center font-semibold">${item.status || 'Selesai'}</td>
+                    <td class="text-center" style="height: 32px; padding: 2px;">
+                      ${item.signature ? `<img src="${item.signature}" style="max-height: 30px; max-width: 65px; object-fit: contain;" />` : ''}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : `
+            <!-- TABEL GABUNGAN SEMUA TAMU -->
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25px;">No</th>
+                  <th style="width: 60px;">Jenis</th>
+                  <th style="width: 85px;">Tgl &amp; Waktu</th>
+                  <th style="width: 140px;">Nama Tamu / Pembina</th>
+                  <th style="width: 110px;">Jabatan</th>
+                  <th style="width: 120px;">Asal Instansi</th>
+                  <th>Keperluan / Aspek Pembinaan</th>
+                  <th style="width: 90px;">No. WhatsApp</th>
+                  <th style="width: 70px;">Status</th>
+                  <th style="width: 65px;">Paraf</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${entriesToPrint.length === 0 ? `
+                  <tr>
+                    <td colspan="10" class="text-center" style="padding: 20px; color: #64748b;">
+                      Tidak ada data tamu pada periode ini.
+                    </td>
+                  </tr>
+                ` : entriesToPrint.map((item, idx) => `
+                  <tr>
+                    <td class="text-center">${idx + 1}</td>
+                    <td class="text-center">
+                      <span class="badge-cat ${item.category === 'pembinaan' ? 'badge-pembinaan' : 'badge-umum'}">
+                        ${item.category === 'pembinaan' ? 'Pembinaan' : 'Umum'}
+                      </span>
+                    </td>
+                    <td class="text-center">
+                      <strong>${item.date}</strong><br/>
+                      <span style="color: #64748b; font-size: 8.5px;">${item.time || '-'} WIB</span>
+                    </td>
+                    <td>
+                      <strong>${item.name}</strong>
+                      ${item.supervisorNip ? `<br/><span style="color: #475569; font-size: 8.5px; font-family: monospace;">NIP: ${item.supervisorNip}</span>` : ''}
+                    </td>
+                    <td>${item.position || '-'}</td>
+                    <td><strong>${item.institution}</strong></td>
+                    <td>
+                      <strong>${item.category === 'pembinaan' ? (item.coachingSubject || item.purpose) : item.purpose}</strong>
+                      ${item.recommendations ? `<br/><span style="color: #059669; font-size: 8.5px;">Saran: ${item.recommendations}</span>` : ''}
+                    </td>
+                    <td class="text-center font-mono">${item.phone}</td>
+                    <td class="text-center font-semibold">${item.status || 'Selesai'}</td>
+                    <td class="text-center" style="height: 30px; padding: 2px;">
+                      ${item.signature ? `<img src="${item.signature}" style="max-height: 28px; max-width: 55px; object-fit: contain;" />` : ''}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `}
+
+          <div class="signature-section">
+            ${activeCat === 'pembinaan' ? `
+              <div class="signature-box">
+                <div>Pandaan, ${dateTodayFormatted}</div>
+                <div>Pengawas / Pembina Sekolah,</div>
+                <div class="signature-space" style="display: flex; align-items: center; justify-content: center; min-height: 55px;">
+                  ${entriesToPrint.length === 1 && entriesToPrint[0].signature ? `
+                    <img src="${entriesToPrint[0].signature}" style="max-height: 55px; max-width: 140px; object-fit: contain;" />
+                  ` : ''}
+                </div>
+                <div class="signature-name">${entriesToPrint.length === 1 ? entriesToPrint[0].name : '( .................................................... )'}</div>
+                <div style="font-size: 10px; color: #475569;">${entriesToPrint.length === 1 && entriesToPrint[0].supervisorNip ? `NIP. ${entriesToPrint[0].supervisorNip}` : 'NIP. .............................................'}</div>
+              </div>
+            ` : `<div></div>`}
+
+            <div class="signature-box">
+              <div>Pandaan, ${dateTodayFormatted}</div>
+              <div>Mengetahui,</div>
+              <div style="font-weight: bold; margin-top: 2px;">Kepala SMP Ma'arif NU Pandaan</div>
+              <div class="signature-space"></div>
+              <div class="signature-name">${principalName}</div>
+              <div style="font-size: 10px; color: #475569;">NIP/NIK. ${schoolIdentity?.principalNip || '-'}</div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  };
+
+  // Cetak Stand Meja / Akrilik QR Code Buku Tamu
+  const handlePrintQrStandBanner = (qrType: 'all' | 'umum' | 'pembinaan' = qrTypeSelection) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Popup diblokir oleh browser. Izinkan popup untuk mencetak stand banner QR Code.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const schoolAddress = schoolIdentity?.address || "Jl. Raya Kasri No. 19 Pandaan, Pasuruan";
+    const schoolLogo = schoolIdentity?.logo || "";
+
+    const bannerTitle = qrType === 'pembinaan' 
+      ? 'BUKU TAMU PEMBINAAN & SUPERVISI' 
+      : qrType === 'umum' 
+      ? 'BUKU TAMU UMUM KUNJUNGAN' 
+      : 'BUKU TAMU DIGITAL RESMI';
+
+    const bannerSubtitle = qrType === 'pembinaan'
+      ? 'Khusus Pengawas Pembina, Tim Monev, Asesor & Tamu Kedinasan'
+      : qrType === 'umum'
+      ? 'Selamat Datang Tamu, Wali Murid & Mitra Sekolah'
+      : 'Buku Tamu Umum & Buku Tamu Pembinaan Supervisi';
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Stand Banner QR Buku Tamu - ${schoolName}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 15mm;
+            }
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              margin: 0;
+              padding: 0;
+              color: #0f172a;
+              background: #fff;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              min-height: 90vh;
+              text-align: center;
+            }
+            .card-stand {
+              border: 3px solid #0f172a;
+              border-radius: 24px;
+              padding: 30px 24px;
+              max-width: 520px;
+              width: 100%;
+              box-sizing: border-box;
+            }
+            .school-logo {
+              width: 70px;
+              height: 70px;
+              object-fit: contain;
+              margin-bottom: 8px;
+            }
+            h1 {
+              margin: 0;
+              font-size: 20px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              color: #0f172a;
+            }
+            .sub {
+              font-size: 11px;
+              color: #475569;
+              margin-top: 3px;
+              font-weight: 600;
+            }
+            .badge-buku-tamu {
+              display: inline-block;
+              margin: 16px 0 8px 0;
+              padding: 6px 18px;
+              background-color: ${qrType === 'pembinaan' ? '#d97706' : '#059669'};
+              color: #fff;
+              font-size: 12px;
+              font-weight: 900;
+              border-radius: 9999px;
+              letter-spacing: 1px;
+              text-transform: uppercase;
+            }
+            .qr-container {
+              background: #fff;
+              padding: 12px;
+              border: 2px dashed #94a3b8;
+              border-radius: 20px;
+              display: inline-block;
+              margin: 10px 0;
+            }
+            .qr-container img {
+              width: 260px;
+              height: 260px;
+              display: block;
+            }
+            .instruction-box {
+              background-color: #f8fafc;
+              border: 1px solid #cbd5e1;
+              border-radius: 14px;
+              padding: 12px;
+              margin-top: 14px;
+              font-size: 11px;
+              line-height: 1.5;
+            }
+            .instruction-box ol {
+              text-align: left;
+              margin: 6px 0 0 18px;
+              padding: 0;
+            }
+            .instruction-box li {
+              margin-bottom: 3px;
+              font-weight: 600;
+            }
+            .footer-note {
+              margin-top: 16px;
+              font-size: 10px;
+              color: #64748b;
+              font-weight: 600;
+            }
+            @media print {
+              body { min-height: 0; padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="card-stand">
+            ${schoolLogo ? `<img class="school-logo" src="${schoolLogo}" alt="Logo Sekolah" />` : ''}
+            <h1>${schoolName}</h1>
+            <div class="sub">${schoolAddress}</div>
+
+            <div class="badge-buku-tamu">${bannerTitle}</div>
+
+            <p style="font-size: 12px; margin: 4px 0 2px 0; font-weight: bold; color: #334155;">
+              SELAMAT DATANG BAPAK / IBU TAMU
+            </p>
+            <p style="font-size: 10.5px; color: #64748b; margin: 0 0 10px 0;">
+              ${bannerSubtitle}
+            </p>
+
+            <div class="qr-container">
+              <img src="${qrDataUrl}" alt="QR Code Buku Tamu" />
+            </div>
+
+            <div class="instruction-box">
+              <div style="font-weight: bold; color: #0f172a; text-transform: uppercase; font-size: 10px; margin-bottom: 4px;">
+                Cara Pengisian Praktis (Tanpa Perlu Login):
+              </div>
+              <div style="font-size: 9.5px; color: #475569; margin-bottom: 6px; line-height: 1.4;">
+                Dapat dipindai menggunakan <strong>Kamera Bawaan HP</strong>, <strong>Google Lens</strong>, atau <strong>Aplikasi QR Scanner apa saja</strong> yang diunduh dari <strong>Google Play Store / Apple App Store</strong>.
+              </div>
+              <ol>
+                <li>Buka aplikasi Pemindai QR atau Kamera HP Anda.</li>
+                <li>Arahkan kamera ke Kode QR di atas sampai muncul tautan/link formulir.</li>
+                <li>Klik buka link (langsung terbuka di browser tanpa perlu login akun).</li>
+                <li>Pilih jenis buku tamu (1. Buku Tamu Umum / 2. Buku Tamu Pembinaan), isi data kehadiran Anda, lalu tekan <strong>"Kirim &amp; Catat di Buku Tamu"</strong>. Selesai!</li>
+              </ol>
+            </div>
+
+            <div class="footer-note">
+              Terima kasih atas kerja sama dan kunjungan Anda di SMP Ma'arif NU Pandaan.
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  };
+
+  const handleDownloadGuestBookXLS = () => {
+    let content = "No\tKategori\tTanggal\tWaktu\tNama Tamu / Pembina\tNIP Pembina\tJabatan\tAsal Instansi\tKeperluan / Aspek Pembinaan\tTemuan Pembinaan\tRekomendasi Tindak Lanjut\tStatus Tindak Lanjut\tNo. HP / WhatsApp\tStatus\tCatatan\n";
+    filteredGuestBooks.forEach((item, idx) => {
+      content += `${idx + 1}\t${item.category === 'pembinaan' ? 'Pembinaan' : 'Umum'}\t${item.date}\t${item.time || '-'}\t${item.name}\t${item.supervisorNip || '-'}\t${item.position || '-'}\t${item.institution}\t${item.category === 'pembinaan' ? (item.coachingSubject || item.purpose) : item.purpose}\t${(item.findings || '-').replace(/\n/g, ' ')}\t${(item.recommendations || '-').replace(/\n/g, ' ')}\t${item.followUpStatus || '-'}\t${item.phone}\t${item.status || 'Selesai'}\t${(item.notes || '-').replace(/\n/g, ' ')}\n`;
+    });
+
+    const blob = new Blob([content], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Buku_Tamu_SMP_Maarif_${guestBookCategoryTab}_${new Date().toISOString().split('T')[0]}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -829,6 +2172,26 @@ export default function PrincipalPanel({
             📊 Command Dashboard
           </button>
           <button
+            onClick={() => {
+              setActiveTab('buku_tamu');
+              fetchGuestBooks();
+            }}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'buku_tamu' 
+                ? 'bg-emerald-600 text-white shadow-sm' 
+                : 'text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100/70 border border-emerald-200/60'
+            }`}
+          >
+            <span>📖 Buku Tamu</span>
+            {guestBooks.length > 0 && (
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                activeTab === 'buku_tamu' ? 'bg-white/20 text-white' : 'bg-emerald-200/80 text-emerald-800'
+              }`}>
+                {guestBooks.length}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setActiveTab('work_programs')}
             className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
               activeTab === 'work_programs' 
@@ -859,6 +2222,16 @@ export default function PrincipalPanel({
             📚 Jurnal KBM Guru
           </button>
           <button
+            onClick={() => setActiveTab('jadwal')}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+              activeTab === 'jadwal' 
+                ? 'bg-indigo-600 text-white shadow-sm' 
+                : 'text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100/60'
+            }`}
+          >
+            🗓️ Matriks Jadwal
+          </button>
+          <button
             onClick={() => setActiveTab('bk_monitoring')}
             className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
               activeTab === 'bk_monitoring' 
@@ -867,6 +2240,16 @@ export default function PrincipalPanel({
             }`}
           >
             🛡️ Monitoring BK & Moral
+          </button>
+          <button
+            onClick={() => setActiveTab('attendance_recap')}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+              activeTab === 'attendance_recap' 
+                ? 'bg-slate-900 text-white shadow-sm' 
+                : 'text-slate-650 hover:bg-slate-50'
+            }`}
+          >
+            📅 Rekap Presensi
           </button>
           <button
             onClick={() => setActiveTab('finance_monitoring')}
@@ -903,6 +2286,33 @@ export default function PrincipalPanel({
         >
           ⚙️ Identitas Sekolah
         </button>
+      </div>
+
+      {/* Mobile Tab Selector */}
+      <div className="md:hidden bg-white border border-slate-200 rounded-2xl p-2.5 shadow-xs">
+        <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">Pilih Menu Panel</label>
+        <select
+          value={activeTab}
+          onChange={(e) => {
+            const val = e.target.value as any;
+            setActiveTab(val);
+            if (val === 'buku_tamu') fetchGuestBooks();
+            if (val === 'sarpras_monitoring') fetchSarprasData();
+          }}
+          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-extrabold text-slate-800 cursor-pointer"
+        >
+          <option value="dashboard">📊 Command Dashboard</option>
+          <option value="buku_tamu">📖 Buku Tamu Kunjungan ({guestBooks.length})</option>
+          <option value="work_programs">📋 Program Kerja Kepsek</option>
+          <option value="evaluations">🏆 Penilaian Kinerja Guru (PKG)</option>
+          <option value="journals">📚 Jurnal KBM Guru</option>
+          <option value="jadwal">🗓️ Matriks Jadwal</option>
+          <option value="bk_monitoring">🛡️ Monitoring BK & Moral</option>
+          <option value="attendance_recap">📅 Rekap Presensi</option>
+          <option value="finance_monitoring">💰 Monitoring Keuangan</option>
+          <option value="sarpras_monitoring">📦 Monitoring Sarpras</option>
+          <option value="school_profile">⚙️ Identitas Sekolah</option>
+        </select>
       </div>
 
       {/* CORE SCREENS VIEW ROUTINGS */}
@@ -945,8 +2355,14 @@ export default function PrincipalPanel({
               <div className="text-[8px] text-slate-400 leading-none">Sistem Tabungan Aman</div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between h-28">
-              <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Tingkat Absensi KBM</span>
+            <div 
+              onClick={() => setActiveTab('attendance_recap')}
+              className="bg-white border border-slate-200 hover:border-indigo-400 rounded-3xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between h-28 cursor-pointer transition-all group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Tingkat Absensi KBM</span>
+                <span className="text-[9px] font-bold text-indigo-600 group-hover:underline">Rekap →</span>
+              </div>
               <div className="flex items-baseline justify-between mt-1">
                 <span className={`text-2xl font-black ${attendanceRate >= 85 ? 'text-emerald-700' : 'text-amber-600'}`}>{attendanceRate}%</span>
                 <span className="text-[9px] font-bold uppercase text-slate-400">Hadir</span>
@@ -1070,7 +2486,7 @@ export default function PrincipalPanel({
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={monthlyRevenueData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="Bulan" stroke="#94a3b8" fontSize={9} fontClass="font-semibold" />
+                    <XAxis dataKey="Bulan" stroke="#94a3b8" fontSize={9} className="font-semibold" />
                     <YAxis stroke="#94a3b8" fontSize={9} tickFormatter={(val) => `Rp ${val/1000}k`} />
                     <Tooltip 
                       formatter={(value: any) => [formatIDR(value), "Pendapatan SPP"]} 
@@ -1934,10 +3350,16 @@ export default function PrincipalPanel({
                                         </style>
                                       </head>
                                       <body>
-                                        <div class="head-school">
-                                          ${schoolIdentity.name}<br/>
-                                          <span style="font-size:10px; font-weight:normal;">Address: ${schoolIdentity.address} | Phone: ${schoolIdentity.phone}</span>
-                                        </div>
+                                        ${schoolIdentity?.letterhead ? `
+                                          <div style="width: 100%; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+                                            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+                                          </div>
+                                        ` : `
+                                          <div class="head-school">
+                                            ${schoolIdentity.name}<br/>
+                                            <span style="font-size:10px; font-weight:normal;">Address: ${schoolIdentity.address} | Phone: ${schoolIdentity.phone}</span>
+                                          </div>
+                                        `}
                                         
                                         <h3 style="text-align:center; text-transform:uppercase; text-decoration:underline;">LEMBAR HASIL PENILAIAN KINERJA GURU (PKG)</h3>
                                         <p style="text-align:center; font-weight:bold; font-size:10px; margin-top:-10px;">TAHUN AJARAN / AKADEMIK: ${ev.academicYear}</p>
@@ -2175,46 +3597,174 @@ export default function PrincipalPanel({
           </div>
 
           <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs text-left">
-            {/* Filter segments */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 mb-5">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setJournalFilter('all')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                    journalFilter === 'all'
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  Semua ({journals.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setJournalFilter('subject')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                    journalFilter === 'subject'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  Guru Mapel ({journals.filter(j => j.teacherType === 'subject_teacher' || !j.teacherType).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setJournalFilter('homeroom')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                    journalFilter === 'homeroom'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  Wali Kelas ({journals.filter(j => j.teacherType === 'homeroom').length})
-                </button>
+            {/* Filter segments & Toolbar */}
+            <div className="flex flex-col gap-4 pb-4 border-b border-slate-100 mb-5">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setJournalFilter('all')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      journalFilter === 'all'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    Semua ({journals.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJournalFilter('subject')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      journalFilter === 'subject'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    Guru Mapel ({journals.filter(j => (j.teacherType === 'subject_teacher' || !j.teacherType) && !((j.topic || '').includes('Tidak Hadir') || (j.notes || '') === 'Tidak Hadir')).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJournalFilter('homeroom')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      journalFilter === 'homeroom'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    Wali Kelas ({journals.filter(j => j.teacherType === 'homeroom').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJournalFilter('absent')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                      journalFilter === 'absent'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                    }`}
+                  >
+                    <span>⚠️ Guru Tidak Hadir ({journals.filter(j => (j.topic || '').includes('Tidak Hadir') || (j.notes || '') === 'Tidak Hadir').length})</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleSyncAbsentJournals}
+                    disabled={isSyncingAbsentJournals}
+                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                    title="Sinkronkan otomatis guru yang belum mengisi jurnal sesuai jadwal ke database MySQL"
+                  >
+                    <RefreshCw size={12} className={isSyncingAbsentJournals ? 'animate-spin' : ''} />
+                    <span>{isSyncingAbsentJournals ? 'Menyinkronkan...' : 'Sinkronkan Guru Tidak Hadir'}</span>
+                  </button>
+
+                  {/* Search Box */}
+                  <div className="relative flex-1 min-w-[200px] max-w-xs">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Cari materi, guru, mapel, kelas..."
+                      value={journalSearchQuery}
+                      onChange={(e) => setJournalSearchQuery(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
               </div>
-              <span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md text-slate-700 font-extrabold font-mono uppercase tracking-wider">
-                {filteredJournals.length} Jurnal Ditampilkan
-              </span>
+
+              {/* Secondary Filter Row: Filter Guru Mapel, Filter Wali Kelas, Filter Kelas */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                {/* Filter Guru Mapel */}
+                <div className="flex items-center gap-1.5 bg-indigo-50/60 border border-indigo-100 px-3 py-1.5 rounded-xl">
+                  <User size={13} className="text-indigo-600 shrink-0" />
+                  <span className="text-[10px] font-black text-indigo-700 uppercase">Guru Mapel:</span>
+                  <select
+                    value={selectedSubjectTeacherFilter}
+                    onChange={(e) => setSelectedSubjectTeacherFilter(e.target.value)}
+                    className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer max-w-[170px] truncate"
+                  >
+                    <option value="all">Semua Guru Mapel</option>
+                    {uniqueSubjectTeacherNames.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Wali Kelas */}
+                <div className="flex items-center gap-1.5 bg-emerald-50/60 border border-emerald-100 px-3 py-1.5 rounded-xl">
+                  <User size={13} className="text-emerald-600 shrink-0" />
+                  <span className="text-[10px] font-black text-emerald-700 uppercase">Wali Kelas:</span>
+                  <select
+                    value={selectedHomeroomTeacherFilter}
+                    onChange={(e) => setSelectedHomeroomTeacherFilter(e.target.value)}
+                    className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer max-w-[200px] truncate"
+                  >
+                    <option value="all">Semua Wali Kelas</option>
+                    {uniqueHomeroomTeacherList.map(item => (
+                      <option key={item.name} value={item.name}>{item.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Kelas */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                  <span className="text-[10px] font-black text-slate-500 uppercase">Kelas:</span>
+                  <select
+                    value={journalClassFilter}
+                    onChange={(e) => setJournalClassFilter(e.target.value)}
+                    className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">Semua Kelas</option>
+                    {uniqueJournalClasses.map(c => (
+                      <option key={c} value={c}>Kelas {c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Reset Filters */}
+                {(selectedSubjectTeacherFilter !== 'all' || selectedHomeroomTeacherFilter !== 'all' || journalClassFilter !== 'all' || journalSearchQuery || journalStartDate || journalEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSubjectTeacherFilter('all');
+                      setSelectedHomeroomTeacherFilter('all');
+                      setJournalClassFilter('all');
+                      setJournalSearchQuery('');
+                      setJournalStartDate('');
+                      setJournalEndDate('');
+                    }}
+                    className="text-[10px] font-extrabold text-rose-600 hover:underline px-2 py-1 cursor-pointer"
+                  >
+                    Reset Filter
+                  </button>
+                )}
+              </div>
+
+              {/* Date Range & Total Count */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <div className="flex items-center gap-2 text-xs text-slate-600 font-semibold flex-wrap">
+                  <Calendar size={13} className="text-teal-600 shrink-0" />
+                  <span>Tanggal:</span>
+                  <input
+                    type="date"
+                    value={journalStartDate}
+                    onChange={(e) => setJournalStartDate(e.target.value)}
+                    className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none"
+                  />
+                  <span>s.d.</span>
+                  <input
+                    type="date"
+                    value={journalEndDate}
+                    onChange={(e) => setJournalEndDate(e.target.value)}
+                    className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none"
+                  />
+                </div>
+
+                <span className="text-[10px] bg-slate-100 px-2.5 py-1 rounded-md text-slate-700 font-extrabold font-mono uppercase tracking-wider">
+                  {filteredJournals.length} Jurnal Ditampilkan
+                </span>
+              </div>
             </div>
 
             {filteredJournals.length === 0 ? (
@@ -2229,35 +3779,44 @@ export default function PrincipalPanel({
                   const presentC = j.attendance ? j.attendance.filter((a: any) => a.status === 'Hadir' || a.status === 'Terlambat').length : 0;
                   const totalC = j.attendance ? j.attendance.length : 0;
                   const isHomeroom = j.teacherType === 'homeroom';
+                  const isAbsentTeacher = (j.topic || '').includes('Tidak Hadir') || (j.notes || '') === 'Tidak Hadir';
 
                   return (
-                    <div key={j.id} className="border border-slate-200 rounded-2xl p-4 hover:border-slate-300 transition-colors flex flex-col gap-3 relative overflow-hidden bg-white">
+                    <div key={j.id} className={`border rounded-2xl p-4 transition-colors flex flex-col gap-3 relative overflow-hidden ${
+                      isAbsentTeacher 
+                        ? 'border-rose-200 bg-rose-50/30 hover:border-rose-300' 
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}>
                       
                       {/* Left color bar indicator */}
-                      <div className={`absolute top-0 bottom-0 left-0 w-1 ${isHomeroom ? 'bg-emerald-500' : 'bg-indigo-500'}`} />
+                      <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${
+                        isAbsentTeacher ? 'bg-rose-500' : (isHomeroom ? 'bg-emerald-500' : 'bg-indigo-500')
+                      }`} />
 
                       {/* Journal Header meta */}
                       <div className="flex items-start justify-between flex-wrap gap-2 text-xs pl-2.5">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className={`px-2 py-0.5 rounded-md font-sans text-[8px] font-black tracking-wider uppercase ${
-                              isHomeroom 
-                                ? 'bg-emerald-150 text-emerald-800' 
-                                : 'bg-indigo-50 text-indigo-800'
+                              isAbsentTeacher
+                                ? 'bg-rose-100 text-rose-800'
+                                : (isHomeroom ? 'bg-emerald-150 text-emerald-800' : 'bg-indigo-50 text-indigo-800')
                             }`}>
                               {j.subject}
                             </span>
                             
                             <span className={`px-1.5 py-0.5 rounded-md font-sans text-[8px] font-extrabold ${
-                              isHomeroom
-                                ? 'bg-teal-50 text-teal-800 border border-teal-250 border-teal-200'
-                                : 'bg-blue-50 text-blue-800 border border-blue-200'
+                              isAbsentTeacher
+                                ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                : (isHomeroom ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-blue-50 text-blue-800 border border-blue-200')
                             }`}>
-                              {isHomeroom ? '📂 Jurnal Wali Kelas' : '📖 Jurnal Guru Mapel'}
+                              {isAbsentTeacher ? '⚠️ Guru Tidak Hadir' : (isHomeroom ? '📂 Jurnal Wali Kelas' : '📖 Jurnal Guru Mapel')}
                             </span>
                           </div>
 
-                          <h4 className="font-extrabold text-slate-900 text-sm leading-tight mt-1.5">Materi: {j.topic}</h4>
+                          <h4 className={`font-extrabold text-sm leading-tight mt-1.5 ${isAbsentTeacher ? 'text-rose-950' : 'text-slate-900'}`}>
+                            Materi: {j.topic}
+                          </h4>
                           <div className="flex items-center gap-2 flex-wrap text-slate-500 text-[10px] mt-1 font-semibold">
                             <span>Nama Guru: {j.teacherName}</span>
                             <span>•</span>
@@ -2424,6 +3983,366 @@ export default function PrincipalPanel({
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'jadwal' && (
+        <div className="w-full text-left">
+          <ScheduleView
+            role="principal"
+            schedules={classSchedules}
+            onRefreshSchedule={onRefresh}
+            availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
+            subjectTeachers={subjectTeachers}
+            homerooms={homerooms}
+            academicYear={schoolIdentity?.activeAcademicYear || '2026/2027'}
+          />
+        </div>
+      )}
+
+      {/* 5.5 ATTENDANCE RECAP VIEW */}
+      {activeTab === 'attendance_recap' && (
+        <div className="flex flex-col gap-6">
+          {/* Header Banner */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500" />
+            <div>
+              <h2 className="text-slate-900 font-black text-lg leading-tight flex items-center gap-2">
+                📅 Rekapitulasi Presensi & Kehadiran Siswa
+              </h2>
+              <p className="text-slate-500 text-xs mt-1 leading-relaxed max-w-3xl">
+                Pantau statistik kehadiran harian siswa per kelas maupun seluruh sekolah berdasarkan rentang tanggal. Hasil rekapitulasi dapat dicetak atau diekspor langsung.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handlePrintPdfPrincipalAttendance}
+                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs cursor-pointer transition-all shadow-xs"
+              >
+                <Printer size={14} /> Cetak PDF (.pdf)
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadPrincipalAttendanceXLS}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl text-xs cursor-pointer transition-all shadow-xs"
+              >
+                <Download size={14} /> Ekspor Excel (.xls)
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="bg-white p-5 border border-slate-200 rounded-3xl shadow-xs flex flex-col gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Tanggal Mulai */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Tanggal Mulai
+                </label>
+                <input
+                  type="date"
+                  value={rekapStartDate}
+                  onChange={(e) => setRekapStartDate(e.target.value)}
+                  className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer w-full"
+                />
+              </div>
+
+              {/* Tanggal Selesai */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Tanggal Selesai
+                </label>
+                <input
+                  type="date"
+                  value={rekapEndDate}
+                  onChange={(e) => setRekapEndDate(e.target.value)}
+                  className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer w-full"
+                />
+              </div>
+
+              {/* Filter Kelas */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Pilih Kelas
+                </label>
+                <select
+                  value={rekapClassFilter}
+                  onChange={(e) => setRekapClassFilter(e.target.value)}
+                  className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer w-full"
+                >
+                  <option value="all">Semua Kelas ({availableClassesForPrincipal.length} Kelas)</option>
+                  {availableClassesForPrincipal.map((cls) => (
+                    <option key={cls} value={cls}>
+                      Kelas {cls}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Status */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Status Presensi
+                </label>
+                <select
+                  value={rekapStatusFilter}
+                  onChange={(e) => setRekapStatusFilter(e.target.value)}
+                  className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer w-full"
+                >
+                  <option value="all">Semua Status Presensi</option>
+                  <option value="Hadir">Ada Catatan Hadir (H)</option>
+                  <option value="Sakit">Ada Catatan Sakit (S)</option>
+                  <option value="Izin">Ada Catatan Izin (I)</option>
+                  <option value="Alpha">Ada Catatan Alpha (A)</option>
+                  <option value="Terlambat">Ada Catatan Terlambat (T)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col md:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100">
+              {/* Search Box */}
+              <div className="relative w-full md:w-80">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nama siswa atau NIS..."
+                  value={rekapSearchQuery}
+                  onChange={(e) => setRekapSearchQuery(e.target.value)}
+                  className="pl-9 pr-3 py-2 w-full border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Quick Preset Date Filters */}
+              <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1">Preset:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const y = now.getFullYear();
+                    const m = String(now.getMonth() + 1).padStart(2, '0');
+                    const d = String(now.getDate()).padStart(2, '0');
+                    setRekapStartDate(`${y}-${m}-01`);
+                    setRekapEndDate(`${y}-${m}-${d}`);
+                  }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg cursor-pointer whitespace-nowrap"
+                >
+                  Bulan Ini
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    const startObj = new Date();
+                    startObj.setDate(startObj.getDate() - 7);
+                    const start = `${startObj.getFullYear()}-${String(startObj.getMonth() + 1).padStart(2, '0')}-${String(startObj.getDate()).padStart(2, '0')}`;
+                    setRekapStartDate(start);
+                    setRekapEndDate(end);
+                  }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg cursor-pointer whitespace-nowrap"
+                >
+                  7 Hari Terakhir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    const startObj = new Date();
+                    startObj.setDate(startObj.getDate() - 30);
+                    const start = `${startObj.getFullYear()}-${String(startObj.getMonth() + 1).padStart(2, '0')}-${String(startObj.getDate()).padStart(2, '0')}`;
+                    setRekapStartDate(start);
+                    setRekapEndDate(end);
+                  }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg cursor-pointer whitespace-nowrap"
+                >
+                  30 Hari Terakhir
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Metric Cards Summary Row */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3.5">
+            <div className="bg-white p-4 border border-slate-200 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Total Siswa</span>
+              <span className="text-xl font-black text-slate-900 mt-1 font-mono">{rekapSiswaPrincipalList.length}</span>
+              <span className="text-[9px] text-slate-400 font-bold mt-0.5">{rekapClassFilter === 'all' ? 'Seluruh Kelas' : `Kelas ${rekapClassFilter}`}</span>
+            </div>
+
+            <div className="bg-emerald-50/50 p-4 border border-emerald-100 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Hadir (H)</span>
+              <span className="text-xl font-black text-emerald-700 mt-1 font-mono">{totalRekapHadir}</span>
+              <span className="text-[9px] text-emerald-600 font-bold mt-0.5">Catatan Hadir</span>
+            </div>
+
+            <div className="bg-blue-50/50 p-4 border border-blue-100 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-blue-600 uppercase tracking-wider">Sakit (S)</span>
+              <span className="text-xl font-black text-blue-700 mt-1 font-mono">{totalRekapSakit}</span>
+              <span className="text-[9px] text-blue-600 font-bold mt-0.5">Izin Sakit</span>
+            </div>
+
+            <div className="bg-amber-50/50 p-4 border border-amber-100 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-amber-600 uppercase tracking-wider">Izin (I)</span>
+              <span className="text-xl font-black text-amber-700 mt-1 font-mono">{totalRekapIzin}</span>
+              <span className="text-[9px] text-amber-600 font-bold mt-0.5">Izin Keperluan</span>
+            </div>
+
+            <div className="bg-rose-50/50 p-4 border border-rose-100 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-rose-600 uppercase tracking-wider">Alpha (A)</span>
+              <span className="text-xl font-black text-rose-700 mt-1 font-mono">{totalRekapAlpha}</span>
+              <span className="text-[9px] text-rose-600 font-bold mt-0.5">Tanpa Keterangan</span>
+            </div>
+
+            <div className="bg-purple-50/50 p-4 border border-purple-100 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-purple-600 uppercase tracking-wider">Rata-rata Kehadiran</span>
+              <span className="text-xl font-black text-purple-700 mt-1 font-mono">{avgPctKehadiran}%</span>
+              <span className="text-[9px] text-purple-600 font-bold mt-0.5">Tingkat Kehadiran</span>
+            </div>
+          </div>
+
+          {/* Class Breakdown Overview */}
+          {rekapClassFilter === 'all' && rekapPerKelasSummary.length > 0 && (
+            <div className="bg-white p-5 border border-slate-200 rounded-3xl shadow-xs flex flex-col gap-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">📊 Ringkasan Kehadiran per Kelas</h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Klik salah satu kelas untuk memfilter detail siswa di bawah ini.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {rekapPerKelasSummary.map(c => {
+                  const classHariTotal = c.hadir + c.sakit + c.izin + c.alpha + c.terlambat;
+                  const classPct = classHariTotal > 0 ? Math.round(((c.hadir + c.terlambat) / classHariTotal) * 100) : 100;
+                  return (
+                    <div
+                      key={c.className}
+                      onClick={() => setRekapClassFilter(c.className)}
+                      className="p-3.5 border border-slate-200 hover:border-indigo-400 rounded-2xl bg-slate-50/50 hover:bg-indigo-50/30 transition-all cursor-pointer flex flex-col justify-between"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-xs text-slate-900">Kelas {c.className}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black font-mono ${
+                          classPct >= 90 ? 'bg-emerald-100 text-emerald-800' : classPct >= 75 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {classPct}%
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1 font-medium">Wali: <span className="font-bold text-slate-700">{c.waliKelas}</span></p>
+                      <div className="grid grid-cols-5 gap-1 mt-3 text-center text-[9px] font-mono font-black pt-2 border-t border-slate-200/60">
+                        <div className="text-emerald-700">H: {c.hadir}</div>
+                        <div className="text-blue-700">S: {c.sakit}</div>
+                        <div className="text-amber-700">I: {c.izin}</div>
+                        <div className="text-rose-700">A: {c.alpha}</div>
+                        <div className="text-purple-700">T: {c.terlambat}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Rincian Table per Siswa */}
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-xs overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">📋 Detail Rekap Presensi Siswa</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Menampilkan {rekapSiswaPrincipalList.length} siswa berdasarkan filter terpilih.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-600">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Urutkan:</span>
+                <select
+                  value={rekapSortBy}
+                  onChange={(e) => setRekapSortBy(e.target.value as any)}
+                  className="px-2.5 py-1 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white"
+                >
+                  <option value="class">Kelas</option>
+                  <option value="name">Nama Siswa</option>
+                  <option value="hadir">Hadir (H)</option>
+                  <option value="sakit">Sakit (S)</option>
+                  <option value="izin">Izin (I)</option>
+                  <option value="alpha">Alpha (A)</option>
+                  <option value="terlambat">Terlambat (T)</option>
+                  <option value="pct">% Kehadiran</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setRekapSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                  className="p-1.5 border border-slate-200 rounded-xl bg-white hover:bg-slate-100 text-slate-700 cursor-pointer"
+                  title="Balik Urutan"
+                >
+                  <ArrowUpDown size={14} />
+                </button>
+              </div>
+            </div>
+
+            {rekapSiswaPrincipalList.length === 0 ? (
+              <div className="py-16 text-center flex flex-col items-center justify-center p-4">
+                <Calendar size={32} className="text-slate-300 mb-2" />
+                <span className="text-xs font-extrabold text-slate-600">Tidak ada data rekap presensi ditemukan</span>
+                <p className="text-[10px] text-slate-400 max-w-xs mt-1">Ubah rentang tanggal, filter kelas, atau kata kunci pencarian Anda.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-[11px]">
+                  <thead>
+                    <tr className="bg-slate-100/80 text-slate-600 font-extrabold uppercase text-[9px] tracking-wider border-b border-slate-200">
+                      <th className="py-3 px-3 text-center w-10">No</th>
+                      <th className="py-3 px-3">NIS</th>
+                      <th className="py-3 px-3">Nama Lengkap Siswa</th>
+                      <th className="py-3 px-3 text-center">Kelas</th>
+                      <th className="py-3 px-3 text-center text-emerald-700">Hadir (H)</th>
+                      <th className="py-3 px-3 text-center text-blue-700">Sakit (S)</th>
+                      <th className="py-3 px-3 text-center text-amber-700">Izin (I)</th>
+                      <th className="py-3 px-3 text-center text-rose-700">Alpha (A)</th>
+                      <th className="py-3 px-3 text-center text-purple-700">Terlambat (T)</th>
+                      <th className="py-3 px-3 text-center">Total Hari</th>
+                      <th className="py-3 px-3 text-center">% Kehadiran</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rekapSiswaPrincipalList.map((item, idx) => (
+                      <tr key={item.student.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-2.5 px-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                        <td className="py-2.5 px-3 font-mono text-slate-500">{item.student.nis || '-'}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="font-extrabold text-slate-900 block">{item.student.name}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-800 rounded-md font-bold text-[10px]">
+                            {item.student.class || '-'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-black font-mono text-emerald-700">{item.hadir}</td>
+                        <td className="py-2.5 px-3 text-center font-black font-mono text-blue-700">{item.sakit}</td>
+                        <td className="py-2.5 px-3 text-center font-black font-mono text-amber-700">{item.izin}</td>
+                        <td className="py-2.5 px-3 text-center font-black font-mono text-rose-700">{item.alpha}</td>
+                        <td className="py-2.5 px-3 text-center font-black font-mono text-purple-700">{item.terlambat}</td>
+                        <td className="py-2.5 px-3 text-center font-bold font-mono text-slate-700">{item.totalHari}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black font-mono inline-block ${
+                            item.pct >= 90
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : item.pct >= 75
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-rose-100 text-rose-800 animate-pulse'
+                          }`}>
+                            {item.pct}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3367,6 +5286,1235 @@ export default function PrincipalPanel({
         </div>
       )}
 
+      {/* ======================================================== */}
+      {/* TAB BUKU TAMU & PEMBINAAN DIGITAL KEPALA SEKOLAH         */}
+      {/* Disimpan langsung di Database MySQL tanpa simpan lokal  */}
+      {/* 2 Jenis: 1 Buku Tamu Umum, 2 Buku Tamu Pembinaan         */}
+      {/* ======================================================== */}
+      {activeTab === 'buku_tamu' && (
+        <div className="flex flex-col gap-6 animate-fade-in text-left">
+          
+          {/* Header Card & Quick Actions */}
+          <div className="bg-slate-900 text-white rounded-3xl p-6 md:p-8 shadow-sm relative overflow-hidden">
+            <div className="absolute right-0 top-0 h-full w-1/3 opacity-15 pointer-events-none bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-amber-500 via-indigo-500 to-transparent hidden md:block" />
+            
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative">
+              <div className="flex items-center gap-4">
+                <div className="p-3.5 bg-gradient-to-br from-amber-500 to-indigo-600 rounded-2xl text-white shadow-lg shadow-amber-500/20">
+                  <BookOpen size={28} />
+                </div>
+                <div>
+                  <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black tracking-wider uppercase mb-1 border border-emerald-500/30">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Database MySQL Langsung (Tanpa Simpan Lokal)
+                  </div>
+                  <h2 className="text-xl md:text-2xl font-black text-white tracking-tight">
+                    Buku Tamu Digital &amp; Pembinaan Sekolah
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                    Arsip digital resmi penerimaan tamu: <strong>1. Buku Tamu Umum</strong> (wali murid, vendor, mitra) dan <strong>2. Buku Tamu Pembinaan</strong> (Pengawas Pembina, Tim Monev, Asesor &amp; Dinas Pendidikan).
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsQrModalOpen(true)}
+                  className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black tracking-wider uppercase transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <QrCode size={16} />
+                  <span>QR Meja Tamu</span>
+                </button>
+
+                <div className="relative group">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintGuestBookReport(guestBookCategoryTab)}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black tracking-wider uppercase transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95"
+                  >
+                    <Printer size={16} />
+                    <span>Cetak PDF Laporan</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddGuestBook(guestBookCategoryTab === 'pembinaan' ? 'pembinaan' : 'umum')}
+                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-black tracking-wider uppercase transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <Plus size={16} />
+                  <span>Catat Tamu Manual</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadGuestBookXLS}
+                  className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/15 cursor-pointer"
+                  title="Unduh Data Excel (.xls)"
+                >
+                  <Download size={16} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={fetchGuestBooks}
+                  disabled={loadingGuestBooks}
+                  className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/15 cursor-pointer disabled:opacity-50"
+                  title="Segarkan dari Database MySQL"
+                >
+                  <RefreshCw size={16} className={loadingGuestBooks ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 2 JENIS BUKU TAMU SELECTOR TABS */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-2 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+              <button
+                type="button"
+                onClick={() => setGuestBookCategoryTab('all')}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
+                  guestBookCategoryTab === 'all'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <span>Semua Kategori</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${guestBookCategoryTab === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                  {guestBooks.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGuestBookCategoryTab('umum')}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
+                  guestBookCategoryTab === 'umum'
+                    ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                    : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'
+                }`}
+              >
+                <BookOpen size={14} />
+                <span>1. Buku Tamu Umum</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${guestBookCategoryTab === 'umum' ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+                  {guestBooks.filter(g => (g.category || 'umum') === 'umum').length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGuestBookCategoryTab('pembinaan')}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
+                  guestBookCategoryTab === 'pembinaan'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/25'
+                    : 'text-slate-600 hover:bg-amber-50 hover:text-amber-800'
+                }`}
+              >
+                <Award size={14} />
+                <span>2. Buku Tamu Pembinaan</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${guestBookCategoryTab === 'pembinaan' ? 'bg-slate-900 text-white' : 'bg-amber-100 text-amber-900'}`}>
+                  {guestBooks.filter(g => g.category === 'pembinaan').length}
+                </span>
+              </button>
+            </div>
+
+            {/* Quick Print buttons for the active view */}
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              {guestBookCategoryTab === 'pembinaan' ? (
+                <button
+                  type="button"
+                  onClick={() => handlePrintGuestBookReport('pembinaan')}
+                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-[11px] font-black transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer size={13} />
+                  <span>Cetak Buku Pembinaan (Format Resmi)</span>
+                </button>
+              ) : guestBookCategoryTab === 'umum' ? (
+                <button
+                  type="button"
+                  onClick={() => handlePrintGuestBookReport('umum')}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 rounded-xl text-[11px] font-black transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer size={13} />
+                  <span>Cetak Buku Tamu Umum (PDF)</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                  <span>Cetak:</span>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintGuestBookReport('umum')}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[10.5px] font-bold text-slate-700 cursor-pointer"
+                  >
+                    Buku Umum
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePrintGuestBookReport('pembinaan')}
+                    className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 rounded-lg text-[10.5px] font-bold text-amber-900 cursor-pointer"
+                  >
+                    Buku Pembinaan
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Metric KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider">Total Kunjungan</span>
+                <span className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
+                  <Users size={16} />
+                </span>
+              </div>
+              <div>
+                <span className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
+                  {guestBooks.length}
+                </span>
+                <span className="text-[11px] text-slate-400 font-medium ml-1">tamu</span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                {guestBooks.filter(g => (g.category || 'umum') === 'umum').length} Umum • {guestBooks.filter(g => g.category === 'pembinaan').length} Pembinaan
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider">Kunjungan Hari Ini</span>
+                <span className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
+                  <Calendar size={16} />
+                </span>
+              </div>
+              <div>
+                <span className="text-2xl md:text-3xl font-black text-emerald-700 tracking-tight">
+                  {guestBooks.filter(g => g.date === new Date().toISOString().split('T')[0]).length}
+                </span>
+                <span className="text-[11px] text-emerald-600 font-medium ml-1">tamu hari ini</span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                {new Date().toLocaleDateString('id-ID', { dateStyle: 'medium' })}
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider">Buku Tamu Pembinaan</span>
+                <span className="p-2 bg-amber-50 rounded-xl text-amber-600">
+                  <Award size={16} />
+                </span>
+              </div>
+              <div>
+                <span className="text-2xl md:text-3xl font-black text-amber-600 tracking-tight">
+                  {guestBooks.filter(g => g.category === 'pembinaan').length}
+                </span>
+                <span className="text-[11px] text-amber-700 font-medium ml-1">kunjungan</span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                {guestBooks.filter(g => g.category === 'pembinaan' && g.followUpStatus === 'Selesai').length} Selesai Ditindaklanjuti
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-[10px] font-black uppercase tracking-wider">Instansi Mitra</span>
+                <span className="p-2 bg-purple-50 rounded-xl text-purple-600">
+                  <Building2 size={16} />
+                </span>
+              </div>
+              <div>
+                <span className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
+                  {new Set(guestBooks.map(g => (g.institution || '').trim().toLowerCase()).filter(Boolean)).size}
+                </span>
+                <span className="text-[11px] text-slate-400 font-medium ml-1">lembaga</span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                Mitra, dinas, komite &amp; rekanan
+              </p>
+            </div>
+          </div>
+
+          {/* Filter & Search Bar */}
+          <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="relative w-full md:w-96">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={guestBookSearch}
+                onChange={(e) => setGuestBookSearch(e.target.value)}
+                placeholder="Cari nama, instansi, keperluan, jabatan, NIP, aspek..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-slate-800 transition-colors"
+              />
+              {guestBookSearch && (
+                <button
+                  type="button"
+                  onClick={() => setGuestBookSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+              {/* Date Filter Select */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
+                <Calendar size={13} className="text-slate-500" />
+                <select
+                  value={guestBookDateFilter}
+                  onChange={(e: any) => setGuestBookDateFilter(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
+                >
+                  <option value="all">Semua Waktu</option>
+                  <option value="today">Hari Ini</option>
+                  <option value="this_week">7 Hari Terakhir</option>
+                  <option value="this_month">Bulan Ini</option>
+                  <option value="custom">Rentang Kustom</option>
+                </select>
+              </div>
+
+              {guestBookDateFilter === 'custom' && (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    value={guestBookStartDate}
+                    onChange={(e) => setGuestBookStartDate(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none"
+                  />
+                  <span className="text-xs text-slate-400 font-bold">-</span>
+                  <input
+                    type="date"
+                    value={guestBookEndDate}
+                    onChange={(e) => setGuestBookEndDate(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              {/* Status Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
+                <Filter size={13} className="text-slate-500" />
+                <select
+                  value={guestBookStatusFilter}
+                  onChange={(e) => setGuestBookStatusFilter(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
+                >
+                  <option value="all">Semua Status</option>
+                  <option value="Selesai">Selesai</option>
+                  <option value="Diterima">Diterima</option>
+                  <option value="Menunggu">Menunggu</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* MAIN DATA TABLE VIEW */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-700">
+                  {guestBookCategoryTab === 'pembinaan' ? 'Daftar Buku Tamu Pembinaan / Supervisi' : guestBookCategoryTab === 'umum' ? 'Daftar Buku Tamu Umum' : 'Seluruh Daftar Kunjungan Buku Tamu'}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-600">
+                  {filteredGuestBooks.length} data
+                </span>
+              </div>
+
+              {loadingGuestBooks && (
+                <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+                  <div className="h-3 w-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                  <span>Memuat dari MySQL...</span>
+                </div>
+              )}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/80 text-[10.5px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200/80">
+                    <th className="py-3.5 px-4 w-12 text-center">No</th>
+                    {guestBookCategoryTab === 'all' && (
+                      <th className="py-3.5 px-3 w-28">Kategori</th>
+                    )}
+                    <th className="py-3.5 px-3 w-36">Waktu Kunjungan</th>
+                    <th className="py-3.5 px-4">
+                      {guestBookCategoryTab === 'pembinaan' ? 'Nama Pembina / Pengawas' : 'Nama Tamu'}
+                    </th>
+                    <th className="py-3.5 px-4">Jabatan &amp; Instansi</th>
+                    <th className="py-3.5 px-4">
+                      {guestBookCategoryTab === 'pembinaan' ? 'Aspek Pembinaan & Temuan' : 'Keperluan Kunjungan'}
+                    </th>
+                    <th className="py-3.5 px-3 w-32">WhatsApp</th>
+                    <th className="py-3.5 px-3 w-28 text-center">
+                      {guestBookCategoryTab === 'pembinaan' ? 'Tindak Lanjut' : 'Status'}
+                    </th>
+                    <th className="py-3.5 px-3 w-24 text-center">Paraf / TTD</th>
+                    <th className="py-3.5 px-4 w-28 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs text-slate-700 font-medium">
+                  {filteredGuestBooks.length === 0 ? (
+                    <tr>
+                      <td colSpan={guestBookCategoryTab === 'all' ? 10 : 9} className="py-12 text-center text-slate-400">
+                        <BookOpen size={36} className="mx-auto text-slate-300 mb-2 stroke-[1.5]" />
+                        <p className="font-bold text-slate-600">Belum ada catatan buku tamu.</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Tamu dapat scan QR Code di meja resepsionis atau Anda dapat mencatat manual melalui tombol di atas.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredGuestBooks.map((item, idx) => {
+                      const isPembinaan = item.category === 'pembinaan';
+                      return (
+                        <tr 
+                          key={item.id} 
+                          className={`hover:bg-slate-50/70 transition-colors ${isPembinaan ? 'bg-amber-50/20' : ''}`}
+                        >
+                          <td className="py-3 px-4 text-center text-slate-400 font-bold text-[11px]">
+                            {idx + 1}
+                          </td>
+
+                          {guestBookCategoryTab === 'all' && (
+                            <td className="py-3 px-3">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                isPembinaan
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                              }`}>
+                                {isPembinaan ? <Award size={11} /> : <BookOpen size={11} />}
+                                <span>{isPembinaan ? 'Pembinaan' : 'Umum'}</span>
+                              </span>
+                            </td>
+                          )}
+
+                          <td className="py-3 px-3">
+                            <span className="font-bold text-slate-900 block">{item.date}</span>
+                            <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Clock size={10} />
+                              <span>{item.time || '-'} WIB</span>
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <div className="font-black text-slate-900 text-xs">
+                              {item.name}
+                            </div>
+                            {item.supervisorNip && (
+                              <span className="text-[10.5px] font-mono text-slate-500 block">
+                                NIP: {item.supervisorNip}
+                              </span>
+                            )}
+                            {item.notes && (
+                              <span className="text-[10px] text-slate-400 italic block mt-0.5 truncate max-w-xs">
+                                Ket: {item.notes}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            {item.position && (
+                              <span className="text-[11px] font-semibold text-slate-600 block">
+                                {item.position}
+                              </span>
+                            )}
+                            <span className="font-bold text-indigo-700 text-xs">
+                              {item.institution}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-4 max-w-xs">
+                            {isPembinaan ? (
+                              <div className="space-y-1">
+                                <span className="inline-block px-2 py-0.5 rounded-lg text-[10.5px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                                  {item.coachingSubject || item.purpose}
+                                </span>
+                                {item.findings && (
+                                  <p className="text-[11px] text-slate-700 line-clamp-2 leading-relaxed">
+                                    <strong className="text-slate-900">Temuan:</strong> {item.findings}
+                                  </p>
+                                )}
+                                {item.recommendations && (
+                                  <p className="text-[11px] text-emerald-800 line-clamp-2 leading-relaxed bg-emerald-50/60 p-1 rounded-md">
+                                    <strong className="text-emerald-950">Saran:</strong> {item.recommendations}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-800 leading-relaxed font-semibold">
+                                {item.purpose}
+                              </p>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3">
+                            {item.phone ? (
+                              <a
+                                href={`https://wa.me/${item.phone.replace(/[^0-9]/g, '').replace(/^0/, '62')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-mono text-[11px] font-bold transition-colors"
+                                title="Kirim Pesan WhatsApp"
+                              >
+                                <Phone size={11} className="text-emerald-600" />
+                                <span>{item.phone}</span>
+                              </a>
+                            ) : (
+                              <span className="text-slate-400 font-mono text-[11px]">-</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3 text-center">
+                            {isPembinaan ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedGuestBookForDetail(item)}
+                                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-black cursor-pointer transition-all border ${
+                                  item.followUpStatus === 'Selesai'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                                    : item.followUpStatus === 'Proses'
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                                    : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                                }`}
+                                title="Klik untuk update tindak lanjut"
+                              >
+                                {item.followUpStatus || 'Belum'}
+                              </button>
+                            ) : (
+                              <span className="inline-block px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-slate-100 text-slate-700">
+                                {item.status || 'Selesai'}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3 text-center">
+                            {item.signature ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedGuestBookForDetail(item)}
+                                className="inline-block p-1 bg-white border border-slate-200 rounded-lg shadow-2xs hover:border-emerald-500 hover:shadow-xs transition-all cursor-pointer"
+                                title="Lihat Tanda Tangan Digital"
+                              >
+                                <img src={item.signature} alt="TTD" className="h-6 max-w-[55px] object-contain mx-auto" />
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-300 italic font-mono">-</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              {isPembinaan && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedGuestBookForDetail(item)}
+                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-800 transition-colors cursor-pointer"
+                                  title="Lihat Detail & Tindak Lanjut"
+                                >
+                                  <FileText size={13} />
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditGuestBook(item)}
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 transition-colors cursor-pointer"
+                                title="Edit Data Kunjungan"
+                              >
+                                <Edit3 size={13} />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (confirm(`Hapus kunjungan tamu "${item.name}" dari database MySQL secara permanen?`)) {
+                                    try {
+                                      const res = await fetch(`/api/guest-book/${item.id}`, { method: 'DELETE' });
+                                      if (res.ok) {
+                                        await fetchGuestBooks();
+                                        setNotifMsg({ type: 'success', text: 'Data buku tamu berhasil dihapus dari database MySQL!' });
+                                      } else {
+                                        alert('Gagal menghapus data dari database MySQL.');
+                                      }
+                                    } catch (err: any) {
+                                      alert(err.message || 'Gagal menghapus data.');
+                                    }
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-700 transition-colors cursor-pointer"
+                                title="Hapus Data Tamu"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL 1: QR CODE MEJA RESEPSIONIS & PRINT STAND AKRILIK  */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {isQrModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 text-left relative overflow-hidden"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600">
+                    <QrCode size={20} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-slate-900 uppercase tracking-wide">
+                      QR Code Meja Resepsionis
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Tamu scan QR ini di meja piket untuk mengisi buku tamu
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsQrModalOpen(false)}
+                  className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold cursor-pointer"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* QR Code Target Selector */}
+              <div className="mb-4">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                  Pilihan Formulir Tujuan QR Code:
+                </label>
+                <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setQrTypeSelection('all')}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      qrTypeSelection === 'all'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Semua (Pilihan)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setQrTypeSelection('umum')}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      qrTypeSelection === 'umum'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    1. Buku Umum
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setQrTypeSelection('pembinaan')}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      qrTypeSelection === 'pembinaan'
+                        ? 'bg-amber-500 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    2. Pembinaan
+                  </button>
+                </div>
+              </div>
+
+              {/* QR Image Container */}
+              <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-5 flex flex-col items-center justify-center text-center">
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt="QR Code Buku Tamu"
+                    className="w-56 h-56 rounded-2xl bg-white p-2 shadow-sm border border-slate-200"
+                  />
+                ) : (
+                  <div className="w-56 h-56 rounded-2xl bg-white flex items-center justify-center text-slate-400">
+                    <div className="h-6 w-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
+                <span className="font-mono text-[11px] text-slate-500 mt-2 break-all max-w-xs">
+                  {`${window.location.origin}/?page=bukutamu${qrTypeSelection === 'all' ? '' : `&type=${qrTypeSelection}`}`}
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = `${window.location.origin}/?page=bukutamu${qrTypeSelection === 'all' ? '' : `&type=${qrTypeSelection}`}`;
+                    navigator.clipboard.writeText(link);
+                    setIsCopiedQrLink(true);
+                    setTimeout(() => setIsCopiedQrLink(false), 2000);
+                  }}
+                  className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Copy size={14} />
+                  <span>{isCopiedQrLink ? 'Link Tersalin! ✓' : 'Salin Link Formulir'}</span>
+                </button>
+
+                <a
+                  href={`/?page=bukutamu${qrTypeSelection === 'all' ? '' : `&type=${qrTypeSelection}`}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <ExternalLink size={14} />
+                  <span>Buka Form di Tab Baru</span>
+                </a>
+              </div>
+
+              <div className="mt-3 p-3 rounded-2xl bg-indigo-50/70 border border-indigo-150 text-[11px] text-indigo-900 leading-relaxed">
+                <span className="font-extrabold block text-indigo-950 mb-0.5">💡 Tanpa Perlu Login &amp; Kompatibel Semua Scanner:</span>
+                Tamu dapat memindai QR ini memakai <strong>Kamera Bawaan HP</strong>, <strong>Google Lens</strong>, atau <strong>Aplikasi QR Scanner apa saja</strong> yang diunduh dari Google Play Store / Apple App Store. Form langsung terbuka di browser, tamu isi data lalu tekan Simpan.
+              </div>
+
+              <div className="mt-2.5">
+                <button
+                  type="button"
+                  onClick={() => handlePrintQrStandBanner(qrTypeSelection)}
+                  className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Printer size={15} />
+                  <span>Cetak Stand Meja / Akrilik (Format A4)</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================================================== */}
+      {/* MODAL 2: DETAIL & UPDATE TINDAK LANJUT BUKU PEMBINAAN    */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {selectedGuestBookForDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 text-left relative overflow-hidden space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-amber-50 rounded-xl text-amber-600">
+                    <Award size={20} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-slate-900 uppercase tracking-wide">
+                      Detail Kunjungan Pembinaan &amp; Supervisi
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {selectedGuestBookForDetail.date} • {selectedGuestBookForDetail.time || '-'} WIB
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedGuestBookForDetail(null)}
+                  className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold cursor-pointer"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Pembina Info */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-slate-400 font-semibold">Nama Pembina</span>
+                  <span className="col-span-2 font-bold text-slate-900">{selectedGuestBookForDetail.name}</span>
+                </div>
+                {selectedGuestBookForDetail.supervisorNip && (
+                  <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-1.5">
+                    <span className="text-slate-400 font-semibold">NIP / NUPTK</span>
+                    <span className="col-span-2 font-mono font-bold text-slate-800">{selectedGuestBookForDetail.supervisorNip}</span>
+                  </div>
+                )}
+                <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-1.5">
+                  <span className="text-slate-400 font-semibold">Jabatan &amp; Instansi</span>
+                  <span className="col-span-2 font-semibold text-slate-800">
+                    {selectedGuestBookForDetail.position || '-'} • <strong className="text-indigo-700">{selectedGuestBookForDetail.institution}</strong>
+                  </span>
+                </div>
+                {selectedGuestBookForDetail.phone && (
+                  <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-1.5">
+                    <span className="text-slate-400 font-semibold">WhatsApp</span>
+                    <span className="col-span-2 font-mono font-bold text-emerald-700">{selectedGuestBookForDetail.phone}</span>
+                  </div>
+                )}
+                {selectedGuestBookForDetail.signature && (
+                  <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2 items-center">
+                    <span className="text-slate-400 font-semibold">Tanda Tangan</span>
+                    <div className="col-span-2">
+                      <div className="inline-block p-1.5 bg-white border border-slate-200 rounded-xl shadow-xs">
+                        <img 
+                          src={selectedGuestBookForDetail.signature} 
+                          alt="Tanda Tangan Digital" 
+                          className="h-12 max-w-[160px] object-contain" 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Aspek Pembinaan */}
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-amber-900 block mb-1">
+                  Aspek / Sasaran Pembinaan:
+                </label>
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs font-black text-amber-900">
+                  {selectedGuestBookForDetail.coachingSubject || selectedGuestBookForDetail.purpose}
+                </div>
+              </div>
+
+              {/* Temuan */}
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-600 block mb-1">
+                  Temuan &amp; Hasil Pemantauan:
+                </label>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 leading-relaxed font-medium">
+                  {selectedGuestBookForDetail.findings || selectedGuestBookForDetail.notes || 'Tidak ada catatan temuan tertulis.'}
+                </div>
+              </div>
+
+              {/* Rekomendasi */}
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block mb-1">
+                  Saran &amp; Rekomendasi Tindak Lanjut Pengawas:
+                </label>
+                <div className="p-3 bg-emerald-50/70 border border-emerald-300 rounded-xl text-xs text-emerald-950 leading-relaxed font-semibold">
+                  {selectedGuestBookForDetail.recommendations || 'Tidak ada rekomendasi tertulis.'}
+                </div>
+              </div>
+
+              {/* Quick Update Follow-up Section */}
+              <div className="border-t border-slate-100 pt-3">
+                <label className="text-[11px] font-black uppercase tracking-wider text-slate-800 block mb-2">
+                  Tindak Lanjut &amp; Realisasi Kepala Sekolah:
+                </label>
+
+                <div className="flex items-center gap-2 mb-2">
+                  {(['Belum', 'Proses', 'Selesai'] as const).map(st => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setSelectedGuestBookForDetail(prev => prev ? { ...prev, followUpStatus: st } : null)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                        selectedGuestBookForDetail.followUpStatus === st
+                          ? st === 'Selesai'
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                            : st === 'Proses'
+                            ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
+                            : 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {st === 'Selesai' ? '✓ Selesai Ditindaklanjuti' : st === 'Proses' ? '⏳ Dalam Proses' : '✕ Belum Ditindaklanjuti'}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  rows={2}
+                  value={selectedGuestBookForDetail.followUpNotes || ''}
+                  onChange={(e) => setSelectedGuestBookForDetail(prev => prev ? { ...prev, followUpNotes: e.target.value } : null)}
+                  placeholder="Tuliskan catatan realisasi langkah tindak lanjut yang telah diambil sekolah..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 focus:bg-white focus:outline-none focus:border-slate-800"
+                />
+
+                <div className="flex justify-end gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedGuestBookForDetail(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!selectedGuestBookForDetail) return;
+                      try {
+                        const res = await fetch(`/api/guest-book/${selectedGuestBookForDetail.id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(selectedGuestBookForDetail)
+                        });
+                        if (res.ok) {
+                          await fetchGuestBooks();
+                          setSelectedGuestBookForDetail(null);
+                          setNotifMsg({ type: 'success', text: 'Tindak lanjut pembinaan berhasil diperbarui di MySQL!' });
+                        } else {
+                          alert('Gagal memperbarui status tindak lanjut.');
+                        }
+                      } catch (err: any) {
+                        alert(err.message || 'Gagal menyimpan perubahan.');
+                      }
+                    }}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer"
+                  >
+                    Simpan Tindak Lanjut
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================================================== */}
+      {/* MODAL 3: TAMBAH / EDIT KUNJUNGAN BUKU TAMU MANUAL        */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {isGuestBookModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 text-left relative overflow-hidden max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2 rounded-xl text-white ${guestBookFormCategory === 'pembinaan' ? 'bg-amber-500' : 'bg-indigo-600'}`}>
+                    {guestBookFormCategory === 'pembinaan' ? <Award size={20} /> : <BookOpen size={20} />}
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-slate-900 uppercase tracking-wide">
+                      {editingGuestBook ? 'Perbarui Data Tamu' : 'Catat Kunjungan Tamu Baru'}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Simpan langsung ke database MySQL resmi sekolah
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsGuestBookModalOpen(false)}
+                  className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold cursor-pointer"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* 2 JENIS BUKU TAMU SELECTOR */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl mb-4">
+                <button
+                  type="button"
+                  onClick={() => setGuestBookFormCategory('umum')}
+                  className={`py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    guestBookFormCategory === 'umum'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <BookOpen size={13} />
+                  <span>1. Buku Tamu Umum</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGuestBookFormCategory('pembinaan')}
+                  className={`py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    guestBookFormCategory === 'pembinaan'
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Award size={13} />
+                  <span>2. Buku Tamu Pembinaan</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveGuestBook} className="space-y-3.5">
+                {/* Tanggal & Waktu */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      Tanggal Kunjungan <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={guestBookFormDate}
+                      onChange={(e) => setGuestBookFormDate(e.target.value)}
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      Waktu / Jam (WIB) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={guestBookFormTime}
+                      onChange={(e) => setGuestBookFormTime(e.target.value)}
+                      placeholder="09:30"
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Nama Lengkap & NIP */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className={guestBookFormCategory === 'pembinaan' ? 'sm:col-span-2' : 'sm:col-span-3'}>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      {guestBookFormCategory === 'pembinaan' ? 'Nama Pembina / Pengawas' : 'Nama Lengkap Tamu'} <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={guestBookFormName}
+                      onChange={(e) => setGuestBookFormName(formatProperWhileTyping(e.target.value))}
+                      onBlur={() => setGuestBookFormName(toProperCase(guestBookFormName))}
+                      placeholder={guestBookFormCategory === 'pembinaan' ? 'Contoh: Drs. H. Bambang Sutrisno, M.Pd' : 'Contoh: Drs. H. Ahmad Fauzi'}
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+
+                  {guestBookFormCategory === 'pembinaan' && (
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                        NIP / NUPTK
+                      </label>
+                      <input
+                        type="text"
+                        value={guestBookFormSupervisorNip}
+                        onChange={(e) => setGuestBookFormSupervisorNip(e.target.value)}
+                        placeholder="197508..."
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Jabatan & Asal Instansi */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      Jabatan / Profesi
+                    </label>
+                    <input
+                      type="text"
+                      value={guestBookFormPosition}
+                      onChange={(e) => setGuestBookFormPosition(formatProperWhileTyping(e.target.value))}
+                      onBlur={() => setGuestBookFormPosition(toProperCase(guestBookFormPosition))}
+                      placeholder={guestBookFormCategory === 'pembinaan' ? 'Pengawas Pembina' : 'Wali Murid / Mitra'}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      {guestBookFormCategory === 'pembinaan' ? 'Lembaga / Instansi Pembina' : 'Asal Instansi'} <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={guestBookFormInstitution}
+                      onChange={(e) => setGuestBookFormInstitution(toUpperCase(e.target.value))}
+                      onBlur={() => setGuestBookFormInstitution(toUpperCase(guestBookFormInstitution))}
+                      placeholder={guestBookFormCategory === 'pembinaan' ? 'Dinas Pendidikan Kab. Pasuruan' : 'Umum / Perusahaan'}
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none uppercase"
+                    />
+                  </div>
+                </div>
+
+                {/* No. HP / WhatsApp */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                    No. Handphone / WhatsApp
+                  </label>
+                  <input
+                    type="tel"
+                    value={guestBookFormPhone}
+                    onChange={(e) => setGuestBookFormPhone(e.target.value)}
+                    placeholder="Contoh: 081234567890"
+                    className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none font-mono"
+                  />
+                </div>
+
+                {/* KHUSUS BUKU PEMBINAAN */}
+                {guestBookFormCategory === 'pembinaan' ? (
+                  <div className="space-y-3 pt-1 border-t border-slate-100">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-amber-900 block mb-1">
+                        Aspek / Materi Pembinaan <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={guestBookFormCoachingSubject}
+                        onChange={(e) => setGuestBookFormCoachingSubject(toSentenceCase(e.target.value))}
+                        onBlur={() => setGuestBookFormCoachingSubject(toSentenceCase(guestBookFormCoachingSubject))}
+                        placeholder="Contoh: Supervisi Akademik & Perangkat Ajar Kurikulum Merdeka"
+                        required
+                        className="w-full bg-amber-50/50 border border-amber-300 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-700 block mb-1">
+                        Temuan &amp; Hasil Pemantauan Pembinaan
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={guestBookFormFindings}
+                        onChange={(e) => setGuestBookFormFindings(toSentenceCase(e.target.value))}
+                        onBlur={() => setGuestBookFormFindings(toSentenceCase(guestBookFormFindings))}
+                        placeholder="Catatan temuan di lapangan..."
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block mb-1">
+                        Saran &amp; Rekomendasi Tindak Lanjut
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={guestBookFormRecommendations}
+                        onChange={(e) => setGuestBookFormRecommendations(toSentenceCase(e.target.value))}
+                        onBlur={() => setGuestBookFormRecommendations(toSentenceCase(guestBookFormRecommendations))}
+                        placeholder="Arahan tindak lanjut untuk sekolah..."
+                        className="w-full bg-emerald-50/40 border border-emerald-300 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                          Status Tindak Lanjut
+                        </label>
+                        <select
+                          value={guestBookFormFollowUpStatus}
+                          onChange={(e) => setGuestBookFormFollowUpStatus(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none"
+                        >
+                          <option value="Belum">Belum Ditindaklanjuti</option>
+                          <option value="Proses">Dalam Proses</option>
+                          <option value="Selesai">Selesai Ditindaklanjuti</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                          Realisasi Tindak Lanjut
+                        </label>
+                        <input
+                          type="text"
+                          value={guestBookFormFollowUpNotes}
+                          onChange={(e) => setGuestBookFormFollowUpNotes(toSentenceCase(e.target.value))}
+                          onBlur={() => setGuestBookFormFollowUpNotes(toSentenceCase(guestBookFormFollowUpNotes))}
+                          placeholder="Catatan realisasi langkah..."
+                          className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* BUKU TAMU UMUM */
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      Keperluan Kunjungan <span className="text-rose-500">*</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={guestBookFormPurpose}
+                      onChange={(e) => setGuestBookFormPurpose(toSentenceCase(e.target.value))}
+                      onBlur={() => setGuestBookFormPurpose(toSentenceCase(guestBookFormPurpose))}
+                      placeholder="Tujuan kunjungan atau pihak yang ditemui..."
+                      required
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                {/* Catatan Tambahan */}
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                    Catatan Tambahan (Opsional)
+                  </label>
+                  <input
+                    type="text"
+                    value={guestBookFormNotes}
+                    onChange={(e) => setGuestBookFormNotes(toSentenceCase(e.target.value))}
+                    onBlur={() => setGuestBookFormNotes(toSentenceCase(guestBookFormNotes))}
+                    placeholder="Keterangan tambahan jika ada..."
+                    className="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                  />
+                </div>
+
+                {/* Tanda Tangan Digital */}
+                <div className="pt-1">
+                  <DigitalSignaturePad
+                    value={guestBookFormSignature}
+                    onChange={setGuestBookFormSignature}
+                    label={guestBookFormCategory === 'pembinaan' ? 'Tanda Tangan Digital Pembina / Pengawas' : 'Tanda Tangan Digital Tamu'}
+                    signerName={guestBookFormName.trim()}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsGuestBookModalOpen(false)}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                  >
+                    Batal
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSavingGuestBook}
+                    className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md cursor-pointer flex items-center gap-2"
+                  >
+                    {isSavingGuestBook ? (
+                      <>
+                        <div className="h-3 w-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <span>Simpan</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* PERSISTENT BOTTOM NAVIGATION BAR (Selaras di Semua Akun) */}
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-4 py-2 flex md:hidden justify-around items-center h-16">
@@ -3459,60 +6607,99 @@ export default function PrincipalPanel({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10"
+              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-5 shadow-2xl text-left flex flex-col gap-2 max-h-[85vh] overflow-y-auto pb-8"
             >
-              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Lainnya</span>
-                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Akses Tambahan Kepala Sekolah</h4>
+              {/* Android Top Drag Handle */}
+              <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0" />
+
+              {/* Minimal Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-600" />
+                  <h4 className="text-slate-900 font-bold text-sm tracking-tight">
+                    Menu Lainnya
+                  </h4>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowMoreMenu(false)}
-                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-xs cursor-pointer transition-colors"
                 >
-                  Tutup
+                  ✕
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+              {/* 3 Horizontal Columns Android App Drawer Grid */}
+              <div className="grid grid-cols-3 gap-y-4 gap-x-2 py-2">
+                {/* 1. Jadwal */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('jadwal');
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-md shadow-indigo-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🗓️
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Matriks Jadwal
+                  </span>
+                </button>
+
+                {/* 2. Jurnal */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('journals');
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeTab === 'journals'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">📚</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Jurnal KBM Guru</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pantau seluruh catatan KBM &amp; ketidakhadiran</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 shadow-md shadow-teal-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📚
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Jurnal KBM
+                  </span>
                 </button>
 
+                {/* 3. Rekap Presensi */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('attendance_recap');
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📅
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Presensi Siswa
+                  </span>
+                </button>
+
+                {/* 4. Keuangan */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('finance_monitoring');
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeTab === 'finance_monitoring'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">💰</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Monitoring Keuangan</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pantau SPP, Tabungan, &amp; buku kas bendahara</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-md shadow-blue-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    💰
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Keuangan
+                  </span>
                 </button>
 
+                {/* 5. Sarpras */}
                 <button
                   type="button"
                   onClick={() => {
@@ -3520,88 +6707,92 @@ export default function PrincipalPanel({
                     setShowMoreMenu(false);
                     fetchSarprasData();
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeTab === 'sarpras_monitoring'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">📦</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Monitoring Sarpras</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pengajuan belanja, stok barang &amp; peminjaman</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md shadow-amber-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📦
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Sarpras
+                  </span>
                 </button>
 
+                {/* 6. Identitas Sekolah */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('school_profile');
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeTab === 'school_profile'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">⚙️</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Identitas Sekolah</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Perbarui identitas kop surat &amp; nama lembaga</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-600 to-slate-800 shadow-md shadow-slate-600/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    ⚙️
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Identitas
+                  </span>
                 </button>
-              </div>
 
-              {/* Quick access to download Mobile Apps in the bottom sheet menu */}
-              <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                  📲 Unduh Aplikasi Mobile Resmi
-                </span>
-                <p className="text-[10px] text-slate-500 leading-normal">
-                  Gunakan aplikasi mobile resmi untuk kemudahan akses monitor seluruh kegiatan pengajaran &amp; pelaporan keuangan langsung lewat HP.
-                </p>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  <a
-                    href={schoolIdentity?.apkUrl || "#"}
-                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!schoolIdentity?.apkUrl) {
-                        e.preventDefault();
-                        alert("Link unduhan Android belum diatur oleh Administrator.");
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
-                      schoolIdentity?.apkUrl 
-                        ? "bg-emerald-50 hover:bg-emerald-105 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
-                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <Smartphone size={13} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
-                    <span className="text-[10px]">Android APK</span>
-                  </a>
+                {/* 7. Buku Tamu */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('buku_tamu');
+                    setShowMoreMenu(false);
+                    fetchGuestBooks();
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-md shadow-cyan-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📖
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Buku Tamu
+                  </span>
+                </button>
 
-                  <a
-                    href={schoolIdentity?.iosUrl || "#"}
-                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!schoolIdentity?.iosUrl) {
-                        e.preventDefault();
-                        alert("Link unduhan iOS belum diatur oleh Administrator.");
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
-                      schoolIdentity?.iosUrl 
-                        ? "bg-sky-50 hover:bg-sky-105 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
-                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <Apple size={13} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
-                    <span className="text-[10px]">iOS Apple</span>
-                  </a>
-                </div>
+                {/* 8. Unduh APK */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (schoolIdentity?.apkUrl) {
+                      window.open(schoolIdentity.apkUrl, "_blank");
+                    } else {
+                      alert("Link unduhan Android belum diatur oleh Administrator.");
+                    }
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Smartphone className="w-7 h-7 text-white stroke-[2.2]" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Unduh APK
+                  </span>
+                </button>
+
+                {/* 9. Unduh iOS */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (schoolIdentity?.iosUrl) {
+                      window.open(schoolIdentity.iosUrl, "_blank");
+                    } else {
+                      alert("Link unduhan iOS belum diatur oleh Administrator.");
+                    }
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-900 shadow-md shadow-slate-700/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Apple className="w-7 h-7 text-white stroke-[2.2]" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Aplikasi iOS
+                  </span>
+                </button>
               </div>
             </motion.div>
           </>

@@ -1,26 +1,69 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal } from './types';
-import StudentPanel from './components/StudentPanel';
-import AdminPanel from './components/AdminPanel';
-import HomeroomPanel from './components/HomeroomPanel';
-import SubjectTeacherPanel from './components/SubjectTeacherPanel';
-import TreasurerPanel from './components/TreasurerPanel';
-import PrincipalPanel from './components/PrincipalPanel';
-import WakaSarprasPanel from './components/WakaSarprasPanel';
-import CounselorPanel from './components/CounselorPanel';
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal, MiscBill, MerdekaAssessment, ClassSchedule } from './types';
 import Login from './components/Login';
+
+// Code-split heavy panels with React.lazy to drastically accelerate initial page load
+const StudentPanel = lazy(() => import('./components/StudentPanel'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
+const HomeroomPanel = lazy(() => import('./components/HomeroomPanel'));
+const SubjectTeacherPanel = lazy(() => import('./components/SubjectTeacherPanel'));
+const TreasurerPanel = lazy(() => import('./components/TreasurerPanel'));
+const PrincipalPanel = lazy(() => import('./components/PrincipalPanel'));
+const WakaSarprasPanel = lazy(() => import('./components/WakaSarprasPanel'));
+const CounselorPanel = lazy(() => import('./components/CounselorPanel'));
+const WakaKurikulumPanel = lazy(() => import('./components/WakaKurikulumPanel'));
+const SpmbLandingPage = lazy(() => import('./components/SpmbLandingPage'));
+const GuestBookPublicForm = lazy(() => import('./components/GuestBookPublicForm'));
+
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
-import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode } from 'lucide-react';
+import PWAInstallButton from './components/PWAInstallButton';
+import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar, BookOpen, ShieldAlert, Megaphone, Loader2 } from 'lucide-react';
+import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from './utils/notificationUtils';
+import AcademicYearDropdown from './components/AcademicYearDropdown';
+import {
+  getAcademicYearFromMiscBill,
+  getStudentClassForYear,
+  getAvailableAcademicYears,
+  isBillInAcademicYear,
+  isTransactionInAcademicYear,
+  getPeriodicHomerooms
+} from './utils/academicYearUtils';
+
+// Helper utility to make fetch requests that strictly bypass any browser, webview or device caching layers
+export async function fetchNoCache(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const urlString = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
+  
+  // Only apply query param cache bust to GET/HEAD requests
+  const method = init?.method || 'GET';
+  let finalUrl = urlString;
+  if (method === 'GET' || method === 'HEAD') {
+    const separator = urlString.includes('?') ? '&' : '?';
+    finalUrl = `${urlString}${separator}_t=${Date.now()}`;
+  }
+  
+  const finalInit: RequestInit = {
+    ...(init || {}),
+    headers: {
+      ...(init?.headers || {}),
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    },
+    cache: 'no-store',
+  };
+  
+  return fetch(finalUrl, finalInit);
+}
 
 export default function App() {
   // Authed state persistence
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem('smp_maarif_logged_in') === 'true';
   });
-  const [role, setRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk'>(() => {
+  const [role, setRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk' | 'waka_kurikulum'>(() => {
     return (localStorage.getItem('smp_maarif_role') as any) || 'student';
   });
   const [loggedStudentId, setLoggedStudentId] = useState<string | null>(() => {
@@ -47,14 +90,53 @@ export default function App() {
     }
   });
 
+  const [isSpmbView, setIsSpmbView] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const params = new URLSearchParams(window.location.search);
+    return path.startsWith('/spmb') || path === '/daftar' || hash.startsWith('#spmb') || params.get('page') === 'spmb';
+  });
+
+  const [isGuestBookView, setIsGuestBookView] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const params = new URLSearchParams(window.location.search);
+    return path.startsWith('/bukutamu') || path.startsWith('/buku-tamu') || path.startsWith('/tamu') || hash.startsWith('#bukutamu') || hash.startsWith('#buku-tamu') || params.get('page') === 'bukutamu' || params.get('page') === 'buku-tamu' || params.get('buku_tamu') === '1' || params.get('bukutamu') === 'true';
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      setIsSpmbView(path.startsWith('/spmb') || path === '/daftar' || hash.startsWith('#spmb') || params.get('page') === 'spmb');
+      setIsGuestBookView(path.startsWith('/bukutamu') || path.startsWith('/buku-tamu') || path.startsWith('/tamu') || hash.startsWith('#bukutamu') || hash.startsWith('#buku-tamu') || params.get('page') === 'bukutamu' || params.get('page') === 'buku-tamu' || params.get('buku_tamu') === '1' || params.get('bukutamu') === 'true');
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
+  }, []);
+
   // School data states
   const [studentsList, setStudentsList] = useState<Student[]>([]);
+  const [miscBillsList, setMiscBillsList] = useState<MiscBill[]>([]);
   const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
 
   const currentStudentRef = useRef<Student | null>(null);
   useEffect(() => {
     currentStudentRef.current = currentStudent;
   }, [currentStudent]);
+
+  const roleRef = useRef(role);
+  useEffect(() => {
+    roleRef.current = role;
+  }, [role]);
+
   const [studentBills, setStudentBills] = useState<SppBill[]>([]);
   const [studentTransactions, setStudentTransactions] = useState<SavingsTransaction[]>([]);
   const [globalNotifications, setGlobalNotifications] = useState<RealtimeNotification[]>([]);
@@ -80,9 +162,12 @@ export default function App() {
     }
   }, [isNotifHistoryOpen, globalNotifications]);
   const [notifSearchQuery, setNotifSearchQuery] = useState<string>('');
+  const [activeNotifCategory, setActiveNotifCategory] = useState<NotifTabCategory>('semua');
   const [attendanceList, setAttendanceList] = useState<AttendanceLog[]>([]);
   const [homeroomsList, setHomeroomsList] = useState<HomeroomTeacher[]>([]);
   const [subjectTeachersList, setSubjectTeachersList] = useState<SubjectTeacher[]>([]);
+  const [merdekaAssessmentsList, setMerdekaAssessmentsList] = useState<MerdekaAssessment[]>([]);
+  const [schedulesList, setSchedulesList] = useState<ClassSchedule[]>([]);
   
   // School Identity state
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentity>({
@@ -97,6 +182,98 @@ export default function App() {
     logo2: "",
     letterhead: ""
   });
+
+  // Academic Year State & Switcher
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(() => {
+    try {
+      return localStorage.getItem('smp_selected_academic_year') || '2026/2027';
+    } catch {
+      return '2026/2027';
+    }
+  });
+
+  const handleSelectAcademicYear = (year: string) => {
+    setSelectedAcademicYear(year);
+    try {
+      localStorage.setItem('smp_selected_academic_year', year);
+    } catch (e) {
+      console.error("Failed to save selected academic year to localStorage", e);
+    }
+  };
+
+  // Keep selected year synchronized if school identity has activeAcademicYear and no preference was saved yet
+  useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear && !localStorage.getItem('smp_selected_academic_year')) {
+      setSelectedAcademicYear(schoolIdentity.activeAcademicYear);
+    }
+  }, [schoolIdentity?.activeAcademicYear]);
+
+  const availableAcademicYears = useMemo(() => {
+    return getAvailableAcademicYears(
+      studentBills,
+      merdekaAssessmentsList,
+      schedulesList,
+      schoolIdentity.activeAcademicYear || '2026/2027'
+    );
+  }, [studentBills, merdekaAssessmentsList, schedulesList, schoolIdentity.activeAcademicYear]);
+
+  // Periodic Students (each student's displayed class matches their class in selectedAcademicYear)
+  const periodicStudentsList = useMemo(() => {
+    return studentsList.map(s => {
+      const historicalClass = getStudentClassForYear(s, selectedAcademicYear, schoolIdentity.activeAcademicYear || '2026/2027');
+      return {
+        ...s,
+        class: historicalClass || s.class
+      };
+    });
+  }, [studentsList, selectedAcademicYear, schoolIdentity.activeAcademicYear]);
+
+  // Periodic SPP Bills (filtered to selected academic year)
+  const periodicBills = useMemo(() => {
+    return studentBills.filter(b => isBillInAcademicYear(b, selectedAcademicYear));
+  }, [studentBills, selectedAcademicYear]);
+
+  // Periodic Misc Bills
+  const periodicMiscBills = useMemo(() => {
+    return miscBillsList.filter(m => {
+      const mAy = getAcademicYearFromMiscBill(m);
+      return mAy === selectedAcademicYear;
+    });
+  }, [miscBillsList, selectedAcademicYear]);
+
+  // Periodic Savings Transactions (filtered to selected academic year)
+  const periodicTransactions = useMemo(() => {
+    return studentTransactions.filter(t => isTransactionInAcademicYear(t, selectedAcademicYear));
+  }, [studentTransactions, selectedAcademicYear]);
+
+  // Periodic Assessments
+  const periodicAssessments = useMemo(() => {
+    return merdekaAssessmentsList.filter(a => a.academicYear === selectedAcademicYear);
+  }, [merdekaAssessmentsList, selectedAcademicYear]);
+
+  // Periodic Homerooms
+  const periodicHomerooms = useMemo(() => {
+    return getPeriodicHomerooms(
+      homeroomsList,
+      subjectTeachersList,
+      selectedAcademicYear,
+      schoolIdentity.activeAcademicYear || '2026/2027'
+    );
+  }, [homeroomsList, subjectTeachersList, selectedAcademicYear, schoolIdentity.activeAcademicYear]);
+
+  // Periodic Schedules
+  const periodicSchedules = useMemo(() => {
+    const activeAy = schoolIdentity.activeAcademicYear || '2026/2027';
+    const targetAy = selectedAcademicYear || activeAy;
+    const directMatches = schedulesList.filter(s => !s.academicYear || s.academicYear === targetAy);
+    if (directMatches.length > 0) {
+      return directMatches;
+    }
+    // Resilient fallback: if no explicit schedule tagged for targetAy, show base schedules so classes never see blank schedule
+    return schedulesList;
+  }, [schedulesList, selectedAcademicYear, schoolIdentity.activeAcademicYear]);
+
+  const isHistoricalView = selectedAcademicYear !== (schoolIdentity.activeAcademicYear || '2026/2027');
   
   // Midtrans Payment Handler states
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
@@ -105,6 +282,13 @@ export default function App() {
   const [payAmount, setPayAmount] = useState<number>(0);
   const [payItemName, setPayItemName] = useState<string>('');
   const [payIsSimulated, setPayIsSimulated] = useState<boolean>(true);
+
+  const isPayModalOpenRef = useRef(false);
+  useEffect(() => {
+    isPayModalOpenRef.current = isPayModalOpen;
+  }, [isPayModalOpen]);
+
+  const handlePaymentSuccessRef = useRef<() => void>(() => {});
   
   // States to persist student details on the successful transaction page
   const [payStudentName, setPayStudentName] = useState<string>('');
@@ -270,6 +454,17 @@ export default function App() {
       const newUrl = window.location.origin + (isRedirectPath ? '/pembayaran-sukses' : window.location.pathname);
       window.history.replaceState({}, document.title, newUrl);
 
+      // Khusus transaksi SPMB (Token & Daftar Ulang): arahkan langsung ke portal SPMB untuk verifikasi status riil
+      if (orderId.startsWith('SPMB-TOKEN-') || orderId.startsWith('SPMB-REREG-') || orderId.startsWith('SPMB-')) {
+        const tokens = orderId.split('-');
+        const candidateNisn = tokens.length >= 3 ? tokens[2] : '';
+        if (candidateNisn) {
+          localStorage.setItem('spmb_last_nisn', candidateNisn);
+        }
+        setIsSpmbView(true);
+        return;
+      }
+
       setIsLoading(true);
       fetch('/api/simulate-payment-success', {
         method: 'POST',
@@ -280,14 +475,16 @@ export default function App() {
       .then(data => {
         if (data.success) {
           let targetStudentId = '';
-          if (orderId.startsWith('SAV-')) {
+          if (data.student && data.student.id) {
+            targetStudentId = data.student.id;
+          } else if (data.bill && data.bill.studentId) {
+            targetStudentId = data.bill.studentId;
+          } else if (data.transaction && data.transaction.studentId) {
+            targetStudentId = data.transaction.studentId;
+          } else if (orderId.startsWith('SAV-')) {
             const middle = orderId.slice(4);
             const lastHyphenIndex = middle.lastIndexOf("-");
             targetStudentId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-          } else if (orderId.startsWith('SPP-')) {
-            if (data.bill && data.bill.studentId) {
-              targetStudentId = data.bill.studentId;
-            }
           }
 
           if (targetStudentId) {
@@ -412,114 +609,203 @@ export default function App() {
     }
   };
 
-  // 1. Initial Load of students and global system configurations
+  // 1. Optimized parallel load of essential data
   const initSystemData = async () => {
     try {
       setIsLoading(true);
-      
-      // Load Students
-      try {
-        const stdRes = await fetch('/api/students');
-        if (stdRes.ok) {
-          const stdData = await stdRes.json();
-          setStudentsList(stdData);
-          // Default select first student or the stored logged-in student ID
-          if (stdData.length > 0) {
-            const storedStudentId = localStorage.getItem('smp_maarif_student_id');
-            const targetId = storedStudentId || stdData[0].id;
-            fetchStudentFullData(targetId, role === 'admin' || role === 'homeroom');
-          }
-        }
-      } catch (e) {
-        console.error("Gagal memuat data siswa", e);
-      }
+      const isUserLoggedIn = localStorage.getItem('smp_maarif_logged_in') === 'true';
+      const userRole = (localStorage.getItem('smp_maarif_role') as any) || 'student';
+      const storedStudentId = localStorage.getItem('smp_maarif_student_id');
 
-      // Load Recent notifications history
-      try {
-        const notifRes = await fetch('/api/notifications');
-        if (notifRes.ok) {
-          const notifData = await notifRes.json();
-          setGlobalNotifications(notifData);
-        }
-      } catch (e) {
-        console.error("Gagal memuat notifikasi", e);
-      }
-
-      // Load School Identity configuration
-      try {
-        const schoolRes = await fetch('/api/school-identity');
-        if (schoolRes.ok) {
-          const sData = await schoolRes.json();
+      // 1. School Identity is the only critical asset needed for initial screen render
+      const identityPromise = fetchNoCache('/api/school-identity').then(async (res) => {
+        if (res.ok) {
+          const sData = await res.json();
           if (sData.success && sData.schoolIdentity) {
             setSchoolIdentity(sData.schoolIdentity);
+            if (sData.schoolIdentity.loadingLogo) {
+              try {
+                localStorage.setItem('app_custom_loading_logo', sData.schoolIdentity.loadingLogo);
+              } catch (_) {}
+            }
           }
         }
-      } catch (e) {
-        console.error("Gagal memuat identitas sekolah", e);
+      }).catch(e => console.error("Gagal memuat identitas sekolah", e));
+
+      if (!isUserLoggedIn) {
+        // Fast path for login / SPMB visitors: render UI immediately once identity is ready!
+        await identityPromise;
+        setIsLoading(false);
+
+        // Fetch students & supporting data asynchronously in background
+        Promise.allSettled([
+          fetchNoCache('/api/students').then(async (res) => {
+            if (res.ok) {
+              const stdData = await res.json();
+              setStudentsList(stdData);
+            }
+          }).catch(() => {}),
+          fetchNoCache('/api/midtrans-config').then(async (res) => {
+            if (res.ok) {
+              const keysData = await res.json();
+              setSysStatus(keysData);
+            }
+          }).catch(() => {}),
+          fetchNoCache('/api/notifications').then(async (res) => {
+            if (res.ok) {
+              const notifData = await res.json();
+              setGlobalNotifications(notifData);
+            }
+          }).catch(() => {})
+        ]);
+        return;
       }
 
-      // Load Midtrans integration keys metadata
-      try {
-        const keysRes = await fetch('/api/midtrans-config');
-        if (keysRes.ok) {
-          const keysData = await keysRes.json();
+      // 2. For authenticated users: fetch students and essential status
+      const studentPromise = fetchNoCache('/api/students').then(async (res) => {
+        if (res.ok) {
+          const stdData = await res.json();
+          setStudentsList(stdData);
+          const targetId = storedStudentId || (stdData.length > 0 ? stdData[0].id : '');
+          if (targetId) {
+            fetchStudentFullData(targetId, userRole === 'admin' || userRole === 'homeroom', false);
+          }
+        }
+      }).catch(e => console.error("Gagal memuat data siswa", e));
+
+      const midtransPromise = fetchNoCache('/api/midtrans-config').then(async (res) => {
+        if (res.ok) {
+          const keysData = await res.json();
           setSysStatus(keysData);
         }
-      } catch (e) {
-        console.error("Gagal memuat konfigurasi midtrans", e);
-      }
+      }).catch(() => {});
 
-      // Load Attendance Logs
-      try {
-        const attRes = await fetch('/api/attendance');
-        if (attRes.ok) {
-          const attData = await attRes.json();
-          setAttendanceList(attData);
+      const notifPromise = fetchNoCache('/api/notifications').then(async (res) => {
+        if (res.ok) {
+          const notifData = await res.json();
+          setGlobalNotifications(notifData);
         }
-      } catch (e) {
-        console.error("Gagal memuat absensi", e);
-      }
+      }).catch(() => {});
 
-      // Load Homerooms
-      try {
-        const hrRes = await fetch('/api/homerooms');
-        if (hrRes.ok) {
-          const hrData = await hrRes.json();
-          setHomeroomsList(hrData);
-        }
-      } catch (e) {
-        console.error("Gagal memuat wali kelas", e);
-      }
-
-      // Load Subject Teachers
-      try {
-        const stRes = await fetch('/api/subject-teachers');
-        if (stRes.ok) {
-          const stData = await stRes.json();
-          setSubjectTeachersList(stData);
-        }
-      } catch (e) {
-        console.error("Gagal memuat guru mapel", e);
-      }
-
+      await Promise.allSettled([identityPromise, studentPromise, midtransPromise, notifPromise]);
       setIsLoading(false);
+
+      // Operational secondary data can hydrate smoothly in background without blocking
+      setTimeout(() => {
+        Promise.allSettled([
+          fetchAttendance(),
+          fetchHomerooms(),
+          fetchSubjectTeachers(),
+          fetchMerdekaAssessments(),
+          fetchSchedules(),
+          fetchMiscBills()
+        ]);
+      }, 100);
+
     } catch (err) {
       console.error('Failed to boot initial data', err);
+    } finally {
       setIsLoading(false);
     }
   };
 
-  // Auxiliary loader to fetch a specific student profile's bills and history
-  const fetchStudentFullData = async (studentId: string, isAdminOverride?: boolean) => {
+  const fetchAttendance = async () => {
     try {
-      setIsLoading(true);
+      const attRes = await fetchNoCache('/api/attendance');
+      if (attRes.ok) {
+        const attData = await attRes.json();
+        setAttendanceList(attData);
+      }
+    } catch (e) {
+      console.error("Gagal memuat absensi", e);
+    }
+  };
+
+  const fetchHomerooms = async () => {
+    try {
+      const hrRes = await fetchNoCache('/api/homerooms?fresh=true');
+      if (hrRes.ok) {
+        const hrData = await hrRes.json();
+        setHomeroomsList(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(hrData)) return prev;
+          return hrData;
+        });
+      }
+    } catch (e) {
+      console.error("Gagal memuat wali kelas", e);
+    }
+  };
+
+  const fetchSubjectTeachers = async () => {
+    try {
+      const stRes = await fetchNoCache('/api/subject-teachers?fresh=true');
+      if (stRes.ok) {
+        const stData = await stRes.json();
+        setSubjectTeachersList(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(stData)) return prev;
+          return stData;
+        });
+      }
+    } catch (e) {
+      console.error("Gagal memuat guru mapel", e);
+    }
+  };
+
+  const fetchMerdekaAssessments = async () => {
+    try {
+      const maRes = await fetchNoCache('/api/merdeka-assessments');
+      if (maRes.ok) {
+        const maData = await maRes.json();
+        setMerdekaAssessmentsList(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(maData)) return prev;
+          return maData;
+        });
+      }
+    } catch (e) {
+      console.error("Gagal memuat penilaian merdeka", e);
+    }
+  };
+
+  const fetchSchedules = async () => {
+    try {
+      const res = await fetchNoCache('/api/curriculum/schedules');
+      if (res.ok) {
+        const data = await res.json();
+        setSchedulesList(data);
+      }
+    } catch (err) {
+      console.error("Gagal memuat jadwal pelajaran:", err);
+    }
+  };
+
+  const fetchMiscBills = async () => {
+    try {
+      const res = await fetchNoCache('/api/misc-bills');
+      if (res.ok) {
+        const data = await res.json();
+        setMiscBillsList(data);
+      }
+    } catch (err) {
+      console.error("Gagal memuat tagihan lain-lain:", err);
+    }
+  };
+
+  // Auxiliary loader to fetch a specific student profile's bills and history
+  const fetchStudentFullData = async (studentId: string, isAdminOverride?: boolean, showFullLoader: boolean = false) => {
+    try {
+      if (showFullLoader) {
+        setIsLoading(true);
+      }
       const checkIsAdmin = isAdminOverride !== undefined ? isAdminOverride : (role === 'admin' || role === 'homeroom');
 
       if (checkIsAdmin) {
-        // Fetch all student bills and total transactions for admin bookkeeping roster
-        const bRes = await fetch('/api/admin/all-bills');
-        const tRes = await fetch('/api/admin/all-transactions');
-        if (bRes.ok && tRes.ok) {
+        // Fetch all student bills and total transactions for admin bookkeeping roster in parallel
+        const [bRes, tRes] = await Promise.all([
+          fetchNoCache('/api/admin/all-bills'),
+          fetchNoCache('/api/admin/all-transactions'),
+          fetchMiscBills()
+        ]);
+        if (bRes && bRes.ok && tRes && tRes.ok) {
           const bData = await bRes.json();
           const tData = await tRes.json();
           setStudentBills(bData);
@@ -528,14 +814,17 @@ export default function App() {
 
         // Also fetch profile of active student selector if they exist
         if (studentId) {
-          const sRes = await fetch(`/api/students/${studentId}`);
+          const sRes = await fetchNoCache(`/api/students/${studentId}`);
           if (sRes.ok) {
             const sData = await sRes.json();
             setCurrentStudent(sData.student);
           }
         }
       } else {
-        const res = await fetch(`/api/students/${studentId}`);
+        const [res] = await Promise.all([
+          fetchNoCache(`/api/students/${studentId}`),
+          fetchMiscBills()
+        ]);
         if (res.ok) {
           const data = await res.json();
           setCurrentStudent(data.student);
@@ -544,23 +833,28 @@ export default function App() {
           setStudentTransactions(data.transactions.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
         }
       }
-      setIsLoading(false);
+      if (showFullLoader) {
+        setIsLoading(false);
+      }
     } catch (err) {
       console.error('Failed to load student details', err);
-      setIsLoading(false);
+      if (showFullLoader) {
+        setIsLoading(false);
+      }
     }
   };
 
   // Reload current views
   const handleReload = () => {
     initSystemData();
-    if (currentStudent) {
-      fetchStudentFullData(currentStudent.id, role === 'admin');
+    const targetId = currentStudent?.id || loggedStudentId || (studentsList.length > 0 ? studentsList[0].id : '');
+    if (targetId) {
+      fetchStudentFullData(targetId, role === 'admin' || role === 'homeroom');
     }
   };
 
   const handleLoginSuccess = (
-    userRole: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk', 
+    userRole: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk' | 'waka_kurikulum', 
     student: Student | null, 
     homeroom: HomeroomTeacher | null,
     subjectTeacher?: SubjectTeacher | null
@@ -573,6 +867,7 @@ export default function App() {
     if (userRole === 'student' && student) {
       setLoggedStudentId(student.id);
       localStorage.setItem('smp_maarif_student_id', student.id);
+      setCurrentStudent(student);
       fetchStudentFullData(student.id, false);
       setLoggedHomeroom(null);
       localStorage.removeItem('smp_maarif_logged_homeroom');
@@ -584,16 +879,43 @@ export default function App() {
       setLoggedStudentId(null);
       localStorage.removeItem('smp_maarif_student_id');
       fetchStudentFullData('', true);
-      setLoggedSubjectTeacher(null);
-      localStorage.removeItem('smp_maarif_logged_subject_teacher');
+
+      // Link assigned subject profile if available
+      let targetSt = subjectTeacher;
+      if (!targetSt && homeroom.subject) {
+        targetSt = subjectTeachersList.find(st => st.username.toLowerCase() === homeroom.username.toLowerCase()) || {
+          id: `st-sync-${homeroom.id}`,
+          username: homeroom.username,
+          name: homeroom.name,
+          subject: homeroom.subject,
+          subjectId: homeroom.subjectId,
+          className: homeroom.className,
+          password: homeroom.password
+        };
+      }
+      if (targetSt) {
+        setLoggedSubjectTeacher(targetSt);
+        localStorage.setItem('smp_maarif_logged_subject_teacher', JSON.stringify(targetSt));
+      } else {
+        setLoggedSubjectTeacher(null);
+        localStorage.removeItem('smp_maarif_logged_subject_teacher');
+      }
     } else if (userRole === 'subject_teacher' && subjectTeacher) {
       setLoggedSubjectTeacher(subjectTeacher);
       localStorage.setItem('smp_maarif_logged_subject_teacher', JSON.stringify(subjectTeacher));
       setLoggedStudentId(null);
       localStorage.removeItem('smp_maarif_student_id');
       fetchStudentFullData('', true);
-      setLoggedHomeroom(null);
-      localStorage.removeItem('smp_maarif_logged_homeroom');
+
+      // Check if this subject teacher is also a homeroom teacher
+      const matchedHr = homeroomsList.find(h => h.username.toLowerCase() === subjectTeacher.username.toLowerCase()) || null;
+      if (matchedHr) {
+        setLoggedHomeroom(matchedHr);
+        localStorage.setItem('smp_maarif_logged_homeroom', JSON.stringify(matchedHr));
+      } else {
+        setLoggedHomeroom(null);
+        localStorage.removeItem('smp_maarif_logged_homeroom');
+      }
     } else {
       setLoggedStudentId(null);
       localStorage.removeItem('smp_maarif_student_id');
@@ -601,6 +923,9 @@ export default function App() {
       localStorage.removeItem('smp_maarif_logged_homeroom');
       setLoggedSubjectTeacher(null);
       localStorage.removeItem('smp_maarif_logged_subject_teacher');
+      if (userRole === 'waka_kurikulum' || userRole === 'admin' || userRole === 'principal') {
+        fetchMerdekaAssessments();
+      }
       if (studentsList.length > 0) {
         fetchStudentFullData(studentsList[0].id, true);
       } else {
@@ -641,6 +966,24 @@ export default function App() {
         // Parse notification
         const rawNotification: RealtimeNotification = data;
         
+        const currentRole = roleRef.current;
+        const activeStud = currentStudentRef.current;
+
+        const isBKNotif = rawNotification.id.includes('-scl-') || rawNotification.id.includes('-bk-') || rawNotification.id.includes('-sil-') || rawNotification.id.includes('-sdl-') ||
+                          rawNotification.title.toLowerCase().includes('bimbingan') || rawNotification.title.toLowerCase().includes('konseling') ||
+                          (rawNotification.message || '').toLowerCase().includes('bimbingan') || (rawNotification.message || '').toLowerCase().includes('konseling');
+
+        // Target audience check for student role
+        if (currentRole === 'student') {
+          if (isBKNotif && (!activeStud || rawNotification.studentId !== activeStud.id)) {
+            // Do NOT notify or pop up toast to a student who is NOT the target of this BK counseling session
+            return;
+          }
+          if (rawNotification.studentId && activeStud && rawNotification.studentId !== activeStud.id) {
+            return;
+          }
+        }
+
         // Push to top of notifications array
         setGlobalNotifications(prev => [rawNotification, ...prev]);
         
@@ -655,16 +998,30 @@ export default function App() {
         // Play notification ding chime!
         triggerBeep();
 
+        // If Midtrans payment modal is open and we receive a success notification, auto-close it after a short delay
+        if (isPayModalOpenRef.current && rawNotification.type === 'payment') {
+          if (!activeStud || rawNotification.studentId === activeStud.id) {
+            console.log('Detected real-time payment success notification via SSE! Auto-closing Midtrans modal...');
+            setTimeout(() => {
+              if (handlePaymentSuccessRef.current) {
+                handlePaymentSuccessRef.current();
+              }
+            }, 1500);
+          }
+        }
+
         // Bidirectional reactive sync: If the transaction belongs to our currently selected student profile,
         // we automatically trigger an API query to sync the screen with the new funds or paid bills!
-        const activeStud = currentStudentRef.current;
         const relatedToActiveStud = activeStud && (rawNotification.studentId === undefined || rawNotification.studentId === activeStud.id);
         
         // Update general catalog (student balances/bills might have shifted)
         fetch('/api/students')
           .then(res => res.json())
           .then(dataList => {
-            setStudentsList(dataList);
+            setStudentsList(prev => {
+              if (JSON.stringify(prev) === JSON.stringify(dataList)) return prev;
+              return dataList;
+            });
             // Also sync active student's specific sub-cards
             const freshActiveStud = currentStudentRef.current;
             if (freshActiveStud) {
@@ -675,6 +1032,14 @@ export default function App() {
               }
             }
           });
+
+        // Always keep curriculum schedules, assessments, homerooms, and bills synchronized in real-time across all devices/views
+        fetchSchedules();
+        fetchMerdekaAssessments();
+        fetchMiscBills();
+        fetchAttendance();
+        fetchHomerooms();
+        fetchSubjectTeachers();
 
       } catch (err) {
         console.error('Error handling push SSE message', err);
@@ -691,9 +1056,25 @@ export default function App() {
       setTimeStr(now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB');
     }, 1000);
 
+    // Window focus re-synchronization: When returning from public web or another tab, automatically refresh state
+    const onWindowFocus = () => {
+      fetchHomerooms();
+      fetchSubjectTeachers();
+      fetchAttendance();
+    };
+    window.addEventListener('focus', onWindowFocus);
+
+    // Continuous background client poll (every 30s) to keep dev and public perfectly synchronized
+    const liveClientSyncInterval = setInterval(() => {
+      fetchHomerooms();
+      fetchSubjectTeachers();
+    }, 30000);
+
     return () => {
       sse.close();
       clearInterval(clockInterval);
+      window.removeEventListener('focus', onWindowFocus);
+      clearInterval(liveClientSyncInterval);
     };
   }, []);
 
@@ -774,6 +1155,76 @@ export default function App() {
       if (role === 'admin') {
         setAdminSppBillToPrintCandidate(bill.id);
       }
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Maaf, sistem tidak bisa menyiapkan invoice Midtrans saat ini. Coba lagi.');
+      setIsLoading(false);
+    }
+  };
+
+  const handlePayMiscSnap = async (bill: MiscBill) => {
+    try {
+      setIsLoading(true);
+      const res = await fetch('/api/pay-misc-snap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billId: bill.id, origin: window.location.origin })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Gagal memanggil API Pembayaran Lain-lain.');
+      }
+
+      const payData = await res.json();
+      setPayToken(payData.token);
+      setPayOrderId(payData.orderId);
+      setPayAmount(payData.totalAmount || bill.amount);
+      setPayItemName(bill.title);
+      setPayIsSimulated(payData.isSimulated);
+
+      const targetStudent = studentsList.find(s => s.id === bill.studentId) || currentStudent;
+      setPayStudentName(targetStudent?.name || "Siswa");
+      setPayStudentNis(targetStudent?.nis || "-");
+      setPayStudentClass(targetStudent?.class || "-");
+      
+      setIsLoading(false);
+      setIsPayModalOpen(true);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Maaf, sistem tidak bisa menyiapkan invoice Midtrans saat ini. Coba lagi.');
+      setIsLoading(false);
+    }
+  };
+
+  const handlePayCartSnap = async (billIds: string[]) => {
+    try {
+      setIsLoading(true);
+      const res = await fetch('/api/pay-cart-snap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billIds, studentId: currentStudent?.id, origin: window.location.origin })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Gagal memanggil API Pembayaran Keranjang.');
+      }
+
+      const payData = await res.json();
+      setPayToken(payData.token);
+      setPayOrderId(payData.orderId);
+      setPayAmount(Number(payData.totalAmount) || 0);
+      setPayItemName(payData.itemCount ? `Pembayaran Keranjang (${payData.itemCount} Item)` : 'Pembayaran Keranjang');
+      setPayIsSimulated(payData.isSimulated || false);
+
+      const targetStudent = currentStudent;
+      setPayStudentName(targetStudent?.name || "Siswa");
+      setPayStudentNis(targetStudent?.nis || "-");
+      setPayStudentClass(targetStudent?.class || "-");
+      
+      setIsLoading(false);
+      setIsPayModalOpen(true);
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'Maaf, sistem tidak bisa menyiapkan invoice Midtrans saat ini. Coba lagi.');
@@ -883,12 +1334,29 @@ export default function App() {
   };
 
   // Administrative Bulk Savings Withdrawal
-  const handleBulkWithdrawSavings = async (grade: string, amount: number, notes: string, allowDebt: boolean): Promise<any> => {
+  const handleBulkWithdrawSavings = async (
+    targetOrGrade: any,
+    amountParam?: number,
+    notesParam?: string,
+    allowDebtParam?: boolean
+  ): Promise<any> => {
     try {
+      let body: any = {};
+      if (typeof targetOrGrade === 'object' && targetOrGrade !== null) {
+        body = targetOrGrade;
+      } else {
+        body = {
+          grade: targetOrGrade,
+          amount: amountParam,
+          notes: notesParam,
+          allowDebt: allowDebtParam ?? true
+        };
+      }
+
       const res = await fetch('/api/admin/savings-bulk-withdraw', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ grade, amount, notes, allowDebt })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
       if (res.ok) {
@@ -995,7 +1463,7 @@ export default function App() {
   };
 
   // Admin broadcast trigger
-  const handleBroadcastNotification = async (title: string, message: string, type: 'info' | 'success' | 'warning' | 'payment'): Promise<boolean> => {
+  const handleBroadcastNotification = async (title: string, message: string, type: 'info' | 'success' | 'warning' | 'payment', category?: string): Promise<boolean> => {
     try {
       const res = await fetch('/api/notifications/broadcast', {
         method: 'POST',
@@ -1003,7 +1471,8 @@ export default function App() {
         body: JSON.stringify({
           title,
           message,
-          type
+          type,
+          category
         })
       });
       return res.ok;
@@ -1014,7 +1483,7 @@ export default function App() {
   };
 
   // Create Student
-  const handleCreateStudent = async (studentData: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }): Promise<boolean> => {
+  const handleCreateStudent = async (studentData: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string; customSppRate?: number }): Promise<boolean> => {
     try {
       const res = await fetch('/api/admin/students', {
         method: 'POST',
@@ -1046,6 +1515,7 @@ export default function App() {
       mutationDate?: string;
       mutationReason?: string;
       mutationDestination?: string;
+      customSppRate?: number | null;
     }
   ): Promise<boolean> => {
     try {
@@ -1097,7 +1567,7 @@ export default function App() {
       class: string;
       email: string;
       phone: string;
-      initialSavings: number;
+      initialSavings?: number;
       gender?: string;
       password?: string;
     }>,
@@ -1117,6 +1587,25 @@ export default function App() {
     } catch (err) {
       console.error(err);
       return { success: false, addedCount: 0, updatedCount: 0 };
+    }
+  };
+
+  // Batalkan Import Kolektif Siswa Terakhir
+  const handleUndoLastImport = async (): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await fetch('/api/admin/students/undo-last-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        initSystemData();
+        return { success: true, message: data.message || 'Import kolektif berhasil dibatalkan.' };
+      }
+      return { success: false, message: data.error || 'Gagal membatalkan import data.' };
+    } catch (err: any) {
+      console.error(err);
+      return { success: false, message: err?.message || 'Terjadi kesalahan koneksi saat membatalkan import.' };
     }
   };
 
@@ -1152,7 +1641,16 @@ export default function App() {
   };
 
   // Create Homeroom Teacher CRUD
-  const handleCreateHomeroom = async (homeroomData: { username: string; name: string; className: string; password?: string }): Promise<boolean> => {
+  const handleCreateHomeroom = async (homeroomData: {
+    username: string;
+    name: string;
+    className: string;
+    password?: string;
+    skUrl?: string;
+    subject?: string;
+    subjectId?: string;
+    subjects?: string[];
+  }): Promise<boolean> => {
     try {
       const res = await fetch('/api/admin/homerooms', {
         method: 'POST',
@@ -1174,7 +1672,19 @@ export default function App() {
   };
 
   // Update Homeroom Teacher CRUD
-  const handleUpdateHomeroom = async (id: string, homeroomData: { username?: string; name?: string; className?: string; password?: string }): Promise<boolean> => {
+  const handleUpdateHomeroom = async (
+    id: string,
+    homeroomData: {
+      username?: string;
+      name?: string;
+      className?: string;
+      password?: string;
+      skUrl?: string;
+      subject?: string;
+      subjectId?: string;
+      subjects?: string[];
+    }
+  ): Promise<boolean> => {
     try {
       const res = await fetch(`/api/admin/homerooms/${id}`, {
         method: 'PUT',
@@ -1341,8 +1851,14 @@ export default function App() {
     // Trigger success checklist screen & countdown
     setShowPaymentSuccessScreen(true);
 
-    // Refresh student records
+    // Refresh student records & trigger auto-reconciliation retry in background
     if (currentStudent) {
+      const targetOrderId = payOrderId;
+      fetch('/api/student/auto-reconcile-retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId: currentStudent.id, orderId: targetOrderId || undefined })
+      }).catch(console.error);
       fetchStudentFullData(currentStudent.id);
     }
     initSystemData();
@@ -1358,6 +1874,10 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    handlePaymentSuccessRef.current = handlePaymentSuccess;
+  }, [handlePaymentSuccess]);
+
   const handleUpdateSchoolIdentity = async (updatedData: Partial<SchoolIdentity>): Promise<boolean> => {
     try {
       const res = await fetch('/api/admin/set-school-identity', {
@@ -1369,15 +1889,73 @@ export default function App() {
         const data = await res.json();
         if (data.success && data.schoolIdentity) {
           setSchoolIdentity(data.schoolIdentity);
+          if (data.schoolIdentity.loadingLogo) {
+            try {
+              localStorage.setItem('app_custom_loading_logo', data.schoolIdentity.loadingLogo);
+            } catch (_) {}
+          } else {
+            try {
+              localStorage.removeItem('app_custom_loading_logo');
+            } catch (_) {}
+          }
           return true;
         }
+      } else {
+        const errorText = await res.text().catch(() => '');
+        console.error('Server error update school identity:', res.status, errorText);
       }
       return false;
     } catch (err) {
-      console.error(err);
+      console.error('Network error update school identity:', err);
       return false;
     }
   };
+
+  const activeLoadingLogo = schoolIdentity?.loadingLogo || (typeof window !== 'undefined' ? localStorage.getItem('app_custom_loading_logo') : null) || schoolIdentity?.logo || '/pwa-192x192.png';
+
+  if (isSpmbView) {
+    return (
+      <Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-16 h-16 rounded-2xl bg-white p-2 shadow-md border border-slate-200 flex items-center justify-center overflow-hidden animate-pulse">
+              <img src={activeLoadingLogo} alt="Logo" className="w-full h-full object-contain" />
+            </div>
+            <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" />
+            <p className="text-xs font-bold text-slate-600">Memuat Portal SPMB...</p>
+          </div>
+        </div>
+      }>
+        <SpmbLandingPage
+          schoolIdentity={schoolIdentity}
+          isProduction={sysStatus?.isProduction || false}
+          midtransClientKey={sysStatus?.clientKey || ""}
+          onBackToLogin={() => {
+            setIsSpmbView(false);
+            const cleanUrl = window.location.origin + '/';
+            window.history.pushState({}, document.title, cleanUrl);
+          }}
+        />
+      </Suspense>
+    );
+  }
+
+  if (isGuestBookView) {
+    return (
+      <Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+            <p className="text-xs font-bold text-slate-300">Membuka Formulir Buku Tamu Digital...</p>
+          </div>
+        </div>
+      }>
+        <GuestBookPublicForm
+          schoolIdentity={schoolIdentity}
+        />
+      </Suspense>
+    );
+  }
 
   return (
     <div id="application-container" className="min-h-screen flex flex-col bg-slate-50 antialiased font-sans">
@@ -1429,14 +2007,14 @@ export default function App() {
               </div>
 
               {/* Toolbar & Filter */}
-              <div className="p-4 border-b border-slate-100 flex flex-col gap-2 bg-white">
+              <div className="p-4 border-b border-slate-100 flex flex-col gap-2.5 bg-white">
                 <div className="relative">
                   <input
                     type="text"
                     placeholder="Cari notifikasi..."
                     value={notifSearchQuery}
                     onChange={(e) => setNotifSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-505"
+                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-505 font-medium"
                   />
                   <div className="absolute left-2.5 top-2.5 text-slate-400">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1445,12 +2023,71 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Category Filter Tabs */}
+                {(() => {
+                  const roleFilteredNotifs = globalNotifications.filter(n => {
+                    if (role === 'student') {
+                      const isBKNotif = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
+                                        n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
+                                        (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
+                      if (isBKNotif) {
+                        return Boolean(currentStudent && n.studentId === currentStudent.id);
+                      }
+                      return !n.studentId || (currentStudent && n.studentId === currentStudent.id);
+                    }
+                    return true;
+                  });
+
+                  const counts = getCategoryCounts(roleFilteredNotifs, notifSearchQuery);
+
+                  return (
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none select-none">
+                      {CATEGORY_TABS.map((tab) => {
+                        const count = counts[tab.id] || 0;
+                        const isActive = activeNotifCategory === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setActiveNotifCategory(tab.id)}
+                            className={`px-2.5 py-1 rounded-xl border text-[10.5px] font-extrabold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                              isActive ? tab.activeClass : tab.inactiveClass
+                            }`}
+                          >
+                            <span>{tab.shortLabel}</span>
+                            <span
+                              className={`px-1.5 py-0.2 text-[9px] rounded-full font-black ${
+                                isActive ? 'bg-white/20 text-white' : tab.badgeBg
+                              }`}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
                 {globalNotifications.length > 0 && (
-                  <div className="flex items-center justify-between text-[11px] pt-1.5">
-                    <span className="text-slate-500 font-semibold">Total: {globalNotifications.filter(n => {
-                      const q = notifSearchQuery.toLowerCase();
-                      return n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q);
-                    }).length} pesan</span>
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-50">
+                    <span className="text-slate-500 font-semibold">Total: {
+                      (() => {
+                        const roleFilteredNotifs = globalNotifications.filter(n => {
+                          if (role === 'student') {
+                            const isBKNotif = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
+                                              n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
+                                              (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
+                            if (isBKNotif) {
+                              return Boolean(currentStudent && n.studentId === currentStudent.id);
+                            }
+                            return !n.studentId || (currentStudent && n.studentId === currentStudent.id);
+                          }
+                          return true;
+                        });
+                        return filterNotificationsByCategory(roleFilteredNotifs, activeNotifCategory, notifSearchQuery).length;
+                      })()
+                    } pesan</span>
                     <button
                       onClick={handleClearAllHistory}
                       className="inline-flex items-center gap-1 text-rose-600 hover:text-rose-800 font-bold transition-colors cursor-pointer uppercase tracking-wider text-[9px]"
@@ -1463,38 +2100,69 @@ export default function App() {
 
               {/* Message Feed */}
               <div className="flex-grow overflow-y-auto p-4 flex flex-col gap-3 min-h-0">
-                {globalNotifications.filter(n => {
-                  const q = notifSearchQuery.toLowerCase();
-                  return n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q);
-                }).length === 0 ? (
-                  <div className="flex flex-col items-center justify-center text-center py-20 px-6 gap-3">
-                    <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 text-slate-350">
-                      <Bell size={20} className="text-slate-400" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-700 text-xs">Belum Ada Notifikasi</h4>
-                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-[240px] mx-auto">
-                        {notifSearchQuery ? 'Tidak menemukan notifikasi dengan kata kunci tersebut.' : 'Semua kuitansi pelunasan, mutasi pinjaman/tabungan, dan siaran pengumuman akan tercatat di sini.'}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  globalNotifications.filter(n => {
-                    const q = notifSearchQuery.toLowerCase();
-                    return n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q);
-                  }).map((notif) => {
+                {(() => {
+                  const roleFilteredNotifs = globalNotifications.filter(n => {
+                    if (role === 'student') {
+                      const isBKNotif = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
+                                        n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
+                                        (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
+                      if (isBKNotif) {
+                        return Boolean(currentStudent && n.studentId === currentStudent.id);
+                      }
+                      return !n.studentId || (currentStudent && n.studentId === currentStudent.id);
+                    }
+                    return true;
+                  });
+
+                  const filtered = filterNotificationsByCategory(roleFilteredNotifs, activeNotifCategory, notifSearchQuery);
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center text-center py-20 px-6 gap-3">
+                        <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 text-slate-350">
+                          <Bell size={20} className="text-slate-400" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-slate-700 text-xs">Belum Ada Notifikasi Pada Kategori Ini</h4>
+                          <p className="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-[240px] mx-auto">
+                            {notifSearchQuery ? 'Tidak menemukan notifikasi dengan kata kunci tersebut.' : 'Semua kuitansi pelunasan, mutasi pinjaman/tabungan, KBM, BK, dan siaran pengumuman akan tercatat di sini.'}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return filtered.map((notif) => {
+                    const category = getNotificationCategory(notif);
+                    let badgePillClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                    let categoryLabel = 'Admin / Lainnya';
+
+                    if (category === 'kbm') {
+                      badgePillClass = 'bg-sky-100 text-sky-800 border-sky-200';
+                      categoryLabel = 'KBM & Akademik';
+                    } else if (category === 'pembayaran') {
+                      badgePillClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                      categoryLabel = 'Pembayaran & Keuangan';
+                    } else if (category === 'bk') {
+                      badgePillClass = 'bg-purple-100 text-purple-800 border-purple-200';
+                      categoryLabel = 'BK & Konseling';
+                    } else {
+                      badgePillClass = 'bg-indigo-100 text-indigo-800 border-indigo-200';
+                      categoryLabel = 'Admin & Pengumuman';
+                    }
+
                     let IconComp = Info;
-                    let badgeColor = 'bg-blue-50 text-blue-700 border-blue-100';
+                    let iconColor = 'bg-blue-50 text-blue-700 border-blue-100';
                     
                     if (notif.type === 'success') {
                       IconComp = CheckCircle2;
-                      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                      iconColor = 'bg-emerald-50 text-emerald-700 border-emerald-100';
                     } else if (notif.type === 'warning') {
                       IconComp = AlertTriangle;
-                      badgeColor = 'bg-amber-50 text-amber-700 border-amber-100';
+                      iconColor = 'bg-amber-50 text-amber-700 border-amber-100';
                     } else if (notif.type === 'payment') {
                       IconComp = CreditCard;
-                      badgeColor = 'bg-teal-50 text-teal-700 border-teal-100';
+                      iconColor = 'bg-teal-50 text-teal-700 border-teal-100';
                     }
 
                     return (
@@ -1503,13 +2171,18 @@ export default function App() {
                         layoutId={`notif-card-${notif.id}`}
                         className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl hover:bg-slate-100/50 transition-all flex gap-3 relative group"
                       >
-                        <div className={`p-1.5 rounded-lg border h-fit self-start shrink-0 ${badgeColor}`}>
+                        <div className={`p-1.5 rounded-lg border h-fit self-start shrink-0 ${iconColor}`}>
                           <IconComp size={15} />
                         </div>
                         <div className="flex-grow min-w-0 pr-4">
-                          <span className="text-[9.5px] font-mono text-slate-550 block mb-0.5 font-bold">
-                            {formatNotifTime(notif.createdAt)}
-                          </span>
+                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                            <span className={`px-2 py-0.2 rounded-md border text-[8.5px] font-black uppercase tracking-wider ${badgePillClass}`}>
+                              {categoryLabel}
+                            </span>
+                            <span className="text-[9.5px] font-mono text-slate-500 font-bold ml-auto">
+                              {formatNotifTime(notif.createdAt)}
+                            </span>
+                          </div>
                           <h4 className="font-extrabold text-xs text-slate-950 leading-tight">
                             {notif.title}
                           </h4>
@@ -1526,8 +2199,8 @@ export default function App() {
                         </button>
                       </motion.div>
                     );
-                  })
-                )}
+                  });
+                })()}
               </div>
 
               {/* Footer */}
@@ -1661,9 +2334,18 @@ export default function App() {
         onSuccess={handlePaymentSuccess}
         onClose={() => {
           setIsPayModalOpen(false);
+          const closedOrderId = payOrderId;
+          const targetStudentId = currentStudent?.id;
           setPayToken(null);
           setPayOrderId(null);
-          if (currentStudent) fetchStudentFullData(currentStudent.id);
+          if (targetStudentId) {
+            fetch('/api/student/auto-reconcile-retry', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ studentId: targetStudentId, orderId: closedOrderId || undefined })
+            }).catch(console.error);
+            fetchStudentFullData(targetStudentId);
+          }
         }}
       />
 
@@ -1975,7 +2657,10 @@ export default function App() {
           </div>
 
           {/* Time indicator and Toggle Sound */}
-          <div className="flex items-center gap-3 self-end sm:self-center">
+          <div className="flex items-center gap-2.5 sm:gap-3 self-end sm:self-center flex-wrap">
+            {/* PWA Install Button */}
+            <PWAInstallButton variant="pill" label="Pasang Aplikasi" />
+
             {/* Live UTC time converted to WIB */}
             <div className="bg-blue-950/40 border border-teal-500/30 px-3 py-1 rounded-lg text-right font-mono text-[11px] text-teal-100 flex items-center gap-1.5 shadow-inner">
               <Activity size={10} className="text-teal-300 animate-pulse" />
@@ -2018,7 +2703,7 @@ export default function App() {
               ) : role === 'homeroom' ? (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-850 border border-amber-150 rounded-lg text-xs font-bold shadow-sm">
                   <ClipboardCheck size={13} className="text-amber-700" />
-                  <span>Wali Kelas: {loggedHomeroom?.name || 'Wali Kelas'} (Kelas {loggedHomeroom?.className})</span>
+                  <span>Wali Kelas: {loggedHomeroom?.name || 'Wali Kelas'} (Kelas {loggedHomeroom?.className}){loggedHomeroom?.subject ? ` • Mapel: ${loggedHomeroom.subject}` : ''}</span>
                 </div>
               ) : role === 'subject_teacher' ? (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-teal-50 text-teal-850 border border-teal-150 rounded-lg text-xs font-extrabold shadow-sm">
@@ -2040,6 +2725,16 @@ export default function App() {
                   <ShieldCheck size={13} className="text-indigo-700" />
                   <span>Guru BK</span>
                 </div>
+              ) : role === 'waka_kurikulum' ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-50 text-purple-900 border border-purple-150 rounded-lg text-xs font-bold shadow-sm">
+                  <ShieldCheck size={13} className="text-purple-700" />
+                  <span>Waka Kurikulum</span>
+                </div>
+              ) : role === 'waka_sarpras' ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-50 text-sky-900 border border-sky-150 rounded-lg text-xs font-bold shadow-sm">
+                  <ShieldCheck size={13} className="text-sky-700" />
+                  <span>Waka Sarpras</span>
+                </div>
               ) : (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-850 border border-indigo-150 rounded-lg text-xs font-bold shadow-sm animate-pulse">
                   <ShieldCheck size={13} className="text-indigo-700" />
@@ -2049,6 +2744,15 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3.5 font-sans">
+              <AcademicYearDropdown
+                selectedYear={selectedAcademicYear}
+                activeYear={schoolIdentity.activeAcademicYear || '2026/2027'}
+                availableYears={availableAcademicYears}
+                onSelectYear={handleSelectAcademicYear}
+              />
+
+              <div className="w-px h-4 bg-slate-200" />
+
               <div className="flex items-center gap-1 text-[11px] text-emerald-850 font-bold">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                 <span>Kanal Real-time Aktif</span>
@@ -2100,20 +2804,52 @@ export default function App() {
         </div>
       )}
 
+      {/* Historical Archive Banner */}
+      {isLoggedIn && isHistoricalView && (
+        <div className="bg-amber-500/10 border-b border-amber-300/60 text-amber-950 px-4 sm:px-6 py-2.5 text-xs font-semibold flex flex-wrap items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+            <span>
+              <strong>Mode Arsip / Histori:</strong> Menampilkan data periodik Tahun Ajaran <strong>{selectedAcademicYear}</strong>. Anggota kelas, wali kelas, tagihan pembayaran &amp; tabungan difilter sesuai periode tahun tersebut.
+            </span>
+          </div>
+          <button
+            onClick={() => handleSelectAcademicYear(schoolIdentity.activeAcademicYear || '2026/2027')}
+            className="px-3 py-1 bg-amber-200 hover:bg-amber-300 text-amber-950 font-extrabold rounded-lg text-[11px] transition-all cursor-pointer shadow-3xs shrink-0 flex items-center gap-1.5"
+          >
+            <span>Kembali ke Tahun Aktif ({schoolIdentity.activeAcademicYear || '2026/2027'})</span>
+          </button>
+        </div>
+      )}
+
       {/* Core Stage Frame */}
       <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Suspense fallback={
+          <div className="flex flex-col items-center justify-center min-h-[380px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+            <div className="w-16 h-16 rounded-2xl bg-slate-50 p-2 shadow-inner border border-slate-200 flex items-center justify-center overflow-hidden animate-pulse mb-3">
+              <img src={activeLoadingLogo} alt="Logo" className="w-full h-full object-contain" />
+            </div>
+            <Loader2 className="w-7 h-7 text-emerald-600 animate-spin mb-2" />
+            <h3 className="font-extrabold text-sm text-slate-800">Menyiapkan Panel...</h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm">Memuat modul antarmuka sesuai hak akses sesi Anda.</p>
+          </div>
+        }>
         {!isLoggedIn ? (
           <Login
             students={studentsList}
             onLoginSuccess={handleLoginSuccess}
             schoolIdentity={schoolIdentity}
+            onOpenSpmb={() => {
+              setIsSpmbView(true);
+              window.history.pushState({}, 'SPMB', '/spmb');
+            }}
           />
         ) : role === 'student' ? (
           <StudentPanel
-            students={studentsList}
-            currentStudent={currentStudent}
-            bills={studentBills}
-            transactions={studentTransactions}
+            students={periodicStudentsList}
+            currentStudent={periodicStudentsList.find(s => s.id === currentStudent?.id) || currentStudent}
+            bills={periodicBills}
+            transactions={periodicTransactions}
             isLoading={isLoading}
             onSelectStudent={(id) => fetchStudentFullData(id)}
             onPaySpp={handlePaySpp}
@@ -2128,57 +2864,106 @@ export default function App() {
             notifications={globalNotifications}
             onLogout={handleLogout}
             midtransStatus={sysStatus}
+            miscBills={periodicMiscBills}
+            onPayMiscSnap={handlePayMiscSnap}
+            onPayCartSnap={handlePayCartSnap}
+            classSchedules={periodicSchedules}
+            subjectTeachers={subjectTeachersList}
+            homerooms={periodicHomerooms}
+            merdekaAssessments={periodicAssessments}
+            globalAcademicYear={selectedAcademicYear}
+            onSelectAcademicYear={handleSelectAcademicYear}
           />
         ) : role === 'homeroom' ? (
-          <HomeroomPanel
-            currentTeacher={homeroomsList.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom!}
-            students={studentsList}
-            attendanceLogs={attendanceList}
-            bills={studentBills}
-            schoolIdentity={schoolIdentity}
-            onLogout={handleLogout}
-            onSaveBatchAttendance={handleSaveBatchAttendance}
-            onRefresh={handleReload}
-            isLoading={isLoading}
-            onUpdateStudent={handleUpdateStudent}
-            scannedStudentNis={scannedStudentNis}
-            scannedStudentAt={scannedStudentAt}
-          />
+          (periodicHomerooms.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom) ? (
+            <HomeroomPanel
+              currentTeacher={periodicHomerooms.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom!}
+              students={periodicStudentsList}
+              attendanceLogs={attendanceList}
+              bills={periodicBills}
+              schoolIdentity={schoolIdentity}
+              onLogout={handleLogout}
+              onSaveBatchAttendance={handleSaveBatchAttendance}
+              onRefresh={handleReload}
+              isLoading={isLoading}
+              onUpdateStudent={handleUpdateStudent}
+              scannedStudentNis={scannedStudentNis}
+              scannedStudentAt={scannedStudentAt}
+              miscBills={periodicMiscBills}
+              classSchedules={periodicSchedules}
+              subjectTeachers={subjectTeachersList}
+              homerooms={periodicHomerooms}
+              transactions={periodicTransactions}
+              selectedAcademicYear={selectedAcademicYear}
+              onSelectAcademicYear={handleSelectAcademicYear}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+              <h3 className="font-extrabold text-sm text-slate-800">Menyinkronkan Akun Wali Kelas...</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm">Mohon tunggu sebentar, sistem sedang memverifikasi profil kelas Anda dari server.</p>
+              <button
+                onClick={handleLogout}
+                className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Kembali ke Halaman Masuk
+              </button>
+            </div>
+          )
         ) : role === 'subject_teacher' ? (
-          <SubjectTeacherPanel
-            currentTeacher={subjectTeachersList.find(st => st.id === loggedSubjectTeacher?.id) || loggedSubjectTeacher!}
-            students={studentsList}
-            attendanceLogs={attendanceList}
-            schoolIdentity={schoolIdentity}
-            onLogout={handleLogout}
-            onRefresh={handleReload}
-            isLoading={isLoading}
-          />
+          (subjectTeachersList.find(st => st.id === loggedSubjectTeacher?.id) || loggedSubjectTeacher) ? (
+            <SubjectTeacherPanel
+              currentTeacher={subjectTeachersList.find(st => st.id === loggedSubjectTeacher?.id) || loggedSubjectTeacher!}
+              students={periodicStudentsList}
+              attendanceLogs={attendanceList}
+              schoolIdentity={schoolIdentity}
+              onLogout={handleLogout}
+              onRefresh={handleReload}
+              isLoading={isLoading}
+              classSchedules={periodicSchedules}
+              subjectTeachers={subjectTeachersList}
+              homerooms={periodicHomerooms}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+              <h3 className="font-extrabold text-sm text-slate-800">Menyinkronkan Profil Guru Mapel...</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm">Mohon tunggu sebentar, profil dan jadwal mengajar Anda sedang dimuat dari server.</p>
+              <button
+                onClick={handleLogout}
+                className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Kembali ke Halaman Masuk
+              </button>
+            </div>
+          )
         ) : role === 'treasurer' ? (
           <TreasurerPanel
             schoolIdentity={schoolIdentity}
-            homerooms={homeroomsList}
+            homerooms={periodicHomerooms}
             subjectTeachers={subjectTeachersList}
             onLogout={handleLogout}
+            onRefresh={handleReload}
           />
         ) : role === 'principal' ? (
           <PrincipalPanel
-            students={studentsList}
-            bills={studentBills}
+            students={periodicStudentsList}
+            bills={periodicBills}
             attendanceLogs={attendanceList}
-            homerooms={homeroomsList}
+            homerooms={periodicHomerooms}
             subjectTeachers={subjectTeachersList}
             schoolIdentity={schoolIdentity}
             onUpdateSchoolIdentity={handleUpdateSchoolIdentity}
             onLogout={handleLogout}
             onRefresh={handleReload}
             isLoading={isLoading}
+            classSchedules={periodicSchedules}
           />
         ) : role === 'waka_sarpras' ? (
           <WakaSarprasPanel
             schoolIdentity={schoolIdentity}
             onLogout={handleLogout}
-            homerooms={homeroomsList}
+            homerooms={periodicHomerooms}
             subjectTeachers={subjectTeachersList}
           />
         ) : role === 'bk' ? (
@@ -2187,12 +2972,30 @@ export default function App() {
             onLogout={handleLogout}
             onRefresh={handleReload}
             onUpdateStudent={handleUpdateStudent}
+            classSchedules={periodicSchedules}
+            subjectTeachers={subjectTeachersList}
+            homerooms={periodicHomerooms}
+            students={periodicStudentsList}
+            attendanceLogs={attendanceList}
+          />
+        ) : role === 'waka_kurikulum' ? (
+          <WakaKurikulumPanel
+            students={periodicStudentsList}
+            subjectTeachers={subjectTeachersList}
+            homerooms={periodicHomerooms}
+            merdekaAssessments={periodicAssessments}
+            classSchedules={periodicSchedules}
+            schoolIdentity={schoolIdentity}
+            attendanceLogs={attendanceList}
+            onRefreshData={handleReload}
+            globalAcademicYear={selectedAcademicYear}
+            onSelectAcademicYear={handleSelectAcademicYear}
           />
         ) : (
           <AdminPanel
-            students={studentsList}
-            bills={studentBills}
-            transactions={studentTransactions}
+            students={periodicStudentsList}
+            bills={periodicBills}
+            transactions={periodicTransactions}
             isLoading={isLoading}
             midtransStatus={sysStatus}
             scannedStudentNis={scannedStudentNis}
@@ -2214,10 +3017,11 @@ export default function App() {
             onUpdateStudent={handleUpdateStudent}
             onDeleteStudent={handleDeleteStudent}
             onImportStudents={handleImportStudents}
+            onUndoLastImport={handleUndoLastImport}
             onImportTeachers={handleImportTeachers}
             schoolIdentity={schoolIdentity}
             onUpdateSchoolIdentity={handleUpdateSchoolIdentity}
-            homerooms={homeroomsList}
+            homerooms={periodicHomerooms}
             onCreateHomeroom={handleCreateHomeroom}
             onUpdateHomeroom={handleUpdateHomeroom}
             onDeleteHomeroom={handleDeleteHomeroom}
@@ -2228,8 +3032,14 @@ export default function App() {
             onAutoGenerateSubjectTeachers={handleAutoGenerateSubjectTeachers}
             onLogout={handleLogout}
             attendanceLogs={attendanceList}
+            miscBills={periodicMiscBills}
+            classSchedules={periodicSchedules}
+            selectedAcademicYear={selectedAcademicYear}
+            onSelectAcademicYear={handleSelectAcademicYear}
+            availableAcademicYears={availableAcademicYears}
           />
         )}
+        </Suspense>
       </main>
 
       {/* Bottom Footer block */}

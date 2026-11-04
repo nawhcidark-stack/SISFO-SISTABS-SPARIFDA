@@ -1,13 +1,28 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue } from '../types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills, ClassSchedule, SubjectTeacher, SavingsTransaction, SharedLearningObjective } from '../types';
+import { isSameSubject, normClass, isSameClass, toMasterSubjectName, normalizeSubject } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
 import BukuIndukManagement from './BukuIndukManagement';
+import ScheduleView from './ScheduleView';
+import { SavingsPassbookModal } from './SavingsPassbookModal';
+import { StudentFinancialRecapModal } from './StudentFinancialRecapModal';
+import { TpJournalSelector } from './TpJournalSelector';
+import { SharedTpBankView } from './SharedTpBankView';
+import { SharedTpQuickSelector } from './SharedTpQuickSelector';
+import { 
+  exportSppRecapToExcel, 
+  exportMiscRecapToExcel, 
+  exportSavingsRecapToExcel 
+} from '../utils/excelExport';
+import { printClassFinancialRecapPdf } from '../utils/financialRecapPrint';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
-  Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key,
-  Printer, FileText, Plus, Trash2, Award, Heart, Smile, Megaphone, AlertTriangle,
-  LayoutGrid, Home, Smartphone, Apple
+  Download, Copy, Search, Wallet, CreditCard, CheckCircle, CheckCircle2, Clock, User, Key, Lock, Unlock,
+  Printer, FileText, Plus, Trash2, Edit, Award, Heart, Smile, Megaphone, AlertTriangle,
+  LayoutGrid, Home, Smartphone, Apple, Filter, RotateCcw, ArrowUpDown,
+  FileSpreadsheet, Upload, X
 } from 'lucide-react';
 
 // Standalone Type-Safe Print Helper Functions (Isolated from JSX rendering context)
@@ -30,10 +45,16 @@ function printSingleAnnouncement(log: ClassAnnouncement, schoolIdentity?: School
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan | Telp: ${schoolPhone}</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan | Telp: ${schoolPhone}</p>
+          </div>
+        `}
         <div class="title">SURAT EDARAN &amp; MAKLUMAT KELAS ${currentClassName}</div>
         <div class="date">Pandaan, ${log.date}</div>
         <div style="font-size:12px; margin-bottom:15px">Kepada Yth.<br/><b>Bapak/Ibu Orang Tua Wali / Siswa Kelas ${currentClassName}</b><br/>Di Tempat</div>
@@ -75,10 +96,16 @@ function printSingleMeetingLog(log: ClassMeetingLog, schoolIdentity?: SchoolIden
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>JURNAL RAPAT, KOORDINASI, DAN NOTULENSI FASILITATOR</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>JURNAL RAPAT, KOORDINASI, DAN NOTULENSI FASILITATOR</p>
+          </div>
+        `}
         <div class="title">NOTULENSI JURNAL KOORDINASI WALI KELAS</div>
         <table class="meta">
           <tr><td class="label">Jenis Pertemuan / Rapat</td><td>${log.meetingType}</td><td class="label">Hari / Tanggal Rapat</td><td>${log.date}</td></tr>
@@ -130,11 +157,17 @@ function printSingleDevelopmentLog(log: StudentDevelopmentLog, schoolIdentity?: 
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
-          <p>${schoolAddress}</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
+            <p>${schoolAddress}</p>
+          </div>
+        `}
         <div class="title">JURNAL CATATAN PERKEMBANGAN SISWA</div>
         <table class="meta">
           <tr><td class="label">Siswa</td><td>${log.studentName}</td><td class="label">Tanggal</td><td>${log.date}</td></tr>
@@ -177,10 +210,16 @@ function printSingleInfractionLog(log: StudentInfractionLog, schoolIdentity?: Sc
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>LEMBAR PENANGANAN KEDISIPLINAN DAN KETERTIBAN SISWA</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>LEMBAR PENANGANAN KEDISIPLINAN DAN KETERTIBAN SISWA</p>
+          </div>
+        `}
         <div class="title">BAP PERILAKU DAN KETERTIBAN SISWA</div>
         <table class="meta">
           <tr><td class="label">Nama Siswa / NIS</td><td>${log.studentName}</td><td class="label">Hari / Tanggal</td><td>${log.date}</td></tr>
@@ -231,10 +270,16 @@ function printSingleCounselingLog(log: StudentCounselingLog, schoolIdentity?: Sc
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>JURNAL LAYANAN KONSELING &amp; KELUARGA</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>JURNAL LAYANAN KONSELING &amp; KELUARGA</p>
+          </div>
+        `}
         <div class="title">BERKAS BIMBINGAN SISWA WALI KELAS</div>
         <table class="meta">
           <tr><td class="label">Nama Siswa / NIS</td><td>${log.studentName}</td><td class="label">Tanggal Konseling</td><td>${log.date}</td></tr>
@@ -320,11 +365,17 @@ function printStudentDevelopmentRecap(student: any, logs: StudentDevelopmentLog[
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
-          <p>${schoolAddress}</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
+            <p>${schoolAddress}</p>
+          </div>
+        `}
         
         <div class="title">REKAPITULASI CATATAN PERKEMBANGAN PER SISWA</div>
 
@@ -339,7 +390,7 @@ function printStudentDevelopmentRecap(student: any, logs: StudentDevelopmentLog[
             <td class="label">NIS / NISN</td>
             <td class="value">: ${student.nis} / -</td>
             <td class="label">Tahun Ajaran</td>
-            <td class="value">: 2025 / 2026</td>
+            <td class="value">: ${schoolIdentity?.activeAcademicYear ? schoolIdentity.activeAcademicYear.replace('/', ' / ') : '2026 / 2027'}</td>
           </tr>
           <tr>
             <td class="label">Kelas Asal</td>
@@ -475,11 +526,17 @@ function printStudentCombinedRecap(
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
-          <p>${schoolAddress}</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
+            <p>${schoolAddress}</p>
+          </div>
+        `}
         
         <div class="title">REKAPITULASI JURNAL GABUNGAN SISWA WALI KELAS</div>
 
@@ -494,7 +551,7 @@ function printStudentCombinedRecap(
             <td class="label">NIS / NISN</td>
             <td class="value">: ${student.nis} / -</td>
             <td class="label">Tahun Ajaran</td>
-            <td class="value">: 2025 / 2026</td>
+            <td class="value">: ${schoolIdentity?.activeAcademicYear ? schoolIdentity.activeAcademicYear.replace('/', ' / ') : '2026 / 2027'}</td>
           </tr>
           <tr>
             <td class="label">Kelas Asal</td>
@@ -590,6 +647,90 @@ function printStudentCombinedRecap(
   printWin.document.close();
 }
 
+const getWIBDateStr = (date: Date = new Date()): string => {
+  const wibTime = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  return wibTime.toISOString().substring(0, 10);
+};
+
+const getSemesterFromDate = (dateStr?: string): 'Ganjil' | 'Genap' => {
+  if (!dateStr) {
+    const now = new Date();
+    const month = now.getMonth();
+    return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+  }
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) {
+    const now = new Date();
+    const month = now.getMonth();
+    return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+  }
+  const month = d.getMonth(); // 0 = Jan, 11 = Dec
+  return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+};
+
+const isMutationStudent = (student: Student | null | undefined) => {
+  if (!student) return false;
+  return !!student.mutationDate || (student.class && (student.class.toLowerCase() === 'mutasi' || student.class.toLowerCase() === 'mutasi keluar'));
+};
+
+const checkIsBillActiveInHomeroom = (bill: SppBill, studentId: string, allBills: SppBill[], allStudents: Student[] = []) => {
+  const student = allStudents.find(s => s.id === studentId);
+  const MONTH_MAP: Record<string, number> = {
+    Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
+    Juli: 6, Agustus: 7, September: 8, Oktober: 9, November: 10, Desember: 11,
+  };
+
+  const billMonthIdx = MONTH_MAP[bill.month] !== undefined ? MONTH_MAP[bill.month] : 0;
+  const billScore = bill.year * 12 + billMonthIdx;
+
+  if (student && isMutationStudent(student)) {
+    let mutYear: number;
+    let mutMonthIdx: number;
+
+    if (student.mutationDate && student.mutationDate.trim()) {
+      const d = new Date(student.mutationDate.trim());
+      if (!isNaN(d.getTime())) {
+        mutYear = d.getFullYear();
+        mutMonthIdx = d.getMonth();
+      } else {
+        const parts = student.mutationDate.trim().split("-");
+        mutYear = parseInt(parts[0], 10) || new Date().getFullYear();
+        mutMonthIdx = (parseInt(parts[1], 10) || 1) - 1;
+      }
+    } else {
+      const now = new Date();
+      mutYear = now.getFullYear();
+      mutMonthIdx = now.getMonth();
+    }
+
+    const mutationScore = mutYear * 12 + mutMonthIdx;
+
+    if (billScore >= mutationScore && (bill.status === "unpaid" || bill.status === "pending")) {
+      return false;
+    }
+  }
+
+  const studentBills = allBills.filter((b) => b.studentId === studentId);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonthIdx = now.getMonth();
+  const currentScore = currentYear * 12 + currentMonthIdx;
+
+  // 1. If it's a past month or current month, it is always active
+  if (billScore <= currentScore) {
+    return true;
+  }
+
+  // 2. If it is a future month, check if all bills strictly prior are paid/waived
+  const priorBills = studentBills.filter((b) => {
+    const bMonthIdx = MONTH_MAP[b.month] !== undefined ? MONTH_MAP[b.month] : 0;
+    const bScore = b.year * 12 + bMonthIdx;
+    return bScore < billScore;
+  });
+
+  return priorBills.every((b) => b.status === 'paid' || b.status === 'waived');
+};
+
 interface HomeroomPanelProps {
   currentTeacher: HomeroomTeacher;
   students: Student[];
@@ -603,6 +744,13 @@ interface HomeroomPanelProps {
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   scannedStudentNis?: string | null;
   scannedStudentAt?: number | null;
+  miscBills?: MiscBill[];
+  classSchedules?: ClassSchedule[];
+  subjectTeachers?: SubjectTeacher[];
+  homerooms?: HomeroomTeacher[];
+  transactions?: SavingsTransaction[];
+  selectedAcademicYear?: string;
+  onSelectAcademicYear?: (year: string) => void;
 }
 
 export default function HomeroomPanel({
@@ -617,30 +765,317 @@ export default function HomeroomPanel({
   isLoading,
   onUpdateStudent,
   scannedStudentNis,
-  scannedStudentAt
+  scannedStudentAt,
+  miscBills = [],
+  classSchedules = [],
+  subjectTeachers = [],
+  homerooms = [],
+  transactions = [],
+  selectedAcademicYear,
+  onSelectAcademicYear
 }: HomeroomPanelProps) {
-  const todayStr = new Date().toISOString().substring(0, 10);
+  const todayStr = getWIBDateStr();
 
   const getFirstDayOfMonth = () => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().substring(0, 10);
+    const wibToday = getWIBDateStr();
+    return `${wibToday.substring(0, 8)}01`;
   };
 
   const [selectedDate, setSelectedDate] = useState(todayStr);
-  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'rapor_merdeka' | 'pkg' | 'buku_induk'>('record');
+  const [passbookStudent, setPassbookStudent] = useState<Student | null>(null);
+  const [recapModalStudent, setRecapModalStudent] = useState<Student | null>(null);
+  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'pkg' | 'buku_induk' | 'kokurikuler' | 'jadwal'>('record');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
   const [selectedReportStudentId, setSelectedReportStudentId] = useState<string | null>(null);
 
+  // Kokurikuler & Full Merdeka Assessment states for Wali Kelas
+  const [kokurikulerSemester, setKokurikulerSemester] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
+  const [kokurikulerYear, setKokurikulerYear] = useState<string>(selectedAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027');
+  const [kokurikulerScores, setKokurikulerScores] = useState<Record<string, string>>({});
+  const [isSavingKokurikuler, setIsSavingKokurikuler] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (selectedAcademicYear) {
+      setKokurikulerYear(selectedAcademicYear);
+    }
+  }, [selectedAcademicYear]);
+
+  // Selected class for grading & rapor (defaults to homeroom class but can be changed to any class)
+  const [selectedGradingClass, setSelectedGradingClass] = useState<string>(currentTeacher?.className || '');
+
+  useEffect(() => {
+    if (currentTeacher?.className) {
+      setSelectedGradingClass(currentTeacher.className);
+    }
+  }, [currentTeacher?.className]);
+
+  const [selectedSubjectForGrading, setSelectedSubjectForGrading] = useState<string>(() => toMasterSubjectName(currentTeacher?.subject || 'Pendidikan Pancasila'));
+
+  useEffect(() => {
+    if (currentTeacher?.subject) {
+      setSelectedSubjectForGrading(toMasterSubjectName(currentTeacher.subject));
+    }
+  }, [currentTeacher?.subject]);
+
+  const [gradeInputMap, setGradeInputMap] = useState<Record<string, any>>({});
+
+  // Anti-Wipe Protection & Unsaved Manual Grade Tracking for Wali Kelas
+  const dirtyStudentsRef = useRef<Set<string>>(new Set());
+  const lastGradingScopeRef = useRef<string>('');
+  const [hasUnsavedGrades, setHasUnsavedGrades] = useState<boolean>(false);
+  const [unsavedCount, setUnsavedCount] = useState<number>(0);
+
+  // Warn homeroom teacher before leaving if there are unsaved grades
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedGrades) {
+        e.preventDefault();
+        e.returnValue = 'Ada nilai siswa yang belum disimpan ke database. Yakin ingin meninggalkan halaman?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedGrades]);
+  const [tp1InputName, setTp1InputName] = useState<string>('Memahami konsep dasar dan penerapannya');
+  const [tp2InputName, setTp2InputName] = useState<string>('Menganalisis materi dan studi kasus');
+  const [tp3InputName, setTp3InputName] = useState<string>('Praktik dan refleksi pembiasaan');
+  const [tp4InputName, setTp4InputName] = useState<string>('Evaluasi & pengerjaan proyek');
+  const [tp1Id, setTp1Id] = useState<string>('');
+  const [tp2Id, setTp2Id] = useState<string>('');
+  const [tp3Id, setTp3Id] = useState<string>('');
+  const [tp4Id, setTp4Id] = useState<string>('');
+  const [homeroomPenilaianSubTab, setHomeroomPenilaianSubTab] = useState<'input_nilai' | 'bank_tp'>('input_nilai');
+  const [tpFilledBy, setTpFilledBy] = useState<string>('');
+  const [tpFilledAt, setTpFilledAt] = useState<string>('');
+  const [tpEditedBy, setTpEditedBy] = useState<string>('');
+  const [tpEditedAt, setTpEditedAt] = useState<string>('');
+  const [tpEditedByRole, setTpEditedByRole] = useState<string>('');
+  const [isSavingTp, setIsSavingTp] = useState<boolean>(false);
+
+  const handleSelectSharedTp = (tp: SharedLearningObjective, slot: 1 | 2 | 3 | 4) => {
+    if (slot === 1) {
+      setTp1InputName(tp.title);
+      setTp1Id(tp.id);
+    } else if (slot === 2) {
+      setTp2InputName(tp.title);
+      setTp2Id(tp.id);
+    } else if (slot === 3) {
+      setTp3InputName(tp.title);
+      setTp3Id(tp.id);
+    } else if (slot === 4) {
+      setTp4InputName(tp.title);
+      setTp4Id(tp.id);
+    }
+  };
+
+  const gradingGradeLevel = useMemo(() => {
+    const targetClass = selectedGradingClass || currentTeacher?.className || '';
+    const m = String(targetClass).match(/\d+/);
+    return m ? m[0] : '7';
+  }, [selectedGradingClass, currentTeacher?.className]);
+
+  // Sync TP from curriculum level for the selected subject and grade
+  const fetchHomeroomTpDescriptions = async () => {
+    try {
+      const res = await fetch('/api/tp-descriptions');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.descriptions) {
+          const targetClass = selectedGradingClass || currentTeacher?.className || '';
+          const m = String(targetClass).match(/\d+/);
+          const gradeLevel = m ? m[0] : '7';
+          const subKey = (selectedSubjectForGrading || '').trim().toLowerCase();
+          const levelKey = `tingkat_${gradeLevel}_${subKey}`;
+          const classKey = (targetClass || '').trim().toLowerCase();
+          const semKey = (kokurikulerSemester || 'ganjil').trim().toLowerCase();
+          const yearKey = (kokurikulerYear || '2026/2027').trim().toLowerCase();
+          const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
+
+          const saved = data.descriptions[levelKey] || data.descriptions[fullKey] || data.descriptions[subKey];
+          if (saved && (saved.tp1Name || saved.tp2Name || saved.tp3Name || saved.tp4Name)) {
+            setTp1InputName(saved.tp1Name || '');
+            setTp2InputName(saved.tp2Name || '');
+            setTp3InputName(saved.tp3Name || '');
+            setTp4InputName(saved.tp4Name || '');
+            setTpFilledBy(saved.filledBy || '');
+            setTpFilledAt(saved.filledAt || '');
+            setTpEditedBy(saved.editedBy || '');
+            setTpEditedAt(saved.editedAt || '');
+            setTpEditedByRole(saved.editedByRole || '');
+          }
+
+          const matchedAss = merdekaAssessments.find(a => 
+            (a.className === targetClass || (a.className && a.className.startsWith(gradeLevel))) &&
+            isSameSubject(a.subject, selectedSubjectForGrading) &&
+            (a.tp1Id || a.tp2Id || a.tp3Id || a.tp4Id)
+          );
+          if (matchedAss) {
+            if (matchedAss.tp1Id) setTp1Id(matchedAss.tp1Id);
+            if (matchedAss.tp2Id) setTp2Id(matchedAss.tp2Id);
+            if (matchedAss.tp3Id) setTp3Id(matchedAss.tp3Id);
+            if (matchedAss.tp4Id) setTp4Id(matchedAss.tp4Id);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Gagal memuat deskripsi TP di wali kelas:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchHomeroomTpDescriptions();
+  }, [selectedSubjectForGrading, selectedGradingClass, currentTeacher?.className, kokurikulerSemester, kokurikulerYear]);
+
+  const handleSaveHomeroomTp = async () => {
+    if (!selectedSubjectForGrading) return;
+    setIsSavingTp(true);
+    const targetClass = selectedGradingClass || currentTeacher?.className || '';
+    const m = String(targetClass).match(/\d+/);
+    const gradeLevel = m ? m[0] : '7';
+    const teacherName = currentTeacher?.name || 'Wali Kelas';
+    try {
+      const res = await fetch('/api/tp-descriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: selectedSubjectForGrading,
+          className: targetClass,
+          gradeLevel,
+          semester: kokurikulerSemester,
+          academicYear: kokurikulerYear,
+          tp1Name: tp1InputName,
+          tp2Name: tp2InputName,
+          tp3Name: tp3InputName,
+          tp4Name: tp4InputName,
+          isLocked: false,
+          filledBy: tpFilledBy || teacherName,
+          filledByRole: `Wali Kelas ${targetClass}`,
+          editedBy: teacherName,
+          editedByRole: `Wali Kelas ${targetClass}`
+        })
+      });
+      if (res.ok) {
+        const nowIso = new Date().toISOString();
+        if (!tpFilledBy) setTpFilledBy(teacherName);
+        if (!tpFilledAt) setTpFilledAt(nowIso);
+        setTpEditedBy(teacherName);
+        setTpEditedAt(nowIso);
+        setTpEditedByRole(`Wali Kelas ${targetClass}`);
+        setNotifMsg({
+          type: 'success',
+          text: `Judul TP mapel ${selectedSubjectForGrading} berhasil disimpan untuk tingkat ${gradeLevel}!`
+        });
+        fetchHomeroomTpDescriptions();
+      }
+    } catch (err: any) {
+      alert('Gagal menyimpan TP: ' + err.message);
+    } finally {
+      setIsSavingTp(false);
+    }
+  };
+
+  const handleAutoFillAllTpsFromJournals = () => {
+    const norm = (s?: string) => (s || '').toLowerCase().trim();
+    const targetClass = selectedGradingClass || currentTeacher?.className || '';
+    const sourceJournals = allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList;
+
+    let relevant = sourceJournals.filter((j: any) => {
+      const matchSubj = selectedSubjectForGrading ? norm(j.subject) === norm(selectedSubjectForGrading) : true;
+      const matchClass = targetClass ? norm(j.className) === norm(targetClass) : true;
+      return matchSubj && matchClass;
+    });
+
+    if (relevant.length === 0) {
+      relevant = sourceJournals.filter((j: any) => {
+        return selectedSubjectForGrading ? norm(j.subject) === norm(selectedSubjectForGrading) : true;
+      });
+    }
+
+    // Sort chronological (oldest to newest meeting)
+    const sorted = [...relevant].sort((a: any, b: any) => {
+      const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return (Number(a.pertemuanKe) || 0) - (Number(b.pertemuanKe) || 0);
+    });
+
+    if (sorted.length === 0) {
+      setNotifMsg({
+        type: 'error',
+        text: `Belum ada Jurnal Pembelajaran yang diisi untuk Mapel ${selectedSubjectForGrading}. Silakan gunakan pilihan dropdown per TP atau ketik secara manual.`
+      });
+      return;
+    }
+
+    let filledCount = 0;
+    if (sorted[0]) {
+      setTp1InputName(sorted[0].tujuanPembelajaran || sorted[0].topic || tp1InputName);
+      filledCount++;
+    }
+    if (sorted[1]) {
+      setTp2InputName(sorted[1].tujuanPembelajaran || sorted[1].topic || '');
+      filledCount++;
+    }
+    if (sorted[2]) {
+      setTp3InputName(sorted[2].tujuanPembelajaran || sorted[2].topic || '');
+      filledCount++;
+    }
+    if (sorted[3]) {
+      setTp4InputName(sorted[3].tujuanPembelajaran || sorted[3].topic || '');
+      filledCount++;
+    }
+
+    setNotifMsg({
+      type: 'success',
+      text: `🎉 Berhasil mengambil ${filledCount} Judul TP otomatis dari Jurnal Pembelajaran ${selectedSubjectForGrading}!`
+    });
+  };
+
+  const [showExcelModal, setShowExcelModal] = useState<boolean>(false);
+  const [excelPasteContent, setExcelPasteContent] = useState<string>('');
+  const [excelParseError, setExcelParseError] = useState<string | null>(null);
+  const [excelParsedPreview, setExcelParsedPreview] = useState<any[]>([]);
+  const [isSavingFullGrades, setIsSavingFullGrades] = useState<boolean>(false);
+  const [isProcessingExcelFile, setIsProcessingExcelFile] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear) {
+      setKokurikulerYear(schoolIdentity.activeAcademicYear);
+    }
+  }, [schoolIdentity?.activeAcademicYear]);
+
+
+
   // Filter students who are in this homeroom teacher's class
   const classStudents = useMemo(() => {
-    return students
-      .filter(
-        (s) => s.class.toLowerCase() === currentTeacher.className.toLowerCase()
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [students, currentTeacher.className]);
+    if (!currentTeacher?.className) return [];
+    const targetClass = currentTeacher.className.trim().toLowerCase();
+    const targetClean = targetClass.replace(/[^a-zA-Z0-9]/g, '');
+    return (students || [])
+      .filter((s) => {
+        if (!s || isMutationStudent(s) || !s.class) return false;
+        const sClass = s.class.trim().toLowerCase();
+        const sClean = sClass.replace(/[^a-zA-Z0-9]/g, '');
+        return sClass === targetClass || (targetClean.length > 0 && sClean === targetClean);
+      })
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [students, currentTeacher?.className]);
+
+  // Filter students for grading & rapor based on selectedGradingClass
+  const gradingStudents = useMemo(() => {
+    const target = (selectedGradingClass || currentTeacher?.className || "").trim().toLowerCase();
+    const targetClean = target.replace(/[^a-zA-Z0-9]/g, '');
+    return (students || [])
+      .filter((s) => {
+        if (!s || isMutationStudent(s) || !s.class) return false;
+        const sClass = s.class.trim().toLowerCase();
+        const sClean = sClass.replace(/[^a-zA-Z0-9]/g, '');
+        return sClass === target || (targetClean.length > 0 && sClean === targetClean);
+      })
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [students, selectedGradingClass, currentTeacher?.className]);
 
   useEffect(() => {
     if (scannedStudentNis) {
@@ -651,15 +1086,172 @@ export default function HomeroomPanel({
       }
     }
   }, [scannedStudentNis, scannedStudentAt, classStudents]);
-  const [selectedReportSemester, setSelectedReportSemester] = useState<string>('Genap');
-  const [selectedReportYear, setSelectedReportYear] = useState<string>('2025/2026');
+  const [selectedReportSemester, setSelectedReportSemester] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
+  const [selectedReportYear, setSelectedReportYear] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
+
+  useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear) {
+      setSelectedReportYear(schoolIdentity.activeAcademicYear);
+    }
+  }, [schoolIdentity?.activeAcademicYear]);
   const [waliKelasNotes, setWaliKelasNotes] = useState<Record<string, string>>({
     "default": "Pertahankan prestasi belajarmu, tingkatkan disiplin dan rajin beribadah."
   });
   const [rekapStartDate, setRekapStartDate] = useState(getFirstDayOfMonth());
   const [rekapEndDate, setRekapEndDate] = useState(todayStr);
+  const [rekapStatusFilter, setRekapStatusFilter] = useState<'all' | 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'>('all');
+  const [rekapSortBy, setRekapSortBy] = useState<'name' | 'hadir' | 'terlambat' | 'sakit' | 'izin' | 'alpa' | 'total' | 'rate'>('name');
+  const [rekapSortOrder, setRekapSortOrder] = useState<'asc' | 'desc'>('asc');
   const [financeSearch, setFinanceSearch] = useState('');
   const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
+
+  // Excel export functions for homeroom class payments
+  const handleExportSppExcel = () => {
+    const rekapSppYearFilter = schoolIdentity?.activeAcademicYear || "all";
+    
+    const getAcademicYearOfBill = (bill: SppBill) => {
+      const startYear = [
+        "Juli",
+        "Agustus",
+        "September",
+        "Oktober",
+        "November",
+        "Desember",
+      ].includes(bill.month)
+        ? bill.year
+        : bill.year - 1;
+      return `${startYear}/${startYear + 1}`;
+    };
+
+    const summaryMatrix = classStudents.map((student) => {
+      const sBills = bills.filter(
+        (b) =>
+          b.studentId === student.id &&
+          (rekapSppYearFilter === "all" ||
+            getAcademicYearOfBill(b) === rekapSppYearFilter),
+      );
+      const paid = sBills.filter((b) => b.status === "paid");
+      const unpaid = sBills.filter((b) => b.status === "unpaid" && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
+      const totalPaidNominal = paid.reduce((sum, b) => sum + b.amount, 0);
+      const totalUnpaidNominal = unpaid.reduce((sum, b) => sum + b.amount, 0);
+      const pct = sBills.length > 0 ? Math.round((paid.length / sBills.length) * 100) : 0;
+      return {
+        student,
+        totalBillsCount: sBills.length,
+        paidCount: paid.length,
+        unpaidCount: unpaid.length,
+        totalPaidNominal,
+        totalUnpaidNominal,
+        pct,
+      };
+    });
+
+    const globalTotalPaid = summaryMatrix.reduce((acc, current) => acc + current.totalPaidNominal, 0);
+    const globalTotalUnpaid = summaryMatrix.reduce((acc, current) => acc + current.totalUnpaidNominal, 0);
+
+    exportSppRecapToExcel({
+      rekapSppGradeFilter: currentTeacher.className.substring(0, 1) || "all",
+      rekapSppClassFilter: currentTeacher.className,
+      rekapSppYearFilter,
+      summaryMatrix,
+      globalTotalPaid,
+      globalTotalUnpaid,
+    });
+  };
+
+  const handleExportMiscExcel = () => {
+    const rekapMiscGradeFilter = currentTeacher.className.substring(0, 1) || "all";
+    const rekapMiscClassFilter = currentTeacher.className;
+
+    const studentIdsSet = new Set(classStudents.map(s => s.id));
+    const activeMiscBills = (miscBills || []).filter(b => studentIdsSet.has(b.studentId));
+
+    const totalMiscTarget = activeMiscBills.reduce((sum, b) => sum + b.amount, 0);
+    const totalMiscPaid = activeMiscBills.filter(b => b.status === "paid").reduce((sum, b) => sum + b.amount, 0);
+    const totalMiscUnpaid = activeMiscBills.filter(b => b.status !== "paid").reduce((sum, b) => sum + b.amount, 0);
+
+    const groupedMiscMap: { [title: string]: { targetCount: number, paidCount: number, targetNominal: number, paidNominal: number } } = {};
+    activeMiscBills.forEach((bill) => {
+      const title = bill.title;
+      if (!groupedMiscMap[title]) {
+        groupedMiscMap[title] = {
+          targetCount: 0,
+          paidCount: 0,
+          targetNominal: 0,
+          paidNominal: 0
+        };
+      }
+      groupedMiscMap[title].targetCount += 1;
+      groupedMiscMap[title].targetNominal += bill.amount;
+      if (bill.status === "paid") {
+        groupedMiscMap[title].paidCount += 1;
+        groupedMiscMap[title].paidNominal += bill.amount;
+      }
+    });
+
+    const groupedMiscList = Object.entries(groupedMiscMap).map(([title, stats]) => ({
+      title,
+      ...stats,
+      pct: stats.targetNominal > 0 ? Math.round((stats.paidNominal / stats.targetNominal) * 100) : 0
+    })).sort((a, b) => a.title.localeCompare(b.title));
+
+    const studentMiscDetails = classStudents.map(student => {
+      const sBills = activeMiscBills.filter(b => b.studentId === student.id);
+      const totalBilled = sBills.reduce((sum, b) => sum + b.amount, 0);
+      const totalPaid = sBills.filter(b => b.status === "paid").reduce((sum, b) => sum + b.amount, 0);
+      const totalUnpaid = sBills.filter(b => b.status !== "paid").reduce((sum, b) => sum + b.amount, 0);
+      return {
+        student,
+        bills: sBills,
+        totalBilled,
+        totalPaid,
+        totalUnpaid
+      };
+    }).filter(item => item.bills.length > 0).sort((a, b) => a.student.name.localeCompare(b.student.name));
+
+    exportMiscRecapToExcel({
+      rekapMiscGradeFilter,
+      rekapMiscClassFilter,
+      totalMiscTarget,
+      totalMiscPaid,
+      totalMiscUnpaid,
+      groupedMiscList,
+      studentMiscDetails,
+    });
+  };
+
+  const handleExportSavingsExcel = () => {
+    const rekapTabunganGradeFilter = currentTeacher.className.substring(0, 1) || "all";
+    const rekapTabunganClassFilter = currentTeacher.className;
+
+    const orderedStudentsBySavings = [...classStudents].sort((a, b) => (b.savingsBalance || 0) - (a.savingsBalance || 0));
+    const totalGlobalSavings = orderedStudentsBySavings.reduce((sum, s) => sum + (s.savingsBalance || 0), 0);
+    const countActiveAccounts = orderedStudentsBySavings.filter(s => (s.savingsBalance || 0) > 0).length;
+    const filteredTabunganStudentsLength = orderedStudentsBySavings.length;
+
+    exportSavingsRecapToExcel({
+      rekapTabunganGradeFilter,
+      rekapTabunganClassFilter,
+      orderedStudentsBySavings,
+      totalGlobalSavings,
+      countActiveAccounts,
+      filteredTabunganStudentsLength,
+      transactions,
+      includeMutations: true,
+      schoolName: schoolIdentity?.name || "SMP MAARIF NU PANDAAN",
+    });
+  };
+
+  const handlePrintClassFinancePdf = () => {
+    printClassFinancialRecapPdf({
+      className: currentTeacher.className,
+      teacherName: currentTeacher.name,
+      students: classStudents,
+      bills,
+      miscBills,
+      schoolIdentity,
+    });
+  };
 
   // Active workspace for Homeroom Journals
   const [selectedJournalTab, setSelectedJournalTab] = useState<'menu' | 'development' | 'infraction' | 'counseling' | 'announcement' | 'meeting'>('menu');
@@ -757,7 +1349,10 @@ export default function HomeroomPanel({
       const res = await fetch('/api/principal/teacher-evaluations');
       if (res.ok) {
         const data = await res.json();
-        const filtered = data.filter((e: any) => e.teacherId === currentTeacher.id);
+        const filtered = data.filter((e: any) => 
+          e.teacherId === currentTeacher?.id ||
+          (currentTeacher?.name && e.teacherName && e.teacherName.trim().toLowerCase() === currentTeacher.name.trim().toLowerCase())
+        );
         setEvaluations(filtered);
       }
     } catch (err) {
@@ -798,10 +1393,16 @@ export default function HomeroomPanel({
           </style>
         </head>
         <body>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
           <div class="head-school">
             ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}<br/>
             <span style="font-size:10px; font-weight:normal;">Address: ${schoolIdentity?.address || ""} | Phone: ${schoolIdentity?.phone || ""}</span>
           </div>
+        `}
           
           <h3 style="text-align:center; text-transform:uppercase; text-decoration:underline;">LEMBAR HASIL PENILAIAN KINERJA GURU (PKG)</h3>
           <p style="text-align:center; font-weight:bold; font-size:10px; margin-top:-10px;">TAHUN AJARAN / AKADEMIK: ${ev.academicYear}</p>
@@ -858,44 +1459,348 @@ export default function HomeroomPanel({
 
   // Teaching Journals state and printing systems
   const [teachingJournalsList, setTeachingJournalsList] = useState<any[]>([]);
+  const [allTeachingJournalsList, setAllTeachingJournalsList] = useState<any[]>([]);
   const [loadingJournals, setLoadingJournals] = useState(false);
   const [journalViewMode, setJournalViewMode] = useState<'presensi' | 'kbm'>('presensi');
+  const [kbmJournalSubTab, setKbmJournalSubTab] = useState<'binaan' | 'kelas_lain'>('binaan');
   const [selectedJournalToPrint, setSelectedJournalToPrint] = useState<any | null>(null);
   const [compiledJournalPrint, setCompiledJournalPrint] = useState<boolean>(false);
+  const [compiledJournalPrintType, setCompiledJournalPrintType] = useState<'binaan' | 'kelas_lain'>('binaan');
+
+  // Date Range Filter states for KBM Teaching Journals
+  const [kbmJournalStartDate, setKbmJournalStartDate] = useState<string>('');
+  const [kbmJournalEndDate, setKbmJournalEndDate] = useState<string>('');
+
+  // Compute separated journals for Wali Kelas (Guided class binaan vs Subject teaching in other classes)
+  const binaanJournals = useMemo(() => {
+    return teachingJournalsList.filter((j: any) => {
+      if (!j.className || j.className.toLowerCase() !== currentTeacher.className.toLowerCase()) return false;
+      let jDate = j.date ? j.date.substring(0, 10) : '';
+      if (jDate.includes('/')) {
+        const parts = jDate.split('/');
+        if (parts.length === 3 && parts[2].length === 4) {
+          jDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+      if (kbmJournalStartDate && jDate < kbmJournalStartDate) return false;
+      if (kbmJournalEndDate && jDate > kbmJournalEndDate) return false;
+      return true;
+    });
+  }, [teachingJournalsList, currentTeacher.className, kbmJournalStartDate, kbmJournalEndDate]);
+
+  const kelasLainJournals = useMemo(() => {
+    const cName = currentTeacher?.name ? currentTeacher.name.trim().toLowerCase() : '';
+    return teachingJournalsList.filter((j: any) => {
+      const isTeacher = (j.teacherId === currentTeacher?.id || (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName));
+      const isOtherClass = j.className && j.className.toLowerCase() !== (currentTeacher?.className || '').toLowerCase();
+      if (!isTeacher || !isOtherClass) return false;
+      let jDate = j.date ? j.date.substring(0, 10) : '';
+      if (jDate.includes('/')) {
+        const parts = jDate.split('/');
+        if (parts.length === 3 && parts[2].length === 4) {
+          jDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+      if (kbmJournalStartDate && jDate < kbmJournalStartDate) return false;
+      if (kbmJournalEndDate && jDate > kbmJournalEndDate) return false;
+      return true;
+    });
+  }, [teachingJournalsList, currentTeacher?.id, currentTeacher?.name, currentTeacher?.className, kbmJournalStartDate, kbmJournalEndDate]);
 
   // Create Journal For Homeroom state
   const [isAddJournalOpen, setIsAddJournalOpen] = useState(false);
   const [journalSubject, setJournalSubject] = useState('Bimbingan Wali Kelas');
-  const [journalDate, setJournalDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [journalDate, setJournalDate] = useState(() => getWIBDateStr());
   const [journalTopic, setJournalTopic] = useState('');
   const [journalFase, setJournalFase] = useState('D');
-  const [journalSemester, setJournalSemester] = useState('Genap');
+  const [journalSemester, setJournalSemester] = useState(() => getSemesterFromDate(getWIBDateStr()));
   const [journalPertemuanKe, setJournalPertemuanKe] = useState('');
   const [journalJamKe, setJournalJamKe] = useState('');
-  const [journalAlokasiWaktu, setJournalAlokasiWaktu] = useState('2 JP');
+  const [journalAlokasiWaktu, setJournalAlokasiWaktu] = useState('2');
   const [journalTujuanPembelajaran, setJournalTujuanPembelajaran] = useState('');
   const [journalPencapaianKktp, setJournalPencapaianKktp] = useState('Tercapai');
   const [journalNotes, setJournalNotes] = useState('');
   const [journalAttendanceMap, setJournalAttendanceMap] = useState<Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }>>({});
   const [savingJournal, setSavingJournal] = useState(false);
   const [journalSearchQuery, setJournalSearchQuery] = useState('');
+  const [journalClassName, setJournalClassName] = useState<string>(currentTeacher.className);
 
-  const handleOpenAddJournalModal = () => {
-    // Initialize attendance map for all students in class as "Hadir"
+  const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
+  const [isCustomSubject, setIsCustomSubject] = useState(false);
+
+  // Get all unique classes taught in school
+  const allClassNames = useMemo(() => {
+    const classes = new Set<string>();
+    if (currentTeacher?.className) {
+      classes.add(currentTeacher.className);
+    }
+    students.forEach(s => {
+      if (s.class) {
+        classes.add(s.class);
+      }
+    });
+    return Array.from(classes).sort();
+  }, [students, currentTeacher?.className]);
+
+  const [masterCurriculumSubjects, setMasterCurriculumSubjects] = useState<Array<{ name: string; code?: string }>>([]);
+  useEffect(() => {
+    fetch('/api/curriculum/subjects')
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.subjects)) {
+          setMasterCurriculumSubjects(data.subjects);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Filter class schedules created in Waka Kurikulum for this current teacher
+  const teacherSchedules = useMemo(() => {
+    if (!classSchedules || classSchedules.length === 0) return [];
+    const cId = currentTeacher?.id ? String(currentTeacher.id).trim().toLowerCase() : '';
+    const cName = currentTeacher?.name ? currentTeacher.name.trim().toLowerCase() : '';
+    return classSchedules.filter(s => {
+      const tId = s.teacherId ? String(s.teacherId).trim().toLowerCase() : '';
+      const tName = s.teacherName ? s.teacherName.trim().toLowerCase() : '';
+      return (cId && tId === cId) || (cName && tName === cName);
+    });
+  }, [classSchedules, currentTeacher]);
+
+  // Modul Penilaian Wali Kelas: Hanya tampilkan mapel yang diampu dan kelas yang diajar saja (sesuai jadwal pelajaran / monitoring jam mengajar)
+  const homeroomGradingSubjects = useMemo(() => {
+    const set = new Set<string>();
+    const seenNormalized = new Set<string>();
+
+    const addSubject = (rawSubj?: string) => {
+      if (!rawSubj || !rawSubj.trim()) return;
+      const sub = rawSubj.trim();
+      const lower = sub.toLowerCase();
+      if (lower.includes('bimbingan wali') || lower.includes('upacara') || lower.includes('senam') || lower.includes('apel')) {
+        return;
+      }
+      const canonical = toMasterSubjectName(sub, masterCurriculumSubjects);
+      const normKey = normalizeSubject(canonical).toLowerCase();
+      if (!seenNormalized.has(normKey)) {
+        seenNormalized.add(normKey);
+        set.add(canonical);
+      }
+    };
+
+    teacherSchedules.forEach(s => {
+      addSubject(s.subject);
+    });
+    if (currentTeacher?.subject) {
+      addSubject(currentTeacher.subject);
+    }
+    if ((currentTeacher as any)?.subjects && Array.isArray((currentTeacher as any).subjects)) {
+      (currentTeacher as any).subjects.forEach((s: string) => {
+        addSubject(s);
+      });
+    }
+    const arr = Array.from(set);
+    if (arr.length > 0) return arr.sort((a, b) => a.localeCompare(b));
+    return currentTeacher?.subject ? [toMasterSubjectName(currentTeacher.subject, masterCurriculumSubjects)] : ['Pendidikan Pancasila'];
+  }, [teacherSchedules, currentTeacher, masterCurriculumSubjects]);
+
+  const homeroomGradingClasses = useMemo(() => {
+    const set = new Set<string>();
+    // 1. Selalu sertakan kelas binaan wali kelas
+    if (currentTeacher?.className && currentTeacher.className.trim()) {
+      set.add(currentTeacher.className.trim());
+    }
+    // 2. Kelas yang diajar sesuai jadwal pelajaran / monitoring jam mengajar
+    teacherSchedules.forEach(s => {
+      if (s.className && s.className.trim()) {
+        set.add(s.className.trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [currentTeacher?.className, teacherSchedules]);
+
+  // Otomatis sinkronisasi pilihan mapel & kelas penilaian wali kelas jika di luar daftar
+  useEffect(() => {
+    if (homeroomGradingSubjects.length > 0 && !homeroomGradingSubjects.some(s => isSameSubject(s, selectedSubjectForGrading))) {
+      setSelectedSubjectForGrading(homeroomGradingSubjects[0]);
+    }
+  }, [homeroomGradingSubjects, selectedSubjectForGrading]);
+
+  useEffect(() => {
+    if (homeroomGradingClasses.length > 0 && (!selectedGradingClass || !homeroomGradingClasses.includes(selectedGradingClass))) {
+      setSelectedGradingClass(currentTeacher?.className || homeroomGradingClasses[0]);
+    }
+  }, [homeroomGradingClasses, selectedGradingClass, currentTeacher?.className]);
+
+  const [journalModalMode, setJournalModalMode] = useState<'binaan' | 'kelas_lain'>('binaan');
+
+  // Schedules filtered by modal mode (Kelas Binaan vs Kelas Lain)
+  const activeSchedules = useMemo(() => {
+    if (journalModalMode === 'binaan') {
+      return teacherSchedules.filter(s => s.className?.trim().toLowerCase() === currentTeacher?.className?.trim().toLowerCase());
+    } else {
+      return teacherSchedules.filter(s => s.className?.trim().toLowerCase() !== currentTeacher?.className?.trim().toLowerCase());
+    }
+  }, [teacherSchedules, journalModalMode, currentTeacher?.className]);
+
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string>('');
+
+  const getIndonesianDay = (dateStr: string) => {
+    if (!dateStr) return 'Senin';
+    const d = new Date(dateStr);
+    const days: Array<'Minggu' | 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu'> = [
+      'Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'
+    ];
+    return days[d.getDay()] || 'Senin';
+  };
+
+  // Sync class, jamKe, and alokasiWaktu automatically based on schedule from Waka Kurikulum
+  useEffect(() => {
+    if (activeSchedules.length > 0 && isAddJournalOpen && !editingJournalId) {
+      const dayOfWeek = getIndonesianDay(journalDate);
+      const match = activeSchedules.find(s => s.day === dayOfWeek) || activeSchedules[0];
+      if (match) {
+        setSelectedScheduleId(match.id);
+        setJournalClassName(match.className);
+        setJournalSubject(match.subject || (journalModalMode === 'binaan' ? 'Bimbingan Wali Kelas' : 'Mata Pelajaran'));
+        setJournalJamKe(match.jamKe || '1 - 2');
+        setJournalAlokasiWaktu(match.alokasiWaktu ? match.alokasiWaktu.replace(/[^0-9]/g, '') || '2' : '2');
+      }
+    }
+  }, [activeSchedules, journalDate, isAddJournalOpen, editingJournalId, journalModalMode]);
+
+  // Auto calculate Pertemuan Ke based on existing teachingJournalsList count for this teacher & selected class
+  useEffect(() => {
+    if (journalClassName && isAddJournalOpen) {
+      const prevJournals = teachingJournalsList.filter(j => 
+        j.className?.trim().toUpperCase() === journalClassName.trim().toUpperCase() &&
+        (j.teacherId === currentTeacher?.id || (j.teacherName && j.teacherName === currentTeacher?.name))
+      );
+      setJournalPertemuanKe(String(prevJournals.length + 1));
+    }
+  }, [journalClassName, teachingJournalsList, currentTeacher, isAddJournalOpen]);
+
+  const handleScheduleSelect = (schedId: string) => {
+    setSelectedScheduleId(schedId);
+    const found = activeSchedules.find(s => s.id === schedId);
+    if (found) {
+      setJournalClassName(found.className);
+      setJournalSubject(found.subject || (journalModalMode === 'binaan' ? 'Bimbingan Wali Kelas' : 'Mata Pelajaran'));
+      setJournalJamKe(found.jamKe || '1 - 2');
+      setJournalAlokasiWaktu(found.alokasiWaktu ? found.alokasiWaktu.replace(/[^0-9]/g, '') || '2' : '2');
+    }
+  };
+
+  // Dynamic journalStudents list based on selected class in the modal
+  const journalStudents = useMemo(() => {
+    const targetClass = journalClassName || currentTeacher.className;
+    return students
+      .filter(
+        (s) => !isMutationStudent(s) && s.class && s.class.toLowerCase() === targetClass.toLowerCase()
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [students, journalClassName, currentTeacher.className]);
+
+  // Automatically reset the attendance map when the selected journal class changes
+  useEffect(() => {
+    if (isAddJournalOpen && journalStudents.length > 0 && !editingJournalId) {
+      const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
+      journalStudents.forEach(st => {
+        initialMap[st.id] = { status: 'Hadir', notes: '' };
+      });
+      setJournalAttendanceMap(initialMap);
+    }
+  }, [journalStudents, isAddJournalOpen, editingJournalId]);
+
+  const handleOpenAddJournalModal = (mode: 'binaan' | 'kelas_lain' = 'binaan') => {
+    setJournalModalMode(mode);
+    setEditingJournalId(null);
+
+    const relevantSchedules = mode === 'binaan'
+      ? teacherSchedules.filter(s => s.className?.trim().toLowerCase() === currentTeacher?.className?.trim().toLowerCase())
+      : teacherSchedules.filter(s => s.className?.trim().toLowerCase() !== currentTeacher?.className?.trim().toLowerCase());
+
+    const targetClass = mode === 'binaan' 
+      ? currentTeacher.className 
+      : (relevantSchedules.length > 0 ? relevantSchedules[0].className : (allClassNames.find(c => c.toLowerCase() !== currentTeacher.className.toLowerCase()) || currentTeacher.className));
+
+    setJournalClassName(targetClass);
+    setJournalSubject(mode === 'binaan' ? 'Bimbingan Wali Kelas' : (relevantSchedules.length > 0 ? relevantSchedules[0].subject || 'Mata Pelajaran' : 'Mata Pelajaran'));
+    setIsCustomSubject(false);
+
     const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
-    classStudents.forEach(st => {
+    const defaultStudents = students
+      .filter((s) => !isMutationStudent(s) && s.class && s.class.toLowerCase() === targetClass.toLowerCase())
+      .sort((a, b) => a.name.localeCompare(b.name));
+    defaultStudents.forEach(st => {
       initialMap[st.id] = { status: 'Hadir', notes: '' };
     });
     setJournalAttendanceMap(initialMap);
-    setJournalSubject('Bimbingan Wali Kelas');
-    setJournalDate(new Date().toISOString().substring(0, 10));
+
+    const todayStr = getWIBDateStr();
+    setJournalDate(todayStr);
+    setJournalSemester(getSemesterFromDate(todayStr));
+    setJournalFase('D');
     setJournalTopic('');
     setJournalPertemuanKe('');
     setJournalJamKe('');
-    setJournalAlokasiWaktu('2 JP');
+    setJournalAlokasiWaktu('2');
     setJournalTujuanPembelajaran('');
     setJournalPencapaianKktp('Tercapai');
     setJournalNotes('');
+    setIsAddJournalOpen(true);
+  };
+
+  const handleOpenEditJournalModal = (journal: any) => {
+    setEditingJournalId(journal.id);
+    setJournalClassName(journal.className || currentTeacher.className);
+    setJournalSubject(journal.subject || 'Bimbingan Wali Kelas');
+    
+    const isPredefined = [
+      'Bimbingan Wali Kelas', 
+      'Matematika', 
+      'IPA', 
+      'IPS', 
+      'Bahasa Indonesia', 
+      'Bahasa Inggris', 
+      'PJOK', 
+      'Pendidikan Agama Islam', 
+      'Seni Budaya', 
+      'Informatika', 
+      'Pendidikan Pancasila', 
+      'Prakarya',
+      'Jam Kelas/Koordinasi', 
+      'Pendidikan Karakter', 
+      'Literasi Mandiri'
+    ].includes(journal.subject || 'Bimbingan Wali Kelas');
+    setIsCustomSubject(!isPredefined);
+
+    setJournalDate(journal.date || getWIBDateStr());
+    setJournalSemester(journal.semester || getSemesterFromDate(journal.date || ''));
+    setJournalFase(journal.fase || 'D');
+    setJournalTopic(journal.topic || '');
+
+    const cleanPertemuan = journal.pertemuanKe ? String(journal.pertemuanKe).replace(/\D/g, '') : '';
+    const cleanJam = journal.jamKe ? String(journal.jamKe) : '';
+    const cleanAlokasi = journal.alokasiWaktu ? String(journal.alokasiWaktu).replace(/\D/g, '') : '2';
+
+    setJournalPertemuanKe(cleanPertemuan);
+    setJournalJamKe(cleanJam);
+    setJournalAlokasiWaktu(cleanAlokasi);
+
+    setJournalTujuanPembelajaran(journal.tujuanPembelajaran || '');
+    setJournalPencapaianKktp(journal.pencapaianKktp || 'Tercapai');
+    setJournalNotes(journal.notes || '');
+
+    // Initialize attendance map from the existing journal record
+    const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
+    if (Array.isArray(journal.attendance)) {
+      journal.attendance.forEach((att: any) => {
+        initialMap[att.studentId] = {
+          status: att.status || 'Hadir',
+          notes: att.notes || ''
+        };
+      });
+    }
+    setJournalAttendanceMap(initialMap);
     setIsAddJournalOpen(true);
   };
 
@@ -912,7 +1817,7 @@ export default function HomeroomPanel({
 
     setSavingJournal(true);
     try {
-      const attendanceList = classStudents.map(student => {
+      const attendanceList = journalStudents.map(student => {
         const record = journalAttendanceMap[student.id] || { status: 'Hadir', notes: '' };
         return {
           studentId: student.id,
@@ -922,15 +1827,18 @@ export default function HomeroomPanel({
         };
       });
 
-      const response = await fetch('/api/teaching-journals', {
-        method: 'POST',
+      const url = editingJournalId ? `/api/teaching-journals/${editingJournalId}` : '/api/teaching-journals';
+      const method = editingJournalId ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           teacherId: currentTeacher.id,
           teacherName: currentTeacher.name,
           teacherType: 'homeroom',
           subject: journalSubject.trim(),
-          className: currentTeacher.className,
+          className: journalClassName,
           date: journalDate,
           topic: journalTopic.trim(),
           notes: journalNotes.trim(),
@@ -949,6 +1857,7 @@ export default function HomeroomPanel({
         setNotifMsg({ type: 'success', text: 'Jurnal KBM & Absensi Wali Kelas berhasil disimpan!' });
         setIsAddJournalOpen(false);
         fetchTeachingJournals();
+        if (onRefresh) onRefresh();
       } else {
         const errData = await response.json();
         setNotifMsg({ type: 'error', text: errData.error || 'Gagal menyimpan Jurnal Pembelajaran.' });
@@ -966,9 +1875,22 @@ export default function HomeroomPanel({
     try {
       const res = await fetch('/api/teaching-journals');
       if (res.ok) {
-        const data = await res.json();
-        // Filter journals that belong to current homeroom teacher's class
-        const filtered = data.filter((j: any) => j.className.toLowerCase() === currentTeacher.className.toLowerCase());
+        const rawData = await res.json();
+        const dataList = Array.isArray(rawData) ? rawData : [];
+        const normalized = dataList.map((j: any) => ({
+          ...j,
+          attendance: Array.isArray(j.attendance)
+            ? j.attendance
+            : (Array.isArray(j.attendanceData) ? j.attendanceData : [])
+        }));
+        setAllTeachingJournalsList(normalized);
+        // Filter journals that belong to current homeroom teacher's class OR are taught by this teacher
+        const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
+        const filtered = normalized.filter((j: any) => 
+          (j.className && j.className.toLowerCase() === currentTeacher.className.toLowerCase()) || 
+          j.teacherId === currentTeacher.id ||
+          (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName)
+        );
         setTeachingJournalsList(filtered);
       }
     } catch (err) {
@@ -1492,6 +2414,10 @@ export default function HomeroomPanel({
   };
 
   useEffect(() => {
+    fetchTeachingJournals();
+  }, [currentTeacher.className]);
+
+  useEffect(() => {
     if (activeSubTab === 'history') {
       fetchTeachingJournals();
     } else if (activeSubTab === 'perkembangan') {
@@ -1501,7 +2427,7 @@ export default function HomeroomPanel({
       fetchCounseling();
       fetchAnnouncements();
       fetchMeetings();
-    } else if (activeSubTab === 'rapor_merdeka') {
+    } else if (activeSubTab === 'kokurikuler') {
       fetchMerdekaAssessments();
     } else if (activeSubTab === 'profile') {
       fetchPrincipalWorkPrograms();
@@ -1511,28 +2437,780 @@ export default function HomeroomPanel({
   }, [activeSubTab, currentTeacher.className]);
 
   useEffect(() => {
-    if (classStudents.length > 0 && !selectedReportStudentId) {
-      setSelectedReportStudentId(classStudents[0].id);
+    if (activeSubTab === 'kokurikuler' && gradingStudents.length > 0) {
+      const initialMap: Record<string, string> = {};
+      const fullGradeMap: Record<string, any> = {};
+
+      // Sinkronisasi deskripsi TP sesuai mapel yang dipilih
+      const matchedSubjectAss = merdekaAssessments.find(a =>
+        isSameSubject(a.subject, selectedSubjectForGrading) &&
+        (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
+      );
+      if (matchedSubjectAss) {
+        if (matchedSubjectAss.tp1Name) setTp1InputName(matchedSubjectAss.tp1Name);
+        if (matchedSubjectAss.tp2Name) setTp2InputName(matchedSubjectAss.tp2Name);
+        if (matchedSubjectAss.tp3Name) setTp3InputName(matchedSubjectAss.tp3Name);
+        if (matchedSubjectAss.tp4Name) setTp4InputName(matchedSubjectAss.tp4Name);
+      }
+
+      gradingStudents.forEach(st => {
+        const match = merdekaAssessments.find(a => 
+          a.studentId === st.id && 
+          isSameSubject(a.subject, selectedSubjectForGrading) &&
+          (a.semester || '').toLowerCase() === kokurikulerSemester.toLowerCase() && 
+          (a.academicYear || '').toLowerCase() === kokurikulerYear.toLowerCase()
+        );
+
+        // General kokurikuler score
+        const generalMatch = merdekaAssessments.find(a =>
+          a.studentId === st.id &&
+          (a.semester || '').toLowerCase() === kokurikulerSemester.toLowerCase() &&
+          (a.academicYear || '').toLowerCase() === kokurikulerYear.toLowerCase() &&
+          a.nilaiKokurikuler !== undefined &&
+          a.nilaiKokurikuler > 0
+        );
+
+        const currentKoku = generalMatch?.nilaiKokurikuler !== undefined 
+          ? String(generalMatch.nilaiKokurikuler) 
+          : (match?.nilaiKokurikuler !== undefined ? String(match.nilaiKokurikuler) : "0");
+
+        initialMap[st.id] = currentKoku;
+
+        if (match) {
+          fullGradeMap[st.id] = {
+            tp1Tugas1: match.tp1Tugas1 !== undefined ? String(match.tp1Tugas1) : '',
+            tp1Tugas2: match.tp1Tugas2 !== undefined ? String(match.tp1Tugas2) : '',
+            tp1Uh: match.tp1Uh !== undefined ? String(match.tp1Uh) : '',
+
+            tp2Tugas1: match.tp2Tugas1 !== undefined ? String(match.tp2Tugas1) : '',
+            tp2Tugas2: match.tp2Tugas2 !== undefined ? String(match.tp2Tugas2) : '',
+            tp2Uh: match.tp2Uh !== undefined ? String(match.tp2Uh) : '',
+
+            tp3Tugas1: match.tp3Tugas1 !== undefined ? String(match.tp3Tugas1) : '',
+            tp3Tugas2: match.tp3Tugas2 !== undefined ? String(match.tp3Tugas2) : '',
+            tp3Uh: match.tp3Uh !== undefined ? String(match.tp3Uh) : '',
+
+            tp4Tugas1: match.tp4Tugas1 !== undefined ? String(match.tp4Tugas1) : '',
+            tp4Tugas2: match.tp4Tugas2 !== undefined ? String(match.tp4Tugas2) : '',
+            tp4Uh: match.tp4Uh !== undefined ? String(match.tp4Uh) : '',
+
+            kokurikuler: currentKoku,
+            pts: match.nilaiPts !== undefined ? String(match.nilaiPts) : '',
+            pas: match.nilaiPas !== undefined ? String(match.nilaiPas) : '',
+            deskripsi: match.deskripsiCapaian || ''
+          };
+        } else {
+          fullGradeMap[st.id] = {
+            tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+            tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+            tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+            tp4Tugas1: '', tp4Tugas2: '', tp4Uh: '',
+            kokurikuler: currentKoku,
+            pts: '', pas: '', deskripsi: ''
+          };
+        }
+      });
+      const currentScopeKey = `${currentTeacher?.id || 'wali'}_${selectedGradingClass || currentTeacher.className}_${selectedSubjectForGrading}_${kokurikulerSemester}_${kokurikulerYear}`;
+      const isScopeChange = lastGradingScopeRef.current !== currentScopeKey;
+
+      if (isScopeChange) {
+        lastGradingScopeRef.current = currentScopeKey;
+        let restoredFromDraft = false;
+        try {
+          const rawDraft = localStorage.getItem(`draft_grades_homeroom_${currentScopeKey}`);
+          if (rawDraft) {
+            const draftObj = JSON.parse(rawDraft);
+            if (draftObj && typeof draftObj === 'object') {
+              gradingStudents.forEach(st => {
+                if (draftObj[st.id]) {
+                  fullGradeMap[st.id] = { ...fullGradeMap[st.id], ...draftObj[st.id] };
+                  dirtyStudentsRef.current.add(st.id);
+                  if (draftObj[st.id].kokurikuler !== undefined) {
+                    initialMap[st.id] = String(draftObj[st.id].kokurikuler);
+                  }
+                }
+              });
+              restoredFromDraft = dirtyStudentsRef.current.size > 0;
+            }
+          }
+        } catch (e) {
+          console.warn("Gagal membaca draft lokal wali kelas:", e);
+        }
+
+        if (!restoredFromDraft) {
+          dirtyStudentsRef.current.clear();
+          setHasUnsavedGrades(false);
+          setUnsavedCount(0);
+        } else {
+          setHasUnsavedGrades(true);
+          setUnsavedCount(dirtyStudentsRef.current.size);
+        }
+        setKokurikulerScores(prev => ({ ...initialMap, ...prev }));
+        setGradeInputMap(fullGradeMap);
+      } else {
+        // Background sync, SSE, student array update, or background polling:
+        // CRITICAL: Protect dirty inputs from being wiped out!
+        setGradeInputMap(prev => {
+          const merged: Record<string, any> = { ...fullGradeMap };
+          Object.keys(prev).forEach(studId => {
+            if (dirtyStudentsRef.current.has(studId) && prev[studId]) {
+              merged[studId] = { ...fullGradeMap[studId], ...prev[studId] };
+            }
+          });
+          return merged;
+        });
+        setKokurikulerScores(prev => ({ ...initialMap, ...prev }));
+      }
     }
-  }, [classStudents, selectedReportStudentId]);
+  }, [activeSubTab, merdekaAssessments, selectedSubjectForGrading, gradingStudents, kokurikulerSemester, kokurikulerYear, selectedGradingClass, currentTeacher?.id, currentTeacher?.className]);
+
+  const handleSaveFullGrades = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingFullGrades(true);
+    setNotifMsg(null);
+    try {
+      const newKokuScores = { ...kokurikulerScores };
+      const targetClass = selectedGradingClass || currentTeacher.className;
+
+      const batchData = gradingStudents.map(s => {
+        const inputState = gradeInputMap[s.id] || {
+          tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+          tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+          tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+          tp4Tugas1: '', tp4Tugas2: '', tp4Uh: '',
+          kokurikuler: '0', pts: '', pas: '', deskripsi: ''
+        };
+
+        const kokuVal = Number(inputState.kokurikuler) || Number(kokurikulerScores[s.id]) || 0;
+        newKokuScores[s.id] = String(kokuVal);
+
+        return {
+          studentId: s.id,
+          studentName: s.name,
+          className: targetClass,
+          subject: selectedSubjectForGrading,
+          teacherName: currentTeacher.name,
+          teacherId: currentTeacher.username || currentTeacher.id,
+          semester: kokurikulerSemester,
+          academicYear: kokurikulerYear,
+          tp1Id: tp1Id || undefined,
+          tp1Name: tp1InputName,
+          tp1Tugas1: inputState.tp1Tugas1,
+          tp1Tugas2: inputState.tp1Tugas2,
+          tp1Uh: inputState.tp1Uh,
+
+          tp2Id: tp2Id || undefined,
+          tp2Name: tp2InputName || undefined,
+          tp2Tugas1: inputState.tp2Tugas1,
+          tp2Tugas2: inputState.tp2Tugas2,
+          tp2Uh: inputState.tp2Uh,
+
+          tp3Id: tp3Id || undefined,
+          tp3Name: tp3InputName || undefined,
+          tp3Tugas1: inputState.tp3Tugas1,
+          tp3Tugas2: inputState.tp3Tugas2,
+          tp3Uh: inputState.tp3Uh,
+
+          tp4Id: tp4Id || undefined,
+          tp4Name: tp4InputName || undefined,
+          tp4Tugas1: inputState.tp4Tugas1,
+          tp4Tugas2: inputState.tp4Tugas2,
+          tp4Uh: inputState.tp4Uh,
+
+          nilaiKokurikuler: kokuVal,
+          nilaiPts: inputState.pts !== '' ? Number(inputState.pts) : undefined,
+          nilaiPas: inputState.pas !== '' ? Number(inputState.pas) : undefined,
+          deskripsiCapaian: inputState.deskripsi || undefined
+        };
+      });
+
+      setKokurikulerScores(newKokuScores);
+
+      const res1 = await fetch('/api/merdeka-assessments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(batchData)
+      });
+
+      await fetch('/api/kokurikuler/batch-save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          className: currentTeacher.className,
+          semester: kokurikulerSemester,
+          academicYear: kokurikulerYear,
+          scores: newKokuScores
+        })
+      });
+
+      if (res1.ok) {
+        dirtyStudentsRef.current.clear();
+        setHasUnsavedGrades(false);
+        setUnsavedCount(0);
+        try {
+          localStorage.removeItem(`draft_grades_homeroom_${lastGradingScopeRef.current}`);
+        } catch (e) {}
+
+        setNotifMsg({ type: 'success', text: `🎉 Penilaian Kurikulum Merdeka & Nilai Kokurikuler Kelas ${currentTeacher.className} (${selectedSubjectForGrading}) berhasil disimpan langsung ke database MySQL!` });
+        setGradeSuccessSummary({
+          className: currentTeacher.className,
+          subject: selectedSubjectForGrading,
+          count: batchData.length
+        });
+        setShowGradeSuccessModal(true);
+        fetchMerdekaAssessments();
+        if (onRefresh) onRefresh();
+      } else {
+        const d = await res1.json();
+        setNotifMsg({ type: 'error', text: d.error || 'Gagal menyimpan nilai ke database MySQL.' });
+      }
+    } catch (err) {
+      setNotifMsg({ type: 'error', text: 'Terjadi kesalahan koneksi ke server.' });
+    } finally {
+      setIsSavingFullGrades(false);
+    }
+  };
+
+  const handleFillSampleGrades = () => {
+    const updatedMap = { ...gradeInputMap };
+    gradingStudents.forEach((st, index) => {
+      dirtyStudentsRef.current.add(st.id);
+      const cur = updatedMap[st.id] || {};
+      const base = 80 + ((index * 3) % 15);
+      updatedMap[st.id] = {
+        ...cur,
+        tp1Tugas1: cur.tp1Tugas1 || String(base),
+        tp1Tugas2: cur.tp1Tugas2 || String(base + 2 > 100 ? 98 : base + 2),
+        tp1Uh: cur.tp1Uh || String(base - 1),
+
+        tp2Tugas1: cur.tp2Tugas1 || String(base + 1),
+        tp2Tugas2: cur.tp2Tugas2 || String(base + 3 > 100 ? 95 : base + 3),
+        tp2Uh: cur.tp2Uh || String(base),
+
+        tp3Tugas1: cur.tp3Tugas1 || String(base),
+        tp3Tugas2: cur.tp3Tugas2 || String(base + 1),
+        tp3Uh: cur.tp3Uh || String(base + 2 > 100 ? 96 : base + 2),
+
+        tp4Tugas1: cur.tp4Tugas1 || String(base - 2 < 75 ? 80 : base - 2),
+        tp4Tugas2: cur.tp4Tugas2 || String(base + 2),
+        tp4Uh: cur.tp4Uh || String(base + 1),
+
+        kokurikuler: cur.kokurikuler && cur.kokurikuler !== '0' ? cur.kokurikuler : String(base + 3 > 100 ? 92 : base + 3),
+        pts: cur.pts || String(base + 1),
+        pas: cur.pas || String(base + 2)
+      };
+    });
+    setGradeInputMap(updatedMap);
+    setHasUnsavedGrades(true);
+    setUnsavedCount(dirtyStudentsRef.current.size);
+    try {
+      localStorage.setItem(`draft_grades_homeroom_${lastGradingScopeRef.current}`, JSON.stringify(updatedMap));
+    } catch (e) {}
+    setNotifMsg({ type: 'success', text: '✨ Berhasil mengisi contoh nilai (80-95) untuk seluruh siswa. Klik Simpan untuk memperbarui database.' });
+    setShowSuccessCheck(true);
+  };
+
+  // 1. Download Template Excel (.xlsx) untuk Penilaian Wali Kelas
+  const handleDownloadHomeroomExcelTemplate = () => {
+    try {
+      const targetClass = selectedGradingClass || currentTeacher.className;
+      const headers = [
+        "No", "NIS", "Nama Siswa",
+        "TP1_Tugas", "TP1_UH",
+        "TP2_Tugas", "TP2_UH",
+        "TP3_Tugas", "TP3_UH",
+        "TP4_Tugas", "TP4_UH",
+        "Kokurikuler", "PTS", "PAS"
+      ];
+
+      const dataRows = gradingStudents.map((st, idx) => [
+        idx + 1,
+        String(st.nis || st.id || ''),
+        st.name || '',
+        "", "",
+        "", "",
+        "", "",
+        "", "",
+        "", "", ""
+      ]);
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 6 },  // No
+        { wch: 16 }, // NIS
+        { wch: 32 }, // Nama Siswa
+        { wch: 12 }, // TP1_Tugas
+        { wch: 12 }, // TP1_UH
+        { wch: 12 }, // TP2_Tugas
+        { wch: 12 }, // TP2_UH
+        { wch: 12 }, // TP3_Tugas
+        { wch: 12 }, // TP3_UH
+        { wch: 12 }, // TP4_Tugas
+        { wch: 12 }, // TP4_UH
+        { wch: 14 }, // Kokurikuler
+        { wch: 10 }, // PTS
+        { wch: 10 }  // PAS
+      ];
+
+      // Format NIS as text to preserve leading zeros
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+      for (let R = 1; R <= range.e.r; ++R) {
+        const nisCellAddr = XLSX.utils.encode_cell({ r: R, c: 1 });
+        if (ws[nisCellAddr]) {
+          ws[nisCellAddr].t = 's';
+          ws[nisCellAddr].z = '@';
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Template Penilaian");
+
+      const safeClass = targetClass.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSubj = (selectedSubjectForGrading || 'Mapel').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSem = kokurikulerSemester.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeYear = kokurikulerYear.replace(/[^a-zA-Z0-9_-]/g, '-');
+      const filename = `Template_Penilaian_Kelas_${safeClass}_${safeSubj}_${safeSem}_${safeYear}.xlsx`;
+
+      XLSX.writeFile(wb, filename);
+      setNotifMsg({ type: 'success', text: `📥 Berhasil mengunduh template Excel penilaian (${filename})!` });
+    } catch (err: any) {
+      console.error("Error generating Excel template:", err);
+      setNotifMsg({ type: 'error', text: `Gagal membuat template Excel: ${err.message || err}` });
+    }
+  };
+
+  // 2. Export Excel Rapi (.xlsx) untuk Penilaian Wali Kelas
+  const handleExportHomeroomExcelRapi = () => {
+    try {
+      const targetClass = selectedGradingClass || currentTeacher.className;
+      const headers = [
+        "No", "NIS", "Nama Siswa",
+        "TP1_Tugas", "TP1_UH",
+        "TP2_Tugas", "TP2_UH",
+        "TP3_Tugas", "TP3_UH",
+        "TP4_Tugas", "TP4_UH",
+        "Rata_TP", "Kokurikuler", "PTS", "PAS", "Nilai_Akhir_Mapel"
+      ];
+
+      const calcTp = (t1: any, uh: any) => {
+        const n1 = t1 !== '' && t1 !== null && t1 !== undefined && !isNaN(Number(t1)) ? Number(t1) : null;
+        const n3 = uh !== '' && uh !== null && uh !== undefined && !isNaN(Number(uh)) ? Number(uh) : null;
+        if (n1 === null && n3 === null) return null;
+        if (n1 !== null && n3 !== null) return Math.round((n1 * 0.7) + (n3 * 0.3));
+        if (n1 !== null) return Math.round(n1);
+        if (n3 !== null) return Math.round(n3);
+        return null;
+      };
+
+      const dataRows = gradingStudents.map((st, idx) => {
+        const state = gradeInputMap[st.id] || {
+          tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+          tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+          tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+          tp4Tugas1: '', tp4Tugas2: '', tp4Uh: '',
+          kokurikuler: kokurikulerScores[st.id] || '0',
+          pts: '', pas: ''
+        };
+
+        const tp1 = calcTp(state.tp1Tugas1, state.tp1Uh);
+        const tp2 = calcTp(state.tp2Tugas1, state.tp2Uh);
+        const tp3 = calcTp(state.tp3Tugas1, state.tp3Uh);
+        const tp4 = calcTp(state.tp4Tugas1, state.tp4Uh);
+
+        const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
+        const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
+
+        const koku = Number(state.kokurikuler) || Number(kokurikulerScores[st.id]) || 0;
+        const pts = state.pts !== '' && !isNaN(Number(state.pts)) ? Number(state.pts) : 0;
+        const pas = state.pas !== '' && !isNaN(Number(state.pas)) ? Number(state.pas) : 0;
+
+        const finalMapel = avgTp !== null 
+          ? Math.round(((avgTp * 3) + koku + pts + pas) / 6) 
+          : null;
+
+        return [
+          idx + 1,
+          String(st.nis || st.id || ''),
+          st.name || '',
+          state.tp1Tugas1 !== undefined ? state.tp1Tugas1 : '',
+          state.tp1Uh !== undefined ? state.tp1Uh : '',
+          state.tp2Tugas1 !== undefined ? state.tp2Tugas1 : '',
+          state.tp2Uh !== undefined ? state.tp2Uh : '',
+          state.tp3Tugas1 !== undefined ? state.tp3Tugas1 : '',
+          state.tp3Uh !== undefined ? state.tp3Uh : '',
+          state.tp4Tugas1 !== undefined ? state.tp4Tugas1 : '',
+          state.tp4Uh !== undefined ? state.tp4Uh : '',
+          avgTp !== null ? avgTp : '',
+          koku || '',
+          pts || '',
+          pas || '',
+          finalMapel !== null ? finalMapel : ''
+        ];
+      });
+
+      const titleRows = [
+        ["REKAP NILAI PENILAIAN KURIKULUM MERDEKA & KOKURIKULER"],
+        [`Sekolah: ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}`],
+        [`Kelas: ${targetClass} | Mata Pelajaran: ${selectedSubjectForGrading}`],
+        [`Semester: ${kokurikulerSemester} | Tahun Ajaran: ${kokurikulerYear} | Wali Kelas: ${currentTeacher.name}`],
+        [] // Blank row
+      ];
+
+      const allRows = [...titleRows, headers, ...dataRows];
+      const ws = XLSX.utils.aoa_to_sheet(allRows);
+
+      ws['!cols'] = [
+        { wch: 6 },  // No
+        { wch: 16 }, // NIS
+        { wch: 32 }, // Nama Siswa
+        { wch: 11 }, // TP1_Tugas
+        { wch: 11 }, // TP1_UH
+        { wch: 11 }, // TP2_Tugas
+        { wch: 11 }, // TP2_UH
+        { wch: 11 }, // TP3_Tugas
+        { wch: 11 }, // TP3_UH
+        { wch: 11 }, // TP4_Tugas
+        { wch: 11 }, // TP4_UH
+        { wch: 11 }, // Rata_TP
+        { wch: 13 }, // Kokurikuler
+        { wch: 10 }, // PTS
+        { wch: 10 }, // PAS
+        { wch: 14 }  // Nilai_Akhir_Mapel
+      ];
+
+      // Format NIS cells
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+      for (let R = 5; R <= range.e.r; ++R) {
+        const nisCellAddr = XLSX.utils.encode_cell({ r: R, c: 1 });
+        if (ws[nisCellAddr]) {
+          ws[nisCellAddr].t = 's';
+          ws[nisCellAddr].z = '@';
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Rekap Penilaian");
+
+      const safeClass = targetClass.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSubj = (selectedSubjectForGrading || 'Mapel').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSem = kokurikulerSemester.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeYear = kokurikulerYear.replace(/[^a-zA-Z0-9_-]/g, '-');
+      const filename = `Rekap_Nilai_Kelas_${safeClass}_${safeSubj}_${safeSem}_${safeYear}.xlsx`;
+
+      XLSX.writeFile(wb, filename);
+      setNotifMsg({ type: 'success', text: `📊 Berhasil mengekspor rekap nilai Excel (${filename})!` });
+    } catch (err: any) {
+      console.error("Error exporting Excel:", err);
+      setNotifMsg({ type: 'error', text: `Gagal mengekspor file Excel: ${err.message || err}` });
+    }
+  };
+
+  // 3. Helper to parse matrix of rows (from XLSX or text) into excelParsedPreview
+  const processMatrixRows = (matrix: (string | number)[][]) => {
+    if (!matrix || matrix.length === 0) {
+      setExcelParseError("Data kosong. Silakan unggah file Excel atau tempel data terlebih dahulu.");
+      setExcelParsedPreview([]);
+      return;
+    }
+
+    try {
+      const parsedData: any[] = [];
+      let headerIndex = -1;
+
+      // Find header row
+      for (let i = 0; i < Math.min(matrix.length, 10); i++) {
+        const rowStr = matrix[i].map(c => String(c ?? '').trim().toLowerCase()).join(' ');
+        if (
+          (rowStr.includes("nis") || rowStr.includes("nama")) &&
+          (rowStr.includes("tp") || rowStr.includes("tugas") || rowStr.includes("koku") || rowStr.includes("uh") || matrix[i].length >= 3)
+        ) {
+          headerIndex = i;
+          break;
+        }
+      }
+
+      const rowsToProcess = headerIndex !== -1 ? matrix.slice(headerIndex + 1) : matrix;
+
+      rowsToProcess.forEach((rawRow) => {
+        const cells = rawRow.map(c => String(c ?? '').trim().replace(/^["']|["']$/g, ''));
+        if (cells.length < 2 || cells.every(c => c === '')) return;
+
+        // Skip potential repeated header
+        if (
+          cells[0].toLowerCase().includes("nis") ||
+          cells[0].toLowerCase().includes("no") ||
+          cells[1]?.toLowerCase().includes("nama") ||
+          cells[1]?.toLowerCase().includes("nis")
+        ) {
+          return;
+        }
+
+        // Detect if first column is row number (No: 1, 2, 3...)
+        let shift = 0;
+        if (!isNaN(Number(cells[0])) && Number(cells[0]) < 1000 && (cells[1] || '').length >= 2) {
+          shift = 1;
+        }
+
+        const rawNis = cells[shift] || "";
+        const nameInput = cells[shift + 1] || "";
+
+        if (!rawNis && !nameInput) return;
+
+        // Clean NIS for matching
+        const cleanRawNis = rawNis.replace(/[^a-zA-Z0-9]/g, '');
+        const cleanNameInput = nameInput.toLowerCase().trim();
+
+        // Match against gradingStudents first, fallback to all students
+        const studentPool = gradingStudents.length > 0 ? gradingStudents : students;
+        const matched = studentPool.find(s => {
+          const sNis = String(s.nis || '').replace(/[^a-zA-Z0-9]/g, '');
+          const sId = String(s.id || '').replace(/[^a-zA-Z0-9]/g, '');
+          const sName = (s.name || '').toLowerCase().trim();
+
+          if (cleanRawNis && (sNis === cleanRawNis || sId === cleanRawNis)) return true;
+          if (cleanNameInput && (sName === cleanNameInput || sName.includes(cleanNameInput) || cleanNameInput.includes(sName))) return true;
+          return false;
+        });
+
+        const gradeCells = cells.slice(shift + 2);
+
+        let tp1T1 = "", tp1Uh = "";
+        let tp2T1 = "", tp2Uh = "";
+        let tp3T1 = "", tp3Uh = "";
+        let tp4T1 = "", tp4Uh = "";
+        let kokurikuler = "";
+        let pts = "";
+        let pas = "";
+
+        if (gradeCells.length >= 13) {
+          // Format with Rata_TP: TP1_T, TP1_UH, TP2_T, TP2_UH, TP3_T, TP3_UH, TP4_T, TP4_UH, Rata_TP, Kokurikuler, PTS, PAS
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+          tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+          tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+          tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+          kokurikuler = gradeCells[9] || "";
+          pts = gradeCells[10] || "";
+          pas = gradeCells[11] || "";
+        } else if (gradeCells.length >= 11) {
+          // Standard template: TP1_T, TP1_UH, TP2_T, TP2_UH, TP3_T, TP3_UH, TP4_T, TP4_UH, Kokurikuler, PTS, PAS
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+          tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+          tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+          tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+          kokurikuler = gradeCells[8] || "";
+          pts = gradeCells[9] || "";
+          pas = gradeCells[10] || "";
+        } else if (gradeCells.length >= 8) {
+          // 8 TP cols only
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+          tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+          tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+          tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+        } else if (gradeCells.length >= 4) {
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[0] || "";
+          tp2T1 = gradeCells[1] || ""; tp2Uh = gradeCells[1] || "";
+          tp3T1 = gradeCells[2] || ""; tp3Uh = gradeCells[2] || "";
+          tp4T1 = gradeCells[3] || ""; tp4Uh = gradeCells[3] || "";
+          pts = gradeCells[4] || "";
+          pas = gradeCells[5] || "";
+        } else {
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[0] || "";
+          tp2T1 = gradeCells[1] || ""; tp2Uh = gradeCells[1] || "";
+        }
+
+        parsedData.push({
+          studentId: matched?.id,
+          studentName: matched ? matched.name : nameInput || "Siswa Tidak Ditemukan",
+          inputName: nameInput,
+          nis: matched?.nis || rawNis || "-",
+          className: matched?.class || "-",
+          matched: !!matched,
+          tp1Tugas1: tp1T1, tp1Uh,
+          tp2Tugas1: tp2T1, tp2Uh,
+          tp3Tugas1: tp3T1, tp3Uh,
+          tp4Tugas1: tp4T1, tp4Uh,
+          kokurikuler, pts, pas
+        });
+      });
+
+      const matchedCount = parsedData.filter(d => d.matched).length;
+      if (parsedData.length === 0) {
+        setExcelParseError("Tidak ada baris data valid yang terdeteksi.");
+        setExcelParsedPreview([]);
+      } else if (matchedCount === 0) {
+        setExcelParseError("Gagal mencocokkan data baris dengan siswa terdaftar. Pastikan NIS atau Nama sesuai dengan daftar siswa.");
+        setExcelParsedPreview(parsedData);
+      } else {
+        setExcelParsedPreview(parsedData);
+        setExcelParseError(null);
+      }
+    } catch (err: any) {
+      console.error("Error processing matrix:", err);
+      setExcelParseError("Kesalahan saat memproses data: " + (err.message || err));
+    }
+  };
+
+  // Upload handler for .xlsx, .xls, .csv, .tsv, .txt
+  const handleHomeroomExcelFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingExcelFile(true);
+    setExcelParseError(null);
+    try {
+      const fileName = file.name.toLowerCase();
+      let matrix: any[][] = [];
+
+      if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' }) as any[][];
+      } else {
+        const text = await file.text();
+        setExcelPasteContent(text);
+        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+        const delimiter = lines[0]?.includes('\t') ? '\t' : (lines[0]?.includes(';') ? ';' : ',');
+        matrix = lines.map(line => line.split(delimiter));
+      }
+
+      processMatrixRows(matrix);
+    } catch (err: any) {
+      console.error("Error reading uploaded file:", err);
+      setExcelParseError("Gagal membaca berkas: " + (err.message || err));
+    } finally {
+      setIsProcessingExcelFile(false);
+      e.target.value = '';
+    }
+  };
+
+  // Paste / Textarea parse trigger
+  const handleParseHomeroomPastedExcel = () => {
+    if (!excelPasteContent.trim()) {
+      setExcelParseError("Silakan tempel data dari Excel atau unggah file terlebih dahulu.");
+      return;
+    }
+    const lines = excelPasteContent.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+    const delimiter = lines[0]?.includes('\t') ? '\t' : (lines[0]?.includes(';') ? ';' : ',');
+    const matrix = lines.map(line => line.split(delimiter));
+    processMatrixRows(matrix);
+  };
+
+  // Apply parsed items to gradeInputMap & kokurikulerScores
+  const applyHomeroomExcelImportToState = () => {
+    const updatedMap = { ...gradeInputMap };
+    const updatedKoku = { ...kokurikulerScores };
+    let importCount = 0;
+
+    excelParsedPreview.forEach(item => {
+      if (item.matched && item.studentId) {
+        dirtyStudentsRef.current.add(item.studentId);
+        updatedMap[item.studentId] = {
+          ...(updatedMap[item.studentId] || {}),
+          tp1Tugas1: item.tp1Tugas1 !== undefined ? String(item.tp1Tugas1) : "",
+          tp1Uh: item.tp1Uh !== undefined ? String(item.tp1Uh) : "",
+
+          tp2Tugas1: item.tp2Tugas1 !== undefined ? String(item.tp2Tugas1) : "",
+          tp2Uh: item.tp2Uh !== undefined ? String(item.tp2Uh) : "",
+
+          tp3Tugas1: item.tp3Tugas1 !== undefined ? String(item.tp3Tugas1) : "",
+          tp3Uh: item.tp3Uh !== undefined ? String(item.tp3Uh) : "",
+
+          tp4Tugas1: item.tp4Tugas1 !== undefined ? String(item.tp4Tugas1) : "",
+          tp4Uh: item.tp4Uh !== undefined ? String(item.tp4Uh) : "",
+
+          kokurikuler: item.kokurikuler !== undefined && item.kokurikuler !== "" ? String(item.kokurikuler) : (updatedMap[item.studentId]?.kokurikuler || "0"),
+          pts: item.pts !== undefined ? String(item.pts) : "",
+          pas: item.pas !== undefined ? String(item.pas) : ""
+        };
+
+        if (item.kokurikuler !== undefined && item.kokurikuler !== "") {
+          updatedKoku[item.studentId] = String(item.kokurikuler);
+        }
+
+        importCount++;
+      }
+    });
+
+    setGradeInputMap(updatedMap);
+    setKokurikulerScores(updatedKoku);
+    setHasUnsavedGrades(true);
+    setUnsavedCount(dirtyStudentsRef.current.size);
+    try {
+      localStorage.setItem(`draft_grades_homeroom_${lastGradingScopeRef.current}`, JSON.stringify(updatedMap));
+    } catch (e) {}
+    setShowExcelModal(false);
+    setExcelPasteContent('');
+    setExcelParsedPreview([]);
+    setNotifMsg({
+      type: 'success',
+      text: `🎉 Berhasil memuat & menerapkan nilai ${importCount} siswa dari Excel ke tabel penilaian!`
+    });
+    setShowSuccessCheck(true);
+  };
+
+  const handleSaveKokurikulerBatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingKokurikuler(true);
+    setNotifMsg(null);
+    try {
+      const res = await fetch('/api/kokurikuler/batch-save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          className: selectedGradingClass || currentTeacher.className,
+          semester: kokurikulerSemester,
+          academicYear: kokurikulerYear,
+          scores: kokurikulerScores
+        })
+      });
+      if (res.ok) {
+        setNotifMsg({ type: 'success', text: '🎉 Nilai Kokurikuler berhasil disimpan & otomatis terhubung ke perhitungan Guru Mapel!' });
+        setShowSuccessCheck(true);
+        fetchMerdekaAssessments();
+        if (onRefresh) onRefresh();
+      } else {
+        const d = await res.json();
+        setNotifMsg({ type: 'error', text: d.error || 'Gagal menyimpan nilai kokurikuler.' });
+      }
+    } catch (err) {
+      setNotifMsg({ type: 'error', text: 'Terjadi kesalahan koneksi ke server.' });
+    } finally {
+      setIsSavingKokurikuler(false);
+    }
+  };
+
+  useEffect(() => {
+    const list = activeSubTab === 'kokurikuler' ? gradingStudents : classStudents;
+    if (list.length > 0 && (!selectedReportStudentId || !list.some(s => s.id === selectedReportStudentId))) {
+      setSelectedReportStudentId(list[0].id);
+    }
+  }, [classStudents, gradingStudents, activeSubTab, selectedReportStudentId]);
 
   const selectedStudent = useMemo(() => {
-    return classStudents.find(s => s.id === selectedReportStudentId) || classStudents[0] || null;
-  }, [classStudents, selectedReportStudentId]);
+    const list = activeSubTab === 'kokurikuler' ? gradingStudents : classStudents;
+    return list.find(s => s.id === selectedReportStudentId) || list[0] || null;
+  }, [classStudents, gradingStudents, activeSubTab, selectedReportStudentId]);
 
-  // In-memory state for active edits of attendance for the selected date
   const [dailyStatusMap, setDailyStatusMap] = useState<Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [notifMsg, setNotifMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showSuccessCheck, setShowSuccessCheck] = useState<boolean>(false);
+  const [showGradeSuccessModal, setShowGradeSuccessModal] = useState<boolean>(false);
+  const [gradeSuccessSummary, setGradeSuccessSummary] = useState<{ className: string; subject: string; count: number } | null>(null);
 
   // Sync state when date changes or logs/students change
   useEffect(() => {
     const statusMap: Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }> = {};
+    const normDate = (selectedDate || '').substring(0, 10);
     
     classStudents.forEach((student) => {
       const existing = attendanceLogs.find(
-        (log) => log.studentId === student.id && log.date === selectedDate
+        (log) => (log.studentId === student.id || (student.nis && log.studentId === student.nis)) &&
+          ((log.date || '').substring(0, 10) === normDate)
       );
       if (existing) {
         statusMap[student.id] = {
@@ -1579,6 +3257,8 @@ export default function HomeroomPanel({
 
     const logsToSave = classStudents.map((s) => ({
       studentId: s.id,
+      studentName: s.name,
+      className: currentTeacher.className,
       date: selectedDate,
       status: dailyStatusMap[s.id]?.status || 'Hadir',
       notes: dailyStatusMap[s.id]?.notes || ''
@@ -1589,6 +3269,7 @@ export default function HomeroomPanel({
        if (success) {
          setNotifMsg({ type: 'success', text: `🎉 Berhasil menyimpan absensi Kelas ${currentTeacher.className} tanggal ${selectedDate}!` });
          setShowSuccessCheck(true);
+         if (onRefresh) onRefresh();
        } else {
          setNotifMsg({ type: 'error', text: 'Gagal menghubungkan ke server untuk menyimpan absensi.' });
        }
@@ -1634,7 +3315,16 @@ export default function HomeroomPanel({
   };
 
   // Pre-calculate today's statistics
-  const currentFilteredLogs = attendanceLogs.filter(l => l.date === selectedDate && classStudents.some(s => s.id === l.studentId));
+  const currentFilteredLogs = attendanceLogs.filter(l => {
+    const logDate = l.date ? l.date.substring(0, 10) : '';
+    if (logDate !== selectedDate) return false;
+    return classStudents.some(s => 
+      s.id === l.studentId || 
+      (s.nis && s.nis === l.studentId) || 
+      (l.studentId && l.studentId.toLowerCase() === s.id.toLowerCase())
+    );
+  });
+
   const stats = {
     total: classStudents.length,
     hadir: currentFilteredLogs.filter(l => l.status === 'Hadir').length,
@@ -1657,7 +3347,13 @@ export default function HomeroomPanel({
   }, [dailyStatusMap, classStudents]);
 
   // All time class stats
-  const classLogs = attendanceLogs.filter(l => classStudents.some(s => s.id === l.studentId));
+  const classLogs = attendanceLogs.filter(l => 
+    classStudents.some(s => 
+      s.id === l.studentId || 
+      (s.nis && s.nis === l.studentId) || 
+      (l.studentId && l.studentId.toLowerCase() === s.id.toLowerCase())
+    )
+  );
 
   // Filtered Student Development Logs
   const filteredDevLogs = useMemo(() => {
@@ -1714,7 +3410,7 @@ export default function HomeroomPanel({
   }, [meetingsList, meetSearch]);
 
   // Copy WhatsApp Reminder for parents regarding outstanding bills
-  const copyWaReminder = (student: Student, unpaidBills: SppBill[]) => {
+  const copyWaReminder = (student: Student, unpaidBills: SppBill[], unpaidMisc: MiscBill[] = []) => {
     const formattedSavings = new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
@@ -1730,17 +3426,44 @@ export default function HomeroomPanel({
       maximumFractionDigits: 0
     }).format(totalUnpaid);
 
-    const monthsStr = unpaidBills.map(b => `${b.month} ${b.year}`).join(', ');
+    const totalUnpaidMisc = unpaidMisc.reduce((acc, curr) => acc + curr.amount, 0);
+    const formattedUnpaidMisc = new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(totalUnpaidMisc);
+
+    const totalAllUnpaid = totalUnpaid + totalUnpaidMisc;
+    const formattedAllUnpaid = new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(totalAllUnpaid);
+
+    const monthsStr = sortSppBills(unpaidBills).map(b => `${b.month} ${b.year}`).join(', ');
+    const miscsStr = unpaidMisc.map(b => `${b.title} (${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(b.amount)})`).join(', ');
     const schoolName = schoolIdentity?.name || "SMP Maarif";
+
+    let billDetails = '';
+    if (unpaidBills.length > 0) {
+      billDetails += `\n*Tunggakan SPP Belum Lunas:* ${formattedUnpaid} (${monthsStr})`;
+    }
+    if (unpaidMisc.length > 0) {
+      billDetails += `\n*Tunggakan Iuran Lain-lain:* ${formattedUnpaidMisc} (${miscsStr})`;
+    }
+    if (unpaidBills.length > 0 && unpaidMisc.length > 0) {
+      billDetails += `\n*Total Seluruh Tunggakan:* ${formattedAllUnpaid}`;
+    }
 
     const text = `Assalamualaikum Wr. Wb. Bapak/Ibu Wali Murid dari *${student.name}* (NIS: *${student.nis}*).
 
-Kami dari pihak Wali Kelas *${currentTeacher.className}* ${schoolName} ingin menginfokan bahwa saat ini terdapat tagihan SPP bulanan siswa yang belum dilunasi dengan rincian sebagai berikut:
-
-*Tunggakan SPP Belum Lunas:* ${formattedUnpaid} (${monthsStr})
+Kami dari pihak Wali Kelas *${currentTeacher.className}* ${schoolName} ingin menginfokan bahwa saat ini terdapat tagihan siswa yang belum dilunasi dengan rincian sebagai berikut:
+${billDetails}
 *Saldo Tabungan Saat Ini:* ${formattedSavings}
 
-Bapak/Ibu dapat melakukan pelunasan SPP ini secara online via Portal Pembayaran Siswa, atau dengan menyetorkan secara tunai melalui staf sekolah / teller keuangan.
+Bapak/Ibu dapat melakukan pelunasan tagihan ini secara online via Portal Pembayaran Siswa, atau dengan menyetorkan secara tunai melalui staf sekolah / teller keuangan.
 
 Terima kasih banyak atas perhatian, kerja sama, dan support Bapak/Ibu sekalian.
 Wassalamualaikum Wr. Wb.
@@ -1758,13 +3481,30 @@ Wassalamualaikum Wr. Wb.
 
   // Memoized Attendance Recap calculation in selected duration
   const rekapData = useMemo(() => {
-    return classStudents.map((student, idx) => {
+    const startDate = rekapStartDate || getFirstDayOfMonth();
+    const endDate = rekapEndDate || todayStr;
+
+    return (classStudents || []).filter(Boolean).map((student, idx) => {
       // Filter logs for this student within date range
-      const sLogs = attendanceLogs.filter(
-        l => l.studentId === student.id &&
-             l.date >= rekapStartDate &&
-             l.date <= rekapEndDate
-      );
+      const sLogs = (attendanceLogs || []).filter(l => {
+        if (!l) return false;
+        const isStudentMatch = 
+          (student.id && l.studentId === student.id) || 
+          (student.nis && l.studentId === student.nis) || 
+          (l.studentId && student.id && l.studentId.toLowerCase() === student.id.toLowerCase());
+        if (!isStudentMatch) return false;
+
+        let logDate = l.date ? l.date.substring(0, 10) : '';
+        if (logDate.includes('/')) {
+          const parts = logDate.split('/');
+          if (parts.length === 3 && parts[2].length === 4) {
+            logDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          }
+        }
+        if (startDate && logDate < startDate) return false;
+        if (endDate && logDate > endDate) return false;
+        return true;
+      });
 
       const countHadir = sLogs.filter(l => l.status === 'Hadir').length;
       const countTerlambat = sLogs.filter(l => l.status === 'Terlambat').length;
@@ -1791,6 +3531,214 @@ Wassalamualaikum Wr. Wb.
       };
     });
   }, [classStudents, attendanceLogs, rekapStartDate, rekapEndDate]);
+
+  const filteredRekapData = useMemo(() => {
+    let list = rekapData || [];
+    if (rekapStatusFilter !== 'all') {
+      list = list.filter(r => {
+        if (!r) return false;
+        if (rekapStatusFilter === 'Hadir') return r.hadir > 0;
+        if (rekapStatusFilter === 'Sakit') return r.sakit > 0;
+        if (rekapStatusFilter === 'Izin') return r.izin > 0;
+        if (rekapStatusFilter === 'Alpa') return r.alpa > 0;
+        if (rekapStatusFilter === 'Terlambat') return r.terlambat > 0;
+        return true;
+      });
+    }
+
+    const sorted = [...list].sort((a, b) => {
+      if (!a || !b) return 0;
+      const compareClasses = (clsA: string = '', clsB: string = '') => {
+        return clsA.localeCompare(clsB, 'id', { numeric: true, sensitivity: 'base' });
+      };
+
+      let valA: any = a[rekapSortBy];
+      let valB: any = b[rekapSortBy];
+
+      if (rekapSortBy === 'name') {
+        const classA = a.student?.class || (a.student as any)?.className || '';
+        const classB = b.student?.class || (b.student as any)?.className || '';
+        const classComp = compareClasses(classA, classB);
+        if (classComp !== 0) {
+          return rekapSortOrder === 'asc' ? classComp : -classComp;
+        }
+        valA = a.student?.name || '';
+        valB = b.student?.name || '';
+        return rekapSortOrder === 'asc'
+          ? valA.localeCompare(valB, 'id', { sensitivity: 'base' })
+          : valB.localeCompare(valA, 'id', { sensitivity: 'base' });
+      }
+
+      if (valA === undefined || valA === null) valA = 0;
+      if (valB === undefined || valB === null) valB = 0;
+
+      if (valA === valB) {
+        const classA = a.student?.class || (a.student as any)?.className || '';
+        const classB = b.student?.class || (b.student as any)?.className || '';
+        const classComp = compareClasses(classA, classB);
+        if (classComp !== 0) return classComp;
+        return (a.student?.name || '').localeCompare(b.student?.name || '', 'id', { sensitivity: 'base' });
+      }
+
+      return rekapSortOrder === 'desc' ? valB - valA : valA - valB;
+    });
+
+    return sorted.map((item, idx) => ({
+      ...item,
+      index: idx + 1
+    }));
+  }, [rekapData, rekapStatusFilter, rekapSortBy, rekapSortOrder]);
+
+  // PDF Rekapitulasi Presensi Function
+  const downloadPdfRekap = () => {
+    const totalHadirClass = rekapData.reduce((acc, r) => acc + r.hadir, 0);
+    const totalTerlambatClass = rekapData.reduce((acc, r) => acc + r.terlambat, 0);
+    const totalSakitClass = rekapData.reduce((acc, r) => acc + r.sakit, 0);
+    const totalIzinClass = rekapData.reduce((acc, r) => acc + r.izin, 0);
+    const totalAlpaClass = rekapData.reduce((acc, r) => acc + r.alpa, 0);
+    const totalPencatatanClass = rekapData.reduce((acc, r) => acc + r.total, 0);
+    const avgRateClass = rekapData.length > 0
+      ? Math.round(rekapData.reduce((acc, r) => acc + r.rate, 0) / rekapData.length)
+      : 0;
+
+    const schoolNameUpper = (schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN").toUpperCase();
+    const schoolAddress = schoolIdentity?.address || "Jl. Niaga No. 05 Pandaan, Pasuruan";
+    const schoolPhone = schoolIdentity?.phone || "(0343) 631456";
+    const principalName = schoolIdentity?.principal || "H. Ahmad Fuad, S.Pd, M.PdI";
+
+    const printWin = window.open("", "_blank");
+    if (!printWin) return;
+
+    let rowsHtml = '';
+    rekapData.forEach((row, idx) => {
+      rowsHtml += `
+        <tr>
+          <td style="text-align:center;">${idx + 1}</td>
+          <td style="text-align:center; font-family:monospace;">${row.student.nis || '-'}</td>
+          <td style="text-align:left; font-weight:bold;">${row.student.name}</td>
+          <td style="text-align:center;">${currentTeacher.className}</td>
+          <td style="text-align:center; color:#16a34a; font-weight:bold;">${row.hadir}</td>
+          <td style="text-align:center; color:#ca8a04;">${row.terlambat}</td>
+          <td style="text-align:center; color:#2563eb;">${row.sakit}</td>
+          <td style="text-align:center; color:#7c3aed;">${row.izin}</td>
+          <td style="text-align:center; color:#db2777;">${row.alpa}</td>
+          <td style="text-align:center; font-weight:bold;">${row.total}</td>
+          <td style="text-align:center; font-weight:bold; color:#0f766e;">${row.rate}%</td>
+        </tr>
+      `;
+    });
+
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Rekap Presensi Kelas ${currentTeacher.className} (${rekapStartDate} - ${rekapEndDate})</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 15px; color: #1e293b; font-size: 11px; line-height: 1.4; }
+            .header-school { text-align: center; border-bottom: 3px double #0f172a; padding-bottom: 10px; margin-bottom: 15px; }
+            .school-title { font-size: 18px; font-weight: 900; color: #15803d; letter-spacing: 0.5px; }
+            .school-meta { font-size: 10px; color: #475569; margin-top: 2px; }
+            .doc-title { text-align: center; font-size: 13px; font-weight: 800; text-transform: uppercase; margin-bottom: 12px; color: #0f172a; text-decoration: underline; }
+            .meta-table { width: 100%; margin-bottom: 12px; border-collapse: collapse; font-size: 11px; }
+            .meta-table td { padding: 3px 0; }
+            .data-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10.5px; }
+            .data-table th, .data-table td { border: 1px solid #64748b; padding: 6px 8px; }
+            .data-table th { background-color: #1e293b; color: #ffffff; font-weight: 700; text-transform: uppercase; font-size: 9.5px; }
+            .data-table tbody tr:nth-child(even) { background-color: #f8fafc; }
+            .summary-row { background-color: #e2e8f0 !important; font-weight: bold; }
+            .summary-row td { border-top: 2px solid #0f172a; }
+            .signatures { width: 100%; margin-top: 30px; page-break-inside: avoid; }
+            .signatures td { text-align: center; width: 50%; vertical-align: top; }
+          </style>
+        </head>
+        <body>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <div class="header-school">
+              <div class="school-title">${schoolNameUpper}</div>
+              <div class="school-meta">Alamat: ${schoolAddress} | Telepon: ${schoolPhone}</div>
+            </div>
+          `}
+
+          <div class="doc-title">REKAPITULASI PRESENSI KEHADIRAN SISWA</div>
+
+          <table class="meta-table">
+            <tr>
+              <td style="width: 12%; font-weight: bold;">Kelas</td>
+              <td style="width: 38%;">: <strong>${currentTeacher.className}</strong></td>
+              <td style="width: 15%; font-weight: bold;">Rentang Waktu</td>
+              <td style="width: 35%;">: ${rekapStartDate} s.d. ${rekapEndDate}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: bold;">Wali Kelas</td>
+              <td>: ${currentTeacher.name}</td>
+              <td style="font-weight: bold;">Tanggal Cetak</td>
+              <td>: ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</td>
+            </tr>
+          </table>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 35px;">No</th>
+                <th style="width: 80px;">NIS</th>
+                <th>Nama Siswa</th>
+                <th style="width: 50px;">Kelas</th>
+                <th style="width: 65px;">Hadir (H)</th>
+                <th style="width: 75px;">Terlambat (T)</th>
+                <th style="width: 65px;">Sakit (S)</th>
+                <th style="width: 65px;">Izin (I)</th>
+                <th style="width: 65px;">Alpa (A)</th>
+                <th style="width: 70px;">Total Hari</th>
+                <th style="width: 75px;">Kehadiran</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+              <tr class="summary-row">
+                <td colspan="4" style="text-align: right; padding-right: 12px;">TOTAL / RATA-RATA KELAS</td>
+                <td style="text-align: center; color: #16a34a;">${totalHadirClass}</td>
+                <td style="text-align: center; color: #ca8a04;">${totalTerlambatClass}</td>
+                <td style="text-align: center; color: #2563eb;">${totalSakitClass}</td>
+                <td style="text-align: center; color: #7c3aed;">${totalIzinClass}</td>
+                <td style="text-align: center; color: #db2777;">${totalAlpaClass}</td>
+                <td style="text-align: center;">${totalPencatatanClass}</td>
+                <td style="text-align: center; color: #0f766e;">${avgRateClass}%</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <table class="signatures">
+            <tr>
+              <td>
+                Mengetahui,<br/>
+                Kepala Sekolah
+                <div style="height: 60px;"></div>
+                <strong><u>${principalName}</u></strong>
+              </td>
+              <td>
+                Pasuruan, ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}<br/>
+                Wali Kelas ${currentTeacher.className}
+                <div style="height: 60px;"></div>
+                <strong><u>${currentTeacher.name}</u></strong>
+              </td>
+            </tr>
+          </table>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWin.document.close();
+  };
 
   // Excel (.xls format with clean XML and styles optimized for Microsoft Excel)
   const downloadExcelRekap = () => {
@@ -1997,24 +3945,51 @@ Wassalamualaikum Wr. Wb.
     let totalSavings = 0;
     let totalUnpaidSpp = 0;
     let totalInArrearsCount = 0;
+    let totalUnpaidMisc = 0;
+    let totalInArrearsMiscCount = 0;
 
     classStudents.forEach(student => {
       totalSavings += student.savingsBalance || 0;
       
-      const sBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
+      const sBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
       const unpaidSum = sBills.reduce((acc, curr) => acc + curr.amount, 0);
       totalUnpaidSpp += unpaidSum;
       if (sBills.length > 0) {
         totalInArrearsCount++;
+      }
+
+      const sMiscBills = (miscBills || []).filter(b => b.studentId === student.id && b.status !== 'paid');
+      const unpaidMiscSum = sMiscBills.reduce((acc, curr) => acc + curr.amount, 0);
+      totalUnpaidMisc += unpaidMiscSum;
+      if (sMiscBills.length > 0) {
+        totalInArrearsMiscCount++;
       }
     });
 
     return {
       totalSavings,
       totalUnpaidSpp,
-      totalInArrearsCount
+      totalInArrearsCount,
+      totalUnpaidMisc,
+      totalInArrearsMiscCount
     };
-  }, [classStudents, bills]);
+  }, [classStudents, bills, miscBills]);
+
+  if (!currentTeacher) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mb-3" />
+        <h3 className="font-extrabold text-sm text-slate-800">Menyinkronkan Akun Wali Kelas...</h3>
+        <p className="text-xs text-slate-500 mt-1 max-w-sm">Mohon tunggu sebentar, sistem sedang memverifikasi data kelas dari server.</p>
+        <button
+          onClick={onLogout}
+          className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+        >
+          Kembali ke Halaman Masuk
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div id="homeroom-dashboard-root" className="flex flex-col gap-6 pb-24 md:pb-0 animate-fade-in">
@@ -2105,6 +4080,40 @@ Wassalamualaikum Wr. Wb.
         </div>
       </div>
 
+      {/* Mobile Sub-Navigation Pills (Horizontal Scrollable for Fast Access on Mobile) */}
+      <div className="flex md:hidden items-center gap-2 overflow-x-auto pb-1 no-scrollbar select-none">
+        {[
+          { id: 'record', label: 'Absensi', icon: '📝' },
+          { id: 'jadwal', label: 'Jadwal Kelas', icon: '📅', highlight: true },
+          { id: 'history', label: 'Jurnal', icon: '📊' },
+          { id: 'rekap_absensi', label: 'Rekap', icon: '📉' },
+          { id: 'finance', label: 'Keuangan', icon: '💳' },
+          { id: 'perkembangan', label: 'Perkembangan', icon: '📈' },
+          { id: 'kokurikuler', label: 'Nilai Kokurikuler', icon: '⭐' },
+          { id: 'buku_induk', label: 'Buku Induk', icon: '📗' },
+          { id: 'pkg', label: 'PKG', icon: '🎖️' },
+          { id: 'profile', label: 'Profil', icon: '👤' },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveSubTab(tab.id as any)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition-all cursor-pointer shrink-0 border ${
+              activeSubTab === tab.id
+                ? tab.highlight
+                  ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                  : 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                : tab.highlight
+                  ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
       {/* Primary Workspace */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
         {/* Left Control Column (Date and Subtabs selector) - Hidden on mobile, controlled via bottom nav */}
@@ -2118,7 +4127,7 @@ Wassalamualaikum Wr. Wb.
             {/* Subtab selection */}
             <div className="flex flex-col gap-1.5 p-1 bg-slate-50 border border-slate-200 rounded-xl">
               <button
-                _id="tab-btn-record"
+                id="tab-btn-record"
                 onClick={() => setActiveSubTab('record')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'record'
@@ -2128,10 +4137,23 @@ Wassalamualaikum Wr. Wb.
                 title="Pengisian Absensi"
               >
                 <span className="text-sm">📝</span>
-                <span className="hidden md:inline">Pengisian Absensi</span>
+                <span className="inline">Pengisian Absensi</span>
               </button>
               <button
-                _id="tab-btn-history"
+                id="tab-btn-jadwal"
+                onClick={() => setActiveSubTab('jadwal')}
+                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                  activeSubTab === 'jadwal'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100/60'
+                }`}
+                title="Matriks Jadwal Pelajaran Kelas & Guru"
+              >
+                <span className="text-sm">📅</span>
+                <span className="inline">Jadwal Pelajaran</span>
+              </button>
+              <button
+                id="tab-btn-history"
                 onClick={() => setActiveSubTab('history')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'history'
@@ -2141,10 +4163,10 @@ Wassalamualaikum Wr. Wb.
                 title="Riwayat Jurnal Kelas"
               >
                 <span className="text-sm">📊</span>
-                <span className="hidden md:inline">Riwayat Jurnal</span>
+                <span className="inline">Riwayat Jurnal</span>
               </button>
               <button
-                _id="tab-btn-rekap"
+                id="tab-btn-rekap"
                 onClick={() => setActiveSubTab('rekap_absensi')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'rekap_absensi'
@@ -2154,10 +4176,10 @@ Wassalamualaikum Wr. Wb.
                 title="Rekap Absensi Kelas"
               >
                 <span className="text-sm">📉</span>
-                <span className="hidden md:inline">Rekap Absensi</span>
+                <span className="inline">Rekap Absensi</span>
               </button>
               <button
-                _id="tab-btn-finance"
+                id="tab-btn-finance"
                 onClick={() => setActiveSubTab('finance')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'finance'
@@ -2167,10 +4189,10 @@ Wassalamualaikum Wr. Wb.
                 title="Tabungan & Tagihan SPP"
               >
                 <span className="text-sm">💳</span>
-                <span className="hidden md:inline">Tabungan & SPP</span>
+                <span className="inline">Tabungan & SPP</span>
               </button>
               <button
-                _id="tab-btn-perkembangan"
+                id="tab-btn-perkembangan"
                 onClick={() => setActiveSubTab('perkembangan')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'perkembangan'
@@ -2180,10 +4202,10 @@ Wassalamualaikum Wr. Wb.
                 title="Jurnal Perkembangan Siswa"
               >
                 <span className="text-sm">📈</span>
-                <span className="hidden md:inline">Jurnal Perkembangan</span>
+                <span className="inline">Jurnal Perkembangan</span>
               </button>
               <button
-                _id="tab-btn-profile"
+                id="tab-btn-profile"
                 onClick={() => setActiveSubTab('profile')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'profile'
@@ -2193,25 +4215,25 @@ Wassalamualaikum Wr. Wb.
                 title="Profil Wali Kelas & Ubah Sandi"
               >
                 <span className="text-sm">👤</span>
-                <span className="hidden md:inline">Profil & Sandi</span>
+                <span className="inline">Profil & Sandi</span>
               </button>
 
               <button
-                _id="tab-btn-rapor"
-                onClick={() => setActiveSubTab('rapor_merdeka')}
+                id="tab-btn-kokurikuler"
+                onClick={() => setActiveSubTab('kokurikuler')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
-                  activeSubTab === 'rapor_merdeka'
-                    ? 'bg-indigo-650 text-white shadow-md'
-                    : 'text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50'
+                  activeSubTab === 'kokurikuler'
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'text-purple-700 bg-purple-50 hover:bg-purple-100'
                 }`}
-                title="Halaman Rapor Kurikulum Merdeka Siswa"
+                title="Input Nilai Kokurikuler Kelas Binaan"
               >
-                <span className="text-sm">🎓</span>
-                <span className="hidden md:inline">Rapor Merdeka</span>
+                <span className="text-sm">⭐</span>
+                <span className="inline">Nilai Kokurikuler</span>
               </button>
 
               <button
-                _id="tab-btn-pkg"
+                id="tab-btn-pkg"
                 onClick={() => setActiveSubTab('pkg')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'pkg'
@@ -2221,11 +4243,11 @@ Wassalamualaikum Wr. Wb.
                 title="Evaluasi Penilaian Kinerja Guru oleh Kepala Sekolah"
               >
                 <span className="text-sm">🎖️</span>
-                <span className="hidden md:inline">Kinerja (PKG)</span>
+                <span className="inline">Kinerja (PKG)</span>
               </button>
 
               <button
-                _id="tab-btn-buku-induk"
+                id="tab-btn-buku-induk"
                 onClick={() => setActiveSubTab('buku_induk')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'buku_induk'
@@ -2235,7 +4257,7 @@ Wassalamualaikum Wr. Wb.
                 title="Buku Induk Kesiswaan Digital Kelas Binaan"
               >
                 <span className="text-sm">📗</span>
-                <span className="hidden md:inline">Buku Induk Kelas</span>
+                <span className="inline">Buku Induk Kelas</span>
               </button>
             </div>
 
@@ -2509,8 +4531,9 @@ Wassalamualaikum Wr. Wb.
                                   <button
                                     key={st}
                                     type="button"
+                                    translate="no"
                                     onClick={() => handleStatusChange(student.id, st)}
-                                    className={`py-2 px-0.5 text-xs border font-black uppercase tracking-wider rounded-md text-center cursor-pointer transition-all ${isActive ? activeColors[st] : defaultColors}`}
+                                    className={`notranslate py-2 px-0.5 text-xs border font-black uppercase tracking-wider rounded-md text-center cursor-pointer transition-all ${isActive ? activeColors[st] : defaultColors}`}
                                     title={st}
                                   >
                                     {shortLabel}
@@ -2700,8 +4723,18 @@ Wassalamualaikum Wr. Wb.
                 <div className="flex flex-col gap-6 animate-fade-in">
                   <div className="flex justify-between items-center bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex-wrap gap-4 select-none">
                     <div className="text-left">
-                      <h4 className="text-indigo-950 font-black text-xs uppercase tracking-wider">Jurnal Kegiatan Belajar Mengajar (KBM) Kelas {currentTeacher.className}</h4>
-                      <p className="text-slate-500 text-[11px] mt-0.5 font-semibold">Berikut adalah rincian materi pembelajaran dan administrasi presensi harian per jam mata pelajaran dari guru bidang studi.</p>
+                      <h4 className="text-indigo-950 font-black text-xs uppercase tracking-wider">
+                        {kbmJournalSubTab === 'binaan' 
+                          ? `Jurnal Kegiatan Belajar Mengajar (KBM) Kelas Binaan ${currentTeacher.className}`
+                          : 'Jurnal KBM Mengajar di Kelas Lain'
+                        }
+                      </h4>
+                      <p className="text-slate-500 text-[11px] mt-0.5 font-semibold">
+                        {kbmJournalSubTab === 'binaan'
+                          ? `Berikut adalah rincian materi pembelajaran dan administrasi presensi harian per jam mata pelajaran dari guru bidang studi di kelas binaan Anda (${currentTeacher.className}).`
+                          : 'Berikut adalah rincian materi pelajaran yang Anda ampu sebagai guru mata pelajaran di kelas lain.'
+                        }
+                      </p>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -2713,137 +4746,330 @@ Wassalamualaikum Wr. Wb.
                       >
                         🔄 {loadingJournals ? 'Memuat...' : 'Muat Ulang'}
                       </button>
+                      {kbmJournalSubTab === 'binaan' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAddJournalModal('binaan')}
+                            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs border border-emerald-700 transition-all font-sans"
+                          >
+                            <Plus size={13} strokeWidth={2.5} />
+                            <span>Isi Jurnal KBM Kelas Binaan</span>
+                          </button>
+                          {binaanJournals.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCompiledJournalPrintType('binaan');
+                                setCompiledJournalPrint(true);
+                                // Trigger native browser printing immediately
+                                setTimeout(() => {
+                                  window.print();
+                                }, 350);
+                              }}
+                              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs border border-indigo-700 transition-all"
+                            >
+                              <Printer size={13} strokeWidth={2.5} />
+                              <span>Cetak Buku KBM Kelas Binaan</span>
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAddJournalModal('kelas_lain')}
+                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs border border-indigo-700 transition-all font-sans"
+                          >
+                            <Plus size={13} strokeWidth={2.5} />
+                            <span>Isi Jurnal KBM Kelas Lain</span>
+                          </button>
+                          {kelasLainJournals.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCompiledJournalPrintType('kelas_lain');
+                                setCompiledJournalPrint(true);
+                                // Trigger native browser printing immediately
+                                setTimeout(() => {
+                                  window.print();
+                                }, 350);
+                              }}
+                              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs border border-indigo-700 transition-all"
+                            >
+                              <Printer size={13} strokeWidth={2.5} />
+                              <span>Cetak Buku KBM Kelas Lain</span>
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sub Tab Switcher for KBM Journal Types */}
+                  <div className="flex border-b border-slate-200 select-none mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setKbmJournalSubTab('binaan')}
+                      className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                        kbmJournalSubTab === 'binaan'
+                          ? 'border-indigo-600 text-indigo-600 font-extrabold'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Home size={14} />
+                      <span>Jurnal KBM Kelas Binaan ({binaanJournals.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setKbmJournalSubTab('kelas_lain')}
+                      className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                        kbmJournalSubTab === 'kelas_lain'
+                          ? 'border-indigo-600 text-indigo-600 font-extrabold'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <BookOpen size={14} />
+                      <span>Jurnal Mengajar di Kelas Lain ({kelasLainJournals.length})</span>
+                    </button>
+                  </div>
+
+                  {/* Filter Rentang Tanggal Jurnal KBM */}
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                        <Calendar size={14} className="text-indigo-600 shrink-0" />
+                        <span>Filter Rentang Tanggal:</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-extrabold uppercase text-slate-400">Dari</span>
+                          <input
+                            type="date"
+                            value={kbmJournalStartDate}
+                            onChange={(e) => setKbmJournalStartDate(e.target.value)}
+                            className="text-xs font-semibold px-2.5 py-1 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-extrabold uppercase text-slate-400">s.d</span>
+                          <input
+                            type="date"
+                            value={kbmJournalEndDate}
+                            onChange={(e) => setKbmJournalEndDate(e.target.value)}
+                            className="text-xs font-semibold px-2.5 py-1 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 self-start sm:self-center flex-wrap">
                       <button
                         type="button"
-                        onClick={handleOpenAddJournalModal}
-                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs border border-emerald-700 transition-all font-sans"
+                        onClick={() => {
+                          const today = getWIBDateStr();
+                          setKbmJournalStartDate(today);
+                          setKbmJournalEndDate(today);
+                        }}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                          kbmJournalStartDate === getWIBDateStr() && kbmJournalEndDate === getWIBDateStr()
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
                       >
-                        <Plus size={13} strokeWidth={2.5} />
-                        <span>Isi Jurnal Mengajar</span>
+                        Hari Ini
                       </button>
-                      {teachingJournalsList.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setKbmJournalStartDate(getFirstDayOfMonth());
+                          setKbmJournalEndDate(getWIBDateStr());
+                        }}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                          kbmJournalStartDate === getFirstDayOfMonth() && kbmJournalEndDate === getWIBDateStr()
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Bulan Ini
+                      </button>
+                      {(kbmJournalStartDate || kbmJournalEndDate) && (
                         <button
                           type="button"
                           onClick={() => {
-                            setCompiledJournalPrint(true);
-                            // Trigger native browser printing immediately
-                            setTimeout(() => {
-                              window.print();
-                            }, 350);
+                            setKbmJournalStartDate('');
+                            setKbmJournalEndDate('');
                           }}
-                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs border border-indigo-700 transition-all"
+                          className="px-2.5 py-1 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 rounded-md text-[11px] font-extrabold transition-all cursor-pointer flex items-center gap-1"
                         >
-                          <Printer size={13} strokeWidth={2.5} />
-                          <span>Cetak Buku KBM Kelas</span>
+                          <RotateCcw size={11} />
+                          <span>Reset Filter</span>
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {loadingJournals ? (
-                    <div className="p-12 text-center text-slate-400 font-semibold flex flex-col items-center justify-center gap-3">
-                      <Loader2 className="animate-spin text-indigo-600" size={26} />
-                      <p className="text-xs">Menghubungkan ke pusat data KBM...</p>
-                    </div>
-                  ) : teachingJournalsList.length === 0 ? (
-                    <div className="p-12 text-center text-slate-400 bg-slate-50 border border-slate-150 rounded-2xl">
-                      <BookOpen size={28} className="mx-auto text-slate-300 mb-2" />
-                      <p className="text-xs font-bold text-slate-700">Belum ada Rekaman Jurnal Pembelajaran</p>
-                      <p className="text-[11px] text-slate-440 max-w-sm mx-auto mt-0.5">Guru Mata Pelajaran belum mengisi Jurnal KBM maupun absensi khusus jam pelajaran di kelas {currentTeacher.className}.</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-4">
-                      {teachingJournalsList
-                        .sort((a,b) => b.date.localeCompare(a.date))
-                        .map((journal) => {
-                          const totalSiswa = journal.attendance?.length || 0;
-                          const hadirCount = journal.attendance?.filter((a: any) => a.status === 'Hadir').length || 0;
-                          const terlambatCount = journal.attendance?.filter((a: any) => a.status === 'Terlambat').length || 0;
-                          const sakitCount = journal.attendance?.filter((a: any) => a.status === 'Sakit').length || 0;
-                          const izinCount = journal.attendance?.filter((a: any) => a.status === 'Izin').length || 0;
-                          const alpaCount = journal.attendance?.filter((a: any) => a.status === 'Alpa').length || 0;
-                          const totalHadir = hadirCount + terlambatCount;
-                          const totalAbsen = sakitCount + izinCount + alpaCount;
+                  {(() => {
+                    const currentJournals = kbmJournalSubTab === 'binaan' ? binaanJournals : kelasLainJournals;
 
-                          return (
-                            <div key={journal.id} className="bg-white border border-slate-200 hover:border-indigo-200 hover:shadow-xs transition-all rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                              <div className="flex-grow min-w-0 flex gap-3 text-left">
-                                <div className="p-3 bg-indigo-50 text-indigo-700 rounded-xl hidden sm:block h-fit shrink-0">
-                                  <FileText size={18} />
-                                </div>
-                                <div className="min-w-0 flex flex-col gap-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-extrabold text-sm text-slate-900">{journal.subject}</span>
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                                      {journal.teacherName}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 font-bold font-mono">
-                                      {new Date(journal.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                                    </span>
+                    if (loadingJournals) {
+                      return (
+                        <div className="p-12 text-center text-slate-400 font-semibold flex flex-col items-center justify-center gap-3">
+                          <Loader2 className="animate-spin text-indigo-600" size={26} />
+                          <p className="text-xs">Menghubungkan ke pusat data KBM...</p>
+                        </div>
+                      );
+                    }
+
+                    if (currentJournals.length === 0) {
+                      return (
+                        <div className="p-12 text-center text-slate-400 bg-slate-50 border border-slate-150 rounded-2xl">
+                          <BookOpen size={28} className="mx-auto text-slate-300 mb-2" />
+                          <p className="text-xs font-bold text-slate-700">
+                            {kbmJournalSubTab === 'binaan'
+                              ? 'Belum ada Rekaman Jurnal Pembelajaran Kelas Binaan'
+                              : 'Belum ada Rekaman Jurnal Mengajar Anda di Kelas Lain'
+                            }
+                          </p>
+                          <p className="text-[11px] text-slate-440 max-w-sm mx-auto mt-0.5">
+                            {kbmJournalSubTab === 'binaan'
+                              ? `Guru bidang studi belum mengisi Jurnal KBM maupun absensi khusus jam pelajaran di kelas binaan Anda (${currentTeacher.className}).`
+                              : 'Anda belum mencatatkan Jurnal KBM maupun presensi jam mata pelajaran yang Anda ampu di kelas lain.'
+                            }
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex flex-col gap-4">
+                        {currentJournals
+                          .sort((a,b) => b.date.localeCompare(a.date))
+                          .map((journal) => {
+                            const totalSiswa = journal.attendance?.length || 0;
+                            const hadirCount = journal.attendance?.filter((a: any) => a.status === 'Hadir').length || 0;
+                            const terlambatCount = journal.attendance?.filter((a: any) => a.status === 'Terlambat').length || 0;
+                            const sakitCount = journal.attendance?.filter((a: any) => a.status === 'Sakit').length || 0;
+                            const izinCount = journal.attendance?.filter((a: any) => a.status === 'Izin').length || 0;
+                            const alpaCount = journal.attendance?.filter((a: any) => a.status === 'Alpa').length || 0;
+                            const totalHadir = hadirCount + terlambatCount;
+                            const totalAbsen = sakitCount + izinCount + alpaCount;
+
+                            return (
+                              <div key={journal.id} className="bg-white border border-slate-200 hover:border-indigo-200 hover:shadow-xs transition-all rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex-grow min-w-0 flex gap-3 text-left">
+                                  <div className="p-3 bg-indigo-50 text-indigo-700 rounded-xl hidden sm:block h-fit shrink-0">
+                                    <FileText size={18} />
                                   </div>
-                                  <p className="text-xs text-slate-700 font-semibold leading-tight"><strong className="text-slate-400 font-extrabold text-[10px] uppercase">Materi KBM:</strong> {journal.topic}</p>
-                                  {journal.notes && (
-                                    <p className="text-[11px] text-slate-500 italic mt-0.5">Catatan: &ldquo;{journal.notes}&rdquo;</p>
-                                  )}
-                                  <div className="flex gap-1.5 mt-2 flex-wrap">
-                                    <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider rounded bg-emerald-50 text-emerald-800 border border-emerald-100 uppercase">Hadir: {totalHadir}</span>
-                                    {totalAbsen > 0 && (
-                                      <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider rounded bg-rose-50 text-rose-800 border border-rose-100 uppercase">Absen: {totalAbsen}</span>
+                                  <div className="min-w-0 flex flex-col gap-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-extrabold text-sm text-slate-900">{journal.subject}</span>
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                        {journal.teacherName}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 font-bold font-mono">
+                                        {new Date(journal.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-slate-700 font-semibold leading-tight"><strong className="text-slate-400 font-extrabold text-[10px] uppercase">Materi KBM:</strong> {journal.topic}</p>
+                                    {journal.notes && (
+                                      <p className="text-[11px] text-slate-500 italic mt-0.5">Catatan: &ldquo;{journal.notes}&rdquo;</p>
                                     )}
-                                    {sakitCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-semibold text-amber-600 font-mono">Sakit: {sakitCount}</span>}
-                                    {izinCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-semibold text-blue-600 font-mono">Izin: {izinCount}</span>}
-                                    {alpaCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-bold text-rose-600 font-mono">Alpa: {alpaCount}</span>}
-                                  </div>
+                                    <div className="flex gap-1.5 mt-2 flex-wrap">
+                                      <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider rounded bg-emerald-50 text-emerald-800 border border-emerald-100 uppercase">Hadir: {totalHadir}</span>
+                                      {totalAbsen > 0 && (
+                                        <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider rounded bg-rose-50 text-rose-800 border border-rose-100 uppercase">Absen: {totalAbsen}</span>
+                                      )}
+                                      {sakitCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-semibold text-amber-600 font-mono">Sakit: {sakitCount}</span>}
+                                      {izinCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-semibold text-blue-600 font-mono">Izin: {izinCount}</span>}
+                                      {alpaCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-bold text-rose-600 font-mono">Alpa: {alpaCount}</span>}
+                                    </div>
 
-                                  {/* List of absent students */}
-                                  {(() => {
-                                    const nonPresent = (journal.attendance || []).filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
-                                    if (nonPresent.length > 0) {
-                                      return (
-                                        <div className="mt-2 text-xs text-slate-700 leading-relaxed bg-rose-50/20 border border-slate-150 rounded-xl p-2.5 max-w-xl">
-                                          <span className="font-extrabold text-slate-800 text-[10px] uppercase tracking-wider block mb-1">Daftar Siswa Tidak Hadir:</span>
-                                          <div className="flex flex-wrap gap-1.5">
-                                            {nonPresent.map((a: any, i: number) => (
-                                              <span key={i} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                                a.status === 'Sakit' ? 'bg-amber-50 text-amber-850 border-amber-100' :
-                                                a.status === 'Izin' ? 'bg-sky-50 text-sky-850 border-sky-100' :
-                                                'bg-rose-50 text-rose-850 border-rose-100'
-                                              }`}>
-                                                {a.studentName} ({a.status}{a.notes ? `: ${a.notes}` : ''})
-                                              </span>
-                                            ))}
+                                    {/* List of absent students */}
+                                    {(() => {
+                                      const nonPresent = (journal.attendance || []).filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
+                                      if (nonPresent.length > 0) {
+                                        return (
+                                          <div className="mt-2 text-xs text-slate-700 leading-relaxed bg-rose-50/20 border border-slate-150 rounded-xl p-2.5 max-w-xl">
+                                            <span className="font-extrabold text-slate-800 text-[10px] uppercase tracking-wider block mb-1">Daftar Siswa Tidak Hadir:</span>
+                                            <div className="flex flex-wrap gap-1.5">
+                                              {nonPresent.map((a: any, i: number) => (
+                                                <span key={i} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                                  a.status === 'Sakit' ? 'bg-amber-50 text-amber-850 border-amber-100' :
+                                                  a.status === 'Izin' ? 'bg-sky-50 text-sky-850 border-sky-100' :
+                                                  'bg-rose-50 text-rose-850 border-rose-100'
+                                                }`}>
+                                                  {a.studentName} ({a.status}{a.notes ? `: ${a.notes}` : ''})
+                                                </span>
+                                              ))}
+                                            </div>
                                           </div>
-                                        </div>
-                                      );
-                                    } else {
-                                      return (
-                                        <div className="mt-2 text-[10.5px] font-extrabold text-emerald-700 bg-emerald-50/40 border border-emerald-100 rounded-lg p-1.5 w-fit px-2.5">
-                                          ✓ Nihil (Semua siswa hadir)
-                                        </div>
-                                      );
-                                    }
-                                  })()}
+                                        );
+                                      } else {
+                                        return (
+                                          <div className="mt-2 text-[10.5px] font-extrabold text-emerald-700 bg-emerald-50/40 border border-emerald-100 rounded-lg p-1.5 w-fit px-2.5">
+                                            ✓ Nihil (Semua siswa hadir)
+                                          </div>
+                                        );
+                                      }
+                                    })()}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 self-start md:self-center flex-wrap select-none">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditJournalModal(journal)}
+                                    className="px-3 py-2 bg-slate-50 hover:bg-amber-50 border border-slate-200 hover:border-amber-200 text-slate-700 hover:text-amber-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                                  >
+                                    <Edit size={13} className="text-amber-600" />
+                                    <span>Edit Jurnal</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (window.confirm("Apakah Anda yakin ingin menghapus jurnal pembelajaran ini?")) {
+                                        try {
+                                          const res = await fetch(`/api/teaching-journals/${journal.id}`, { method: 'DELETE' });
+                                          if (res.ok) {
+                                            setNotifMsg({ type: 'success', text: 'Jurnal pembelajaran berhasil dihapus.' });
+                                            fetchTeachingJournals();
+                                          } else {
+                                            setNotifMsg({ type: 'error', text: 'Gagal menghapus jurnal.' });
+                                          }
+                                        } catch (err) {
+                                          console.error(err);
+                                          setNotifMsg({ type: 'error', text: 'Koneksi gagal saat menghapus jurnal.' });
+                                        }
+                                      }
+                                    }}
+                                    className="p-2 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 rounded-xl transition-all flex items-center shadow-2xs cursor-pointer"
+                                    title="Hapus Jurnal"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedJournalToPrint(journal);
+                                      setTimeout(() => {
+                                        window.print();
+                                      }, 350);
+                                    }}
+                                    className="px-3.5 py-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                                  >
+                                    <Printer size={13} />
+                                    <span>Cetak Jurnal PDF</span>
+                                  </button>
                                 </div>
                               </div>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedJournalToPrint(journal);
-                                  setTimeout(() => {
-                                    window.print();
-                                  }, 350);
-                                }}
-                                className="px-3.5 py-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer self-start md:self-center"
-                              >
-                                <Printer size={13} />
-                                <span>Cetak Jurnal PDF</span>
-                              </button>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
+                            );
+                          })}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -2856,7 +5082,15 @@ Wassalamualaikum Wr. Wb.
                   <h3 className="text-slate-900 font-extrabold text-sm">Rekapitulasi Presensi Kehadiran Siswa</h3>
                   <p className="text-slate-450 text-xs mt-0.5">Pantau rasio persentase absensi kelas {currentTeacher.className} pada rentang waktu terpilih.</p>
                 </div>
-                <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={downloadPdfRekap}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all focus:ring-2 focus:ring-rose-200 cursor-pointer"
+                  >
+                    <Printer size={14} />
+                    Unduh PDF Rekap (.pdf)
+                  </button>
                   <button
                     type="button"
                     onClick={downloadExcelRekap}
@@ -2868,31 +5102,232 @@ Wassalamualaikum Wr. Wb.
                 </div>
               </div>
 
-              {/* Date pickers for rekapitulasi */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 p-4 bg-slate-50 border border-slate-200 rounded-xl col-span-1">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Mulai</label>
-                  <input
-                    type="date"
-                    value={rekapStartDate}
-                    onChange={(e) => setRekapStartDate(e.target.value)}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  />
+              {/* Date pickers for rekapitulasi & status filter */}
+              <div className="flex flex-col gap-4 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Mulai</label>
+                    <input
+                      type="date"
+                      value={rekapStartDate}
+                      onChange={(e) => setRekapStartDate(e.target.value)}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Akhir</label>
+                    <input
+                      type="date"
+                      value={rekapEndDate}
+                      onChange={(e) => setRekapEndDate(e.target.value)}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Akhir</label>
-                  <input
-                    type="date"
-                    value={rekapEndDate}
-                    onChange={(e) => setRekapEndDate(e.target.value)}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  />
+
+                {/* Filter Status H S I A T */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                  <div className="text-[11px] font-extrabold text-slate-700 flex items-center gap-1.5 uppercase tracking-wide">
+                    <Filter size={13} className="text-indigo-600" />
+                    <span>Filter Siswa Berdasarkan Status Kehadiran (H / S / I / A / T):</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setRekapStatusFilter('all');
+                        setRekapSortBy('name');
+                        setRekapSortOrder('asc');
+                      }}
+                      className={`notranslate px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'all'
+                          ? 'bg-slate-800 text-white shadow-2xs'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      Semua Siswa
+                    </button>
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setRekapStatusFilter('Hadir');
+                        setRekapSortBy('hadir');
+                        setRekapSortOrder('desc');
+                      }}
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'Hadir'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                      title="Urutkan & Saring berdasarkan Hadir (H) Terbanyak"
+                    >
+                      H <span className="text-[10px] font-bold">(Hadir)</span>
+                    </button>
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setRekapStatusFilter('Sakit');
+                        setRekapSortBy('sakit');
+                        setRekapSortOrder('desc');
+                      }}
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'Sakit'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                      }`}
+                      title="Urutkan & Saring berdasarkan Sakit (S) Terbanyak"
+                    >
+                      S <span className="text-[10px] font-bold">(Sakit)</span>
+                    </button>
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setRekapStatusFilter('Izin');
+                        setRekapSortBy('izin');
+                        setRekapSortOrder('desc');
+                      }}
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'Izin'
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                      }`}
+                      title="Urutkan & Saring berdasarkan Izin (I) Terbanyak"
+                    >
+                      I <span className="text-[10px] font-bold">(Izin)</span>
+                    </button>
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setRekapStatusFilter('Alpa');
+                        setRekapSortBy('alpa');
+                        setRekapSortOrder('desc');
+                      }}
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'Alpa'
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                      }`}
+                      title="Urutkan & Saring berdasarkan Alpa (A) Terbanyak"
+                    >
+                      A <span className="text-[10px] font-bold">(Alpa)</span>
+                    </button>
+                    <button
+                      type="button"
+                      translate="no"
+                      onClick={() => {
+                        setRekapStatusFilter('Terlambat');
+                        setRekapSortBy('terlambat');
+                        setRekapSortOrder('desc');
+                      }}
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'Terlambat'
+                          ? 'bg-purple-600 text-white shadow-2xs'
+                          : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                      }`}
+                      title="Urutkan & Saring berdasarkan Terlambat (T) Terbanyak"
+                    >
+                      T <span className="text-[10px] font-bold">(Terlambat)</span>
+                    </button>
+                    {(rekapStatusFilter !== 'all' || rekapStartDate !== getFirstDayOfMonth() || rekapEndDate !== todayStr || rekapSortBy !== 'name' || rekapSortOrder !== 'asc') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRekapStartDate(getFirstDayOfMonth());
+                          setRekapEndDate(todayStr);
+                          setRekapStatusFilter('all');
+                          setRekapSortBy('name');
+                          setRekapSortOrder('asc');
+                        }}
+                        className="px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-all cursor-pointer flex items-center gap-1 shrink-0 ml-1"
+                        title="Reset semua filter tanggal, status kehadiran, dan pengurutan ke default"
+                      >
+                        <RotateCcw size={12} />
+                        <span>Reset Default</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Sorting Bar: Terbesar ke Terkecil / Terkecil ke Terbesar */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 bg-indigo-50/70 border border-indigo-150 p-3 rounded-2xl">
+                  <div className="text-[11px] font-extrabold text-indigo-900 flex items-center gap-1.5 uppercase tracking-wide">
+                    <ArrowUpDown size={13} className="text-indigo-600" />
+                    <span>Urutkan Data Rekap (Sorting):</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-white border border-indigo-200 rounded-xl px-2.5 py-1">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">Kriteria:</span>
+                      <select
+                        value={rekapSortBy}
+                        onChange={(e: any) => setRekapSortBy(e.target.value)}
+                        className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                      >
+                        <option value="name">Nama Siswa (A - Z)</option>
+                        <option value="rate">Persentase Kehadiran (%)</option>
+                        <option value="alpa">Jumlah Alpa (A)</option>
+                        <option value="sakit">Jumlah Sakit (S)</option>
+                        <option value="izin">Jumlah Izin (I)</option>
+                        <option value="terlambat">Jumlah Terlambat (T)</option>
+                        <option value="hadir">Jumlah Hadir (H)</option>
+                        <option value="total">Total Hari Pencatatan</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center rounded-xl bg-white border border-indigo-200 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setRekapSortOrder('desc')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                          rekapSortOrder === 'desc'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="Urutkan dari angka terbesar ke terkecil (Descending)"
+                      >
+                        <span>⬇️ Terbesar → Terkecil</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRekapSortOrder('asc')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                          rekapSortOrder === 'asc'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="Urutkan dari angka terkecil ke terbesar (Ascending)"
+                      >
+                        <span>⬆️ Terkecil → Terbesar</span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRekapStartDate(getFirstDayOfMonth());
+                        setRekapEndDate(todayStr);
+                        setRekapStatusFilter('all');
+                        setRekapSortBy('name');
+                        setRekapSortOrder('asc');
+                      }}
+                      className="px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 bg-white border border-rose-200 hover:bg-rose-50 transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                      title="Reset semua filter tanggal, status kehadiran, dan urutan ke default"
+                    >
+                      <RotateCcw size={12} />
+                      <span>Reset Filter & Urutan</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {rekapData.length === 0 ? (
+              {filteredRekapData.length === 0 ? (
                 <div className="p-12 text-center text-slate-450 text-xs">
-                  Tidak ada data siswa untuk kelas ini.
+                  Tidak ada data siswa yang cocok dengan filter.
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -2901,18 +5336,106 @@ Wassalamualaikum Wr. Wb.
                       <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
                         <th className="py-2.5 px-3 text-center w-12">No</th>
                         <th className="py-2.5 px-3">NIS</th>
-                        <th className="py-2.5 px-3">Nama Siswa</th>
-                        <th className="py-2.5 px-3 text-center text-emerald-700 bg-emerald-50/50">Hadir</th>
-                        <th className="py-2.5 px-3 text-center text-purple-700 bg-purple-50/50">Terlambat</th>
-                        <th className="py-2.5 px-3 text-center text-amber-700 bg-amber-50/50">Sakit</th>
-                        <th className="py-2.5 px-3 text-center text-blue-700 bg-blue-50/50">Izin</th>
-                        <th className="py-2.5 px-3 text-center text-rose-700 bg-rose-50/50">Alpa</th>
-                        <th className="py-2.5 px-3 text-center">Total Hari</th>
-                        <th className="py-2.5 px-3 text-right">Persentase</th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'name') setRekapSortOrder(rekapSortOrder === 'asc' ? 'desc' : 'asc');
+                            else { setRekapSortBy('name'); setRekapSortOrder('asc'); }
+                          }}
+                          className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Nama Siswa</span>
+                            {rekapSortBy === 'name' && (<span>{rekapSortOrder === 'asc' ? '▲' : '▼'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'hadir') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('hadir'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center text-emerald-700 bg-emerald-50/50 cursor-pointer hover:bg-emerald-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Hadir</span>
+                            {rekapSortBy === 'hadir' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'terlambat') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('terlambat'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center text-purple-700 bg-purple-50/50 cursor-pointer hover:bg-purple-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Terlambat</span>
+                            {rekapSortBy === 'terlambat' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'sakit') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('sakit'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center text-amber-700 bg-amber-50/50 cursor-pointer hover:bg-amber-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Sakit</span>
+                            {rekapSortBy === 'sakit' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'izin') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('izin'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center text-blue-700 bg-blue-50/50 cursor-pointer hover:bg-blue-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Izin</span>
+                            {rekapSortBy === 'izin' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'alpa') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('alpa'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center text-rose-700 bg-rose-50/50 cursor-pointer hover:bg-rose-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Alpa</span>
+                            {rekapSortBy === 'alpa' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'total') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('total'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Total Hari</span>
+                            {rekapSortBy === 'total' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'rate') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('rate'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-right cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            <span>Persentase</span>
+                            {rekapSortBy === 'rate' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {rekapData.map((row) => (
+                      {filteredRekapData.map((row) => (
                         <tr key={row.student.id} className="hover:bg-slate-50/55 transition-colors">
                           <td className="py-2 px-3 text-center font-semibold text-slate-400">{row.index}</td>
                           <td className="py-2 px-3 font-mono text-slate-500 font-bold">{row.student.nis}</td>
@@ -2945,26 +5468,62 @@ Wassalamualaikum Wr. Wb.
 
           {activeSubTab === 'finance' && (
             <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left p-6">
-              <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="mb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
                   <h3 className="text-slate-900 font-extrabold text-sm">Monitoring Administrasi & Keuangan Kelas</h3>
-                  <p className="text-slate-450 text-xs mt-0.5">Informasi rincian saldo tabungan dan tunggakan tagihan SPP untuk bantuan pengingat (Reminder).</p>
+                  <p className="text-slate-450 text-xs mt-0.5">Informasi rincian saldo tabungan, tunggakan tagihan SPP, dan iuran lain-lain murid untuk sinkronisasi pengingat (Reminder).</p>
                 </div>
-                {/* Search input inside Tab */}
-                <div className="relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Cari nama atau NIS siswa..."
-                    value={financeSearch}
-                    onChange={(e) => setFinanceSearch(e.target.value)}
-                    className="w-full md:w-56 pl-9 pr-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:bg-white"
-                  />
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleExportSppExcel}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                      title="Export Rekap SPP Kelas ke Excel"
+                    >
+                      <Download size={12} /> Rekap SPP 📊
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportMiscExcel}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                      title="Export Rekap Iuran Lain-lain ke Excel"
+                    >
+                      <Download size={12} /> Rekap Iuran 📊
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportSavingsExcel}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                      title="Export Rekap Tabungan Kelas ke Excel"
+                    >
+                      <Download size={12} /> Rekap Tabungan 📊
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePrintClassFinancePdf}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                      title="Cetak Rekap Keuangan Seluruh Siswa Kelas ke PDF"
+                    >
+                      <Printer size={12} /> Rekap Keuangan PDF 🖨️
+                    </button>
+                  </div>
+                  {/* Search input inside Tab */}
+                  <div className="relative w-full sm:w-auto">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Cari nama atau NIS siswa..."
+                      value={financeSearch}
+                      onChange={(e) => setFinanceSearch(e.target.value)}
+                      className="w-full sm:w-56 pl-9 pr-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:bg-white"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* Class Aggregate widgets */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
                 <div className="bg-emerald-50/55 border border-emerald-100 rounded-xl p-4 flex flex-col justify-between">
                   <span className="block text-[9px] font-extrabold text-emerald-700 uppercase tracking-widest">Total Tabungan Kelas</span>
                   <div className="flex items-center gap-2 mt-1.5">
@@ -2976,7 +5535,7 @@ Wassalamualaikum Wr. Wb.
                 </div>
 
                 <div className="bg-rose-50/55 border border-rose-100 rounded-xl p-4 flex flex-col justify-between">
-                  <span className="block text-[9px] font-extrabold text-rose-700 uppercase tracking-widest">Total Tunggakan SPP Kelas</span>
+                  <span className="block text-[9px] font-extrabold text-rose-700 uppercase tracking-widest">Tunggakan SPP Kelas</span>
                   <div className="flex items-center gap-2 mt-1.5">
                     <CreditCard size={16} className="text-rose-600" />
                     <span className="block text-base font-black text-rose-800">
@@ -2985,11 +5544,23 @@ Wassalamualaikum Wr. Wb.
                   </div>
                 </div>
 
+                <div className="bg-indigo-50/55 border border-indigo-100 rounded-xl p-4 flex flex-col justify-between">
+                  <span className="block text-[9px] font-extrabold text-indigo-700 uppercase tracking-widest">Tunggakan Lain-lain Kelas</span>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <CreditCard size={16} className="text-indigo-600" />
+                    <span className="block text-base font-black text-indigo-800">
+                      {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(classFinanceStats.totalUnpaidMisc)}
+                    </span>
+                  </div>
+                </div>
+
                 <div className="bg-amber-50/55 border border-amber-100 rounded-xl p-4 flex flex-col justify-between">
-                  <span className="block text-[9px] font-extrabold text-amber-700 uppercase tracking-widest">Siswa Menunggak SPP</span>
+                  <span className="block text-[9px] font-extrabold text-amber-700 uppercase tracking-widest">Siswa Menunggak SPP / Iuran</span>
                   <div className="flex items-center gap-2 mt-1.5">
                     <Users size={16} className="text-amber-600" />
-                    <span className="block text-base font-black text-slate-800">{classFinanceStats.totalInArrearsCount} <span className="text-xs font-normal text-slate-500">Siswa</span></span>
+                    <span className="block text-base font-black text-slate-800">
+                      {classFinanceStats.totalInArrearsCount} / {classFinanceStats.totalInArrearsMiscCount} <span className="text-xs font-normal text-slate-500">Siswa</span>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -3019,15 +5590,20 @@ Wassalamualaikum Wr. Wb.
                             <th className="py-2.5 px-3">Nama Lengkap & NIS</th>
                             <th className="py-2.5 px-3">Saldo Tabungan</th>
                             <th className="py-2.5 px-3">Status Tagihan SPP (Unpaid)</th>
+                            <th className="py-2.5 px-3">Tagihan Lain-lain (Misc)</th>
                             <th className="py-2.5 px-3">Bulan SPP Lunas</th>
                             <th className="py-2.5 px-3 text-right">Tindakan Pengingat</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {filteredClassStudents.map((student) => {
-                            const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
+                            const overdueBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills))));
                             const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
-                            const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
+                            const paidBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'paid'));
+
+                            const studentMiscBills = (miscBills || []).filter(b => b.studentId === student.id);
+                            const unpaidMisc = studentMiscBills.filter(b => b.status !== 'paid');
+                            const totalUnpaidMisc = unpaidMisc.reduce((sum, b) => sum + b.amount, 0);
 
                             return (
                               <tr key={student.id} className="hover:bg-slate-50/30 transition-colors">
@@ -3041,18 +5617,37 @@ Wassalamualaikum Wr. Wb.
                                 <td className="py-3 px-3">
                                   {overdueBills.length === 0 ? (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                                      <CheckCircle size={10} /> Lunas
+                                      <CheckCircle size={10} /> Lunas SPP
                                     </span>
                                   ) : (
                                     <div className="flex flex-col gap-1">
                                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full w-max animate-pulse">
-                                        ⚠️ Menunggak
+                                        ⚠️ Menunggak SPP
                                       </span>
                                       <span className="font-mono text-rose-700 font-semibold text-[10.5px]">
                                         Total: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid)}
                                       </span>
                                       <span className="text-[9px] text-rose-500 font-medium">
                                         Tunggakan: {overdueBills.map(b => `${b.month} ${b.year}`).join(', ')}
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3">
+                                  {unpaidMisc.length === 0 ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                      <CheckCircle size={10} /> Lunas Iuran
+                                    </span>
+                                  ) : (
+                                    <div className="flex flex-col gap-1">
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full w-max">
+                                        ⚠️ {unpaidMisc.length} Tertunda
+                                      </span>
+                                      <span className="font-mono text-indigo-700 font-semibold text-[10.5px]">
+                                        Total: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaidMisc)}
+                                      </span>
+                                      <span className="text-[9px] text-slate-500 font-medium truncate max-w-[150px]" title={unpaidMisc.map(b => b.title).join(', ')}>
+                                        Iuran: {unpaidMisc.map(b => b.title).join(', ')}
                                       </span>
                                     </div>
                                   )}
@@ -3071,31 +5666,47 @@ Wassalamualaikum Wr. Wb.
                                   )}
                                 </td>
                                 <td className="py-3 px-3 text-right">
-                                  {overdueBills.length > 0 ? (
+                                  <div className="flex items-center justify-end gap-1.5">
                                     <button
                                       type="button"
-                                      onClick={() => copyWaReminder(student, overdueBills)}
-                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-extrabold shadow-xs transition-all cursor-pointer ${
-                                        copiedStudentId === student.id
-                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-250 animate-pulse'
-                                          : 'bg-indigo-50 border border-indigo-100 hover:bg-indigo-150 text-indigo-700 hover:text-indigo-850'
-                                      }`}
+                                      onClick={() => setRecapModalStudent(student)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10.5px] font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 shadow-2xs transition-all cursor-pointer shrink-0"
+                                      title="Cetak Rekapitulasi Keuangan Siswa (PDF)"
                                     >
-                                      {copiedStudentId === student.id ? (
-                                        <>
-                                          <Check size={12} className="text-emerald-600 font-black" />
-                                          Reminder Tersalin!
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Copy size={12} />
-                                          Salin WA Reminder
-                                        </>
-                                      )}
+                                      <FileText size={12} /> Rekap PDF
                                     </button>
-                                  ) : (
-                                    <span className="text-[10px] text-slate-400 font-medium italic">Tidak ada tunggakan</span>
-                                  )}
+                                    <button
+                                      type="button"
+                                      onClick={() => setPassbookStudent(student)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10.5px] font-extrabold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs transition-all cursor-pointer shrink-0"
+                                      title="Cetak Mutasi Buku Tabungan Siswa"
+                                    >
+                                      <Printer size={12} /> Cetak Mutasi
+                                    </button>
+                                    {(overdueBills.length > 0 || unpaidMisc.length > 0) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => copyWaReminder(student, overdueBills, unpaidMisc)}
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-extrabold shadow-xs transition-all cursor-pointer shrink-0 ${
+                                          copiedStudentId === student.id
+                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-250 animate-pulse'
+                                            : 'bg-indigo-50 border border-indigo-100 hover:bg-indigo-150 text-indigo-700 hover:text-indigo-850'
+                                        }`}
+                                      >
+                                        {copiedStudentId === student.id ? (
+                                          <>
+                                            <Check size={12} className="text-emerald-600 font-black" />
+                                            Reminder Tersalin!
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Copy size={12} />
+                                            Salin WA Reminder
+                                          </>
+                                        )}
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -3107,9 +5718,13 @@ Wassalamualaikum Wr. Wb.
                     {/* Mobile View (Bento Cards to avoid scroll completely) */}
                     <div className="block md:hidden space-y-4">
                       {filteredClassStudents.map((student) => {
-                        const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
+                        const overdueBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills))));
                         const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
-                        const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
+                        const paidBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'paid'));
+
+                        const studentMiscBills = (miscBills || []).filter(b => b.studentId === student.id);
+                        const unpaidMisc = studentMiscBills.filter(b => b.status !== 'paid');
+                        const totalUnpaidMisc = unpaidMisc.reduce((sum, b) => sum + b.amount, 0);
 
                         return (
                           <div key={student.id} className="bg-slate-50/50 border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
@@ -3119,14 +5734,23 @@ Wassalamualaikum Wr. Wb.
                                 <div className="font-extrabold text-slate-800 text-xs sm:text-sm">{student.name}</div>
                                 <div className="text-[10px] text-slate-400 font-bold font-mono mt-0.5">NIS: {student.nis}</div>
                               </div>
-                              <div>
+                              <div className="flex flex-col gap-1 items-end">
                                 {overdueBills.length === 0 ? (
-                                  <span className="inline-flex items-center gap-1 text-[9.5px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                    <CheckCircle size={10} className="text-emerald-600" /> Lunas SPP
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    ✓ Lunas SPP
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 text-[9.5px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full animate-pulse">
-                                    ⚠️ Menunggak
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full animate-pulse">
+                                    ⚠️ Tunggakan SPP
+                                  </span>
+                                )}
+                                {unpaidMisc.length === 0 ? (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    ✓ Lunas Iuran
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                                    ⚠️ {unpaidMisc.length} Iuran Tertunda
                                   </span>
                                 )}
                               </div>
@@ -3142,11 +5766,11 @@ Wassalamualaikum Wr. Wb.
                               </div>
                               <div>
                                 <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider">Total Belum Bayar</span>
-                                {overdueBills.length === 0 ? (
+                                {overdueBills.length === 0 && unpaidMisc.length === 0 ? (
                                   <span className="block font-mono font-bold text-xs text-emerald-600 mt-1">Rp 0</span>
                                 ) : (
                                   <span className="block font-mono font-bold text-xs text-rose-700 mt-1">
-                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid)}
+                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid + totalUnpaidMisc)}
                                   </span>
                                 )}
                               </div>
@@ -3158,6 +5782,16 @@ Wassalamualaikum Wr. Wb.
                                 <span className="block text-[8px] font-black text-rose-500 uppercase tracking-wider mb-0.5">Detail Bulan Menunggak:</span>
                                 <p className="text-[9.5px] text-rose-650 font-semibold leading-relaxed">
                                   {overdueBills.map(b => `${b.month} ${b.year}`).join(', ')}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Unpaid Misc details if overdue */}
+                            {unpaidMisc.length > 0 && (
+                              <div className="bg-indigo-50/40 border border-indigo-100/60 rounded-lg p-2 text-left">
+                                <span className="block text-[8px] font-black text-indigo-500 uppercase tracking-wider mb-0.5">Iuran Lain-lain Belum Lunas:</span>
+                                <p className="text-[9.5px] text-indigo-650 font-semibold leading-relaxed">
+                                  {unpaidMisc.map(b => `${b.title} (${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(b.amount)})`).join(', ')}
                                 </p>
                               </div>
                             )}
@@ -3178,16 +5812,36 @@ Wassalamualaikum Wr. Wb.
                               )}
                             </div>
 
-                            {/* Action WA Reminder */}
-                            {overdueBills.length > 0 && (
-                              <div className="mt-1 pt-2.5 border-t border-slate-150">
+                            {/* Action Buttons */}
+                            <div className="mt-1 pt-2.5 border-t border-slate-150 flex flex-col gap-2">
+                              <div className="grid grid-cols-2 gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => copyWaReminder(student, overdueBills)}
+                                  onClick={() => setRecapModalStudent(student)}
+                                  className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-2xs transition-all cursor-pointer"
+                                  title="Cetak Rekapitulasi Keuangan Siswa (PDF)"
+                                >
+                                  <FileText size={13} /> Cetak Rekap PDF
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPassbookStudent(student)}
+                                  className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs transition-all cursor-pointer"
+                                  title="Cetak Mutasi Buku Tabungan Siswa"
+                                >
+                                  <Printer size={13} /> Buku Tabungan
+                                </button>
+                              </div>
+
+                              {/* Action WA Reminder */}
+                              {(overdueBills.length > 0 || unpaidMisc.length > 0) && (
+                                <button
+                                  type="button"
+                                  onClick={() => copyWaReminder(student, overdueBills, unpaidMisc)}
                                   className={`w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black shadow-xs transition-colors cursor-pointer ${
                                     copiedStudentId === student.id
                                       ? 'bg-emerald-50 text-emerald-700 border border-emerald-250'
-                                      : 'bg-indigo-50 border border-indigo-100 hover:bg-indigo-150 text-indigo-700 hover:text-indigo-850'
+                                      : 'bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-800'
                                   }`}
                                 >
                                   {copiedStudentId === student.id ? (
@@ -3202,8 +5856,8 @@ Wassalamualaikum Wr. Wb.
                                     </>
                                   )}
                                 </button>
-                              </div>
-                            )}
+                              )}
+                            </div>
                           </div>
                         );
                       })}
@@ -4885,6 +7539,23 @@ Wassalamualaikum Wr. Wb.
             </div>
           )}
 
+          {activeSubTab === 'jadwal' && (
+            <div className="w-full text-left">
+              <ScheduleView
+                role="homeroom"
+                userClass={currentTeacher.className}
+                userTeacherId={currentTeacher.id}
+                userTeacherName={currentTeacher.name}
+                schedules={classSchedules}
+                onRefreshSchedule={onRefresh}
+                availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
+                subjectTeachers={subjectTeachers}
+                homerooms={homerooms}
+                academicYear={selectedAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'}
+              />
+            </div>
+          )}
+
           {activeSubTab === 'buku_induk' && (
             <div className="w-full">
               <BukuIndukManagement
@@ -4930,6 +7601,19 @@ Wassalamualaikum Wr. Wb.
                         <span>Kelas Binaan: <strong className="text-white font-extrabold">{currentTeacher.className}</strong></span>
                         <span className="opacity-40">•</span>
                         <span>Username: <strong className="text-white font-mono font-bold">@{currentTeacher.username}</strong></span>
+                        <span className="opacity-40">•</span>
+                        <span>Mata Pelajaran: <strong className="text-emerald-300 font-extrabold">{currentTeacher.subject || 'Belum Ditugaskan Admin'}</strong></span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/20 backdrop-blur-sm text-[11px] font-bold text-white border border-white/25">
+                          <BookOpen size={12} className="text-emerald-300" />
+                          <span>Mapel KBM: {currentTeacher.subject || 'Belum Ditugaskan (Hubungi Admin)'}</span>
+                        </span>
+                        {currentTeacher.subject && (
+                          <span className="text-[10px] text-emerald-300 font-extrabold bg-emerald-950/80 border border-emerald-500/50 px-2.5 py-0.5 rounded-full">
+                            ✓ Akun Pendidik &amp; KBM Terverifikasi
+                          </span>
+                        )}
                       </div>
                       {currentTeacher.skUrl && (
                         <div className="mt-3">
@@ -5077,27 +7761,120 @@ Wassalamualaikum Wr. Wb.
             </div>
           )}
 
-          {activeSubTab === 'rapor_merdeka' && (
+          {activeSubTab === 'kokurikuler' && (
             <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
-              {/* Page Title Card */}
+              {/* Sub Navigation Bar: Input Penilaian & Kokurikuler vs Bank TP Bersama */}
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setHomeroomPenilaianSubTab('input_nilai')}
+                  className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                    homeroomPenilaianSubTab === 'input_nilai'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25'
+                      : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  <ClipboardCheck size={15} />
+                  <span>Input Penilaian & Kokurikuler</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setHomeroomPenilaianSubTab('bank_tp')}
+                  className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                    homeroomPenilaianSubTab === 'bank_tp'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25'
+                      : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  <BookOpen size={15} />
+                  <span>Bank TP Bersama (Kurikulum Merdeka)</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                    homeroomPenilaianSubTab === 'bank_tp' ? 'bg-purple-700 text-purple-100' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  }`}>
+                    Tersinkron Otomatis
+                  </span>
+                </button>
+              </div>
+
+              {/* VIEW 1: BANK TP BERSAMA */}
+              {homeroomPenilaianSubTab === 'bank_tp' && (
+                <SharedTpBankView
+                  isWaka={false}
+                  currentUser={{
+                    id: currentTeacher.id,
+                    name: currentTeacher.name,
+                    role: currentTeacher.role || `Wali Kelas ${currentTeacher.className}`
+                  }}
+                  initialSubject={selectedSubjectForGrading}
+                  initialGradeLevel={gradingGradeLevel}
+                  initialSemester={kokurikulerSemester}
+                  initialAcademicYear={kokurikulerYear}
+                  activeClass={selectedGradingClass || currentTeacher.className}
+                  onUseTp={(tp, slot) => {
+                    handleSelectSharedTp(tp, slot);
+                    setHomeroomPenilaianSubTab('input_nilai');
+                  }}
+                  embedded={true}
+                />
+              )}
+
+              {/* VIEW 2: FORM PENILAIAN */}
+              {homeroomPenilaianSubTab === 'input_nilai' && (
+                <div className="flex flex-col gap-6">
+                  {/* Header Card */}
               <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
-                <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-violet-600 to-indigo-600" />
-                <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Modul Wali Kelas (Homeroom Teacher)</span>
+                <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-purple-600 to-indigo-600" />
+                <span className="text-[10px] font-black uppercase text-purple-600 tracking-wider">Khusus Wali Kelas ({currentTeacher.className})</span>
                 <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
-                  🎓 Rekap Rapor Akhir Siswa (Kurikulum Merdeka)
+                  ⭐ Input Penilaian Rapor Merdeka & Kokurikuler
                 </h2>
                 <p className="text-slate-500 text-[11px] mt-0.5">
-                  Kolektif nilai rapor hasil asessment mata pelajaran. Cetak lembar rapor resmi per individu dengan format standar kementerian pendidikan.
+                  Input nilai TP 1 s.d. TP 4 (Tugas, UH), Rata-rata TP, Nilai Kokurikuler, PTS, dan PAS. Nilai Kokurikuler otomatis terhitung ke Nilai Akhir Mapel Rapor.
                 </p>
 
                 {/* Filter Row */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-100">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-slate-100">
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">Pilih Kelas Penilaian</label>
+                      <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded">Kelas Diajar ({homeroomGradingClasses.length})</span>
+                    </div>
+                    <select
+                      value={selectedGradingClass || currentTeacher.className}
+                      onChange={(e) => setSelectedGradingClass(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                    >
+                      {homeroomGradingClasses.map(cls => (
+                        <option key={cls} value={cls}>
+                          Kelas {cls} {cls.toLowerCase() === currentTeacher.className.toLowerCase() ? '(Kelas Binaan Anda)' : '(Jadwal Mengajar)'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">Mata Pelajaran</label>
+                      <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded">Jadwal Mengajar</span>
+                    </div>
+                    <select
+                      value={selectedSubjectForGrading}
+                      onChange={(e) => setSelectedSubjectForGrading(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                    >
+                      {homeroomGradingSubjects.map(subj => (
+                        <option key={subj} value={subj}>{subj}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Semester</label>
                     <select
-                      value={selectedReportSemester}
-                      onChange={(e) => setSelectedReportSemester(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
+                      value={kokurikulerSemester}
+                      onChange={(e) => setKokurikulerSemester(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
                     >
                       <option value="Ganjil">Semester Ganjil</option>
                       <option value="Genap">Semester Genap</option>
@@ -5107,384 +7884,482 @@ Wassalamualaikum Wr. Wb.
                   <div>
                     <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Tahun Ajaran</label>
                     <select
-                      value={selectedReportYear}
-                      onChange={(e) => setSelectedReportYear(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
+                      value={kokurikulerYear}
+                      onChange={(e) => setKokurikulerYear(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
                     >
-                      <option value="2025/2026">2025/2026</option>
-                      <option value="2024/2025">2024/2025</option>
+                      {Array.from(new Set([
+                        ...(schoolIdentity?.activeAcademicYear ? [schoolIdentity.activeAcademicYear] : []),
+                        '2025/2026',
+                        '2024/2025',
+                        '2023/2024'
+                      ])).map(year => (
+                        <option key={year} value={year}>{year}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
               </div>
 
-              {/* Core Grid Column Panels */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {/* Left Student Selector Roster (4 Cols) */}
-                <div className="lg:col-span-4 flex flex-col gap-4">
-                  <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm">
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-100 mb-3">
-                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Daftar Siswa Kelas {currentTeacher.className}</span>
-                    </div>
-                    <div className="flex flex-col gap-1.5 max-h-[500px] overflow-y-auto pr-1">
-                      {classStudents.map((s, idx) => {
-                        const isSelected = selectedReportStudentId === s.id;
-                        
-                        // Find average grade for this student
-                        const scores = merdekaAssessments.filter(a => 
-                          a.studentId === s.id && 
-                          a.semester === selectedReportSemester && 
-                          a.academicYear === selectedReportYear
-                        );
+              {/* Uraian TP Accordion */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
+                  <div>
+                    <h3 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>Deskripsi Tujuan Pembelajaran (TP 1 - TP 4)</span>
+                      <span className="text-purple-600 font-black">({selectedSubjectForGrading})</span>
+                    </h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Hubungkan judul TP langsung dengan Jurnal Pembelajaran Guru/Wali Kelas melalui pilihan dropdown & pencarian kata kunci.
+                    </p>
+                  </div>
 
-                        let sumFinal = 0;
-                        scores.forEach(a => {
-                          const avgF = Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0)) / 3);
-                          const finalSc = Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
-                          sumFinal += finalSc;
-                        });
+                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                    {/* Keterangan Pengedit / Pengisi */}
+                    {(tpEditedBy || tpFilledBy) && (
+                      <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200/70 px-3 py-1.5 rounded-xl text-purple-900 text-[10.5px] font-semibold">
+                        <User size={12} className="text-purple-600 shrink-0" />
+                        <span>
+                          {tpEditedBy ? (
+                            <>Terakhir diedit oleh <strong className="font-extrabold text-purple-950">{tpEditedBy}</strong></>
+                          ) : (
+                            <>Diisi oleh <strong className="font-extrabold text-purple-950">{tpFilledBy}</strong></>
+                          )}
+                        </span>
+                      </div>
+                    )}
 
-                        const meanScore = scores.length > 0 ? Math.round(sumFinal / scores.length) : 0;
+                    <button
+                      type="button"
+                      onClick={handleSaveHomeroomTp}
+                      disabled={isSavingTp}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                      title={`Simpan Deskripsi TP untuk seluruh rombel tingkat ini`}
+                    >
+                      {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                      <span>Simpan Deskripsi TP ({selectedSubjectForGrading})</span>
+                    </button>
 
-                        return (
-                          <button
-                            key={s.id}
-                            onClick={() => setSelectedReportStudentId(s.id)}
-                            className={`w-full text-left p-3 rounded-2xl flex items-center justify-between cursor-pointer transition-all ${
-                              isSelected 
-                                ? 'bg-slate-900 border border-slate-900 shadow-sm text-white' 
-                                : 'bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className={`h-6 w-6 shrink-0 rounded-lg text-[10px] font-black flex items-center justify-center ${
-                                isSelected ? 'bg-indigo-650 text-white' : 'bg-slate-200 text-slate-600'
-                              }`}>
-                                {idx + 1}
-                              </span>
-                              <div className="min-w-0">
-                                <div className="font-extrabold text-xs truncate leading-tight">{s.name}</div>
-                                <div className={`text-[9px] font-mono mt-0.5 ${isSelected ? 'text-slate-400' : 'text-slate-400'}`}>NIS: {s.nis}</div>
-                              </div>
-                            </div>
-                            {meanScore > 0 ? (
-                              <span className={`px-2 py-0.5 rounded-md font-sans text-[10px] font-black shrink-0 ${
-                                isSelected ? 'bg-indigo-500 text-white' : 'bg-indigo-50 text-indigo-700'
-                              }`}>
-                                {meanScore} Avg
-                              </span>
-                            ) : (
-                              <span className="text-[9px] text-slate-400">Belum Ada</span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {/* Quick Auto-fill TP Button */}
+                    <button
+                      type="button"
+                      onClick={handleAutoFillAllTpsFromJournals}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                      title="Ambil otomatis 4 TP dari jurnal pembelajaran terawal untuk mapel dan kelas ini"
+                    >
+                      <Sparkles size={13} className="text-amber-300" />
+                      <span>Link Otomatis Semua TP dari Jurnal</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* Right Student Report Card Preview Panel (8 Cols) */}
-                <div className="lg:col-span-8 flex flex-col gap-6">
-                  {selectedStudent ? (() => {
-                    const scores = merdekaAssessments.filter(a => 
-                      a.studentId === selectedStudent.id && 
-                      a.semester === selectedReportSemester && 
-                      a.academicYear === selectedReportYear
-                    );
+                {/* Quick Auto-matching Shared TP Selector */}
+                <SharedTpQuickSelector
+                  selectedSubject={selectedSubjectForGrading}
+                  selectedClass={selectedGradingClass || currentTeacher.className}
+                  semester={kokurikulerSemester}
+                  academicYear={kokurikulerYear}
+                  tp1Id={tp1Id}
+                  tp2Id={tp2Id}
+                  tp3Id={tp3Id}
+                  tp4Id={tp4Id}
+                  tp1Name={tp1InputName}
+                  tp2Name={tp2InputName}
+                  tp3Name={tp3InputName}
+                  tp4Name={tp4InputName}
+                  onSelectTp={handleSelectSharedTp}
+                  onOpenFullBank={() => setHomeroomPenilaianSubTab('bank_tp')}
+                  onOpenAddTpModal={() => setHomeroomPenilaianSubTab('bank_tp')}
+                />
 
-                    const att = { Hadir: 0, Sakit: 0, Izin: 0, Alpa: 0, Terlambat: 0 };
-                    attendanceLogs.forEach(l => {
-                      if (l.studentId === selectedStudent.id) {
-                        if (att[l.status] !== undefined) att[l.status]++;
-                      }
-                    });
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <TpJournalSelector
+                      label="Judul TP-1"
+                      tpNumber={1}
+                      value={tp1InputName}
+                      onChange={setTp1InputName}
+                      journals={allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList}
+                      selectedSubject={selectedSubjectForGrading}
+                      selectedClass={selectedGradingClass || currentTeacher.className}
+                      required={true}
+                      placeholder="Uraian TP-1..."
+                      filledBy={tpFilledBy}
+                      filledAt={tpFilledAt}
+                      editedBy={tpEditedBy}
+                      editedAt={tpEditedAt}
+                      editedByRole={tpEditedByRole}
+                      linkedTpId={tp1Id}
+                    />
+                  </div>
 
-                    const noteText = waliKelasNotes[selectedStudent.id] || "Ananda menunjukkan keseriusan belajar yang konsisten. Terus tingkatkan kemampuan di semua rumpun keilmuan.";
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <TpJournalSelector
+                      label="Judul TP-2 (Opsional)"
+                      tpNumber={2}
+                      value={tp2InputName}
+                      onChange={setTp2InputName}
+                      journals={allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList}
+                      selectedSubject={selectedSubjectForGrading}
+                      selectedClass={selectedGradingClass || currentTeacher.className}
+                      placeholder="Uraian TP-2 (opsional)..."
+                      filledBy={tpFilledBy}
+                      filledAt={tpFilledAt}
+                      editedBy={tpEditedBy}
+                      editedAt={tpEditedAt}
+                      editedByRole={tpEditedByRole}
+                      linkedTpId={tp2Id}
+                    />
+                  </div>
 
-                    return (
-                      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-6">
-                        
-                        {/* Toolbar Actions */}
-                        <div className="flex items-center justify-between pb-4 border-b border-slate-100 flex-wrap gap-3">
-                          <div>
-                            <h3 className="font-black text-xs text-slate-400 uppercase tracking-wider">Halaman Pratinjau Rapor</h3>
-                            <p className="font-black text-slate-900 text-base leading-none mt-1">{selectedStudent.name}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const printWin = window.open("", "_blank");
-                              if (!printWin) return;
-                              
-                              const officialHeaderKop = schoolIdentity?.letterhead 
-                                ? `<img src="${schoolIdentity.letterhead}" class="kop-img" referrerPolicy="no-referrer" />`
-                                : `<div class="p-4 border-b-2 border-black text-center" style="margin-bottom:20px;">
-                                     <h2 style="margin:0; font-size:16px; font-weight:bold;">${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h2>
-                                     <p style="margin:2px 0 0; font-size:11px;">Jl. Dr. Sutomo No.1 Pandaan Pasuruan | Telp: ${schoolIdentity?.phone || "-"}</p>
-                                   </div>`;
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <TpJournalSelector
+                      label="Judul TP-3 (Opsional)"
+                      tpNumber={3}
+                      value={tp3InputName}
+                      onChange={setTp3InputName}
+                      journals={allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList}
+                      selectedSubject={selectedSubjectForGrading}
+                      selectedClass={selectedGradingClass || currentTeacher.className}
+                      placeholder="Uraian TP-3 (opsional)..."
+                      filledBy={tpFilledBy}
+                      filledAt={tpFilledAt}
+                      editedBy={tpEditedBy}
+                      editedAt={tpEditedAt}
+                      editedByRole={tpEditedByRole}
+                      linkedTpId={tp3Id}
+                    />
+                  </div>
 
-                              const rowGrids = scores.length === 0 
-                                ? `<tr><td colspan="7" style="text-align:center; padding: 20px;">Belum ada asessment mata pelajaran terdaftar untuk semester ini</td></tr>`
-                                : scores.map((a, idx) => {
-                                    const avgF = Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0)) / 3);
-                                    const finalSc = Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
-                                    
-                                    let capNotes = "";
-                                    if (finalSc >= 85) {
-                                      capNotes = `Menunjukkan pemahaman prima dalam ${a.tp1Name}. Konsisten mempertahankan nilai istimewa.`;
-                                    } else if (finalSc >= 75) {
-                                      capNotes = `Menunjukkan pemahaman tuntas dalam ${a.tp1Name}. Perlu pendalaman lanjut pada materi sumatif.`;
-                                    } else {
-                                      capNotes = `Menunjukkan perlu bimbingan khusus dalam ${a.tp1Name}. Butuh intervensi remedial berkala.`;
-                                    }
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <TpJournalSelector
+                      label="Judul TP-4 (Opsional)"
+                      tpNumber={4}
+                      value={tp4InputName}
+                      onChange={setTp4InputName}
+                      journals={allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList}
+                      selectedSubject={selectedSubjectForGrading}
+                      selectedClass={selectedGradingClass || currentTeacher.className}
+                      placeholder="Uraian TP-4 (opsional)..."
+                      filledBy={tpFilledBy}
+                      filledAt={tpFilledAt}
+                      editedBy={tpEditedBy}
+                      editedAt={tpEditedAt}
+                      editedByRole={tpEditedByRole}
+                      linkedTpId={tp4Id}
+                    />
+                  </div>
+                </div>
+              </div>
 
-                                    return `
-                                      <tr>
-                                        <td style="text-align:center; padding: 8px; border: 1px solid #cbd5e1;">${idx + 1}</td>
-                                        <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight:bold;">${a.subject}</td>
-                                        <td style="text-align:center; padding: 8px; border: 1px solid #cbd5e1;">${avgF}</td>
-                                        <td style="text-align:center; padding: 8px; border: 1px solid #cbd5e1;">${a.nilaiSumatifLM || 0}</td>
-                                        <td style="text-align:center; padding: 8px; border: 1px solid #cbd5e1;">${a.nilaiSAS || 0}</td>
-                                        <td style="text-align:center; padding: 8px; border: 1px solid #cbd5e1; font-weight:bold; background:#f8fafc;">${finalSc}</td>
-                                        <td style="padding: 8px; border: 1px solid #cbd5e1; font-size:10px; line-height:1.4;">${capNotes}</td>
-                                      </tr>
-                                    `;
-                                  }).join('');
+              {/* Input Form Table */}
+              <form onSubmit={handleSaveFullGrades} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900">
+                      Tabel Penilaian Rapor Merdeka & Kokurikuler ({gradingStudents.length} Siswa) - Kelas {selectedGradingClass || currentTeacher.className}
+                    </h3>
+                    <p className="text-slate-500 text-[10.5px]">
+                      Formula: Nilai TP = (Tugas × 70%) + (UH × 30%) | NA = ((3 × Rata TP) + Kokurikuler + PTS + PAS) / 6
+                    </p>
+                  </div>
 
-                              printWin.document.write(`
-                                <html>
-                                  <head>
-                                    <title>RAPOR AKHIR - ${selectedStudent.name}</title>
-                                    <style>
-                                      body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; padding: 30px; color: #000; font-size: 11.5px; line-height:1.5; }
-                                      .kop-img { width:100%; max-height:85px; object-fit:contain; border-bottom:3px double #000; padding-bottom:10px; margin-bottom:20px; }
-                                      .meta-table { width:100%; border-collapse:collapse; margin-bottom:20px; }
-                                      .meta-table td { padding: 4px 0; font-size: 11px; }
-                                      .meta-table td.label { font-weight:bold; width: 15%; }
-                                      .meta-table td.val { width: 35%; }
-                                      .main-report { width:100%; border-collapse:collapse; margin-bottom:25px; }
-                                      .main-report th { background:#f1f5f9; padding:8px; border:1px solid #64748b; font-weight:bold; font-size:10.5px; text-transform:uppercase; text-align:center;}
-                                      .main-report td { border:1px solid #64748b; }
-                                      .att-table { width:45%; border-collapse:collapse; margin-bottom:25px; }
-                                      .att-table td, .att-table th { border:1px solid #64748b; padding:6px; }
-                                      .notes-box { border:1px solid #64748b; padding:12px; border-radius:4px; font-style:italic; margin-bottom:30px; font-weight:bold;}
-                                      .sig-grid { width:100%; margin-top:40px; border-collapse:collapse; }
-                                      .sig-grid td { text-align:center; width:33%; padding:10px 0; font-weight:bold;}
-                                    </style>
-                                  </head>
-                                  <body>
-                                    ${officialHeaderKop}
-                                    <div style="text-align:center; font-size:13px; font-weight:bold; text-transform:uppercase; margin-bottom:20px; text-decoration:underline;">LAPOR HASIL BELAJAR AKHIR (RAPOR MERDEKA)</div>
-                                    
-                                    <table class="meta-table">
-                                      <tr>
-                                        <td class="label">Nama Siswa</td><td class="val">: <strong>${selectedStudent.name}</strong></td>
-                                        <td class="label">Kelas / Fase</td><td class="val">: ${selectedStudent.class} / Fase D</td>
-                                      </tr>
-                                      <tr>
-                                        <td class="label">NIS / NISN</td><td class="val">: ${selectedStudent.nis || "-"}</td>
-                                        <td class="label">Semester</td><td class="val">: ${selectedReportSemester}</td>
-                                      </tr>
-                                      <tr>
-                                        <td class="label">Sekolah</td><td class="val">: ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</td>
-                                        <td class="label">Tahun Ajaran</td><td class="val">: ${selectedReportYear}</td>
-                                      </tr>
-                                    </table>
+                  <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExcelPasteContent('');
+                        setExcelParseError(null);
+                        setExcelParsedPreview([]);
+                        setShowExcelModal(true);
+                      }}
+                      className="px-3 py-2 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Import Nilai dari file Excel (.xlsx) atau tempel data spreadsheet"
+                    >
+                      <Upload size={14} className="text-emerald-600" />
+                      <span>Import dari MS Excel</span>
+                    </button>
 
-                                    <h3 style="margin: 0 0 8px; font-size:11px; text-transform:uppercase; text-decoration:underline;">A. LAPORAN NILAI KOMPETENSI REKAP MATA PELAJARAN</h3>
-                                    <table class="main-report">
-                                      <thead>
-                                        <tr>
-                                          <th style="width:5%">No</th>
-                                          <th style="width:25%">Mata Pelajaran</th>
-                                          <th style="width:10%">Formatif (TP)</th>
-                                          <th style="width:10%">Sumatif LM</th>
-                                          <th style="width:10%">Sumatif SAS</th>
-                                          <th style="width:10%">Nilai Rapor</th>
-                                          <th style="width:30%">Capaian Kompetensi / Deskripsi Merdeka</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        ${rowGrids}
-                                      </tbody>
-                                    </table>
+                    <button
+                      type="button"
+                      onClick={handleDownloadHomeroomExcelTemplate}
+                      className="px-3 py-2 rounded-xl border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-800 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Unduh format template Excel resmi dengan daftar nama & NIS siswa kelas ini"
+                    >
+                      <Download size={14} className="text-teal-600" />
+                      <span>Unduh Template Excel</span>
+                    </button>
 
-                                    <div style="display:flex; justify-content:space-between; gap:20px;">
-                                      <table class="att-table">
-                                        <thead>
-                                          <tr style="background:#f1f5f9;"><th colspan="2" style="font-weight:bold; font-size:10px; text-transform:uppercase;">B. REKAPITULASI KEHADIRAN</th></tr>
-                                        </thead>
-                                        <tbody>
-                                          <tr><td>Sakit (S)</td><td style="text-align:center; font-weight:bold;">${att.Sakit} Hari</td></tr>
-                                          <tr><td>Izin (I)</td><td style="text-align:center; font-weight:bold;">${att.Izin} Hari</td></tr>
-                                          <tr><td>Alpa / Tanpa Keterangan (A)</td><td style="text-align:center; font-weight:bold;">${att.Alpa} Hari</td></tr>
-                                        </tbody>
-                                      </table>
+                    <button
+                      type="button"
+                      onClick={handleExportHomeroomExcelRapi}
+                      className="px-3 py-2 rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Ekspor seluruh rekap penilaian kelas ke file Excel (.xlsx)"
+                    >
+                      <FileSpreadsheet size={14} className="text-indigo-600" />
+                      <span>Export Excel Rapi</span>
+                    </button>
 
-                                      <div style="width:50%;">
-                                        <h3 style="margin: 0 0 6px; font-size:11px; text-transform:uppercase; text-decoration:underline;">C. CATATAN WALI KELAS</h3>
-                                        <div class="notes-box">
-                                          "${noteText}"
-                                        </div>
-                                      </div>
-                                    </div>
+                    <button
+                      type="button"
+                      onClick={handleFillSampleGrades}
+                      className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <span>✨ Isi Contoh Nilai</span>
+                    </button>
 
-                                    <table class="sig-grid">
-                                      <tr>
-                                        <td>Orang Tua / Wali Siswa<div style="height:60px"></div>( ..................................... )</td>
-                                        <td>Wali Kelas Kelas ${selectedStudent.class}<div style="height:60px"></div><u><strong>${currentTeacher.name}</strong></u></td>
-                                        <td>Mengetahui,<br/>Kepala Sekolah<div style="height:60px"></div><u><strong>${schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd"}</strong></u></td>
-                                      </tr>
-                                    </table>
-                                    <script>window.print(); setTimeout(function(){window.close();},5000);</script>
-                                  </body>
-                                </html>
-                              `);
-                              printWin.document.close();
-                            }}
-                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs"
-                          >
-                            <Printer size={13} />
-                            Print Rapor Lembar Cetak
-                          </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingFullGrades || gradingStudents.length === 0}
+                      className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer"
+                    >
+                      {isSavingFullGrades ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Menyimpan...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>💾 Simpan Penilaian & Kokurikuler</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Anti-Wipe Protection Banner & Unsaved Changes Alert for Wali Kelas */}
+                <div className="mb-2">
+                  {hasUnsavedGrades ? (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 bg-amber-50 border-2 border-amber-300 text-amber-950 rounded-2xl text-xs font-semibold shadow-sm animate-fade-in">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-amber-200/80 flex items-center justify-center shrink-0">
+                          <AlertTriangle size={18} className="text-amber-700" />
                         </div>
-
-                        {/* Student Metadata Panel */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-150 text-xs">
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold block uppercase">NIS</span>
-                            <span className="font-extrabold text-slate-800 font-mono">{selectedStudent.nis || "-"}</span>
+                        <div>
+                          <div className="font-extrabold text-amber-900 text-xs flex items-center gap-2">
+                            <span>Perhatian: Ada {unsavedCount} Nilai Siswa Sedang Diisi Manual</span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-900 uppercase">
+                              Draft Aman Anti-Wipe
+                            </span>
                           </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold block uppercase">Kelas / Fase</span>
-                            <span className="font-extrabold text-slate-800">{selectedStudent.class} / Fase D</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold block uppercase">Semester</span>
-                            <span className="font-extrabold text-slate-800">{selectedReportSemester}</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold block uppercase">Mata Pelajaran Dinilai</span>
-                            <span className="font-extrabold text-slate-800">{scores.length} Subjects</span>
-                          </div>
-                        </div>
-
-                        {/* Matched Assessments Table */}
-                        <div className="flex flex-col gap-2">
-                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Laporan Nilai Rekap Pembelajaran Komparatif</span>
-                          <div className="border border-slate-200 rounded-3xl overflow-hidden shadow-2xs">
-                            <table className="w-full border-collapse text-xs select-none">
-                              <thead>
-                                <tr className="bg-slate-900 text-white font-extrabold uppercase text-[9px] text-center">
-                                  <th className="py-2.5 px-3 text-center w-10">No</th>
-                                  <th className="py-2.5 px-3 text-left">Mata Pelajaran</th>
-                                  <th className="py-2.5 px-2">Avg Formatif (TP)</th>
-                                  <th className="py-2.5 px-2">Sumatif M/L</th>
-                                  <th className="py-2.5 px-2">SAS</th>
-                                  <th className="py-2.5 px-3 bg-slate-950 text-emerald-400">Total Akhir</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {scores.length === 0 ? (
-                                  <tr>
-                                    <td colSpan={6} className="py-12 text-center text-slate-400 font-semibold">
-                                      Belum ada rekap nilai kualifikasi Kurikulum Merdeka pelajaran untuk siswa ini.
-                                    </td>
-                                  </tr>
-                                ) : (
-                                  scores.map((a, idx) => {
-                                    const avgF = Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0)) / 3);
-                                    const finalSc = Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
-
-                                    return (
-                                      <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                                        <td className="py-2.5 px-3 text-center text-slate-400 font-bold">{idx + 1}</td>
-                                        <td className="py-2.5 px-3 text-left font-black text-slate-800">{a.subject}</td>
-                                        <td className="py-2.5 px-2 text-center font-bold text-indigo-600">{avgF}</td>
-                                        <td className="py-2.5 px-2 text-center text-slate-700">{a.nilaiSumatifLM || 0}</td>
-                                        <td className="py-2.5 px-2 text-center text-slate-700">{a.nilaiSAS || 0}</td>
-                                        <td className="py-2.5 px-3 text-center bg-slate-50 font-black text-slate-900 leading-none">
-                                          <span className={`px-2 py-0.5 rounded ${
-                                            finalSc >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-850'
-                                          }`}>
-                                            {finalSc}
-                                          </span>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })
-                                )}
-                              </tbody>
-                            </table>
+                          <div className="text-[11px] text-amber-800 mt-0.5 font-normal">
+                            Nilai tersimpan lokal pada peramban Anda dan dilindungi dari refresh / sinkronisasi background otomatis. Klik Simpan untuk memperbarui database MySQL.
                           </div>
                         </div>
-
-                        {/* Bottom Attendance Card & Wali Kelas Note Edit */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
-                          {/* Attendance Summary */}
-                          <div className="bg-slate-50/40 p-4 rounded-3xl border border-slate-200 text-xs flex flex-col gap-3">
-                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Rekap Kehadiran Presensi Pelajaran</span>
-                            <div className="grid grid-cols-3 gap-2 mt-1">
-                              <div className="bg-white p-3 rounded-2xl border border-slate-150 text-center">
-                                <span className="text-[10px] text-slate-400 block font-bold">Sakit (S)</span>
-                                <span className="text-sm font-black text-amber-600 font-mono">{att.Sakit}</span>
-                              </div>
-                              <div className="bg-white p-3 rounded-2xl border border-slate-150 text-center">
-                                <span className="text-[10px] text-slate-400 block font-bold">Izin (I)</span>
-                                <span className="text-sm font-black text-indigo-600 font-mono">{att.Izin}</span>
-                              </div>
-                              <div className="bg-white p-3 rounded-2xl border border-slate-150 text-center">
-                                <span className="text-[10px] text-slate-400 block font-bold">Alpa (A)</span>
-                                <span className="text-sm font-black text-rose-600 font-mono">{att.Alpa}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Homeroom Notes Form */}
-                          <div className="bg-slate-50/40 p-4 rounded-3xl border border-slate-200 flex flex-col gap-2.5">
-                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Catatan Khusus Wali Kelas</span>
-                            <textarea
-                              rows={2}
-                              value={waliKelasNotes[selectedStudent.id] || ''}
-                              onChange={(e) => {
-                                const txt = e.target.value;
-                                setWaliKelasNotes(prev => ({
-                                  ...prev,
-                                  [selectedStudent.id]: txt
-                                }));
-                              }}
-                              placeholder="Wali kelas silakan menulis arahan rujukan peningkatan belajar siswa..."
-                              className="w-full bg-white border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 font-bold text-slate-800 text-[11px] leading-relaxed"
-                            />
-                            <div className="flex justify-end">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setNotifMsg({ type: 'success', text: "Catatan wali kelas disinkronkan ke rapor" });
-                                  setShowSuccessCheck(true);
-                                  setTimeout(() => setShowSuccessCheck(false), 2000);
-                                }}
-                                className="px-3 py-1.5 bg-slate-900 border border-slate-900 hover:bg-slate-800 text-white rounded-lg text-[10px] font-black uppercase tracking-wider cursor-pointer"
-                              >
-                                Update Catatan
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
                       </div>
-                    );
-                  })() : (
-                    <div className="py-20 text-center text-slate-400 font-semibold bg-white border border-slate-200 rounded-3xl shadow-sm text-xs">
-                      Pilih siswa di atas untuk memuat data rapor kurikulum merdeka.
+                      <button
+                        type="submit"
+                        disabled={isSavingFullGrades || gradingStudents.length === 0}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl transition-all shadow-md shadow-amber-600/20 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0 disabled:opacity-50"
+                      >
+                        {isSavingFullGrades ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        <span>Simpan Sekarang ({unsavedCount} Siswa)</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-emerald-900 text-xs font-medium">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                        <span className="text-[11px]">
+                          <strong>Status Penilaian:</strong> Seluruh nilai tersimpan di database. Sistem proteksi background sync aktif melindungi ketikan Anda saat pengisian manual.
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md uppercase">
+                        Anti-Wipe Aktif
+                      </span>
                     </div>
                   )}
                 </div>
-              </div>
+
+                {gradingStudents.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 font-semibold text-xs">
+                    Tidak ada siswa terdaftar pada kelas {selectedGradingClass || currentTeacher.className}.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-inner">
+                    <table className="w-full text-left text-[11px] border-collapse min-w-[1100px]">
+                      <thead>
+                        <tr className="bg-slate-800 text-white font-black border-b border-slate-700 uppercase text-[9.5px] tracking-wider">
+                          <th className="py-3 px-3 w-10 text-center border-r border-slate-700 sticky left-0 z-20 bg-slate-800">No</th>
+                          <th className="py-3 px-3 w-48 border-r border-slate-700 sticky left-10 z-20 bg-slate-800 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.3)]">NIS / Nama Siswa</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={2}>TP 1</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={2}>TP 2</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={2}>TP 3</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={2}>TP 4</th>
+                          <th className="py-3 px-3 text-center border-r border-slate-700 bg-indigo-900/80">Rata TP</th>
+                          <th className="py-3 px-3 text-center border-r border-slate-700 bg-purple-900/80 text-amber-300">⭐ Kokurikuler</th>
+                          <th className="py-3 px-3 text-center border-r border-slate-700 bg-slate-700/60">PTS</th>
+                          <th className="py-3 px-3 text-center border-r border-slate-700 bg-slate-700/60">PAS</th>
+                          <th className="py-3 px-3 text-center bg-emerald-900/90 text-emerald-200">NA Mapel</th>
+                        </tr>
+                        <tr className="bg-slate-700 text-slate-300 font-bold border-b border-slate-600 text-[9px]">
+                          <th className="py-1 px-1 border-r border-slate-600 sticky left-0 z-20 bg-slate-700"></th>
+                          <th className="py-1 px-1 border-r border-slate-600 sticky left-10 z-20 bg-slate-700 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.3)]"></th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">Tugas</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">Tugas</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">Tugas</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">Tugas</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
+                          <th className="py-1 px-1 text-center w-12 border-r border-slate-600">Formative</th>
+                          <th className="py-1 px-1 text-center w-20 border-r border-slate-600 text-amber-300">Wali Kelas</th>
+                          <th className="py-1 px-1 text-center w-12 border-r border-slate-600">Mid</th>
+                          <th className="py-1 px-1 text-center w-12 border-r border-slate-600">Final</th>
+                          <th className="py-1 px-1 text-center w-14">Rapor</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                        {gradingStudents.map((st, idx) => {
+                          const state = gradeInputMap[st.id] || {
+                            tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+                            tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+                            tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+                            tp4Tugas1: '', tp4Tugas2: '', tp4Uh: '',
+                            kokurikuler: kokurikulerScores[st.id] || '0',
+                            pts: '', pas: ''
+                          };
+
+                          const calcTp = (t1: any, uh: any) => {
+                            const n1 = t1 !== '' && !isNaN(Number(t1)) ? Number(t1) : null;
+                            const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
+                            if (n1 === null && n3 === null) return null;
+                            if (n1 !== null && n3 !== null) return Math.round((n1 * 0.7) + (n3 * 0.3));
+                            if (n1 !== null) return Math.round(n1);
+                            if (n3 !== null) return Math.round(n3);
+                            return null;
+                          };
+
+                          const tp1 = calcTp(state.tp1Tugas1, state.tp1Uh);
+                          const tp2 = calcTp(state.tp2Tugas1, state.tp2Uh);
+                          const tp3 = calcTp(state.tp3Tugas1, state.tp3Uh);
+                          const tp4 = calcTp(state.tp4Tugas1, state.tp4Uh);
+
+                          const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
+                          const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
+
+                          const koku = Number(state.kokurikuler) || Number(kokurikulerScores[st.id]) || 0;
+                          const pts = state.pts !== '' && !isNaN(Number(state.pts)) ? Number(state.pts) : 0;
+                          const pas = state.pas !== '' && !isNaN(Number(state.pas)) ? Number(state.pas) : 0;
+
+                          const finalMapel = avgTp !== null 
+                            ? Math.round(((avgTp * 3) + koku + pts + pas) / 6) 
+                            : null;
+
+                          const updateField = (field: string, val: string) => {
+                            dirtyStudentsRef.current.add(st.id);
+                            setHasUnsavedGrades(true);
+                            setUnsavedCount(dirtyStudentsRef.current.size);
+
+                            setGradeInputMap(prev => {
+                              const updatedStudent = {
+                                ...(prev[st.id] || {}),
+                                [field]: val
+                              };
+                              const nextMap = {
+                                ...prev,
+                                [st.id]: updatedStudent
+                              };
+                              try {
+                                localStorage.setItem(`draft_grades_homeroom_${lastGradingScopeRef.current}`, JSON.stringify(nextMap));
+                              } catch (e) {}
+                              return nextMap;
+                            });
+                            if (field === 'kokurikuler') {
+                              setKokurikulerScores(prev => ({
+                                ...prev,
+                                [st.id]: val
+                              }));
+                            }
+                          };
+
+                          return (
+                            <tr key={st.id} className="hover:bg-purple-50/40 transition-colors group">
+                              <td className="py-2 px-2 text-center font-mono text-[11px] text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white group-hover:bg-purple-50/90">{idx + 1}</td>
+                              <td className="py-2 px-3 border-r border-slate-100 sticky left-10 z-10 bg-white group-hover:bg-purple-50/90 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.12)] min-w-[140px] max-w-[180px]">
+                                <div className="font-bold text-slate-900 leading-tight truncate" title={st.name}>{st.name}</div>
+                                <div className="text-[10px] font-mono text-slate-400">{st.nis || st.id}</div>
+                              </td>
+
+                              {/* TP1 */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp1Tugas1} onChange={e => updateField('tp1Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp1Uh} onChange={e => updateField('tp1Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+
+                              {/* TP2 */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp2Tugas1} onChange={e => updateField('tp2Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp2Uh} onChange={e => updateField('tp2Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+
+                              {/* TP3 */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp3Tugas1} onChange={e => updateField('tp3Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp3Uh} onChange={e => updateField('tp3Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+
+                              {/* TP4 */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp4Tugas1} onChange={e => updateField('tp4Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp4Uh} onChange={e => updateField('tp4Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+
+                              {/* Rata TP */}
+                              <td className="p-1 border-r border-slate-100 text-center bg-indigo-50/50 font-black text-indigo-700">
+                                {avgTp !== null ? avgTp : '-'}
+                              </td>
+
+                              {/* KOKURIKULER (EDITABLE FOR WALI KELAS!) */}
+                              <td className="p-1 border-r border-slate-100 text-center bg-purple-50/80">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={state.kokurikuler}
+                                  onChange={e => updateField('kokurikuler', e.target.value)}
+                                  className="w-16 text-center font-black text-purple-900 bg-white border border-purple-300 focus:border-purple-600 rounded-lg px-1 py-1 text-xs shadow-sm"
+                                  placeholder="0-100"
+                                />
+                              </td>
+
+                              {/* PTS */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.pts} onChange={e => updateField('pts', e.target.value)} className="w-11 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" placeholder="PTS" />
+                              </td>
+
+                              {/* PAS */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.pas} onChange={e => updateField('pas', e.target.value)} className="w-11 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" placeholder="PAS" />
+                              </td>
+
+                              {/* Nilai Akhir Mapel */}
+                              <td className="p-1 text-center bg-emerald-50 font-black text-emerald-800 text-xs">
+                                {finalMapel !== null ? finalMapel : '-'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </form>
             </div>
           )}
         </div>
-      </div>
+      )}
+    </div>
+  </div>
 
       {/* ================= PERSISTENT BOTTOM NAVIGATION BAR (Selaras di Semua Akun) ================= */}
       <div 
@@ -5557,10 +8432,10 @@ Wassalamualaikum Wr. Wb.
           onClick={() => setShowMoreMenu(prev => !prev)}
           className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
         >
-          <div className={`p-1.5 rounded-xl transition-colors ${(['perkembangan', 'rapor_merdeka', 'profile', 'pkg'].includes(activeSubTab) || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-            <LayoutGrid size={20} className={(['perkembangan', 'rapor_merdeka', 'profile', 'pkg'].includes(activeSubTab) || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          <div className={`p-1.5 rounded-xl transition-colors ${(['perkembangan', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={(['perkembangan', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
           </div>
-          <span className={`text-[9.5px] leading-none ${(['perkembangan', 'rapor_merdeka', 'profile', 'pkg'].includes(activeSubTab) || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
+          <span className={`text-[9.5px] leading-none ${(['perkembangan', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
         </button>
       </div>
 
@@ -5580,148 +8455,173 @@ Wassalamualaikum Wr. Wb.
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10"
+              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-5 shadow-2xl text-left flex flex-col gap-2 max-h-[85vh] overflow-y-auto pb-8"
             >
-              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Lainnya</span>
-                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Akses Tambahan Wali Kelas</h4>
+              {/* Android Top Drag Handle */}
+              <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-1 shrink-0" />
+
+              {/* Minimal Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-600" />
+                  <h4 className="text-slate-900 font-bold text-sm tracking-tight">
+                    Menu Lainnya
+                  </h4>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowMoreMenu(false)}
-                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-xs cursor-pointer transition-colors"
                 >
-                  Tutup
+                  ✕
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+              {/* 3 Horizontal Columns Android App Drawer Grid */}
+              <div className="grid grid-cols-3 gap-y-4 gap-x-2 py-2">
+                {/* 1. Jadwal */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('jadwal');
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-md shadow-indigo-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🗓️
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Jadwal Pelajaran
+                  </span>
+                </button>
+
+                {/* 2. Kokurikuler */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('kokurikuler');
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 shadow-md shadow-purple-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    ⭐
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Kokurikuler
+                  </span>
+                </button>
+
+                {/* 3. Buku Induk */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('buku_induk');
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-600 to-green-700 shadow-md shadow-emerald-600/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📗
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Buku Induk
+                  </span>
+                </button>
+
+                {/* 4. Perkembangan */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveSubTab('perkembangan');
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeSubTab === 'perkembangan'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-orange-50 rounded-xl text-orange-600 text-lg">📈</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Perkembangan Siswa</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pantau kepribadian, pelanggaran, &amp; konseling siswa</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-400 to-red-500 shadow-md shadow-orange-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📈
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Perkembangan
+                  </span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveSubTab('rapor_merdeka');
-                    setShowMoreMenu(false);
-                  }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeSubTab === 'rapor_merdeka'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-700 text-lg">🎓</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Rapor Merdeka</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pengelolaan rapor kurikulum merdeka terintegrasi</p>
-                  </div>
-                </button>
-
+                {/* 5. Profil */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveSubTab('profile');
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeSubTab === 'profile'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg">👤</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Profil Saya</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Detail akun pendidik dan pengaturan kata sandi privat</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-md shadow-sky-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    👤
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Profil Saya
+                  </span>
                 </button>
 
+                {/* 6. PKG */}
                 <button
                   type="button"
                   onClick={() => {
                     setActiveSubTab('pkg');
                     setShowMoreMenu(false);
                   }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeSubTab === 'pkg'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🎖️</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Evaluasi PKG</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Penilaian Kinerja Guru oleh Kepala Sekolah</p>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md shadow-amber-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🎖️
                   </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Evaluasi PKG
+                  </span>
                 </button>
-              </div>
 
-              {/* Quick access to download Mobile Apps in the bottom sheet menu */}
-              <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                  📲 Unduh Aplikasi Mobile Resmi
-                </span>
-                <p className="text-[10px] text-slate-500 leading-normal">
-                  Gunakan aplikasi mobile resmi untuk kemudahan akses monitor seluruh kegiatan kelas, presensi, &amp; dana tabungan wali murid langsung lewat HP.
-                </p>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  <a
-                    href={schoolIdentity?.apkUrl || "#"}
-                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!schoolIdentity?.apkUrl) {
-                        e.preventDefault();
-                        alert("Link unduhan Android belum diatur oleh Administrator.");
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
-                      schoolIdentity?.apkUrl 
-                        ? "bg-emerald-50 hover:bg-emerald-105 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
-                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <Smartphone size={13} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
-                    <span className="text-[10px]">Android APK</span>
-                  </a>
+                {/* 7. Unduh APK */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (schoolIdentity?.apkUrl) {
+                      window.open(schoolIdentity.apkUrl, "_blank");
+                    } else {
+                      alert("Link unduhan Android belum diatur oleh Administrator.");
+                    }
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Smartphone className="w-7 h-7 text-white stroke-[2.2]" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Unduh APK
+                  </span>
+                </button>
 
-                  <a
-                    href={schoolIdentity?.iosUrl || "#"}
-                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (!schoolIdentity?.iosUrl) {
-                        e.preventDefault();
-                        alert("Link unduhan iOS belum diatur oleh Administrator.");
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
-                      schoolIdentity?.iosUrl 
-                        ? "bg-sky-50 hover:bg-sky-105 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
-                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <Apple size={13} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
-                    <span className="text-[10px]">iOS Apple</span>
-                  </a>
-                </div>
+                {/* 8. Unduh iOS */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (schoolIdentity?.iosUrl) {
+                      window.open(schoolIdentity.iosUrl, "_blank");
+                    } else {
+                      alert("Link unduhan iOS belum diatur oleh Administrator.");
+                    }
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-900 shadow-md shadow-slate-700/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    <Apple className="w-7 h-7 text-white stroke-[2.2]" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Aplikasi iOS
+                  </span>
+                </button>
               </div>
             </motion.div>
           </>
@@ -5825,6 +8725,101 @@ Wassalamualaikum Wr. Wb.
         )}
       </AnimatePresence>
 
+      {/* MODAL VISUALISASI KHUSUS SIMPAN NILAI WALI KELAS (BERBEDA DARI ABSENSI) */}
+      <AnimatePresence>
+        {showGradeSuccessModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md no-print p-4">
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.85, opacity: 0, y: 15 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 320 }}
+              className="bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-indigo-100 flex flex-col items-center max-w-sm w-full text-center relative overflow-hidden"
+            >
+              {/* Vibrant Indigo-Purple Gradient Bar */}
+              <div className="absolute top-0 inset-x-0 h-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600" />
+              <div className="absolute -right-10 -top-10 w-36 h-36 bg-indigo-100 rounded-full opacity-50 blur-xl pointer-events-none" />
+              <div className="absolute -left-10 -bottom-10 w-36 h-36 bg-violet-100 rounded-full opacity-50 blur-xl pointer-events-none" />
+
+              {/* Distinct Badge & Animated Icon: Indigo-Violet Theme */}
+              <div className="relative mb-4 mt-2">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-200 rotate-3">
+                  <motion.div
+                    initial={{ rotate: -25, scale: 0.5 }}
+                    animate={{ rotate: -3, scale: 1 }}
+                    transition={{ type: 'spring', damping: 15, stiffness: 200, delay: 0.1 }}
+                  >
+                    <Award size={40} className="text-white drop-shadow-sm" />
+                  </motion.div>
+                </div>
+                {/* Floating MySQL Live Badge */}
+                <motion.div 
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.35, type: 'spring' }}
+                  className="absolute -bottom-2 -right-2 px-2 py-0.5 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider rounded-full shadow-sm flex items-center gap-1 border border-white"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
+                  MySQL
+                </motion.div>
+              </div>
+
+              {/* Title & Distinct Content */}
+              <h3 className="font-black text-slate-900 text-lg subpixel-antialiased tracking-tight">
+                Nilai Berhasil Tersimpan!
+              </h3>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 border border-indigo-100/80 rounded-full text-[10px] font-bold text-indigo-700 mt-2">
+                <Sparkles size={11} className="text-indigo-600" />
+                <span>Langsung ke Database MySQL</span>
+              </div>
+
+              <p className="text-slate-600 text-xs leading-relaxed mt-2.5 px-1">
+                Data penilaian mata pelajaran <strong className="text-slate-900">{gradeSuccessSummary?.subject}</strong> untuk <strong className="text-slate-900">Kelas {gradeSuccessSummary?.className}</strong> telah sukses tersimpan dan disinkronkan ke database MySQL.
+              </p>
+
+              {/* Detail Ringkasan Nilai */}
+              <div className="mt-4 w-full bg-gradient-to-b from-slate-50 to-indigo-50/30 border border-slate-200/80 rounded-2xl p-3.5 flex flex-col gap-2 relative z-10 text-xs">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <Users size={13} className="text-indigo-600" />
+                    Jumlah Siswa
+                  </span>
+                  <span className="font-black text-slate-900 font-sans">
+                    {gradeSuccessSummary?.count} Murid
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <BookOpen size={13} className="text-violet-600" />
+                    Format Kurikulum
+                  </span>
+                  <span className="font-black text-indigo-700 font-sans">
+                    Kurikulum Merdeka + Kokurikuler
+                  </span>
+                </div>
+                <div className="border-t border-slate-200/80 my-0.5 pt-1.5 flex justify-between items-center text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  <span>Status Database</span>
+                  <span className="font-black text-emerald-700 flex items-center gap-1">
+                    <CheckCircle size={11} />
+                    MySQL Database OK
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Button */}
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowGradeSuccessModal(false)}
+                className="mt-5 w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md shadow-indigo-200 flex items-center justify-center gap-2 relative z-10"
+              >
+                <Check size={14} className="stroke-[3px]" />
+                Lanjutkan
+              </motion.button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* MODAL PRINT OUT JURNAL INDIVIDUAL */}
       <AnimatePresence>
         {selectedJournalToPrint && (
@@ -5868,7 +8863,7 @@ Wassalamualaikum Wr. Wb.
                     <div className="w-full border-b-4 border-double border-slate-900 pb-2 flex flex-col items-center text-left select-none">
                       <img 
                         src={schoolIdentity.letterhead} 
-                        className="w-full max-h-24 object-contain" 
+                        className="w-full h-auto block" 
                         alt="Kop Surat" 
                         referrerPolicy="no-referrer"
                       />
@@ -5907,7 +8902,7 @@ Wassalamualaikum Wr. Wb.
                       Jurnal Pembelajaran &amp; Presensi Mata Pelajaran
                     </h2>
                     <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
-                      Kelas: {selectedJournalToPrint.className} &bull; Semester Genap &bull; Tahun Ajaran 2025/2026
+                      Kelas: {selectedJournalToPrint.className} &bull; Semester {selectedJournalToPrint.semester || getSemesterFromDate(selectedJournalToPrint.date)} &bull; Tahun Ajaran {schoolIdentity?.activeAcademicYear || "2026/2027"}
                     </p>
                   </div>
 
@@ -5931,6 +8926,16 @@ Wassalamualaikum Wr. Wb.
                           {new Date(selectedJournalToPrint.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                         </span>
                       </div>
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Pertemuan Ke</span>
+                        <span>:</span>
+                        <span className="font-bold text-slate-800">{selectedJournalToPrint.pertemuanKe || "-"}</span>
+                      </div>
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Jam Ke</span>
+                        <span>:</span>
+                        <span className="font-bold text-slate-800">{selectedJournalToPrint.jamKe || "-"}</span>
+                      </div>
                     </div>
 
                     <div className="flex flex-col gap-2">
@@ -5943,6 +8948,17 @@ Wassalamualaikum Wr. Wb.
                         <span className="font-bold text-slate-500">Catatan KBM</span>
                         <span>:</span>
                         <span className="font-medium text-slate-700 italic">{selectedJournalToPrint.notes || "-"}</span>
+                      </div>
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Alokasi Waktu</span>
+                        <span>:</span>
+                        <span className="font-bold text-slate-800">
+                          {selectedJournalToPrint.alokasiWaktu 
+                            ? (String(selectedJournalToPrint.alokasiWaktu).toLowerCase().includes('jp')
+                              ? selectedJournalToPrint.alokasiWaktu 
+                              : `${selectedJournalToPrint.alokasiWaktu} JP`)
+                            : "-"}
+                        </span>
                       </div>
                       <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
                         <span className="font-bold text-slate-500">Tingkat Absensi</span>
@@ -6055,7 +9071,12 @@ Wassalamualaikum Wr. Wb.
               <div className="flex justify-between items-center pb-3 border-b border-slate-100 flex-wrap gap-2 select-none">
                 <div className="flex items-center gap-2">
                   <Printer size={18} className="text-indigo-600" />
-                  <span className="font-extrabold text-slate-800 text-sm">Pratinjau PDF Buku Rekap Jurnal Pembelajaran KBM Kelas</span>
+                  <span className="font-extrabold text-slate-800 text-sm">
+                    {compiledJournalPrintType === 'binaan' 
+                      ? 'Pratinjau PDF Buku Rekap Jurnal Pembelajaran KBM Kelas' 
+                      : 'Pratinjau PDF Buku Rekap Jurnal Mengajar di Kelas Lain'
+                    }
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -6085,12 +9106,17 @@ Wassalamualaikum Wr. Wb.
                     <div className="w-full border-b-4 border-double border-slate-900 pb-2 flex flex-col items-center text-left select-none">
                       <img 
                         src={schoolIdentity.letterhead} 
-                        className="w-full max-h-24 object-contain" 
+                        className="w-full h-auto block" 
                         alt="Kop Surat" 
                         referrerPolicy="no-referrer"
                       />
                       <div className="w-full text-right font-mono mt-1 text-[8px] text-slate-400 flex justify-between items-center">
-                        <span className="text-[9px] font-black text-slate-800">REKAPITULASI JURNAL MENGAJAR KBM KELAS</span>
+                        <span className="text-[9px] font-black text-slate-800">
+                          {compiledJournalPrintType === 'binaan' 
+                            ? 'REKAPITULASI JURNAL MENGAJAR KBM KELAS' 
+                            : 'REKAPITULASI JURNAL MENGAJAR KELAS LAIN'
+                          }
+                        </span>
                         <span>Dicetak: {new Date().toLocaleDateString('id-ID')}</span>
                       </div>
                     </div>
@@ -6112,7 +9138,9 @@ Wassalamualaikum Wr. Wb.
                         </div>
                       </div>
                       <div className="text-right flex flex-col gap-0.5 font-mono shrink-0">
-                        <span className="text-xs font-black text-slate-800">BUKU KBM KELAS</span>
+                        <span className="text-xs font-black text-slate-800">
+                          {compiledJournalPrintType === 'binaan' ? 'BUKU KBM KELAS' : 'BUKU JURNAL MENGAJAR'}
+                        </span>
                         <span className="text-[8px] text-slate-400 block mt-1">Dicetak: {new Date().toLocaleDateString('id-ID')}</span>
                       </div>
                     </div>
@@ -6121,17 +9149,37 @@ Wassalamualaikum Wr. Wb.
                   {/* Title of Document */}
                   <div className="text-center my-1 text-slate-900">
                     <h2 className="text-sm font-extrabold uppercase tracking-widest underline">
-                      Buku Rekapitulasi Jurnal Mengajar &amp; KBM Kelas
+                      {compiledJournalPrintType === 'binaan' 
+                        ? 'Buku Rekapitulasi Jurnal Mengajar & KBM Kelas' 
+                        : 'Buku Rekapitulasi Jurnal Mengajar di Kelas Lain'
+                      }
                     </h2>
                     <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
-                      Kelas Rujukan: {currentTeacher.className} &bull; Wali Kelas: {currentTeacher.name} &bull; Semester Genap &bull; Tahun Ajaran 2025/2026
+                      {compiledJournalPrintType === 'binaan'
+                        ? `Kelas Rujukan: ${currentTeacher.className} • Wali Kelas: ${currentTeacher.name} • Semester ${getSemesterFromDate()} • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
+                        : `Guru Pengampu: ${currentTeacher.name} • Wali Kelas Rujukan • Semester ${getSemesterFromDate()} • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
+                      }
+                      {(kbmJournalStartDate || kbmJournalEndDate) && (
+                        <span className="block font-bold text-indigo-900 mt-0.5">
+                          Periode Tanggal: {kbmJournalStartDate ? new Date(kbmJournalStartDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Awal'} s.d. {kbmJournalEndDate ? new Date(kbmJournalEndDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Sekarang'}
+                        </span>
+                      )}
                     </p>
                   </div>
 
                   {/* Summary counts panel */}
                   <div className="p-3 border border-slate-200 rounded-xl bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-600 font-bold uppercase tracking-wider">
-                    <span>Nama Kelas: {currentTeacher.className}</span>
-                    <span>Total Jurnal Terdaftar: {teachingJournalsList.length} Entri Kegiatan</span>
+                    {compiledJournalPrintType === 'binaan' ? (
+                      <>
+                        <span>Nama Kelas: {currentTeacher.className}</span>
+                        <span>Total Jurnal Terdaftar: {binaanJournals.length} Entri Kegiatan</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Guru Pengampu: {currentTeacher.name}</span>
+                        <span>Total Jurnal Terdaftar: {kelasLainJournals.length} Entri Kegiatan</span>
+                      </>
+                    )}
                     <span>Tanggal Dicetak: {new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}</span>
                   </div>
 
@@ -6140,17 +9188,29 @@ Wassalamualaikum Wr. Wb.
                     <table className="w-full border-collapse border border-slate-300 text-[10px] text-slate-800">
                       <thead>
                         <tr className="bg-slate-100 font-extrabold uppercase tracking-wider text-slate-700 text-center">
-                          <th className="border border-slate-300 px-3 py-2" style={{ width: '4%' }}>No</th>
-                          <th className="border border-slate-300 px-3 py-2" style={{ width: '15%' }}>Hari &amp; Tanggal</th>
-                          <th className="border border-slate-300 px-3 py-2" style={{ width: '20%' }}>Mata Pelajaran</th>
-                          <th className="border border-slate-300 px-3 py-2" style={{ width: '20%' }}>Guru Pengampu</th>
-                          <th className="border border-slate-300 px-3 py-2 text-left" style={{ width: '26%' }}>Materi / Pembahasan Belajar</th>
-                          <th className="border border-slate-300 px-3 py-2" style={{ width: '15%' }}>Kehadiran Jam Mapel</th>
+                          <th className="border border-slate-300 px-2 py-2" style={{ width: '4%' }}>No</th>
+                          <th className="border border-slate-300 px-2 py-2" style={{ width: '12%' }}>Hari &amp; Tanggal</th>
+                          {compiledJournalPrintType === 'binaan' ? (
+                            <>
+                              <th className="border border-slate-300 px-2 py-2" style={{ width: '15%' }}>Mata Pelajaran</th>
+                              <th className="border border-slate-300 px-2 py-2" style={{ width: '15%' }}>Guru Pengampu</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="border border-slate-300 px-2 py-2" style={{ width: '10%' }}>Kelas</th>
+                              <th className="border border-slate-300 px-2 py-2" style={{ width: '17%' }}>Mata Pelajaran</th>
+                            </>
+                          )}
+                          <th className="border border-slate-300 px-1 py-2" style={{ width: '5%' }}>Jam Ke</th>
+                          <th className="border border-slate-300 px-1 py-2" style={{ width: '6%' }}>Alokasi</th>
+                          <th className="border border-slate-300 px-1 py-2" style={{ width: '7%' }}>Pertemuan Ke</th>
+                          <th className="border border-slate-300 px-2.5 py-2 text-left" style={{ width: '23%' }}>Materi / Pembahasan Belajar</th>
+                          <th className="border border-slate-300 px-2 py-2" style={{ width: '13%' }}>Kehadiran Jam Mapel</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {teachingJournalsList
-                          .sort((a,b) => b.date.localeCompare(a.date))
+                        {(compiledJournalPrintType === 'binaan' ? binaanJournals : kelasLainJournals)
+                          .sort((a,b) => a.date.localeCompare(b.date) || (new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()))
                           .map((journal, idx) => {
                             const total = journal.attendance?.length || 0;
                             const h = journal.attendance?.filter((a: any) => a.status === 'Hadir').length || 0;
@@ -6167,8 +9227,26 @@ Wassalamualaikum Wr. Wb.
                                 <td className="border border-slate-300 px-3 py-1.5 text-center font-bold">
                                   {new Date(journal.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit' })}
                                 </td>
-                                <td className="border border-slate-300 px-3 py-1.5 text-center font-extrabold text-slate-900">{journal.subject}</td>
-                                <td className="border border-slate-300 px-3 py-1.5 text-center font-medium text-slate-700">{journal.teacherName}</td>
+                                {compiledJournalPrintType === 'binaan' ? (
+                                  <>
+                                    <td className="border border-slate-300 px-3 py-1.5 text-center font-extrabold text-slate-900">{journal.subject}</td>
+                                    <td className="border border-slate-300 px-3 py-1.5 text-center font-medium text-slate-700">{journal.teacherName}</td>
+                                  </>
+                                ) : (
+                                  <>
+                                    <td className="border border-slate-300 px-3 py-1.5 text-center font-extrabold text-indigo-950 uppercase">{journal.className}</td>
+                                    <td className="border border-slate-300 px-3 py-1.5 text-center font-bold text-slate-900">{journal.subject}</td>
+                                  </>
+                                )}
+                                <td className="border border-slate-300 px-1 py-1.5 text-center font-mono">{journal.jamKe || "-"}</td>
+                                <td className="border border-slate-300 px-1 py-1.5 text-center font-mono">
+                                  {journal.alokasiWaktu 
+                                    ? (String(journal.alokasiWaktu).toLowerCase().includes('jp') 
+                                      ? journal.alokasiWaktu 
+                                      : `${journal.alokasiWaktu} JP`)
+                                    : "-"}
+                                </td>
+                                <td className="border border-slate-300 px-1 py-1.5 text-center font-mono">{journal.pertemuanKe || "-"}</td>
                                 <td className="border border-slate-300 px-3 py-1.5 text-left leading-relaxed font-semibold">
                                   <div>{journal.topic}</div>
                                   {journal.notes && <div className="text-[8.5px] italic text-slate-400 mt-0.5">Note: &ldquo;{journal.notes}&rdquo;</div>}
@@ -6206,10 +9284,17 @@ Wassalamualaikum Wr. Wb.
                   <div className="grid grid-cols-2 gap-8 mt-12 mb-4 text-center">
                     <div className="flex flex-col items-center">
                       <span className="text-[10px] text-slate-500">Mengesahkan Rekap,</span>
-                      <span className="text-xs font-bold text-slate-800 mt-0.5">Wali Kelas {currentTeacher.className}</span>
+                      <span className="text-xs font-bold text-slate-800 mt-0.5">
+                        {compiledJournalPrintType === 'binaan' 
+                          ? `Wali Kelas ${currentTeacher.className}`
+                          : "Guru Mata Pelajaran"
+                        }
+                      </span>
                       <div className="h-16" />
                       <span className="text-xs font-bold text-slate-900 border-b border-slate-900 pb-0.5 min-w-[180px]">{currentTeacher.name}</span>
-                      <span className="text-[8px] text-slate-400 font-mono mt-0.5">WALI KELAS KBM RESMI</span>
+                      <span className="text-[8px] text-slate-400 font-mono mt-0.5">
+                        {compiledJournalPrintType === 'binaan' ? 'WALI KELAS KBM RESMI' : 'GURU MATA PELAJARAN'}
+                      </span>
                     </div>
 
                     <div className="flex flex-col items-center">
@@ -6242,10 +9327,10 @@ Wassalamualaikum Wr. Wb.
               <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between">
                 <div className="text-left animate-fade-in">
                   <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-extrabold text-[9px] rounded-full uppercase tracking-wider">
-                    Jurnal Mengajar Wali Kelas
+                    {journalModalMode === 'binaan' ? 'Jurnal KBM Kelas Binaan' : 'Jurnal KBM Kelas Lain'}
                   </span>
                   <h3 className="font-extrabold text-slate-950 text-base mt-0.5">
-                    Buat Jurnal & Presensi Kelas {currentTeacher.className}
+                    {editingJournalId ? "Edit Jurnal & Presensi Kelas" : (journalModalMode === 'binaan' ? "Form Jurnal KBM Kelas Binaan" : "Form Jurnal KBM Kelas Lain")} {journalClassName}
                   </h3>
                 </div>
                 <button
@@ -6263,107 +9348,183 @@ Wassalamualaikum Wr. Wb.
                 {/* Left side: Meta details */}
                 <div className="lg:col-span-4 flex flex-col gap-4 text-left">
                   <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3.5 shadow-2xs">
-                    <h4 className="font-bold text-slate-900 text-xs border-b border-slate-100 pb-2 flex items-center gap-1.5">
-                      <FileText size={14} className="text-emerald-600" />
-                      Detail KBM / Bimbingan
+                    <h4 className="font-bold text-slate-900 text-xs border-b border-slate-100 pb-2 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-black">
+                        <FileText size={14} className="text-emerald-600" />
+                        <span>Detail KBM / Bimbingan</span>
+                      </span>
+                      {activeSchedules.length > 0 && (
+                        <span className="text-[10px] font-black text-emerald-800 bg-emerald-50 border border-emerald-150 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Sparkles size={11} className="text-emerald-600" /> Waka Kurikulum
+                        </span>
+                      )}
                     </h4>
 
+                    {/* Sesi Jadwal dari Waka Kurikulum (jika tersedia) */}
+                    {activeSchedules.length > 0 && (
+                      <div className="flex flex-col gap-1.5 bg-emerald-50/60 p-3 rounded-2xl border border-emerald-100">
+                        <label className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                          <Calendar size={13} className="text-emerald-600" />
+                          <span>Jadwal Mengajar ({journalModalMode === 'binaan' ? 'Kelas Binaan' : 'Kelas Lain'} - Waka Kurikulum)</span>
+                        </label>
+                        <select
+                          value={selectedScheduleId}
+                          onChange={(e) => handleScheduleSelect(e.target.value)}
+                          className="px-3 py-2 border border-emerald-200 rounded-xl font-extrabold text-emerald-950 text-xs bg-white focus:outline-none focus:border-emerald-600 cursor-pointer shadow-2xs"
+                        >
+                          {activeSchedules.map(s => (
+                            <option key={s.id} value={s.id}>
+                              [{s.day}] Kelas {s.className} - Jam {s.jamKe} ({s.subject})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Kelas yang Diajarkan */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <span>Kelas yang Diajarkan</span>
+                          <span className="text-red-500 font-bold">*</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                          <Sparkles size={10} /> Otomatis (Dapat Diubah)
+                        </span>
+                      </label>
+                      <select
+                        value={journalClassName}
+                        onChange={(e) => setJournalClassName(e.target.value)}
+                        className="px-3.5 py-2.5 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs cursor-pointer"
+                      >
+                        {allClassNames.map(c => (
+                          <option key={c} value={c}>Kelas {c}</option>
+                        ))}
+                        {!allClassNames.includes(journalClassName) && journalClassName && (
+                          <option value={journalClassName}>Kelas {journalClassName}</option>
+                        )}
+                      </select>
+                    </div>
+
                     {/* Mata Pelajaran / Kegiatan */}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-black text-slate-500 uppercase">Mata Pelajaran / Kegiatan</label>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <span>Mata Pelajaran / Kegiatan</span>
+                          <span className="text-red-500 font-bold">*</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                          <Sparkles size={10} /> Otomatis (Dapat Diubah)
+                        </span>
+                      </label>
                       <input
                         type="text"
                         value={journalSubject}
                         onChange={(e) => setJournalSubject(e.target.value)}
-                        placeholder="Contoh: Bimbingan Wali Kelas, Bahasa Indonesia..."
-                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white shadow-2xs"
+                        placeholder="Bimbingan Wali Kelas / Mapel..."
+                        className="px-3.5 py-2.5 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs"
                       />
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {['Bimbingan Wali Kelas', 'Jam Kelas/Koordinasi', 'Pendidikan Karakter', 'Literasi Mandiri'].map(tag => (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => setJournalSubject(tag)}
-                            className="px-1.5 py-0.5 text-[8.5px] font-bold border rounded bg-slate-50 hover:bg-slate-100 text-slate-600 cursor-pointer border-slate-200"
-                          >
-                            {tag}
-                          </button>
-                        ))}
-                      </div>
                     </div>
 
                     {/* Tanggal */}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-black text-slate-500 uppercase">Tanggal</label>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <span>Tanggal Pembelajaran</span>
+                          <span className="text-red-500 font-bold">*</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                          <Sparkles size={10} /> Otomatis (Dapat Diubah)
+                        </span>
+                      </label>
                       <input
                         type="date"
                         value={journalDate}
                         onChange={(e) => setJournalDate(e.target.value)}
-                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white"
+                        className="px-3.5 py-2.5 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs cursor-pointer"
                       />
                     </div>
 
                     {/* Grid Meta */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-black text-slate-500 uppercase">Fase</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                          <span>Fase</span>
+                          <span className="text-[9px] text-emerald-700 font-bold">Otomatis</span>
+                        </label>
                         <select
                           value={journalFase}
                           onChange={(e) => setJournalFase(e.target.value)}
-                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                          className="px-3 py-2 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs cursor-pointer"
                         >
-                          <option value="A">A</option>
-                          <option value="B">B</option>
-                          <option value="C">C</option>
-                          <option value="D">D (SMP)</option>
-                          <option value="E">E</option>
-                          <option value="F">F</option>
+                          <option value="A">Fase A</option>
+                          <option value="B">Fase B</option>
+                          <option value="C">Fase C</option>
+                          <option value="D">Fase D</option>
+                          <option value="E">Fase E</option>
+                          <option value="F">Fase F</option>
                         </select>
                       </div>
 
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-black text-slate-500 uppercase">Semester</label>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                          <span>Semester</span>
+                          <span className="text-[9px] text-emerald-700 font-bold">Otomatis</span>
+                        </label>
                         <select
                           value={journalSemester}
-                          onChange={(e) => setJournalSemester(e.target.value)}
-                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                          onChange={(e) => setJournalSemester(e.target.value as "Ganjil" | "Genap")}
+                          className="px-3 py-2 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs cursor-pointer"
                         >
-                          <option value="Ganjil">Ganjil</option>
-                          <option value="Genap">Genap</option>
+                          <option value="1">Semester 1 (Ganjil)</option>
+                          <option value="2">Semester 2 (Genap)</option>
+                          <option value="Ganjil">Semester Ganjil</option>
+                          <option value="Genap">Semester Genap</option>
                         </select>
                       </div>
                     </div>
 
                     {/* Meta Numbers */}
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-black text-slate-500 uppercase">Pertemuan Ke</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="flex flex-col gap-1.5 col-span-1">
+                        <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
+                          <span>Pertemuan</span>
+                          <span className="text-[9px] text-emerald-700 font-bold">Otomatis</span>
+                        </label>
                         <input
                           type="text"
-                          placeholder="misal: 1"
                           value={journalPertemuanKe}
                           onChange={(e) => setJournalPertemuanKe(e.target.value)}
-                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
+                          placeholder="1"
+                          className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-emerald-600 shadow-2xs"
                         />
                       </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-black text-slate-500 uppercase">Jam Ke</label>
+
+                      <div className="flex flex-col gap-1.5 col-span-1">
+                        <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
+                          <span>Jam Ke</span>
+                          <span className="text-[9px] text-emerald-700 font-bold">Otomatis</span>
+                        </label>
                         <input
                           type="text"
-                          placeholder="cth: 1 - 2"
                           value={journalJamKe}
                           onChange={(e) => setJournalJamKe(e.target.value)}
-                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
+                          placeholder="Jam 1 - 2"
+                          className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-emerald-600 shadow-2xs"
                         />
                       </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-black text-slate-500 uppercase">Alokasi</label>
+
+                      <div className="flex flex-col gap-1.5 col-span-1">
+                        <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
+                          <span>Alokasi</span>
+                          <span className="text-[9px] text-emerald-700 font-bold">Otomatis</span>
+                        </label>
                         <input
                           type="text"
-                          placeholder="cth: 2 JP"
                           value={journalAlokasiWaktu}
                           onChange={(e) => setJournalAlokasiWaktu(e.target.value)}
-                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
+                          placeholder="2"
+                          className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-emerald-600 shadow-2xs"
                         />
                       </div>
                     </div>
@@ -6425,7 +9586,7 @@ Wassalamualaikum Wr. Wb.
                     <button
                       type="button"
                       onClick={handleSaveHomeroomJournal}
-                      disabled={savingJournal || classStudents.length === 0}
+                      disabled={savingJournal || journalStudents.length === 0}
                       className="w-full mt-1.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-50 border border-emerald-700 flex items-center justify-center gap-1.5"
                     >
                       {savingJournal ? (
@@ -6436,7 +9597,7 @@ Wassalamualaikum Wr. Wb.
                       ) : (
                         <>
                           <Save size={13} />
-                          <span>Simpan Jurnal & Absensi</span>
+                          <span>{editingJournalId ? "Update Jurnal & Absensi" : "Simpan Jurnal & Absensi"}</span>
                         </>
                       )}
                     </button>
@@ -6453,7 +9614,7 @@ Wassalamualaikum Wr. Wb.
                           Roster Absensi Presensi Siswa
                         </h4>
                         <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                          Tentukan status kehadiran untuk {classStudents.length} siswa kelas bimbingan Anda.
+                          Tentukan status kehadiran untuk {journalStudents.length} siswa kelas {journalClassName}.
                         </p>
                       </div>
 
@@ -6461,7 +9622,7 @@ Wassalamualaikum Wr. Wb.
                         type="button"
                         onClick={() => {
                           const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
-                          classStudents.forEach(st => {
+                          journalStudents.forEach(st => {
                             initialMap[st.id] = { status: 'Hadir', notes: '' };
                           });
                           setJournalAttendanceMap(initialMap);
@@ -6491,7 +9652,7 @@ Wassalamualaikum Wr. Wb.
 
                     {/* List */}
                     <div className="max-h-[350px] overflow-y-auto divide-y divide-slate-100 bg-white">
-                      {classStudents
+                      {journalStudents
                         .filter(s => s.name?.toLowerCase().includes(journalSearchQuery.toLowerCase()) || s.nis?.toLowerCase().includes(journalSearchQuery.toLowerCase()))
                         .map((student, idx) => {
                           const record = journalAttendanceMap[student.id] || { status: 'Hadir', notes: '' };
@@ -6577,6 +9738,257 @@ Wassalamualaikum Wr. Wb.
           </div>
         )}
       </AnimatePresence>
+
+      {/* MODAL IMPORT EXCEL PENILAIAN WALI KELAS */}
+      <AnimatePresence>
+        {showExcelModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md no-print p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-200 flex flex-col max-w-4xl w-full text-left relative"
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-4 bg-emerald-700 text-white flex justify-between items-center select-none">
+                <div>
+                  <h4 className="font-extrabold text-sm uppercase text-white tracking-wider flex items-center gap-2">
+                    <FileSpreadsheet size={18} />
+                    Import Nilai Penilaian Merdeka & Kokurikuler dari MS Excel
+                  </h4>
+                  <p className="text-[11px] text-emerald-100 mt-0.5">
+                    Kelas {selectedGradingClass || currentTeacher.className} &bull; Mapel {selectedSubjectForGrading} &bull; Pemetaan otomatis berdasar NIS atau Nama Siswa.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowExcelModal(false)}
+                  className="p-1.5 hover:bg-emerald-800 rounded-lg text-emerald-100 hover:text-white transition-all cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6 overflow-y-auto max-h-[75vh] flex flex-col gap-4">
+                {/* Instructions */}
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-[11px] leading-relaxed text-emerald-900 flex flex-col gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/60 pb-2">
+                    <div>
+                      <span className="font-black text-xs block text-emerald-950">Panduan Penggunaan Template Excel Wali Kelas:</span>
+                      <p className="text-[10px] text-emerald-700 mt-0.5">
+                        Mendukung file Excel langsung (.xlsx, .xls) atau Salin-Tempel (Copy-Paste) tabel data.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadHomeroomExcelTemplate}
+                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
+                    >
+                      <Download size={13} />
+                      <span>Unduh Template Excel (.xlsx)</span>
+                    </button>
+                  </div>
+
+                  <ol className="list-decimal pl-4 flex flex-col gap-1 text-[10.5px]">
+                    <li>Unduh <strong>Template Excel</strong> di atas yang telah terisi otomatis dengan seluruh nama & NIS siswa di kelas.</li>
+                    <li>
+                      Urutan kolom template standar:
+                      <div className="py-1.5 px-2.5 border border-emerald-200 bg-emerald-100/60 rounded-lg font-mono text-[9px] mt-1 text-slate-800 overflow-x-auto whitespace-nowrap">
+                        No | NIS | Nama Siswa | TP1_Tugas | TP1_UH | TP2_Tugas | TP2_UH | TP3_Tugas | TP3_UH | TP4_Tugas | TP4_UH | Kokurikuler | PTS | PAS
+                      </div>
+                    </li>
+                    <li>Isi nilai-nilai pada file Excel, lalu <strong>unggah berkas Excel (.xlsx / .xls)</strong> di bawah atau cukup <strong>blok & salin tabel nilai lalu tempel (Ctrl+V)</strong> ke kotak teks.</li>
+                    <li>Sistem otomatis mendeteksi baris siswa dan mencocokkan data secara cerdas berdasar NIS atau Nama Siswa.</li>
+                  </ol>
+                </div>
+
+                {/* Upload file or Paste Area */}
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                      Unggah File Excel (.xlsx / .xls) atau Tempel Teks
+                    </span>
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold cursor-pointer transition-colors">
+                      <Upload size={14} className="text-indigo-600" />
+                      <span>{isProcessingExcelFile ? "Membaca Berkas..." : "Pilih File Excel (.xlsx / .xls / .csv)"}</span>
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv,.tsv,.txt"
+                        className="hidden"
+                        onChange={handleHomeroomExcelFileUpload}
+                        disabled={isProcessingExcelFile}
+                      />
+                    </label>
+                  </div>
+
+                  <textarea
+                    rows={6}
+                    value={excelPasteContent}
+                    onChange={(e) => setExcelPasteContent(e.target.value)}
+                    placeholder="Contoh salin-tempel dari spreadsheet:&#10;No&#9;NIS&#9;Nama Siswa&#9;TP1_Tugas&#9;TP1_UH&#9;TP2_Tugas&#9;TP2_UH&#9;TP3_Tugas&#9;TP3_UH&#9;TP4_Tugas&#9;TP4_UH&#9;Kokurikuler&#9;PTS&#9;PAS&#10;1&#9;24001&#9;Achmad Fauzi&#9;85&#9;88&#9;90&#9;85&#9;88&#9;92&#9;80&#9;85&#9;90&#9;86&#9;88"
+                    className="w-full border border-slate-200 focus:border-emerald-600 focus:outline-none rounded-2xl p-3 font-mono text-xs bg-slate-50/50 leading-relaxed"
+                  />
+                </div>
+
+                {excelParseError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs font-semibold flex items-center gap-2">
+                    <AlertCircle size={15} className="text-rose-600 shrink-0" />
+                    <span>{excelParseError}</span>
+                  </div>
+                )}
+
+                {/* Parse Action Button */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleParseHomeroomPastedExcel}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check size={14} />
+                    <span>PROSES & TINJAU DATA EXCEL</span>
+                  </button>
+                  {excelPasteContent && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExcelPasteContent('');
+                        setExcelParseError(null);
+                        setExcelParsedPreview([]);
+                      }}
+                      className="px-3 py-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all"
+                    >
+                      Bersihkan Kotak
+                    </button>
+                  )}
+                </div>
+
+                {/* Matches Preview Table */}
+                {excelParsedPreview.length > 0 && (
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden mt-1 shadow-sm">
+                    <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 flex justify-between items-center">
+                      <span className="text-[10px] font-black uppercase text-slate-700 tracking-wider">
+                        Hasil Pemetaan Siswa ({excelParsedPreview.filter(p => p.matched).length} dari {excelParsedPreview.length} Baris Cocok)
+                      </span>
+                      <span className="text-[10.5px] font-bold text-slate-500">
+                        {excelParsedPreview.filter(p => p.matched).length === gradingStudents.length 
+                          ? '✅ Seluruh siswa kelas cocok' 
+                          : `${excelParsedPreview.filter(p => p.matched).length} siswa teridentifikasi`}
+                      </span>
+                    </div>
+                    <div className="max-h-[240px] overflow-y-auto">
+                      <table className="w-full text-[11px] border-collapse text-left">
+                        <thead className="bg-slate-50 text-slate-600 sticky top-0 font-bold border-b border-slate-200 text-[10px]">
+                          <tr>
+                            <th className="py-2 px-3">NIS</th>
+                            <th className="py-2 px-3">Nama Siswa</th>
+                            <th className="py-2 px-2 text-center">TP 1</th>
+                            <th className="py-2 px-2 text-center">TP 2</th>
+                            <th className="py-2 px-2 text-center">TP 3</th>
+                            <th className="py-2 px-2 text-center">TP 4</th>
+                            <th className="py-2 px-2 text-center text-purple-700 font-extrabold">Kokurikuler</th>
+                            <th className="py-2 px-2 text-center">PTS</th>
+                            <th className="py-2 px-2 text-center">PAS</th>
+                            <th className="py-2 px-3 text-right">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {excelParsedPreview.map((item, idx) => (
+                            <tr key={idx} className={`transition-colors ${item.matched ? 'bg-emerald-50/30 hover:bg-emerald-50/60' : 'bg-rose-50/40 hover:bg-rose-50/70'}`}>
+                              <td className="py-1.5 px-3 font-mono font-medium">{item.nis || "-"}</td>
+                              <td className="py-1.5 px-3 font-bold text-slate-900">
+                                <div>{item.studentName}</div>
+                                {item.inputName && item.inputName !== item.studentName && (
+                                  <div className="text-[9.5px] text-slate-400 font-normal">Input: {item.inputName}</div>
+                                )}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono">
+                                {item.tp1Tugas1 || item.tp1Uh ? `${item.tp1Tugas1 || '-'}/${item.tp1Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono">
+                                {item.tp2Tugas1 || item.tp2Uh ? `${item.tp2Tugas1 || '-'}/${item.tp2Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono">
+                                {item.tp3Tugas1 || item.tp3Uh ? `${item.tp3Tugas1 || '-'}/${item.tp3Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono">
+                                {item.tp4Tugas1 || item.tp4Uh ? `${item.tp4Tugas1 || '-'}/${item.tp4Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-bold text-purple-800">
+                                {item.kokurikuler || '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono">{item.pts || '-'}</td>
+                              <td className="py-1.5 px-2 text-center font-mono">{item.pas || '-'}</td>
+                              <td className="py-1.5 px-3 text-right">
+                                {item.matched ? (
+                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-black text-[9px] rounded-md uppercase">
+                                    Cocok
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-rose-100 text-rose-800 font-black text-[9px] rounded-md uppercase">
+                                    Tidak Ditemukan
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
+                <div className="text-[11px] text-slate-500 font-medium">
+                  {excelParsedPreview.filter(p => p.matched).length > 0 && (
+                    <span>Siap menerapkan nilai untuk <strong>{excelParsedPreview.filter(p => p.matched).length} siswa</strong> terverifikasi.</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowExcelModal(false)}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl font-bold text-xs cursor-pointer transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    disabled={excelParsedPreview.filter(p => p.matched).length === 0}
+                    onClick={applyHomeroomExcelImportToState}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs tracking-wider rounded-xl cursor-pointer transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+                  >
+                    <Check size={14} />
+                    <span>TERAPKAN NILAI KE TABEL PENILAIAN</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <SavingsPassbookModal
+        isOpen={!!passbookStudent}
+        onClose={() => setPassbookStudent(null)}
+        student={passbookStudent}
+        transactions={transactions}
+        schoolIdentity={schoolIdentity}
+      />
+
+      <StudentFinancialRecapModal
+        isOpen={!!recapModalStudent}
+        onClose={() => setRecapModalStudent(null)}
+        student={recapModalStudent}
+        bills={bills}
+        miscBills={miscBills}
+        transactions={transactions}
+        schoolIdentity={schoolIdentity}
+        homeroomTeacherName={currentTeacher.name}
+        className={currentTeacher.className}
+      />
     </div>
   );
 }

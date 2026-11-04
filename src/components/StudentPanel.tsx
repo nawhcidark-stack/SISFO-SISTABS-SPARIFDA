@@ -213,7 +213,7 @@ export default function StudentPanel({
   const [curriculumSubjectsList, setCurriculumSubjectsList] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch(`/api/curriculum/subjects?_t=${Date.now()}`)
+    fetch('/api/curriculum-subjects')
       .then(res => res.json())
       .then(data => {
         if (data && Array.isArray(data.subjects) && data.subjects.length > 0) {
@@ -273,16 +273,9 @@ export default function StudentPanel({
     );
 
     // Source master subjects from curriculumSubjectsList, with fallback to DEFAULT_REPORT_SUBJECTS
-    const rawSubjects = (curriculumSubjectsList && curriculumSubjectsList.length > 0)
+    const baseSubjects = (curriculumSubjectsList && curriculumSubjectsList.length > 0)
       ? [...curriculumSubjectsList]
       : [...DEFAULT_REPORT_SUBJECTS];
-
-    // Filter out legacy or excluded subjects (Bahasa Arab & Aswaja)
-    const baseSubjects = rawSubjects.filter(s => {
-      const c = (s.code || '').toUpperCase();
-      const n = (s.name || '').toLowerCase();
-      return c !== 'BARAB' && c !== 'ASWAJA' && !n.includes('bahasa arab') && !n.includes('aswaja') && !n.includes('ke-nu-an');
-    });
 
     // Strictly sort subjects: Official 11 order first, then remaining master subjects by orderNum
     baseSubjects.sort((a, b) => {
@@ -355,10 +348,8 @@ export default function StudentPanel({
       };
     });
 
-    // Append any extra subjects that were assessed but not present in baseSubjects (excluding deprecated subjects)
+    // Append any extra subjects that were assessed but not present in baseSubjects
     matched.forEach(a => {
-      const subLower = (a.subject || '').toLowerCase();
-      if (subLower.includes('bahasa arab') || subLower.includes('aswaja') || subLower.includes('ke-nu-an')) return;
       const exists = reportRows.some(r => isSameSubject(r.subject, a.subject) || isSameSubject(r.code, a.subject));
       if (!exists) {
         const avgTp = a.nilaiRataTp !== undefined && a.nilaiRataTp !== null ? Number(a.nilaiRataTp) : 0;

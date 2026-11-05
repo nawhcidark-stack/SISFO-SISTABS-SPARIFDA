@@ -182,46 +182,39 @@ function createPool(overrideConfig?: Partial<MysqlDatabaseConfig>) {
 export async function saveConfigToMysql(configId: string, data: any, overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<boolean> {
   const pool = getSharedPool(overrideConfig);
   let connection: mysql.PoolConnection | null = null;
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    for (const k of Object.keys(data)) {
+      if (/^\d+$/.test(k)) delete data[k];
+    }
+  }
+  const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
   try {
     connection = await pool.getConnection();
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS \`shared_learning_objectives\` (
-  \`id\` VARCHAR(120) NOT NULL,
-  \`code\` VARCHAR(64) NOT NULL,
-  \`subject_id\` VARCHAR(64) NOT NULL,
-  \`subject_name\` VARCHAR(150) NOT NULL,
-  \`grade_level\` VARCHAR(16) NOT NULL,
-  \`semester\` VARCHAR(16) NOT NULL,
-  \`academic_year\` VARCHAR(32) NOT NULL,
-  \`tp_number\` INT DEFAULT 1,
-  \`title\` TEXT NOT NULL,
-  \`creator_id\` VARCHAR(64) DEFAULT NULL,
-  \`creator_name\` VARCHAR(150) DEFAULT NULL,
-  \`creator_role\` VARCHAR(100) DEFAULT NULL,
-  \`status\` VARCHAR(32) DEFAULT "Aktif",
-  \`revision_requests\` LONGTEXT DEFAULT NULL,
-  \`created_at\` VARCHAR(64) DEFAULT NULL,
-  \`updated_at\` VARCHAR(64) DEFAULT NULL,
-  PRIMARY KEY (\`id\`),
-  KEY \`idx_slo_subject\` (\`subject_id\`),
-  KEY \`idx_slo_grade\` (\`grade_level\`),
-  KEY \`idx_slo_sem\` (\`semester\`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS \`app_configs\` (
-        \`id\` VARCHAR(64) NOT NULL,
-        \`data\` LONGTEXT NOT NULL,
-        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-
-    const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
-    await connection.query(`
-      INSERT INTO \`app_configs\` (\`id\`, \`data\`)
-      VALUES (?, ?)
-      ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`)
-    `, [configId, jsonStr]);
+    try {
+      await connection.query(`
+        INSERT INTO \`app_configs\` (\`id\`, \`data\`)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`), \`updated_at\` = CURRENT_TIMESTAMP
+      `, [configId, jsonStr]);
+    } catch (innerErr: any) {
+      if (innerErr && innerErr.code === 'ER_NO_SUCH_TABLE') {
+        await connection.query(`
+          CREATE TABLE IF NOT EXISTS \`app_configs\` (
+            \`id\` VARCHAR(64) NOT NULL,
+            \`data\` LONGTEXT NOT NULL,
+            \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (\`id\`)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `);
+        await connection.query(`
+          INSERT INTO \`app_configs\` (\`id\`, \`data\`)
+          VALUES (?, ?)
+          ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`), \`updated_at\` = CURRENT_TIMESTAMP
+        `, [configId, jsonStr]);
+      } else {
+        throw innerErr;
+      }
+    }
     return true;
   } catch (err: any) {
     console.warn(`[MySQL Config Sync] Gagal menyimpan config "${configId}" ke MySQL:`, err.message || err);
@@ -1503,10 +1496,10 @@ ${COMPLETE_TABLES_SQL.trim()}
     'bkConfig', 'curriculumConfig', 'adminConfig', 'spmbConfig', 'reportReleaseConfig', 'backupConfig'
   ];
 
-  out += `\n-- Data Konfigurasi Master & Pengaturan Aplikasi\n`;
+  out += `\n-- Data Konfigurasi Master & Pengaturan Aplikasi (INSERT IGNORE agar pengaturan yang sudah disimpan di MySQL tidak pernah tertimpa)\n`;
   for (const key of configKeys) {
     if (snapshot[key]) {
-      out += `INSERT INTO \`app_configs\` (\`id\`, \`data\`) VALUES (${sqlEscape(key)}, ${sqlEscape(snapshot[key])}) ON DUPLICATE KEY UPDATE \`data\`=VALUES(\`data\`);\n`;
+      out += `INSERT IGNORE INTO \`app_configs\` (\`id\`, \`data\`) VALUES (${sqlEscape(key)}, ${sqlEscape(snapshot[key])});\n`;
     }
   }
 

@@ -1123,28 +1123,54 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   // SPMB (PENERIMAAN MURID BARU) API ENDPOINTS
   // ==========================================
 
-  // 1. Get SPMB Configuration
+  function sanitizeSpmbConfig(target: any, incoming?: any) {
+    if (target && typeof target === "object" && !Array.isArray(target)) {
+      for (const k of Object.keys(target)) {
+        if (/^\d+$/.test(k)) delete target[k];
+      }
+    }
+    if (incoming && typeof incoming === "object" && !Array.isArray(incoming)) {
+      for (const [k, v] of Object.entries(incoming)) {
+        if (!/^\d+$/.test(k)) {
+          target[k] = v;
+        }
+      }
+    }
+    return target;
+  }
+
+  // 1. Get SPMB Configuration (Langsung dari MySQL agar terlindung dari update aplikasi)
   router.get("/config", async (req, res) => {
     try {
       const mysqlCfg = await getConfigFromMysql("spmbConfig");
-      if (mysqlCfg && typeof mysqlCfg === "object") {
-        Object.assign(spmbConfig, mysqlCfg);
+      if (mysqlCfg && typeof mysqlCfg === "object" && !Array.isArray(mysqlCfg)) {
+        sanitizeSpmbConfig(spmbConfig, mysqlCfg);
+      } else {
+        sanitizeSpmbConfig(spmbConfig);
       }
-    } catch (_) {}
+    } catch (_) {
+      sanitizeSpmbConfig(spmbConfig);
+    }
     res.json(spmbConfig);
   });
 
-  // 2. Update SPMB Configuration (Admin)
+  // 2. Update SPMB Configuration (Admin) - Langsung disimpan permanen ke MySQL
   router.post("/config", async (req, res) => {
     try {
       const newConfig = req.body;
-      if (!newConfig) {
+      if (!newConfig || typeof newConfig !== "object" || Array.isArray(newConfig)) {
         return res.status(400).json({ error: "Data konfigurasi tidak valid." });
       }
-      Object.assign(spmbConfig, newConfig);
-      await saveConfigToMysql("spmbConfig", spmbConfig).catch(err => console.warn("[MySQL SPMB Config Sync Warning]:", err?.message || err));
-      saveState();
-      res.json({ success: true, message: "Konfigurasi SPMB berhasil diperbarui.", config: spmbConfig });
+      sanitizeSpmbConfig(spmbConfig, newConfig);
+      let saved = await saveConfigToMysql("spmbConfig", spmbConfig);
+      if (!saved) {
+        // Retry 1x apabila koneksi idle MySQL sempat di-reset oleh server hosting
+        saved = await saveConfigToMysql("spmbConfig", spmbConfig);
+      }
+      if (!saved) {
+        return res.status(500).json({ error: "Gagal menyimpan pengaturan SPMB ke database MySQL. Silakan coba lagi." });
+      }
+      res.json({ success: true, mysqlSaved: true, message: "Pengaturan SPMB berhasil disimpan permanen ke database MySQL.", config: spmbConfig });
     } catch (err: any) {
       console.error("Error updating SPMB config:", err);
       res.status(500).json({ error: "Gagal memperbarui konfigurasi SPMB: " + err.message });

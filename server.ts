@@ -1620,20 +1620,12 @@ function getFullSnapshotForMysql() {
 // Guard flag ensuring we NEVER push default in-memory state to MySQL before pulling authoritative data from MySQL
 let isMysqlHydrated = false;
 
-function saveState(skipRemoteSync: boolean = false) {
-  try {
-    // 100% MySQL Persistence (Tanpa Penyimpanan Lokal / data_store.json)
-    // Hanya sinkronkan ke MySQL apabila data dari MySQL sudah berhasil dimuat (hydrated)
-    if (!skipRemoteSync && isMysqlHydrated) {
-      debouncedSyncConfigsToMysql();
-      const cfg = getSanitizedConfig();
-      if (cfg.autoSyncEnabled !== false) {
-        triggerDebouncedMysqlSync(() => getFullSnapshotForMysql(), 800);
-      }
-    }
-  } catch (error) {
-    console.error("Failed to save state:", error);
-  }
+function saveState(_skipRemoteSync: boolean = false) {
+  // 100% Direct MySQL Persistence:
+  // Setiap perubahan entitas langsung disimpan melalui directSaveEntityToMysql / persistEntity,
+  // dan setiap perubahan pengaturan (termasuk SPMB, Identitas Sekolah, SPP, Midtrans, dll.)
+  // langsung disimpan secara spesifik melalui saveConfigToMysql tanpa menimpa pengaturan lain
+  // dan tanpa menjalankan full-database dump yang membebani koneksi MySQL.
 }
 
 // Local file storage is completely disabled; all data is stored exclusively in MySQL
@@ -1643,34 +1635,6 @@ function triggerDebouncedLocalSave(_dataGetter: () => any) {
 
 function executeSafeLocalSave(_dataGetter: () => any) {
   // No-op: penyimpanan lokal dinonaktifkan sepenuhnya
-}
-
-// Debounced helper to save application configs to MySQL app_configs in a single query
-let configBatchTimer: NodeJS.Timeout | null = null;
-function debouncedSyncConfigsToMysql() {
-  if (!isMysqlHydrated) return;
-  if (configBatchTimer) clearTimeout(configBatchTimer);
-  configBatchTimer = setTimeout(() => {
-    if (!isMysqlHydrated) return;
-    saveConfigsBatchToMysql([
-      { id: "midtransConfig", data: midtransConfig },
-      { id: "schoolIdentity", data: schoolIdentity },
-      { id: "sppRates", data: sppRates },
-      { id: "salaryConfig", data: salaryConfig },
-      { id: "whatsappConfig", data: whatsappConfig },
-      { id: "treasurerConfig", data: treasurerConfig },
-      { id: "principalConfig", data: principalConfig },
-      { id: "sarprasConfig", data: sarprasConfig },
-      { id: "bkConfig", data: bkConfig },
-      { id: "curriculumConfig", data: curriculumConfig },
-      { id: "adminConfig", data: adminConfig },
-      { id: "spmbConfig", data: spmbConfig },
-      { id: "reportReleaseConfig", data: reportReleaseConfig },
-      { id: "backupConfig", data: backupConfig }
-    ]).catch(err => {
-      console.warn("[MySQL Debounced Config Sync] Gagal menyimpan configs ke MySQL:", err?.message || err);
-    });
-  }, 3000);
 }
 
 function seedStudentClassHistories() {

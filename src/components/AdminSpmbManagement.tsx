@@ -93,6 +93,7 @@ export default function AdminSpmbManagement({
   const [candidates, setCandidates] = useState<SpmbCandidate[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
+  const [configSaveFeedback, setConfigSaveFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'candidates' | 'finance' | 'reconciliation' | 'settings' | 'uniforms' | 'sessions'>('candidates');
 
   // SPMB Midtrans Reconciliation State
@@ -258,24 +259,40 @@ export default function AdminSpmbManagement({
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  // Save SPMB Configuration
-  const handleSaveConfig = async (newConfig: SpmbConfig) => {
+  // Save SPMB Configuration directly to MySQL
+  const handleSaveConfig = async (newConfig: SpmbConfig, isAutoToggle: boolean = false) => {
     try {
       setIsSavingConfig(true);
+      setConfigSaveFeedback(null);
       const res = await fetch('/api/spmb/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newConfig)
       });
-      if (res.ok) {
-        const updated = await res.json();
+      const updated = await res.json().catch(() => null);
+      if (res.ok && updated && !updated.error) {
         setConfig(updated.config || updated);
-        alert(`Pengaturan SPMB ${newConfig.academicYear || 'Tahun Ajaran'} berhasil disimpan!`);
+        setConfigSaveFeedback({
+          type: 'success',
+          message: isAutoToggle
+            ? `Perubahan pengaturan SPMB ${newConfig.academicYear || ''} otomatis tersimpan ke MySQL.`
+            : `Pengaturan SPMB ${newConfig.academicYear || 'Tahun Ajaran'} berhasil disimpan permanen ke database MySQL!`
+        });
+        setTimeout(() => {
+          setConfigSaveFeedback(prev => prev?.type === 'success' ? null : prev);
+        }, 4000);
       } else {
-        alert('Gagal menyimpan pengaturan.');
+        setConfigSaveFeedback({
+          type: 'error',
+          message: updated?.error || 'Gagal menyimpan pengaturan SPMB ke database MySQL. Silakan klik Simpan kembali.'
+        });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error saving SPMB config:', e);
+      setConfigSaveFeedback({
+        type: 'error',
+        message: 'Terjadi gangguan jaringan saat menyimpan pengaturan SPMB: ' + (e?.message || 'Unknown error')
+      });
     } finally {
       setIsSavingConfig(false);
     }
@@ -1590,6 +1607,33 @@ export default function AdminSpmbManagement({
           <span>Setting Biaya, Kontak & Tahun Ajaran SPMB</span>
         </button>
       </div>
+
+      {/* Banner Status Simpan Pengaturan SPMB ke MySQL */}
+      {configSaveFeedback && (
+        <div
+          className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 shadow-md transition-all ${
+            configSaveFeedback.type === 'success'
+              ? 'bg-emerald-950/90 border-emerald-500/60 text-emerald-200'
+              : 'bg-rose-950/90 border-rose-500/60 text-rose-200'
+          }`}
+        >
+          <div className="flex items-center gap-2.5 text-xs font-bold">
+            {configSaveFeedback.type === 'success' ? (
+              <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle size={18} className="text-rose-400 shrink-0" />
+            )}
+            <span>{configSaveFeedback.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setConfigSaveFeedback(null)}
+            className="text-xs font-bold px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+          >
+            Tutup
+          </button>
+        </div>
+      )}
 
       {/* ================= TAB 1: DAFTAR CALON MURID ================= */}
       {activeTab === 'candidates' && (
@@ -3420,7 +3464,11 @@ export default function AdminSpmbManagement({
               <input
                 type="checkbox"
                 checked={config.isOpen !== false}
-                onChange={(e) => setConfig({ ...config, isOpen: e.target.checked })}
+                onChange={(e) => {
+                  const next = { ...config, isOpen: e.target.checked };
+                  setConfig(next);
+                  handleSaveConfig(next, true);
+                }}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
@@ -3458,7 +3506,11 @@ export default function AdminSpmbManagement({
                 <input
                   type="checkbox"
                   checked={config.autoTransferExpiredSessions !== false}
-                  onChange={(e) => setConfig({ ...config, autoTransferExpiredSessions: e.target.checked })}
+                  onChange={(e) => {
+                    const next = { ...config, autoTransferExpiredSessions: e.target.checked };
+                    setConfig(next);
+                    handleSaveConfig(next, true);
+                  }}
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
@@ -3499,7 +3551,9 @@ export default function AdminSpmbManagement({
                         checked={session.isActive}
                         onChange={(e) => {
                           const updated = config.sessions.map(s => s.id === session.id ? { ...s, isActive: e.target.checked } : s);
-                          setConfig({ ...config, sessions: updated });
+                          const next = { ...config, sessions: updated };
+                          setConfig(next);
+                          handleSaveConfig(next, true);
                         }}
                         className="sr-only peer"
                       />
@@ -3610,7 +3664,9 @@ export default function AdminSpmbManagement({
                         checked={session.sportsUniformBonusForMaarif ?? (session.id === 'inden')}
                         onChange={(e) => {
                           const updated = config.sessions.map(s => s.id === session.id ? { ...s, sportsUniformBonusForMaarif: e.target.checked } : s);
-                          setConfig({ ...config, sessions: updated });
+                          const next = { ...config, sessions: updated };
+                          setConfig(next);
+                          handleSaveConfig(next, true);
                         }}
                         className="sr-only peer"
                       />
@@ -3633,6 +3689,18 @@ export default function AdminSpmbManagement({
                 </div>
               );
             })}
+          </div>
+
+          <div className="flex justify-end pt-3 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => handleSaveConfig(config)}
+              disabled={isSavingConfig}
+              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-md"
+            >
+              {isSavingConfig ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+              <span>Simpan Seluruh Pengaturan Sesi ke MySQL</span>
+            </button>
           </div>
         </div>
       )}
@@ -3677,7 +3745,11 @@ export default function AdminSpmbManagement({
                     <button
                       key={year}
                       type="button"
-                      onClick={() => setConfig({ ...config, academicYear: year })}
+                      onClick={() => {
+                        const next = { ...config, academicYear: year };
+                        setConfig(next);
+                        handleSaveConfig(next, true);
+                      }}
                       className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                         config.academicYear === year
                           ? 'bg-emerald-500 text-slate-950 font-black'
@@ -4268,7 +4340,11 @@ export default function AdminSpmbManagement({
                           <input
                             type="checkbox"
                             checked={config.maarifIndenSportsUniformBonus ?? true}
-                            onChange={(e) => setConfig({ ...config, maarifIndenSportsUniformBonus: e.target.checked })}
+                            onChange={(e) => {
+                              const next = { ...config, maarifIndenSportsUniformBonus: e.target.checked };
+                              setConfig(next);
+                              handleSaveConfig(next, true);
+                            }}
                             className="sr-only peer"
                           />
                           <div className="w-9 h-5 bg-slate-700 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
@@ -4401,7 +4477,7 @@ export default function AdminSpmbManagement({
                   Item seragam olahraga, bedge, hasduk, jilbab (khusus putri), topi, kaos kaki, baju batik, dan ikat pinggang.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => {
@@ -4418,6 +4494,15 @@ export default function AdminSpmbManagement({
                 >
                   <Plus size={14} />
                   <span>Tambah Item</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveConfig(config)}
+                  disabled={isSavingConfig}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                >
+                  {isSavingConfig ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                  <span>Simpan Item Seragam</span>
                 </button>
               </div>
             </div>
@@ -4439,7 +4524,9 @@ export default function AdminSpmbManagement({
                       type="button"
                       onClick={() => {
                         const updated = config.uniformItems.filter(u => u.id !== item.id);
-                        setConfig({ ...config, uniformItems: updated });
+                        const next = { ...config, uniformItems: updated };
+                        setConfig(next);
+                        handleSaveConfig(next, true);
                       }}
                       className="p-2 bg-rose-950/40 hover:bg-rose-900 text-rose-300 rounded-xl transition-colors cursor-pointer"
                     >
@@ -4479,6 +4566,18 @@ export default function AdminSpmbManagement({
                   </div>
                 </div>
               ))}
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => handleSaveConfig(config)}
+                disabled={isSavingConfig}
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-md"
+              >
+                {isSavingConfig ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                <span>Simpan Seluruh Pengaturan Biaya & Seragam ke MySQL</span>
+              </button>
             </div>
           </div>
         </div>

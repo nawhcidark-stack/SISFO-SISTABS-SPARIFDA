@@ -12,9 +12,5 @@
   "connectTimeout": 10000,
   "autoSyncEnabled": true,
   "autoSyncDirection": "push",
-  "status": "connected",
-  "lastConnectedAt": "2026-11-02T07:29:51.954Z",
-  "lastSyncAt": "2026-11-02T07:29:59.668Z",
-  "lastAutoSyncStatus": "error",
-  "lastAutoSyncMessage": "Column 'nik' cannot be null"
+  "status": "connected"
 }

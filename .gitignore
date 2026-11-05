@@ -6,6 +6,3 @@ coverage/
 *.log
 .env*
 !.env.example
-data_store.json
-uploads/*
-!uploads/.gitkeep

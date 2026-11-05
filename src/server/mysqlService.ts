@@ -12,8 +12,8 @@ let currentConfig: MysqlDatabaseConfig = {
   port: parseInt(process.env.MYSQL_PORT || '3306', 10),
   database: process.env.MYSQL_DATABASE || 'u604170242_spp_db',
   user: process.env.MYSQL_USER || 'u604170242_spp_user',
-  password: process.env.MYSQL_PASSWORD || '',
-  hasPassword: Boolean(process.env.MYSQL_PASSWORD),
+  password: process.env.MYSQL_PASSWORD || 'Sparifda@92',
+  hasPassword: true,
   ssl: false,
   phpmyadminUrl: process.env.MYSQL_PHPMYADMIN_URL || 'https://portal.smpmaarifpdn.sch.id:8443',
   charset: 'utf8mb4',
@@ -30,24 +30,29 @@ export function loadMysqlConfig(): MysqlDatabaseConfig {
     if (fs.existsSync(CONFIG_FILE)) {
       const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
       const parsed = JSON.parse(data);
+      const effectivePassword = (parsed.password && parsed.password.length > 0) ? parsed.password : (currentConfig.password || 'Sparifda@92');
       currentConfig = {
         ...currentConfig,
         ...parsed,
+        password: effectivePassword,
+        hasPassword: Boolean(effectivePassword && effectivePassword.length > 0),
         autoSyncEnabled: parsed.autoSyncEnabled !== undefined ? Boolean(parsed.autoSyncEnabled) : true,
         autoSyncIntervalHours: undefined,
-        nextAutoSyncAt: undefined,
-        hasPassword: Boolean(parsed.password && parsed.password.length > 0)
+        nextAutoSyncAt: undefined
       };
+    } else {
+      currentConfig.password = currentConfig.password || 'Sparifda@92';
+      currentConfig.hasPassword = true;
     }
 
-    // Environment variables take precedence if explicitly provided
+    // Environment variables take precedence if explicitly provided and non-empty
     if (process.env.MYSQL_HOST) currentConfig.host = process.env.MYSQL_HOST;
     if (process.env.MYSQL_PORT) currentConfig.port = parseInt(process.env.MYSQL_PORT, 10);
     if (process.env.MYSQL_DATABASE) currentConfig.database = process.env.MYSQL_DATABASE;
     if (process.env.MYSQL_USER) currentConfig.user = process.env.MYSQL_USER;
-    if (process.env.MYSQL_PASSWORD !== undefined) {
+    if (process.env.MYSQL_PASSWORD) {
       currentConfig.password = process.env.MYSQL_PASSWORD;
-      currentConfig.hasPassword = Boolean(process.env.MYSQL_PASSWORD.length > 0);
+      currentConfig.hasPassword = true;
     }
     if (process.env.MYSQL_PHPMYADMIN_URL) currentConfig.phpmyadminUrl = process.env.MYSQL_PHPMYADMIN_URL;
     if (process.env.MYSQL_PRIMARY === 'true' || process.env.MYSQL_AUTO_SYNC === 'true') {
@@ -58,6 +63,9 @@ export function loadMysqlConfig(): MysqlDatabaseConfig {
   }
   return currentConfig;
 }
+
+// Automatically load saved configuration on module import
+loadMysqlConfig();
 
 export function saveMysqlConfig(newConfig: Partial<MysqlDatabaseConfig>): MysqlDatabaseConfig {
   const password = (newConfig.password !== undefined && newConfig.password !== '') 
@@ -244,6 +252,34 @@ export async function getConfigFromMysql<T = any>(configId: string, overrideConf
   }
 }
 
+// Retrieve all configurations from the app_configs MySQL table in a single query
+export async function getAllConfigsFromMysql(overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<Record<string, any> | null> {
+  const pool = getSharedPool(overrideConfig);
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query("SELECT `id`, `data` FROM `app_configs`");
+    const result: Record<string, any> = {};
+    if (Array.isArray(rows)) {
+      for (const r of rows) {
+        if (r && r.id && r.data !== undefined && r.data !== null) {
+          try {
+            result[r.id] = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+          } catch (_) {
+            result[r.id] = r.data;
+          }
+        }
+      }
+    }
+    return result;
+  } catch (err: any) {
+    console.warn(`[MySQL All Configs Fetch] Gagal mengambil seluruh config dari MySQL:`, err.message || err);
+    return null;
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 // Save or update multiple configurations into the app_configs MySQL table in a SINGLE query
 export async function saveConfigsBatchToMysql(configs: { id: string; data: any }[], overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<boolean> {
   if (!Array.isArray(configs) || configs.length === 0) return true;
@@ -273,6 +309,39 @@ export async function saveConfigsBatchToMysql(configs: { id: string; data: any }
   } finally {
     if (connection) connection.release();
     // Do NOT end pool here - reuse connection
+  }
+}
+
+// Seed only missing application configs into MySQL (INSERT IGNORE) so existing admin settings in MySQL are never overwritten on app update/startup
+export async function seedMissingConfigsToMysql(configs: { id: string; data: any }[], overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<boolean> {
+  if (!configs || configs.length === 0) return true;
+  const cfg = overrideConfig || currentConfig;
+  if (!cfg.host || !cfg.database || !cfg.user) return false;
+
+  const pool = getSharedPool(overrideConfig);
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`app_configs\` (
+        \`id\` VARCHAR(64) NOT NULL,
+        \`data\` LONGTEXT NOT NULL,
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    const values = configs.map(c => [c.id, typeof c.data === 'string' ? c.data : JSON.stringify(c.data)]);
+    await connection.query(`
+      INSERT IGNORE INTO \`app_configs\` (\`id\`, \`data\`)
+      VALUES ?
+    `, [values]);
+    return true;
+  } catch (err: any) {
+    console.warn(`[MySQL Config Seed] Gagal melakukan seed default configs ke MySQL:`, err.message || err);
+    return false;
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -1173,7 +1242,7 @@ ${COMPLETE_TABLES_SQL.trim()}
   if (sppBills.length > 0) {
     out += `\n-- Data Tagihan SPP (${sppBills.length} baris)\n`;
     for (const b of sppBills) {
-      out += `INSERT INTO \`spp_bills\` (\`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`) VALUES (${sqlEscape(b.id)}, ${sqlEscape(b.studentId)}, ${sqlEscape(b.month)}, ${sqlEscape(b.year || 2026)}, ${sqlEscape(b.amount || 0)}, ${sqlEscape(b.status || 'unpaid')}, ${sqlEscape(b.paidAt)}, ${sqlEscape(b.paymentMethod)}, ${sqlEscape(b.orderId)}, ${sqlEscape(b.transactionId)}, ${sqlEscape(b.achievementType)}, ${sqlEscape(b.achievementDetail)}, ${sqlEscape(b.isVoidedByAdmin ? 1 : 0)}, ${sqlEscape(b.voidedAt)}, ${sqlEscape(b.voidReason)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`), \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`);\n`;
+      out += `INSERT INTO \`spp_bills\` (\`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`) VALUES (${sqlEscape(b.id)}, ${sqlEscape(b.studentId)}, ${sqlEscape(b.month)}, ${sqlEscape(b.year || 2026)}, ${sqlEscape(b.amount || 0)}, ${sqlEscape(b.status || 'unpaid')}, ${sqlEscape(b.paidAt)}, ${sqlEscape(b.paymentMethod)}, ${sqlEscape(b.orderId)}, ${sqlEscape(b.transactionId)}, ${sqlEscape(b.achievementType)}, ${sqlEscape(b.achievementDetail)}, ${sqlEscape(b.isVoidedByAdmin ? 1 : 0)}, ${sqlEscape(b.voidedAt)}, ${sqlEscape(b.voidReason)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`paid_at\`=IF(VALUES(\`is_voided_by_admin\`)=1, VALUES(\`paid_at\`), IF(\`status\`='paid' AND VALUES(\`status\`)!='paid', \`paid_at\`, COALESCE(VALUES(\`paid_at\`), \`paid_at\`))), \`payment_method\`=IF(VALUES(\`is_voided_by_admin\`)=1, VALUES(\`payment_method\`), IF(\`status\`='paid' AND VALUES(\`status\`)!='paid', \`payment_method\`, COALESCE(VALUES(\`payment_method\`), \`payment_method\`))), \`order_id\`=IF(VALUES(\`is_voided_by_admin\`)=1, VALUES(\`order_id\`), IF(\`status\`='paid' AND VALUES(\`status\`)!='paid', \`order_id\`, COALESCE(VALUES(\`order_id\`), \`order_id\`))), \`transaction_id\`=IF(VALUES(\`is_voided_by_admin\`)=1, VALUES(\`transaction_id\`), IF(\`status\`='paid' AND VALUES(\`status\`)!='paid', \`transaction_id\`, COALESCE(VALUES(\`transaction_id\`), \`transaction_id\`))), \`status\`=IF(VALUES(\`is_voided_by_admin\`)=1, VALUES(\`status\`), IF(\`status\`='paid' AND VALUES(\`status\`)!='paid', 'paid', VALUES(\`status\`))), \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`), \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`);\n`;
     }
   }
 
@@ -1183,7 +1252,7 @@ ${COMPLETE_TABLES_SQL.trim()}
   if (miscBills.length > 0) {
     out += `\n-- Data Tagihan Non-SPP / Lainnya (${miscBills.length} baris)\n`;
     for (const m of miscBills) {
-      out += `INSERT INTO \`misc_bills\` (\`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`) VALUES (${sqlEscape(m.id)}, ${sqlEscape(m.studentId)}, ${sqlEscape(m.title)}, ${sqlEscape(m.amount || 0)}, ${sqlEscape(m.status || 'unpaid')}, ${sqlEscape(m.createdAt)}, ${sqlEscape(m.paidAt)}, ${sqlEscape(m.paymentMethod)}, ${sqlEscape(m.orderId)}, ${sqlEscape(m.transactionId)}, ${sqlEscape(m.isMonthly ? 1 : 0)}, ${sqlEscape(m.month)}, ${sqlEscape(m.isVoidedByAdmin ? 1 : 0)}, ${sqlEscape(m.voidedAt)}, ${sqlEscape(m.voidReason)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`), \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`);\n`;
+      out += `INSERT INTO \`misc_bills\` (\`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`) VALUES (${sqlEscape(m.id)}, ${sqlEscape(m.studentId)}, ${sqlEscape(m.title)}, ${sqlEscape(m.amount || 0)}, ${sqlEscape(m.status || 'unpaid')}, ${sqlEscape(m.createdAt)}, ${sqlEscape(m.paidAt)}, ${sqlEscape(m.paymentMethod)}, ${sqlEscape(m.orderId)}, ${sqlEscape(m.transactionId)}, ${sqlEscape(m.isMonthly ? 1 : 0)}, ${sqlEscape(m.month)}, ${sqlEscape(m.isVoidedByAdmin ? 1 : 0)}, ${sqlEscape(m.voidedAt)}, ${sqlEscape(m.voidReason)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`paid_at\`=IF(VALUES(\`is_voided_by_admin\`)=1, VALUES(\`paid_at\`), IF(\`status\`='paid' AND VALUES(\`status\`)!='paid', \`paid_at\`, COALESCE(VALUES(\`paid_at\`), \`paid_at\`))), \`payment_method\`=IF(VALUES(\`is_voided_by_admin\`)=1, VALUES(\`payment_method\`), IF(\`status\`='paid' AND VALUES(\`status\`)!='paid', \`payment_method\`, COALESCE(VALUES(\`payment_method\`), \`payment_method\`))), \`order_id\`=IF(VALUES(\`is_voided_by_admin\`)=1, VALUES(\`order_id\`), IF(\`status\`='paid' AND VALUES(\`status\`)!='paid', \`order_id\`, COALESCE(VALUES(\`order_id\`), \`order_id\`))), \`transaction_id\`=IF(VALUES(\`is_voided_by_admin\`)=1, VALUES(\`transaction_id\`), IF(\`status\`='paid' AND VALUES(\`status\`)!='paid', \`transaction_id\`, COALESCE(VALUES(\`transaction_id\`), \`transaction_id\`))), \`status\`=IF(VALUES(\`is_voided_by_admin\`)=1, VALUES(\`status\`), IF(\`status\`='paid' AND VALUES(\`status\`)!='paid', 'paid', VALUES(\`status\`))), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`), \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`);\n`;
     }
   }
 
@@ -1413,7 +1482,7 @@ ${COMPLETE_TABLES_SQL.trim()}
   if (midtrans.length > 0) {
     out += `\n-- Data Transaksi Midtrans / Payment Gateway (${midtrans.length} baris)\n`;
     for (const md of midtrans) {
-      out += `INSERT INTO \`midtrans_transactions\` (\`id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`student_name\`, \`student_nis\`, \`nisn\`, \`bill_type\`, \`description\`, \`gross_amount\`, \`payment_type\`, \`transaction_status\`, \`fraud_status\`, \`settlement_time\`, \`transaction_time\`, \`created_at\`, \`updated_at\`, \`snap_token\`, \`raw_response\`) VALUES (${sqlEscape(md.id)}, ${sqlEscape(md.orderId)}, ${sqlEscape(md.transactionId)}, ${sqlEscape(md.studentId)}, ${sqlEscape(md.studentName)}, ${sqlEscape(md.studentNis)}, ${sqlEscape(md.nisn)}, ${sqlEscape(md.billType)}, ${sqlEscape(md.description)}, ${sqlEscape(md.grossAmount || 0)}, ${sqlEscape(md.paymentType)}, ${sqlEscape(md.transactionStatus)}, ${sqlEscape(md.fraudStatus)}, ${sqlEscape(md.settlementTime)}, ${sqlEscape(md.transactionTime)}, ${sqlEscape(md.createdAt)}, ${sqlEscape(md.updatedAt)}, ${sqlEscape(md.snapToken)}, ${sqlEscape(md.rawResponse)}) ON DUPLICATE KEY UPDATE \`transaction_status\`=VALUES(\`transaction_status\`);\n`;
+      out += `INSERT INTO \`midtrans_transactions\` (\`id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`student_name\`, \`student_nis\`, \`nisn\`, \`bill_type\`, \`description\`, \`gross_amount\`, \`payment_type\`, \`transaction_status\`, \`fraud_status\`, \`settlement_time\`, \`transaction_time\`, \`created_at\`, \`updated_at\`, \`snap_token\`, \`raw_response\`) VALUES (${sqlEscape(md.id)}, ${sqlEscape(md.orderId)}, ${sqlEscape(md.transactionId)}, ${sqlEscape(md.studentId)}, ${sqlEscape(md.studentName)}, ${sqlEscape(md.studentNis)}, ${sqlEscape(md.nisn)}, ${sqlEscape(md.billType)}, ${sqlEscape(md.description)}, ${sqlEscape(md.grossAmount || 0)}, ${sqlEscape(md.paymentType)}, ${sqlEscape(md.transactionStatus)}, ${sqlEscape(md.fraudStatus)}, ${sqlEscape(md.settlementTime)}, ${sqlEscape(md.transactionTime)}, ${sqlEscape(md.createdAt)}, ${sqlEscape(md.updatedAt)}, ${sqlEscape(md.snapToken)}, ${sqlEscape(md.rawResponse)}) ON DUPLICATE KEY UPDATE \`transaction_id\`=COALESCE(VALUES(\`transaction_id\`), \`transaction_id\`), \`payment_type\`=COALESCE(VALUES(\`payment_type\`), \`payment_type\`), \`transaction_status\`=IF(\`transaction_status\` IN ('settlement', 'capture') AND VALUES(\`transaction_status\`) NOT IN ('settlement', 'capture', 'refund', 'cancel'), \`transaction_status\`, VALUES(\`transaction_status\`)), \`settlement_time\`=COALESCE(VALUES(\`settlement_time\`), \`settlement_time\`), \`description\`=COALESCE(VALUES(\`description\`), \`description\`), \`updated_at\`=VALUES(\`updated_at\`);\n`;
     }
   }
 
@@ -1431,7 +1500,7 @@ ${COMPLETE_TABLES_SQL.trim()}
   const configKeys = [
     'schoolIdentity', 'sppRates', 'salaryConfig', 'midtransConfig',
     'whatsappConfig', 'treasurerConfig', 'principalConfig', 'sarprasConfig',
-    'bkConfig', 'curriculumConfig', 'adminConfig', 'spmbConfig', 'reportReleaseConfig'
+    'bkConfig', 'curriculumConfig', 'adminConfig', 'spmbConfig', 'reportReleaseConfig', 'backupConfig'
   ];
 
   out += `\n-- Data Konfigurasi Master & Pengaturan Aplikasi\n`;

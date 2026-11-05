@@ -4621,9 +4621,6 @@ export default function AdminPanel({
       // Auto-compress and scale down to 1000px if above 1000px while keeping full transparency
       const compressed = await compressAndResizeImage(file, 1000, 1000, 0.92);
       setSchoolLoadingLogo(compressed);
-      try {
-        localStorage.setItem("app_custom_loading_logo", compressed);
-      } catch (_) {}
       setSchoolIdentityMsg({
         type: "success",
         text: "Logo loading berhasil diproses & dioptimasi. Klik 'Simpan Logo Loading Ini' atau 'Simpan Perubahan' di bawah.",
@@ -4653,14 +4650,9 @@ export default function AdminPanel({
           if (onUpdateSchoolIdentity) {
             onUpdateSchoolIdentity({ loadingLogo: schoolLoadingLogo });
           }
-          if (schoolLoadingLogo) {
-            try { localStorage.setItem("app_custom_loading_logo", schoolLoadingLogo); } catch (_) {}
-          } else {
-            try { localStorage.removeItem("app_custom_loading_logo"); } catch (_) {}
-          }
           setSchoolIdentityMsg({
             type: "success",
-            text: "🎉 Logo khusus loading awal (splash screen) berhasil disimpan!",
+            text: "🎉 Logo khusus loading awal (splash screen) berhasil disimpan secara permanen di MySQL!",
           });
         } else {
           setSchoolIdentityMsg({

@@ -12,6 +12,7 @@ import {
   VoidedPaymentRecord
 } from "../../types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "../../savings_map";
+import { getConfigFromMysql } from "../mysqlService";
 
 export interface MidtransRouterDeps {
   midtransConfig: MidtransConfig;
@@ -620,8 +621,11 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       if (data.studentNis && !existing.studentNis) existing.studentNis = data.studentNis;
       if (data.description && !existing.description) existing.description = data.description;
       existing.updatedAt = new Date().toISOString();
+      if (persistEntity) {
+        persistEntity("midtrans", existing).catch(() => {});
+      }
     } else {
-      midtransTransactions.unshift({
+      const newRecord: MidtransTransactionRecord = {
         id: `mt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         orderId: data.orderId,
         transactionId: data.transactionId || "",
@@ -636,7 +640,11 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         settlementTime: data.settlementTime || (data.transactionStatus === "settlement" ? new Date().toISOString() : undefined),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      });
+      };
+      midtransTransactions.unshift(newRecord);
+      if (persistEntity) {
+        persistEntity("midtrans", newRecord).catch(() => {});
+      }
     }
   }
 
@@ -1892,7 +1900,13 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
   // =========================================================================
 
   // 1. Get Midtrans visual details (safely masks server key)
-  router.get("/midtrans-config", (req, res) => {
+  router.get("/midtrans-config", async (req, res) => {
+    try {
+      const mysqlCfg = await getConfigFromMysql("midtransConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") {
+        Object.assign(midtransConfig, mysqlCfg);
+      }
+    } catch (_) {}
     res.json({
       merchantId: midtransConfig.merchantId,
       clientKey: midtransConfig.clientKey,
@@ -3984,6 +3998,10 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 matchedCandidate.tokenPaymentMethod = actualPaymentType;
                 matchedCandidate.tokenAmount = tokenAmt;
 
+                if (persistEntity) {
+                  persistEntity("spmbCandidates", matchedCandidate).catch(() => {});
+                }
+
                 reconciledCount++;
                 totalAmountReconciled += tokenAmt;
                 stateChanged = true;
@@ -4076,6 +4094,10 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               matchedCandidate.reRegistrationPaidAt = resolvedPaidAt;
               matchedCandidate.reRegistrationPaymentMethod = actualPaymentType;
               matchedCandidate.reRegistrationAmount = reregAmt;
+
+              if (persistEntity) {
+                persistEntity("spmbCandidates", matchedCandidate).catch(() => {});
+              }
 
               reconciledCount++;
               totalAmountReconciled += reregAmt;

@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import QRCode from "qrcode";
 import { SpmbCandidate, SpmbConfig, Student, RealtimeNotification, MidtransConfig } from "../../types";
-import { directSaveEntityToMysql, directSaveEntitiesBatchToMysql, directDeleteEntityFromMysql, saveConfigToMysql, mapMysqlRowToSpmbCandidate, findSpmbCandidateInMysql, getAllSpmbCandidatesFromMysql, ensureAllMysqlTablesExist } from "../mysqlService";
+import { directSaveEntityToMysql, directSaveEntitiesBatchToMysql, directDeleteEntityFromMysql, saveConfigToMysql, getConfigFromMysql, mapMysqlRowToSpmbCandidate, findSpmbCandidateInMysql, getAllSpmbCandidatesFromMysql, ensureAllMysqlTablesExist } from "../mysqlService";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -1124,20 +1124,26 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   // ==========================================
 
   // 1. Get SPMB Configuration
-  router.get("/config", (req, res) => {
+  router.get("/config", async (req, res) => {
+    try {
+      const mysqlCfg = await getConfigFromMysql("spmbConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") {
+        Object.assign(spmbConfig, mysqlCfg);
+      }
+    } catch (_) {}
     res.json(spmbConfig);
   });
 
   // 2. Update SPMB Configuration (Admin)
-  router.post("/config", (req, res) => {
+  router.post("/config", async (req, res) => {
     try {
       const newConfig = req.body;
       if (!newConfig) {
         return res.status(400).json({ error: "Data konfigurasi tidak valid." });
       }
       Object.assign(spmbConfig, newConfig);
+      await saveConfigToMysql("spmbConfig", spmbConfig).catch(err => console.warn("[MySQL SPMB Config Sync Warning]:", err?.message || err));
       saveState();
-      saveConfigToMysql("spmbConfig", spmbConfig).catch(err => console.warn("[MySQL SPMB Config Sync Warning]:", err?.message || err));
       res.json({ success: true, message: "Konfigurasi SPMB berhasil diperbarui.", config: spmbConfig });
     } catch (err: any) {
       console.error("Error updating SPMB config:", err);

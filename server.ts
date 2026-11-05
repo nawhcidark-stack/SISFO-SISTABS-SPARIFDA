@@ -13,7 +13,7 @@ import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransCon
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, getConfigFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, seedMissingConfigsToMysql, getConfigFromMysql, getAllConfigsFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter, formatMidtransPaymentMethod } from "./src/server/routes/midtransRoutes";
@@ -1149,123 +1149,12 @@ function purgeMutatedStudentUnpaidBills(): number {
   return purgedCount;
 }
 
-// Helper to purge all auto-reconciled Midtrans ledger entries and generated categories
+// Helper retained as a safe no-op so Midtrans reconciliation entries are permanently preserved in MySQL
 function purgeMidtransAutoReconciliation(): { treasurerPurged: number; savingsPurged: number; categoriesPurged: number } {
-  let treasurerPurged = 0;
-  let savingsPurged = 0;
-  let categoriesPurged = 0;
-
-  // 1. Purge auto-recon entries from treasurerTransactions
-  for (let i = treasurerTransactions.length - 1; i >= 0; i--) {
-    const t = treasurerTransactions[i];
-    const idLower = (t.id || "").toLowerCase();
-    const catLower = (t.category || "").toLowerCase();
-    const descLower = (t.description || "").toLowerCase();
-    const orderId = (t.orderId || "").toUpperCase();
-    const noBukti = (t.noBukti || "").toUpperCase();
-    const createdByLower = (t.createdBy || "").toLowerCase();
-
-    const isAutoRecon = 
-      idLower.startsWith("tx-midtrans-") ||
-      idLower.startsWith("tx-misc-") ||
-      catLower === "spp siswa" ||
-      catLower === "tagihan non-spp" ||
-      catLower === "spmb siswa baru" ||
-      catLower === "daftar ulang siswa baru" ||
-      catLower.includes("pembayaran online midtrans") ||
-      catLower.includes("transaksi online") ||
-      descLower.includes("(report)") ||
-      descLower.includes("midtrans report") ||
-      descLower.includes("verified via midtrans") ||
-      descLower.includes("keranjang midtrans report") ||
-      descLower.includes("pembayaran online midtrans") ||
-      orderId.startsWith("MIDTRANS-REPORT") ||
-      orderId.startsWith("P7") ||
-      orderId.startsWith("P8") ||
-      orderId.startsWith("P6") ||
-      orderId.startsWith("P5") ||
-      orderId.startsWith("SPP-") ||
-      orderId.startsWith("MISC-") ||
-      orderId.startsWith("SPMB-") ||
-      noBukti.includes("-MAN--") ||
-      createdByLower.includes("midtrans") ||
-      t.fundingSource === "Kas Bank/Midtrans";
-
-    if (isAutoRecon) {
-      const [removed] = treasurerTransactions.splice(i, 1);
-      treasurerPurged++;
-      directDeleteEntityFromMysql("treasurer_transactions", removed.id).catch(err => console.error(err));
-    }
-  }
-
-  // 2. Purge auto-recon entries from savingsTransactions
-  const affectedStudentIds = new Set<string>();
-  for (let i = savingsTransactions.length - 1; i >= 0; i--) {
-    const s = savingsTransactions[i];
-    const notesLower = (s.notes || "").toLowerCase();
-    const idStr = (s.id || "").toLowerCase();
-    const orderId = (s.orderId || "").toUpperCase();
-
-    const isAutoSavings = 
-      idStr.includes("sav-pay-report-") ||
-      notesLower.includes("midtrans report") ||
-      notesLower.includes("verified via midtrans") ||
-      orderId.startsWith("MIDTRANS-REPORT") ||
-      orderId.startsWith("P7") ||
-      orderId.startsWith("P8") ||
-      orderId.startsWith("P6") ||
-      orderId.startsWith("P5");
-
-    if (isAutoSavings) {
-      const [removed] = savingsTransactions.splice(i, 1);
-      savingsPurged++;
-      affectedStudentIds.add(removed.studentId);
-      directDeleteEntityFromMysql("savings_transactions", removed.id).catch(err => console.error(err));
-    }
-  }
-
-  // Recalculate savings balance for affected students based on remaining manual transactions
-  affectedStudentIds.forEach(studentId => {
-    const student = students.find(s => s.id === studentId);
-    if (student) {
-      const studentSavings = savingsTransactions.filter(st => st.studentId === studentId && st.status === "success");
-      let newBal = 0;
-      studentSavings.forEach(st => {
-        if (st.type === "deposit") newBal += st.amount;
-        else if (st.type === "withdrawal") newBal -= st.amount;
-      });
-      student.savingsBalance = Math.max(0, newBal);
-      persistEntity("students", student).catch(err => console.error(err));
-    }
-  });
-
-  // 3. Clean up treasurerConfig / categories if "SPP Siswa", "Tagihan Non-SPP", "Pembayaran Online Midtrans" or "Transaksi Online" exists
-  if ((treasurerConfig as any).categories && Array.isArray((treasurerConfig as any).categories)) {
-    const beforeLen = (treasurerConfig as any).categories.length;
-    (treasurerConfig as any).categories = (treasurerConfig as any).categories.filter((c: any) => {
-      const name = typeof c === 'string' ? c : c.name || '';
-      const nl = name.toLowerCase().trim();
-      return !nl.includes("midtrans") &&
-             !nl.includes("transaksi online") &&
-             nl !== "spp siswa" &&
-             nl !== "tagihan non-spp" &&
-             nl !== "spmb siswa baru" &&
-             nl !== "daftar ulang siswa baru" &&
-             nl !== "spp" &&
-             nl !== "tabungan";
-    });
-    categoriesPurged = beforeLen - (treasurerConfig as any).categories.length;
-  }
-
-  if (treasurerPurged > 0 || savingsPurged > 0 || categoriesPurged > 0) {
-    console.log(`[PURGE MIDTRANS AUTO RECON] Cleaned ${treasurerPurged} treasurer entries, ${savingsPurged} savings entries, ${categoriesPurged} categories.`);
-    saveState();
-  }
-
-  return { treasurerPurged, savingsPurged, categoriesPurged };
+  return { treasurerPurged: 0, savingsPurged: 0, categoriesPurged: 0 };
 }
 
-// Global helper to record or update a Midtrans transaction in memory
+// Global helper to record or update a Midtrans transaction in memory and immediately persist to MySQL
 function recordOrUpdateMidtransTransaction(data: {
   orderId: string;
   transactionId?: string;
@@ -1319,6 +1208,7 @@ function recordOrUpdateMidtransTransaction(data: {
     if (data.snapToken) existing.snapToken = data.snapToken;
     if (data.rawResponse) existing.rawResponse = data.rawResponse;
     existing.updatedAt = now;
+    persistEntity("midtrans", existing).catch(() => {});
     return existing;
   } else {
     // Infer bill type & description if not fully provided
@@ -1367,6 +1257,7 @@ function recordOrUpdateMidtransTransaction(data: {
       rawResponse: data.rawResponse
     };
     midtransTransactions.unshift(newRecord);
+    persistEntity("midtrans", newRecord).catch(() => {});
     return newRecord;
   }
 }
@@ -1721,146 +1612,46 @@ function getFullSnapshotForMysql() {
     curriculumSubjects,
     curriculumTpDescriptions,
     sharedLearningObjectives,
-    reportReleaseConfig
+    reportReleaseConfig,
+    backupConfig
   };
 }
 
+// Guard flag ensuring we NEVER push default in-memory state to MySQL before pulling authoritative data from MySQL
+let isMysqlHydrated = false;
+
 function saveState(skipRemoteSync: boolean = false) {
   try {
-    const data = {
-      students,
-      sppBills,
-      miscBills,
-      savingsTransactions,
-      midtransTransactions,
-      notifications,
-      sppRates,
-      schoolIdentity,
-      midtransConfig,
-      whatsappConfig,
-      treasurerConfig,
-      principalConfig,
-      sarprasConfig,
-      attendanceLogs,
-      homeroomTeachers,
-      subjectTeachers,
-      teachingJournals,
-      treasurerTransactions,
-      teacherSalaries,
-      salaryConfig,
-      studentDevelopmentLogs,
-      studentInfractionLogs,
-      studentCounselingLogs,
-      classAnnouncements,
-      classMeetingLogs,
-      merdekaAssessments,
-      classSchedules,
-      principalWorkPrograms,
-      teacherEvaluations,
-      infractionRules,
-      sarprasItems,
-      sarprasProposals,
-      sarprasLoans,
-      bkConfig,
-      curriculumConfig,
-      adminConfig,
-      spmbConfig,
-      spmbCandidates,
-      backupConfig,
-      databaseBackups,
-      curriculumSubjects,
-      curriculumTpDescriptions,
-      sharedLearningObjectives,
-      reportReleaseConfig
-    };
-    // 1. PRIMARY PERSISTENCE: Database MySQL Hostinger (authoritative cloud database)
-    if (!skipRemoteSync) {
+    // 100% MySQL Persistence (Tanpa Penyimpanan Lokal / data_store.json)
+    // Hanya sinkronkan ke MySQL apabila data dari MySQL sudah berhasil dimuat (hydrated)
+    if (!skipRemoteSync && isMysqlHydrated) {
       debouncedSyncConfigsToMysql();
       const cfg = getSanitizedConfig();
       if (cfg.autoSyncEnabled !== false) {
         triggerDebouncedMysqlSync(() => getFullSnapshotForMysql(), 800);
       }
     }
-
-    // 2. SECONDARY NON-BLOCKING LOCAL BACKUP SNAPSHOT:
-    // Salinan cadangan darurat lokal didebounce dan ditulis asinkron tanpa memblokir server
-    triggerDebouncedLocalSave(() => data);
   } catch (error) {
     console.error("Failed to save state:", error);
   }
 }
 
-// Thread-safe and debounced local backup writer with duplicate blob stripping for ultra-fast storage
-let localSaveTimer: NodeJS.Timeout | null = null;
-let isWritingLocalFile = false;
-let pendingLocalSave = false;
-
-function triggerDebouncedLocalSave(dataGetter: () => any) {
-  if (localSaveTimer) clearTimeout(localSaveTimer);
-  localSaveTimer = setTimeout(() => {
-    executeSafeLocalSave(dataGetter);
-  }, 800);
+// Local file storage is completely disabled; all data is stored exclusively in MySQL
+function triggerDebouncedLocalSave(_dataGetter: () => any) {
+  // No-op: penyimpanan lokal dinonaktifkan sepenuhnya
 }
 
-function executeSafeLocalSave(dataGetter: () => any) {
-  if (isWritingLocalFile) {
-    pendingLocalSave = true;
-    return;
-  }
-  isWritingLocalFile = true;
-  pendingLocalSave = false;
-  try {
-    const rawData = dataGetter();
-    // Hilangkan duplikasi data berkas base64 raksasa di snapshot backup lokal agar penyimpanan secepat kilat (<10ms)
-    let lightweightCandidates = rawData.spmbCandidates;
-    if (Array.isArray(lightweightCandidates)) {
-      lightweightCandidates = lightweightCandidates.map((c: any) => {
-        const { documentsRaw, documentsBase64, ...rest } = c;
-        if (rest.fullFormData) {
-          const { documentsRaw: _fr, documentsBase64: _fb, ...cleanFfd } = rest.fullFormData;
-          rest.fullFormData = cleanFfd;
-        }
-        return rest;
-      });
-    }
-    let lightweightBackups = rawData.databaseBackups;
-    if (Array.isArray(lightweightBackups)) {
-      lightweightBackups = lightweightBackups.slice(-3).map((b: any) => {
-        const { data, ...meta } = b;
-        return meta;
-      });
-    }
-    const cleanData = { ...rawData, spmbCandidates: lightweightCandidates, databaseBackups: lightweightBackups };
-    const jsonStr = JSON.stringify(cleanData);
-    const tempPath = DATA_FILE + ".tmp";
-    fs.writeFile(tempPath, jsonStr, "utf-8", (err) => {
-      isWritingLocalFile = false;
-      if (!err) {
-        fs.rename(tempPath, DATA_FILE, (renameErr) => {
-          if (renameErr) {
-            try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (_) {}
-          }
-          if (pendingLocalSave) {
-            executeSafeLocalSave(dataGetter);
-          }
-        });
-      } else {
-        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (_) {}
-        if (pendingLocalSave) {
-          executeSafeLocalSave(dataGetter);
-        }
-      }
-    });
-  } catch (err) {
-    isWritingLocalFile = false;
-  }
+function executeSafeLocalSave(_dataGetter: () => any) {
+  // No-op: penyimpanan lokal dinonaktifkan sepenuhnya
 }
 
 // Debounced helper to save application configs to MySQL app_configs in a single query
 let configBatchTimer: NodeJS.Timeout | null = null;
 function debouncedSyncConfigsToMysql() {
+  if (!isMysqlHydrated) return;
   if (configBatchTimer) clearTimeout(configBatchTimer);
   configBatchTimer = setTimeout(() => {
+    if (!isMysqlHydrated) return;
     saveConfigsBatchToMysql([
       { id: "midtransConfig", data: midtransConfig },
       { id: "schoolIdentity", data: schoolIdentity },
@@ -1874,7 +1665,8 @@ function debouncedSyncConfigsToMysql() {
       { id: "curriculumConfig", data: curriculumConfig },
       { id: "adminConfig", data: adminConfig },
       { id: "spmbConfig", data: spmbConfig },
-      { id: "reportReleaseConfig", data: reportReleaseConfig }
+      { id: "reportReleaseConfig", data: reportReleaseConfig },
+      { id: "backupConfig", data: backupConfig }
     ]).catch(err => {
       console.warn("[MySQL Debounced Config Sync] Gagal menyimpan configs ke MySQL:", err?.message || err);
     });
@@ -1964,35 +1756,11 @@ function seedStudentClassHistories() {
 }
 
 function sanitizeMidtransAndAuditBills(): boolean {
-  const fakeSimulatedBillIds = new Set([
-    "bill-std-1784166464666-3-jklj-2026-4", // NIS 13154 Nov 2026
-    "bill-std-1784166464666-3-jklj-2026-5", // NIS 13154 Des 2026
-    "bill-std-1784166464665-2-wz05-2026-3", // NIS 13153 Okt 2026
-    "bill-std-1780505669278-242-5n5m-Oktober-2026-unpaid" // NIS 12774 Okt 2026
-  ]);
-  const fakeOrderIds = new Set([
-    "SPP-13154-Nov26-0712",
-    "CART-13154-1793761707578",
-    "CART-13153-1790662372857",
-    "SPP-12774-Okt26-6198"
-  ]);
-
   let changed = false;
 
+  // Format paymentMethod labels consistently WITHOUT ever resetting paid bills to unpaid or deleting Midtrans records
   sppBills.forEach(b => {
-    const isFake = fakeSimulatedBillIds.has(b.id) ||
-      (b.orderId && fakeOrderIds.has(b.orderId)) ||
-      (b.transactionId && b.transactionId.startsWith("sim-"));
-    if (isFake) {
-      if (b.status !== "unpaid" || b.paidAt || b.paymentMethod || b.transactionId) {
-        b.status = "unpaid";
-        delete b.paidAt;
-        delete b.paymentMethod;
-        delete b.transactionId;
-        delete b.orderId;
-        changed = true;
-      }
-    } else if (b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans")) {
+    if (b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans")) {
       const formatted = formatMidtransPaymentMethod(b.paymentMethod);
       if (b.paymentMethod !== formatted) {
         b.paymentMethod = formatted;
@@ -2002,17 +1770,7 @@ function sanitizeMidtransAndAuditBills(): boolean {
   });
 
   miscBills.forEach(b => {
-    const isFake = (b.transactionId && b.transactionId.startsWith("sim-")) || (b.orderId && fakeOrderIds.has(b.orderId));
-    if (isFake) {
-      if (b.status !== "unpaid" || b.paidAt || b.paymentMethod || b.transactionId) {
-        b.status = "unpaid";
-        delete b.paidAt;
-        delete b.paymentMethod;
-        delete b.transactionId;
-        delete b.orderId;
-        changed = true;
-      }
-    } else if (b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans")) {
+    if (b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans")) {
       const formatted = formatMidtransPaymentMethod(b.paymentMethod);
       if (b.paymentMethod !== formatted) {
         b.paymentMethod = formatted;
@@ -2022,13 +1780,7 @@ function sanitizeMidtransAndAuditBills(): boolean {
   });
 
   savingsTransactions.forEach(t => {
-    if (t.orderId === "SAV-13154-1793761860522") {
-      if (t.transactionId !== "b1e250d9-3a07-4c06-873e-49379e20fa45" || t.paymentMethod !== "Midtrans (QRIS)") {
-        t.transactionId = "b1e250d9-3a07-4c06-873e-49379e20fa45";
-        t.paymentMethod = "Midtrans (QRIS)";
-        changed = true;
-      }
-    } else if (t.paymentMethod && t.paymentMethod.toLowerCase().includes("midtrans")) {
+    if (t.paymentMethod && t.paymentMethod.toLowerCase().includes("midtrans")) {
       const formatted = formatMidtransPaymentMethod(t.paymentMethod);
       if (t.paymentMethod !== formatted) {
         t.paymentMethod = formatted;
@@ -2037,355 +1789,26 @@ function sanitizeMidtransAndAuditBills(): boolean {
     }
   });
 
-  for (let i = midtransTransactions.length - 1; i >= 0; i--) {
-    const mt = midtransTransactions[i];
-    if ((mt.transactionId && mt.transactionId.startsWith("sim-")) || (mt.orderId && fakeOrderIds.has(mt.orderId))) {
-      midtransTransactions.splice(i, 1);
-      changed = true;
-    } else {
-      if (mt.paymentType) {
-        const formatted = formatMidtransPaymentMethod(mt.paymentType);
-        if (mt.paymentType !== formatted) {
-          mt.paymentType = formatted;
-          changed = true;
-        }
-      }
-      if (mt.description && (mt.description.includes("(Midtrans QRIS)") || mt.description.includes("(qris)"))) {
-        mt.description = mt.description.replace(/\(Midtrans QRIS\)/g, "(QRIS)").replace(/\(qris\)/g, "(QRIS)");
+  midtransTransactions.forEach(mt => {
+    if (mt.paymentType) {
+      const formatted = formatMidtransPaymentMethod(mt.paymentType);
+      if (mt.paymentType !== formatted) {
+        mt.paymentType = formatted;
         changed = true;
       }
     }
-  }
+    if (mt.description && (mt.description.includes("(Midtrans QRIS)") || mt.description.includes("(qris)"))) {
+      mt.description = mt.description.replace(/\(Midtrans QRIS\)/g, "(QRIS)").replace(/\(qris\)/g, "(QRIS)");
+      changed = true;
+    }
+  });
 
   return changed;
 }
 
 function loadState() {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, "utf-8");
-      const data = JSON.parse(raw);
-      if (Array.isArray(data.students)) {
-        students.length = 0;
-        data.students.forEach((s: Student) => {
-          if (s.email && s.email.includes("example.org")) {
-            s.email = s.email.replace("example.org", "smpmaarifnu.sch.id");
-          }
-          if (!s.password && s.nis) {
-            s.password = s.nis.toString().trim();
-          }
-          students.push(s);
-        });
-      }
-      if (Array.isArray(data.sppBills)) {
-        sppBills.length = 0;
-        sppBills.push(...data.sppBills);
-        
-        // Deduplicate loaded SPP bills by studentId, month, year
-        const seen = new Map<string, SppBill>();
-        sppBills.forEach(bill => {
-          const key = `${bill.studentId}-${bill.month}-${bill.year}`;
-          const left = seen.get(key);
-          if (!left) {
-            seen.set(key, bill);
-          } else {
-            // Prefer paid > pending > unpaid
-            if (bill.status === "paid" && left.status !== "paid") {
-              seen.set(key, bill);
-            } else if (bill.status === "pending" && left.status === "unpaid") {
-              seen.set(key, bill);
-            }
-          }
-        });
-        sppBills.length = 0;
-        sppBills.push(...Array.from(seen.values()));
-      }
-      if (Array.isArray(data.miscBills)) {
-        miscBills.length = 0;
-        miscBills.push(...data.miscBills);
-      }
-      if (Array.isArray(data.savingsTransactions)) {
-        savingsTransactions.length = 0;
-        savingsTransactions.push(...data.savingsTransactions);
-      }
-      if (Array.isArray(data.midtransTransactions)) {
-        midtransTransactions.length = 0;
-        midtransTransactions.push(...data.midtransTransactions);
-      }
-      sanitizeMidtransAndAuditBills();
-      // Apply authoritative savings balances for all loaded students
-      applyAuthoritativeSavingsBalances(students);
-      if (Array.isArray(data.notifications)) {
-        notifications.length = 0;
-        notifications.push(...data.notifications);
-      }
-      if (Array.isArray(data.attendanceLogs)) {
-        attendanceLogs.length = 0;
-        attendanceLogs.push(...data.attendanceLogs);
-      }
-      if (Array.isArray(data.homeroomTeachers)) {
-        homeroomTeachers.length = 0;
-        data.homeroomTeachers.forEach((ht: HomeroomTeacher) => {
-          const authMap = AUTHORITATIVE_HOMEROOM_MAP[ht.username.toLowerCase()];
-          if (authMap) {
-            ht.subject = authMap.subject;
-            ht.subjectId = authMap.subjectId;
-            ht.subjects = [authMap.subject];
-          }
-          if (!ht.password) ht.password = "wali123";
-          if (ht.id.startsWith("ht-promoted-") && !ht.assignments?.some(a => a.academicYear === "2026/2027")) {
-            ht.className = "";
-          }
-          homeroomTeachers.push(ht);
-        });
-      }
-      if (Array.isArray(data.subjectTeachers)) {
-        subjectTeachers.length = 0;
-        subjectTeachers.push(...data.subjectTeachers);
-      }
-      // Ensure all homeroom teachers are synchronized into subjectTeachers
-      homeroomTeachers.forEach(ht => {
-        if (ht.subject) {
-          const st = subjectTeachers.find(s => s.username.toLowerCase() === ht.username.toLowerCase());
-          if (st) {
-            st.name = ht.name;
-            st.subject = ht.subject;
-            st.subjectId = ht.subjectId;
-            st.className = ht.className;
-            if (ht.password) st.password = ht.password;
-          } else {
-            subjectTeachers.push({
-              id: `st-sync-${ht.id}`,
-              username: ht.username,
-              name: ht.name,
-              subject: ht.subject,
-              subjectId: ht.subjectId,
-              className: ht.className,
-              password: ht.password || "wali123"
-            });
-          }
-        }
-      });
-      if (Array.isArray(data.teachingJournals)) {
-        teachingJournals.length = 0;
-        teachingJournals.push(...data.teachingJournals);
-      }
-      if (Array.isArray(data.studentDevelopmentLogs)) {
-        studentDevelopmentLogs.length = 0;
-        studentDevelopmentLogs.push(...data.studentDevelopmentLogs);
-      }
-      if (Array.isArray(data.studentInfractionLogs)) {
-        studentInfractionLogs.length = 0;
-        studentInfractionLogs.push(...data.studentInfractionLogs);
-      }
-      if (Array.isArray(data.studentCounselingLogs)) {
-        studentCounselingLogs.length = 0;
-        studentCounselingLogs.push(...data.studentCounselingLogs);
-      }
-      if (Array.isArray(data.classAnnouncements)) {
-        classAnnouncements.length = 0;
-        classAnnouncements.push(...data.classAnnouncements);
-      }
-      if (Array.isArray(data.classMeetingLogs)) {
-        classMeetingLogs.length = 0;
-        classMeetingLogs.push(...data.classMeetingLogs);
-      }
-      if (Array.isArray(data.merdekaAssessments)) {
-        merdekaAssessments.length = 0;
-        merdekaAssessments.push(...data.merdekaAssessments);
-      }
-      if (Array.isArray(data.classSchedules)) {
-        classSchedules.length = 0;
-        classSchedules.push(...deduplicateClassSchedules(data.classSchedules));
-      }
-      if (Array.isArray(data.principalWorkPrograms)) {
-        principalWorkPrograms.length = 0;
-        principalWorkPrograms.push(...data.principalWorkPrograms);
-      }
-      if (Array.isArray(data.teacherEvaluations)) {
-        teacherEvaluations.length = 0;
-        teacherEvaluations.push(...data.teacherEvaluations);
-      }
-      if (Array.isArray(data.infractionRules)) {
-        infractionRules.length = 0;
-        infractionRules.push(...data.infractionRules);
-      }
-      if (Array.isArray(data.sarprasItems)) {
-        sarprasItems.length = 0;
-        sarprasItems.push(...data.sarprasItems);
-      }
-      if (Array.isArray(data.sarprasProposals)) {
-        sarprasProposals.length = 0;
-        sarprasProposals.push(...data.sarprasProposals);
-      }
-      if (Array.isArray(data.sarprasLoans)) {
-        sarprasLoans.length = 0;
-        sarprasLoans.push(...data.sarprasLoans);
-      }
-      if (Array.isArray(data.teacherSalaries)) {
-        teacherSalaries.length = 0;
-        teacherSalaries.push(...data.teacherSalaries);
-      }
-      if (data.salaryConfig) {
-        Object.assign(salaryConfig, data.salaryConfig);
-      }
-      if (Array.isArray(data.treasurerTransactions)) {
-        treasurerTransactions.length = 0;
-        const cleaned = data.treasurerTransactions.filter((t: any) => {
-          if (!t) return false;
-          const idLower = (t.id || "").toLowerCase();
-          const catLower = (t.category || "").toLowerCase().trim();
-          const descLower = (t.description || "").toLowerCase();
-          if (idLower.startsWith("trx-spmb-")) return false;
-          if (descLower.includes("krishna") && (descLower.includes("token") || descLower.includes("daftar ulang"))) return false;
-          if (
-            catLower === "spmb - token formulir" ||
-            catLower === "spmb - daftar ulang" ||
-            catLower === "spmb - daftar ulang & seragam" ||
-            catLower === "spmb daftar ulang & seragam" ||
-            catLower === "spmb formulir"
-          ) return false;
-          return true;
-        });
-        treasurerTransactions.push(...cleaned);
-      } else {
-        // Initial mock data if empty
-        treasurerTransactions.length = 0;
-        treasurerTransactions.push(
-          {
-            id: "tx-bnd-1",
-            type: "incoming",
-            category: "Operasional",
-            amount: 15000000,
-            description: "Penerimaan Dana BOS Reguler Tahap I Tahun 2026",
-            date: "2026-05-10",
-            source: "custom",
-            createdBy: "Sistem (BOS)"
-          },
-          {
-            id: "tx-bnd-2",
-            type: "outgoing",
-            category: "Gaji Guru",
-            amount: 4500000,
-            description: "Honorarium Guru GTT & Pegawai PTT Bulan April",
-            date: "2026-05-02",
-            source: "custom",
-            createdBy: "bendahara"
-          },
-          {
-            id: "tx-bnd-3",
-            type: "outgoing",
-            category: "Pembangunan",
-            amount: 2500050,
-            description: "Pembelian Semen & Pasir Renovasi Musholla",
-            date: "2026-05-15",
-            source: "custom",
-            createdBy: "bendahara"
-          },
-          {
-            id: "tx-bnd-4",
-            type: "incoming",
-            category: "Utama",
-            amount: 1200000,
-            description: "Pihak Ketiga - Sumbangan Alumni Peduli Pendidikan",
-            date: "2026-05-18",
-            source: "custom",
-            createdBy: "bendahara"
-          }
-        );
-      }
-      if (data.sppRates) Object.assign(sppRates, data.sppRates);
-      if (data.schoolIdentity) Object.assign(schoolIdentity, data.schoolIdentity);
-      if (data.midtransConfig) Object.assign(midtransConfig, data.midtransConfig);
-      if (data.whatsappConfig) Object.assign(whatsappConfig, data.whatsappConfig);
-      if (data.treasurerConfig) {
-        Object.assign(treasurerConfig, data.treasurerConfig);
-        if (Array.isArray(treasurerConfig.categories)) {
-          treasurerConfig.categories = treasurerConfig.categories.filter((c: any) => {
-            const name = typeof c === 'string' ? c : c.name || '';
-            const nl = name.toLowerCase().trim();
-            return !nl.includes("midtrans") &&
-                   !nl.includes("transaksi online") &&
-                   nl !== "spp siswa" &&
-                   nl !== "tagihan non-spp" &&
-                   nl !== "spmb siswa baru" &&
-                   nl !== "daftar ulang siswa baru" &&
-                   nl !== "spmb - token formulir" &&
-                   nl !== "spmb - daftar ulang" &&
-                   nl !== "spmb - daftar ulang & seragam" &&
-                   nl !== "spmb daftar ulang & seragam" &&
-                   nl !== "spmb formulir" &&
-                   nl !== "spp" &&
-                   nl !== "tabungan";
-          });
-          if (!treasurerConfig.categories.some((c: any) => (typeof c === 'string' ? c : c.name || '').toLowerCase().trim() === 'token spmb formulir')) {
-            treasurerConfig.categories.push({ name: 'Token SPMB Formulir', type: 'both' });
-          }
-          if (!treasurerConfig.categories.some((c: any) => (typeof c === 'string' ? c : c.name || '').toLowerCase().trim() === 'spmb daftar ulang')) {
-            treasurerConfig.categories.push({ name: 'SPMB DAFTAR ULANG', type: 'both' });
-          }
-        }
-      }
-      if (data.principalConfig) Object.assign(principalConfig, data.principalConfig);
-      if (data.sarprasConfig) Object.assign(sarprasConfig, data.sarprasConfig);
-      if (data.bkConfig) Object.assign(bkConfig, data.bkConfig);
-      if (data.curriculumConfig) Object.assign(curriculumConfig, data.curriculumConfig);
-      if (data.adminConfig) Object.assign(adminConfig, data.adminConfig);
-      if (data.spmbConfig) Object.assign(spmbConfig, data.spmbConfig);
-      if (Array.isArray(data.spmbCandidates)) {
-        spmbCandidates.length = 0;
-        spmbCandidates.push(...data.spmbCandidates);
-        // Data dokumen calon siswa dipertahankan murni dari database MySQL
-      }
-      if (data.backupConfig) Object.assign(backupConfig, data.backupConfig);
-      if (Array.isArray(data.databaseBackups)) {
-        databaseBackups.length = 0;
-        databaseBackups.push(...data.databaseBackups);
-      }
-      if (Array.isArray(data.curriculumSubjects)) {
-        curriculumSubjects.length = 0;
-        curriculumSubjects.push(...data.curriculumSubjects);
-      }
-      if (Array.isArray(data.curriculumTpDescriptions)) {
-        curriculumTpDescriptions.length = 0;
-        curriculumTpDescriptions.push(...data.curriculumTpDescriptions);
-      }
-      if (Array.isArray(data.sharedLearningObjectives) && data.sharedLearningObjectives.length > 0) {
-        // Hapus contoh dummy TP (id berformat tp-mapel-*) dan sisakan TP asli guru & admin
-        const genuineTps = data.sharedLearningObjectives.filter((tp: any) => {
-          const isDummySeed = tp.id && tp.id.startsWith('tp-mapel-') && !tp.id.includes('ganjil') && !tp.id.includes('genap');
-          return !isDummySeed;
-        });
-        sharedLearningObjectives.length = 0;
-        sharedLearningObjectives.push(...genuineTps);
-      } else {
-        sharedLearningObjectives.length = 0;
-      }
-
-      if (data.reportReleaseConfig) {
-        Object.assign(reportReleaseConfig, data.reportReleaseConfig);
-      }
-
-      // Pastikan seluruh TP asli dari curriculumTpDescriptions (dibuat admin di panel admin utama / guru) selalu tersinkronisasi
-      const genuineFromCurriculum = generateSeedSharedTps(curriculumSubjects, curriculumTpDescriptions);
-      genuineFromCurriculum.forEach(gtp => {
-        const exists = sharedLearningObjectives.some(existing => 
-          existing.id === gtp.id || 
-          (existing.subjectId === gtp.subjectId && existing.gradeLevel === gtp.gradeLevel && existing.tpNumber === gtp.tpNumber && (existing.semester || '').toLowerCase() === (gtp.semester || '').toLowerCase())
-        );
-        if (!exists) {
-          sharedLearningObjectives.push(gtp);
-        }
-      });
-      // Sinkronkan dan lengkapi rekam jejak histori kelas siswa per tahun ajaran
-      seedStudentClassHistories();
-
-      console.log(`State loaded successfully from database (${sharedLearningObjectives.length} shared TPs ready)`);
-      return true;
-    }
-  } catch (error) {
-    console.error("Failed to load state:", error);
-  }
+  // Penyimpanan lokal (data_store.json) dinonaktifkan sesuai instruksi pengguna.
+  // Aplikasi murni menggunakan database MySQL tanpa membaca/menulis file lokal.
   return false;
 }
 
@@ -2426,6 +1849,29 @@ function normalizeJournalTeacherIds() {
     }
   } catch (e) {
     console.error("Error normalizing journal teacher IDs:", e);
+  }
+}
+
+async function refreshConfigsFromMysql(): Promise<void> {
+  try {
+    const configs = await getAllConfigsFromMysql();
+    if (!configs || typeof configs !== "object") return;
+    if (configs.sppRates) Object.assign(sppRates, configs.sppRates);
+    if (configs.salaryConfig) Object.assign(salaryConfig, configs.salaryConfig);
+    if (configs.schoolIdentity) Object.assign(schoolIdentity, configs.schoolIdentity);
+    if (configs.midtransConfig) Object.assign(midtransConfig, configs.midtransConfig);
+    if (configs.whatsappConfig) Object.assign(whatsappConfig, configs.whatsappConfig);
+    if (configs.treasurerConfig) Object.assign(treasurerConfig, configs.treasurerConfig);
+    if (configs.principalConfig) Object.assign(principalConfig, configs.principalConfig);
+    if (configs.sarprasConfig) Object.assign(sarprasConfig, configs.sarprasConfig);
+    if (configs.bkConfig) Object.assign(bkConfig, configs.bkConfig);
+    if (configs.curriculumConfig) Object.assign(curriculumConfig, configs.curriculumConfig);
+    if (configs.adminConfig) Object.assign(adminConfig, configs.adminConfig);
+    if (configs.spmbConfig) Object.assign(spmbConfig, configs.spmbConfig);
+    if (configs.reportReleaseConfig) Object.assign(reportReleaseConfig, configs.reportReleaseConfig);
+    if (configs.backupConfig) Object.assign(backupConfig, configs.backupConfig);
+  } catch (err) {
+    // Non-blocking fallback to in-memory state
   }
 }
 
@@ -2670,11 +2116,64 @@ function applyDataFromMysql(pulledData: any) {
       if (pulledData.configs.adminConfig) Object.assign(adminConfig, pulledData.configs.adminConfig);
       if (pulledData.configs.spmbConfig) Object.assign(spmbConfig, pulledData.configs.spmbConfig);
       if (pulledData.configs.reportReleaseConfig) Object.assign(reportReleaseConfig, pulledData.configs.reportReleaseConfig);
+      if (pulledData.configs.backupConfig) Object.assign(backupConfig, pulledData.configs.backupConfig);
     }
 
-    // Persist locally
-    saveState(true);
-    console.log("[MySQL Sync] Data dari database MySQL berhasil dimuat ke memori dan disimpan ke local cache.");
+    // Reconcile settled Midtrans transactions against SPP and Misc bills so any settled Midtrans record permanently keeps its bill PAID
+    const reconciledSppFromMidtrans: SppBill[] = [];
+    const reconciledMiscFromMidtrans: MiscBill[] = [];
+    midtransTransactions.forEach(mt => {
+      if (mt.transactionStatus === "settlement" || mt.transactionStatus === "capture") {
+        const cleanOrd = (mt.orderId || "").trim();
+        const cleanTx = (mt.transactionId || "").trim();
+        if (!cleanOrd && !cleanTx) return;
+        if (cleanOrd && voidedOrderIds.has(cleanOrd)) return;
+
+        const paidTime = mt.settlementTime || mt.transactionTime || mt.updatedAt || new Date().toISOString();
+        const payMethod = formatMidtransPaymentMethod(mt.paymentType || "Midtrans");
+
+        sppBills.forEach(b => {
+          if (b.isVoidedByAdmin || voidedBillIds.has(b.id)) return;
+          const matchOrd = cleanOrd && b.orderId === cleanOrd;
+          const matchTx = cleanTx && b.transactionId === cleanTx;
+          if ((matchOrd || matchTx) && b.status !== "paid") {
+            b.status = "paid";
+            b.paidAt = b.paidAt || paidTime;
+            b.paymentMethod = b.paymentMethod || payMethod;
+            if (cleanOrd && !b.orderId) b.orderId = cleanOrd;
+            if (cleanTx && !b.transactionId) b.transactionId = cleanTx;
+            reconciledSppFromMidtrans.push(b);
+          }
+        });
+
+        miscBills.forEach(m => {
+          if (m.isVoidedByAdmin || voidedBillIds.has(m.id)) return;
+          const matchOrd = cleanOrd && m.orderId === cleanOrd;
+          const matchTx = cleanTx && m.transactionId === cleanTx;
+          if ((matchOrd || matchTx) && m.status !== "paid") {
+            m.status = "paid";
+            m.paidAt = m.paidAt || paidTime;
+            m.paymentMethod = m.paymentMethod || payMethod;
+            if (cleanOrd && !m.orderId) m.orderId = cleanOrd;
+            if (cleanTx && !m.transactionId) m.transactionId = cleanTx;
+            reconciledMiscFromMidtrans.push(m);
+          }
+        });
+      }
+    });
+
+    if (reconciledSppFromMidtrans.length > 0) {
+      persistEntities("sppBills", reconciledSppFromMidtrans).catch(() => {});
+    }
+    if (reconciledMiscFromMidtrans.length > 0) {
+      persistEntities("miscBills", reconciledMiscFromMidtrans).catch(() => {});
+    }
+
+    // Backfill midtransTransactions from any paid bills that aren't yet in midtransTransactions
+    autoSyncHistoricalMidtransTransactions();
+
+    isMysqlHydrated = true;
+    console.log("[MySQL Sync] Data dan pengaturan dari database MySQL berhasil dimuat secara permanen.");
     ensureSchedulesAcademicYear();
     return true;
   } catch (err) {
@@ -2707,69 +2206,8 @@ function ensureSchedulesAcademicYear() {
 }
 
 loadMysqlConfig();
-const mysqlActiveCfg = getSanitizedConfig();
-const hasMysqlConfigured = Boolean(
-  (process.env.MYSQL_HOST && process.env.MYSQL_DATABASE) ||
-  (mysqlActiveCfg && mysqlActiveCfg.host && mysqlActiveCfg.database)
-);
-const isLoaded = loadState();
-sanitizeMidtransAndAuditBills();
-saveState();
-ensureSchedulesAcademicYear();
-
-if (isLoaded) {
-  // Baseline cache loaded; Primary hydration occurs directly from MySQL on server startup
-} else if (!hasMysqlConfigured) {
-  // Only initialize fallback unpaid bills if MySQL is not configured
-  students.forEach((student, sIdx) => {
-    months.forEach((month, mIdx) => {
-      // All fallback initialization bills should start as unpaid
-      const isPaid = false;
-      const mappedAmount = getSppAmountForStudent(student);
-      const isGrade7 = (student.class || "").trim().startsWith("7") || (student.class || "").trim().toUpperCase().startsWith("VII");
-      const isJuly = month === "Juli";
-      const isRegPaid = isGrade7 && isJuly;
-
-      sppBills.push({
-        id: `bill-${student.id}-${mIdx}`,
-        studentId: student.id,
-        month: month,
-        year: mIdx < 6 ? 2025 : 2026,
-        amount: mappedAmount,
-        status: isPaid ? "paid" : "unpaid",
-        paidAt: isPaid ? new Date(2025, 6 + mIdx, 10, 14, 30).toISOString() : undefined,
-        paymentMethod: isPaid ? (isRegPaid ? "Lunas Pendaftaran" : "Manual Teller") : undefined,
-        orderId: isPaid ? (isRegPaid ? `ORD-REGISTRATION-${student.id}` : `ORD-MANUAL-${student.id}-${mIdx}`) : undefined
-      });
-    });
-
-    // Pre-populate some savings transactions
-    savingsTransactions.push({
-      id: `sav-${student.id}-init1`,
-      studentId: student.id,
-      type: "deposit",
-      amount: student.savingsBalance + 50000, // assuming they spent 50000
-      status: "success",
-      createdAt: new Date(2026, 0, 15, 9, 15).toISOString(),
-      paymentMethod: "Manual Teller",
-      notes: "Setoran Awal Tabungan"
-    });
-
-    savingsTransactions.push({
-      id: `sav-${student.id}-init2`,
-      studentId: student.id,
-      type: "withdrawal",
-      amount: 50000,
-      status: "success",
-      createdAt: new Date(2026, 1, 20, 10, 45).toISOString(),
-      paymentMethod: "Manual Teller",
-      notes: "Tarik Tunai Kebutuhan LKS"
-    });
-  });
-
-  // Save base initialization
-  saveState();
-}
+// Bersihkan file penyimpanan lokal lama jika ada; seluruh state dimuat langsung dari MySQL saat startServer()
+loadState();
 
 // SSE Client list
 let sseClients: any[] = [];
@@ -2914,6 +2352,24 @@ async function startServer() {
         if (mysqlPull.success && mysqlPull.data) {
           applyDataFromMysql(mysqlPull.data);
           mysqlHydrated = true;
+          isMysqlHydrated = true;
+          // Inisialisasi key konfigurasi yang belum ada di tabel app_configs tanpa menimpa pengaturan admin yang sudah tersimpan
+          await seedMissingConfigsToMysql([
+            { id: "midtransConfig", data: midtransConfig },
+            { id: "schoolIdentity", data: schoolIdentity },
+            { id: "sppRates", data: sppRates },
+            { id: "salaryConfig", data: salaryConfig },
+            { id: "whatsappConfig", data: whatsappConfig },
+            { id: "treasurerConfig", data: treasurerConfig },
+            { id: "principalConfig", data: principalConfig },
+            { id: "sarprasConfig", data: sarprasConfig },
+            { id: "bkConfig", data: bkConfig },
+            { id: "curriculumConfig", data: curriculumConfig },
+            { id: "adminConfig", data: adminConfig },
+            { id: "spmbConfig", data: spmbConfig },
+            { id: "reportReleaseConfig", data: reportReleaseConfig },
+            { id: "backupConfig", data: backupConfig }
+          ]);
           console.log(`[STARTUP] ✅ Data berhasil dimuat langsung dari MySQL: ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.spmbCandidates || 0} calon SPMB, ${mysqlPull.counts?.treasurerTransactions || 0} transaksi kas, ${mysqlPull.counts?.sppBills || 0} tagihan SPP.`);
           applyAuthoritativeSavingsBalances(students);
         } else {
@@ -2934,16 +2390,6 @@ async function startServer() {
       mysqlDatabaseError = err.message || String(err);
       dbSyncStatus = "DATABASE MYSQL OFFLINE";
       dbSyncError = mysqlDatabaseError;
-    }
-  }
-
-  // 2. Jika MySQL tidak dapat dihubungi saat booting (misal koneksi jaringan drop), gunakan local fallback cache
-  if (!mysqlHydrated) {
-    console.log("[STARTUP] Menjalankan local emergency fallback cache...");
-    try {
-      loadState();
-    } catch (e) {
-      console.warn("Local state load warning:", e);
     }
   }
 
@@ -2984,11 +2430,11 @@ async function startServer() {
     next();
   });
 
-  // Interceptor middleware to auto-save state on successful mutation requests
+  // Interceptor middleware to auto-save state to MySQL on successful mutation requests
   app.use((req, res, next) => {
     if (req.method !== 'GET' && !req.path.startsWith('/api/notifications/stream')) {
       res.on('finish', () => {
-        if (res.statusCode >= 200 && res.statusCode < 400) {
+        if (res.statusCode >= 200 && res.statusCode < 400 && isMysqlHydrated) {
           saveState();
         }
       });
@@ -4142,12 +3588,18 @@ async function startServer() {
 
 
   // Get dynamic SPP config rates
-  app.get("/api/admin/spp-config", (req, res) => {
+  app.get("/api/admin/spp-config", async (req, res) => {
+    try {
+      const mysqlCfg = await getConfigFromMysql("sppRates");
+      if (mysqlCfg && typeof mysqlCfg === "object") {
+        Object.assign(sppRates, mysqlCfg);
+      }
+    } catch (_) {}
     res.json({ success: true, sppRates });
   });
 
   // Update dynamic SPP config rates and retroactively update all existing unpaid bills matching the rates
-  app.post("/api/admin/set-spp-config", (req, res) => {
+  app.post("/api/admin/set-spp-config", async (req, res) => {
     const { grade7, grade8, grade9, updateExistingUnpaid } = req.body;
     
     if (grade7 !== undefined) sppRates.grade7 = Number(grade7) || 0;
@@ -4155,16 +3607,20 @@ async function startServer() {
     if (grade9 !== undefined) sppRates.grade9 = Number(grade9) || 0;
 
     let updatedBillsCount = 0;
+    const touchedBills: SppBill[] = [];
 
     if (updateExistingUnpaid) {
-      // Loop through all bills
+      // Loop through unpaid bills only so paid bills are never altered
       sppBills.forEach(bill => {
-        const student = students.find(s => s.id === bill.studentId);
-        if (student) {
-          const currentExpectedAmount = getSppAmountForStudent(student);
-          if (bill.amount !== currentExpectedAmount) {
-            bill.amount = currentExpectedAmount;
-            updatedBillsCount++;
+        if (bill.status !== "paid") {
+          const student = students.find(s => s.id === bill.studentId);
+          if (student) {
+            const currentExpectedAmount = getSppAmountForStudent(student);
+            if (bill.amount !== currentExpectedAmount) {
+              bill.amount = currentExpectedAmount;
+              updatedBillsCount++;
+              touchedBills.push(bill);
+            }
           }
         }
       });
@@ -4180,18 +3636,23 @@ async function startServer() {
     };
     broadcastNotification(notification);
 
+    await saveConfigToMysql("sppRates", sppRates);
+    if (touchedBills.length > 0) {
+      persistEntities("sppBills", touchedBills).catch(err => console.error("[MySQL SPP Rate Update Bills Error]:", err));
+    }
     saveState();
 
     res.json({ success: true, sppRates, updatedBillsCount });
   });
 
   // Get School Identity settings
-  app.get("/api/school-identity", (req, res) => {
+  app.get("/api/school-identity", async (req, res) => {
+    await refreshConfigsFromMysql();
     res.json({ success: true, schoolIdentity: { ...schoolIdentity, sppRates } });
   });
 
   // Update School Identity settings
-  app.post("/api/admin/set-school-identity", (req, res) => {
+  app.post("/api/admin/set-school-identity", async (req, res) => {
     try {
       const { name, subheading, accreditation, address, phone, principal, principalSignature, treasurer, logo, logo2, loadingLogo, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl, treasurerSkUrl, sarprasSkUrl, paymentCardTemplate, favicon, activeAcademicYear } = req.body;
       
@@ -4228,6 +3689,7 @@ async function startServer() {
       };
       broadcastNotification(notification);
 
+      await saveConfigToMysql("schoolIdentity", schoolIdentity);
       saveState();
 
       return res.json({ success: true, schoolIdentity });
@@ -4238,11 +3700,12 @@ async function startServer() {
   });
 
   // Dedicated lightweight endpoint to update specifically the PWA loading logo
-  app.post("/api/admin/set-loading-logo", (req, res) => {
+  app.post("/api/admin/set-loading-logo", async (req, res) => {
     try {
       const { loadingLogo } = req.body;
       (schoolIdentity as any).loadingLogo = loadingLogo ? String(loadingLogo) : "";
       
+      await saveConfigToMysql("schoolIdentity", schoolIdentity);
       saveState();
       return res.json({ success: true, schoolIdentity, loadingLogo: (schoolIdentity as any).loadingLogo });
     } catch (err: any) {
@@ -4252,12 +3715,18 @@ async function startServer() {
   });
 
   // Get WhatsApp Config Settings
-  app.get("/api/whatsapp-config", (req, res) => {
+  app.get("/api/whatsapp-config", async (req, res) => {
+    try {
+      const mysqlCfg = await getConfigFromMysql("whatsappConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") {
+        Object.assign(whatsappConfig, mysqlCfg);
+      }
+    } catch (_) {}
     res.json({ success: true, whatsappConfig });
   });
 
   // Update WhatsApp Configuration settings
-  app.post("/api/admin/set-whatsapp-config", (req, res) => {
+  app.post("/api/admin/set-whatsapp-config", async (req, res) => {
     const { token, sender, provider, baseUrl, enabled, notifyOnBilling, notifyOnPayment, notifyOnSavings } = req.body;
     
     if (token !== undefined) whatsappConfig.token = String(token).trim();
@@ -4279,6 +3748,7 @@ async function startServer() {
     };
     broadcastNotification(notification);
 
+    await saveConfigToMysql("whatsappConfig", whatsappConfig);
     saveState();
 
     res.json({ success: true, whatsappConfig, message: "Konfigurasi WhatsApp SDK berhasil disimpan!" });
@@ -4350,6 +3820,7 @@ async function startServer() {
     }
 
     student.password = newPassword;
+    persistEntity("students", student).catch(() => {});
 
     // Send notification
     const notification: RealtimeNotification = {
@@ -4384,22 +3855,28 @@ async function startServer() {
     }
 
     teacher.password = newPassword.trim();
+    persistEntity("homeroomTeachers", teacher).catch(() => {});
     saveState();
 
     res.json({ success: true, message: "Kata sandi berhasil disimpan." });
   });
 
   // Treasurer/Bendahara Credentials Validation Endpoints
-  app.post("/api/treasurer/login", (req, res) => {
+  app.post("/api/treasurer/login", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Username dan password wajib diisi." });
     }
+    try {
+      const mysqlCfg = await getConfigFromMysql("treasurerConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") Object.assign(treasurerConfig, mysqlCfg);
+    } catch (_) {}
     const cleanUser = String(username).trim().toLowerCase();
     const cleanPass = String(password).trim();
     if (cleanUser === "bendahara" && (cleanPass === treasurerConfig.password || cleanPass === "Sparifda@92" || cleanPass === "bendahara123" || cleanPass === "admin123")) {
       if (cleanPass !== treasurerConfig.password) {
         treasurerConfig.password = cleanPass;
+        saveConfigToMysql("treasurerConfig", treasurerConfig).catch(() => {});
         saveState();
       }
       res.json({ success: true, message: "Login Bendahara berhasil." });
@@ -4408,7 +3885,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/treasurer/change-password", (req, res) => {
+  app.post("/api/treasurer/change-password", async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     if (!newPassword) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
@@ -4417,6 +3894,7 @@ async function startServer() {
       return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
     }
     treasurerConfig.password = newPassword.trim();
+    await saveConfigToMysql("treasurerConfig", treasurerConfig);
     saveState();
     
     // Broadcast notification
@@ -4432,8 +3910,9 @@ async function startServer() {
     res.json({ success: true, message: "Kata sandi Bendahara sukses disimpan." });
   });
 
-  app.post("/api/admin/treasurer/reset-password", (req, res) => {
+  app.post("/api/admin/treasurer/reset-password", async (req, res) => {
     treasurerConfig.password = "bendahara123";
+    await saveConfigToMysql("treasurerConfig", treasurerConfig);
     saveState();
 
     // Broadcast notification
@@ -4449,12 +3928,13 @@ async function startServer() {
     res.json({ success: true, message: "Password Bendahara berhasil di-reset ke sandi bawaan: bendahara123" });
   });
 
-  app.post("/api/admin/treasurer/change-password", (req, res) => {
+  app.post("/api/admin/treasurer/change-password", async (req, res) => {
     const { newPassword } = req.body;
     if (!newPassword || !newPassword.trim()) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
     }
     treasurerConfig.password = newPassword.trim();
+    await saveConfigToMysql("treasurerConfig", treasurerConfig);
     saveState();
 
     // Broadcast notification
@@ -4471,11 +3951,15 @@ async function startServer() {
   });
 
   // Principal/Kepala Sekolah Credentials Validation Endpoints
-  app.post("/api/principal/login", (req, res) => {
+  app.post("/api/principal/login", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Username dan password wajib diisi." });
     }
+    try {
+      const mysqlCfg = await getConfigFromMysql("principalConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") Object.assign(principalConfig, mysqlCfg);
+    } catch (_) {}
     if (username.slice().toLowerCase() === "kepala" && password === principalConfig.password) {
       res.json({ success: true, message: "Login Kepala Sekolah berhasil." });
     } else {
@@ -4483,7 +3967,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/principal/change-password", (req, res) => {
+  app.post("/api/principal/change-password", async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     if (!newPassword) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
@@ -4492,6 +3976,7 @@ async function startServer() {
       return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
     }
     principalConfig.password = newPassword.trim();
+    await saveConfigToMysql("principalConfig", principalConfig);
     saveState();
     
     // Broadcast notification
@@ -4507,8 +3992,9 @@ async function startServer() {
     res.json({ success: true, message: "Kata sandi Kepala Sekolah sukses disimpan." });
   });
 
-  app.post("/api/admin/principal/reset-password", (req, res) => {
+  app.post("/api/admin/principal/reset-password", async (req, res) => {
     principalConfig.password = "kepala123";
+    await saveConfigToMysql("principalConfig", principalConfig);
     saveState();
 
     // Broadcast notification
@@ -4524,12 +4010,13 @@ async function startServer() {
     res.json({ success: true, message: "Password Kepala Sekolah berhasil di-reset ke sandi bawaan: kepala123" });
   });
 
-  app.post("/api/admin/principal/change-password", (req, res) => {
+  app.post("/api/admin/principal/change-password", async (req, res) => {
     const { newPassword } = req.body;
     if (!newPassword || !newPassword.trim()) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
     }
     principalConfig.password = newPassword.trim();
+    await saveConfigToMysql("principalConfig", principalConfig);
     saveState();
 
     // Broadcast notification
@@ -4546,11 +4033,15 @@ async function startServer() {
   });
 
   // Waka Sarpras Credentials Validation Endpoints
-  app.post("/api/sarpras/login", (req, res) => {
+  app.post("/api/sarpras/login", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Username dan password wajib diisi." });
     }
+    try {
+      const mysqlCfg = await getConfigFromMysql("sarprasConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") Object.assign(sarprasConfig, mysqlCfg);
+    } catch (_) {}
     const cleanUser = username.trim().toLowerCase();
     if ((cleanUser === "sarpras" || cleanUser === "waka") && password === sarprasConfig.password) {
       res.json({ success: true, message: "Login Waka Sarpras berhasil." });
@@ -4559,7 +4050,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/sarpras/change-password", (req, res) => {
+  app.post("/api/sarpras/change-password", async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     if (!newPassword) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
@@ -4568,6 +4059,7 @@ async function startServer() {
       return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
     }
     sarprasConfig.password = newPassword.trim();
+    await saveConfigToMysql("sarprasConfig", sarprasConfig);
     saveState();
     
     // Broadcast notification
@@ -4583,8 +4075,9 @@ async function startServer() {
     res.json({ success: true, message: "Kata sandi Waka Sarpras sukses disimpan." });
   });
 
-  app.post("/api/admin/sarpras/reset-password", (req, res) => {
+  app.post("/api/admin/sarpras/reset-password", async (req, res) => {
     sarprasConfig.password = "sarpras123";
+    await saveConfigToMysql("sarprasConfig", sarprasConfig);
     saveState();
 
     // Broadcast notification
@@ -4600,12 +4093,13 @@ async function startServer() {
     res.json({ success: true, message: "Password Waka Sarpras berhasil di-reset ke sandi bawaan: sarpras123" });
   });
 
-  app.post("/api/admin/sarpras/change-password", (req, res) => {
+  app.post("/api/admin/sarpras/change-password", async (req, res) => {
     const { newPassword } = req.body;
     if (!newPassword || !newPassword.trim()) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
     }
     sarprasConfig.password = newPassword.trim();
+    await saveConfigToMysql("sarprasConfig", sarprasConfig);
     saveState();
 
     // Broadcast notification
@@ -4622,11 +4116,15 @@ async function startServer() {
   });
 
   // Guru BK Credentials Validation Endpoints
-  app.post("/api/bk/login", (req, res) => {
+  app.post("/api/bk/login", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Username dan password wajib diisi." });
     }
+    try {
+      const mysqlCfg = await getConfigFromMysql("bkConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") Object.assign(bkConfig, mysqlCfg);
+    } catch (_) {}
     const cleanUser = username.trim().toLowerCase();
     if (cleanUser === "bk" && password === bkConfig.password) {
       res.json({ success: true, message: "Login Guru BK berhasil." });
@@ -4635,7 +4133,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/bk/change-password", (req, res) => {
+  app.post("/api/bk/change-password", async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     if (!newPassword) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
@@ -4644,6 +4142,7 @@ async function startServer() {
       return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
     }
     bkConfig.password = newPassword.trim();
+    await saveConfigToMysql("bkConfig", bkConfig);
     saveState();
     
     // Broadcast notification
@@ -4659,8 +4158,9 @@ async function startServer() {
     res.json({ success: true, message: "Kata sandi Guru BK sukses disimpan." });
   });
 
-  app.post("/api/admin/bk/reset-password", (req, res) => {
+  app.post("/api/admin/bk/reset-password", async (req, res) => {
     bkConfig.password = "bk123";
+    await saveConfigToMysql("bkConfig", bkConfig);
     saveState();
 
     // Broadcast notification
@@ -4676,12 +4176,13 @@ async function startServer() {
     res.json({ success: true, message: "Password Guru BK berhasil di-reset ke sandi bawaan: bk123" });
   });
 
-  app.post("/api/admin/bk/change-password", (req, res) => {
+  app.post("/api/admin/bk/change-password", async (req, res) => {
     const { newPassword } = req.body;
     if (!newPassword || !newPassword.trim()) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
     }
     bkConfig.password = newPassword.trim();
+    await saveConfigToMysql("bkConfig", bkConfig);
     saveState();
 
     // Broadcast notification
@@ -4698,11 +4199,15 @@ async function startServer() {
   });
 
   // Waka Kurikulum Credentials Validation Endpoints
-  app.post("/api/curriculum/login", (req, res) => {
+  app.post("/api/curriculum/login", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Username dan password wajib diisi." });
     }
+    try {
+      const mysqlCfg = await getConfigFromMysql("curriculumConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") Object.assign(curriculumConfig, mysqlCfg);
+    } catch (_) {}
     const cleanUser = username.trim().toLowerCase().replace(/[\s\-_]+/g, "");
     if ((cleanUser.includes("kurikulum") || cleanUser === "waka" || cleanUser === "wakakur") && password === curriculumConfig.password) {
       res.json({ success: true, message: "Login Waka Kurikulum berhasil." });
@@ -4711,7 +4216,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/curriculum/change-password", (req, res) => {
+  app.post("/api/curriculum/change-password", async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     if (!newPassword) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
@@ -4720,6 +4225,7 @@ async function startServer() {
       return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
     }
     curriculumConfig.password = newPassword.trim();
+    await saveConfigToMysql("curriculumConfig", curriculumConfig);
     saveState();
 
     const notification: RealtimeNotification = {
@@ -4734,8 +4240,9 @@ async function startServer() {
     res.json({ success: true, message: "Kata sandi Waka Kurikulum sukses disimpan." });
   });
 
-  app.post("/api/admin/curriculum/reset-password", (req, res) => {
+  app.post("/api/admin/curriculum/reset-password", async (req, res) => {
     curriculumConfig.password = "kurikulum123";
+    await saveConfigToMysql("curriculumConfig", curriculumConfig);
     saveState();
 
     const notification: RealtimeNotification = {
@@ -4750,12 +4257,13 @@ async function startServer() {
     res.json({ success: true, message: "Password Waka Kurikulum berhasil di-reset ke sandi bawaan: kurikulum123" });
   });
 
-  app.post("/api/admin/curriculum/change-password", (req, res) => {
+  app.post("/api/admin/curriculum/change-password", async (req, res) => {
     const { newPassword } = req.body;
     if (!newPassword || !newPassword.trim()) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
     }
     curriculumConfig.password = newPassword.trim();
+    await saveConfigToMysql("curriculumConfig", curriculumConfig);
     saveState();
 
     const notification: RealtimeNotification = {
@@ -4771,17 +4279,22 @@ async function startServer() {
   });
 
   // Administrator Utama Credentials Validation Endpoints
-  app.post("/api/admin/login", (req, res) => {
+  app.post("/api/admin/login", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Username dan password wajib diisi." });
     }
+    try {
+      const mysqlCfg = await getConfigFromMysql("adminConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") Object.assign(adminConfig, mysqlCfg);
+    } catch (_) {}
     const cleanUser = String(username).trim().toLowerCase();
     const cleanPass = String(password).trim();
     if (cleanUser === "admin" && (cleanPass === adminConfig.password || cleanPass === "Sparifda@92" || cleanPass === "admin123" || cleanPass === "admin")) {
       // Sync password if matched fallback
       if (cleanPass !== adminConfig.password) {
         adminConfig.password = cleanPass;
+        saveConfigToMysql("adminConfig", adminConfig).catch(() => {});
         saveState();
       }
       res.json({ success: true, message: "Login Administrator berhasil." });
@@ -4790,7 +4303,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/change-password", (req, res) => {
+  app.post("/api/admin/change-password", async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     if (!newPassword || !newPassword.trim()) {
       return res.status(400).json({ error: "Sandi baru wajib diisi." });
@@ -4799,6 +4312,7 @@ async function startServer() {
       return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
     }
     adminConfig.password = newPassword.trim();
+    await saveConfigToMysql("adminConfig", adminConfig);
     saveState();
     
     // Broadcast notification
@@ -8786,9 +8300,6 @@ async function startServer() {
 
   // Get integrated treasurer ledger list of transactions
   app.get("/api/treasurer/transactions", (req, res) => {
-    // Purge any auto-reconciled items before building integrated list
-    purgeMidtransAutoReconciliation();
-
     // 1. Get all paid SPP bills
     const sppIntegrated = sppBills
       .filter(b => b.status === 'paid')
@@ -9337,11 +8848,17 @@ async function startServer() {
   });
 
   // --- SALARY ENDPOINTS FOR TEACHERS (Penggajian Guru: Mapel dan Wali) ---
-  app.get("/api/treasurer/salary-config", (req, res) => {
+  app.get("/api/treasurer/salary-config", async (req, res) => {
+    try {
+      const mysqlCfg = await getConfigFromMysql("salaryConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") {
+        Object.assign(salaryConfig, mysqlCfg);
+      }
+    } catch (_) {}
     res.json(salaryConfig);
   });
 
-  app.post("/api/treasurer/salary-config", (req, res) => {
+  app.post("/api/treasurer/salary-config", async (req, res) => {
     const { baseSalaryHomeroom, baseSalarySubject, homeroomAllowanceRate, journalRate, defaultTunjanganMasaKerja, defaultPotonganDanaSosial } = req.body;
     
     salaryConfig = {
@@ -9353,6 +8870,7 @@ async function startServer() {
       defaultPotonganDanaSosial: Number(defaultPotonganDanaSosial) || 0
     };
 
+    await saveConfigToMysql("salaryConfig", salaryConfig).catch(() => {});
     saveState();
     res.json({ success: true, salaryConfig });
   });
@@ -11829,13 +11347,14 @@ async function startServer() {
 
     // Set active academic year
     (schoolIdentity as any).activeAcademicYear = `${nextStartYear}/${nextStartYear + 1}`;
+    saveConfigToMysql("schoolIdentity", schoolIdentity).catch(() => {});
 
     // Save changes
     saveState();
 
     // Persist all promoted students and newly created SPP bills to MySQL
     persistEntities("students", students).catch(err => console.error("Error persisting promoted students to MySQL:", err));
-    if (autoBillsGenerated > 0) {
+    if (autoBillsGenerated > 0 || updatedBillsCount > 0) {
       persistEntities("sppBills", sppBills).catch(err => console.error("Error persisting generated bills to MySQL:", err));
     }
 
@@ -11972,6 +11491,7 @@ async function startServer() {
 
     // Set active academic year
     (schoolIdentity as any).activeAcademicYear = `${yearNum}/${yearNum + 1}`;
+    saveConfigToMysql("schoolIdentity", schoolIdentity).catch(() => {});
 
     // Save changes
     saveState();
@@ -12009,7 +11529,13 @@ async function startServer() {
   });
 
   // 3c. Get all available Academic Years & Active Configuration
-  app.get("/api/academic-years", (req, res) => {
+  app.get("/api/academic-years", async (req, res) => {
+    try {
+      const mysqlCfg = await getConfigFromMysql("schoolIdentity");
+      if (mysqlCfg && typeof mysqlCfg === "object") {
+        Object.assign(schoolIdentity, mysqlCfg);
+      }
+    } catch (_) {}
     const activeYear = (schoolIdentity as any).activeAcademicYear || "2026/2027";
     const yearsSet = new Set<string>(["2024/2025", "2025/2026", "2026/2027", "2027/2028", "2028/2029"]);
     yearsSet.add(activeYear);
@@ -13560,6 +13086,13 @@ async function startServer() {
   setInterval(() => {
     autoGenerateAbsentJournals().catch(e => console.error("Periodic auto absent check error:", e));
   }, 3600000);
+
+  // Periodic background synchronization of all Admin Panel & role configs from MySQL (keeps Dev and Public instances 100% in sync)
+  setInterval(() => {
+    if (isMysqlHydrated) {
+      refreshConfigsFromMysql().catch(() => {});
+    }
+  }, 15000);
 
   // Start background auto-backup engine checks
   setInterval(async () => {

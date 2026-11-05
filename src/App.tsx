@@ -623,11 +623,6 @@ export default function App() {
           const sData = await res.json();
           if (sData.success && sData.schoolIdentity) {
             setSchoolIdentity(sData.schoolIdentity);
-            if (sData.schoolIdentity.loadingLogo) {
-              try {
-                localStorage.setItem('app_custom_loading_logo', sData.schoolIdentity.loadingLogo);
-              } catch (_) {}
-            }
           }
         }
       }).catch(e => console.error("Gagal memuat identitas sekolah", e));
@@ -1889,15 +1884,6 @@ export default function App() {
         const data = await res.json();
         if (data.success && data.schoolIdentity) {
           setSchoolIdentity(data.schoolIdentity);
-          if (data.schoolIdentity.loadingLogo) {
-            try {
-              localStorage.setItem('app_custom_loading_logo', data.schoolIdentity.loadingLogo);
-            } catch (_) {}
-          } else {
-            try {
-              localStorage.removeItem('app_custom_loading_logo');
-            } catch (_) {}
-          }
           return true;
         }
       } else {
@@ -1911,7 +1897,7 @@ export default function App() {
     }
   };
 
-  const activeLoadingLogo = schoolIdentity?.loadingLogo || (typeof window !== 'undefined' ? localStorage.getItem('app_custom_loading_logo') : null) || schoolIdentity?.logo || '/pwa-192x192.png';
+  const activeLoadingLogo = schoolIdentity?.loadingLogo || schoolIdentity?.logo || '/pwa-192x192.png';
 
   if (isSpmbView) {
     return (

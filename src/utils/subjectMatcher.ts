@@ -11,9 +11,7 @@ export const MASTER_SUBJECTS_LIST: string[] = [
   'Seni Budaya',
   'Pendidikan Jasmani, Olahraga, dan Kesehatan',
   'Informatika',
-  'Muatan Lokal: Bahasa Daerah',
-  'Bahasa Arab',
-  'Ke-NU-an / Aswaja'
+  'Muatan Lokal: Bahasa Daerah'
 ];
 
 export const normalizeSubject = (subj?: string): string => {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, SubjectTeacher, HomeroomTeacher, MerdekaAssessment, SchoolIdentity, ClassSchedule, CurriculumSubject, AttendanceLog } from '../types';
 import ScheduleView from './ScheduleView';
@@ -49,40 +49,66 @@ import {
   ListFilter
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { CurriculumTpDescription, SharedLearningObjective } from '../types';
+import {
+  RaporSemesterDataConfig,
+  RaporStudentRecord,
+  RaporSubjectRow,
+  buildCapaianTujuanPembelajaran,
+  cleanSubjectDisplayName,
+  printRaporAkhirSemesterF4
+} from '../utils/raporAkhirPrint';
+import { RaporAkhirF4Preview } from './RaporAkhirF4Preview';
+
+const normalizeSubjectCache = new Map<string, string>();
 
 // Subject normalizer for reliable cross-matching (e.g. IPA <=> Ilmu Pengetahuan Alam (IPA))
 export const normalizeSubject = (subj?: string): string => {
   if (!subj) return '';
+  const cached = normalizeSubjectCache.get(subj);
+  if (cached !== undefined) return cached;
+
   const s = subj.trim().toLowerCase();
-  if (s === 'pai' || s.includes('agama islam')) return 'Pendidikan Agama Islam';
-  if (s.includes('pancasila') || s === 'pkn' || s === 'ppkn') return 'Pendidikan Pancasila';
-  if (s === 'b. indonesia' || s === 'bahasa indonesia' || s === 'bindo' || s.includes('indonesia')) return 'Bahasa Indonesia';
-  if (s === 'mtk' || s === 'mat' || s.includes('matematika')) return 'Matematika';
-  if (s === 'ipa' || s.includes('pengetahuan alam')) return 'Ilmu Pengetahuan Alam (IPA)';
-  if (s === 'ips' || s.includes('pengetahuan sosial')) return 'Ilmu Pengetahuan Sosial (IPS)';
-  if (s === 'b. inggris' || s === 'bahasa inggris' || s === 'bing' || s.includes('inggris')) return 'Bahasa Inggris';
-  if (s.includes('seni') || s.includes('budaya') || s === 'sbk') return 'Seni Budaya';
-  if (s === 'pjok' || s.includes('jasmani') || s.includes('olahraga') || s.includes('penjas')) return 'Pendidikan Jasmani, Olahraga, dan Kesehatan';
-  if (s.includes('informatika') || s.includes('komputer') || s === 'infor' || s === 'tik') return 'Informatika';
-  if (s === 'b. daerah' || s === 'bahasa daerah' || s.includes('jawa') || s.includes('muatan lokal') || s === 'mulok' || s === 'bjawa') return 'Muatan Lokal: Bahasa Daerah';
-  if (s.includes('prakarya')) return 'Prakarya';
-  if (s.includes('aswaja') || s.includes('ke-nu-an')) return 'Ke-NU-an / Aswaja';
-  if (s.includes('arab')) return 'Bahasa Arab';
-  if (s.includes('konseling') || s === 'bk') return 'Bimbingan Konseling';
-  if (s.includes('kokurikuler') || s.includes('p5')) return 'Kokurikuler';
-  return subj.trim();
+  let res = subj.trim();
+  if (s === 'btq' || s === 'bta' || s.includes('baca tulis') || s.includes('al qur') || s.includes('alqur')) res = "Baca Tulis Al Qur'an";
+  else if (s === 'pai' || s.includes('agama islam')) res = 'Pendidikan Agama Islam';
+  else if (s.includes('pancasila') || s === 'pkn' || s === 'ppkn') res = 'Pendidikan Pancasila';
+  else if (s === 'b. indonesia' || s === 'bahasa indonesia' || s === 'bindo' || s.includes('indonesia')) res = 'Bahasa Indonesia';
+  else if (s === 'mtk' || s === 'mat' || s.includes('matematika')) res = 'Matematika';
+  else if (s === 'ipa' || s.includes('pengetahuan alam')) res = 'Ilmu Pengetahuan Alam (IPA)';
+  else if (s === 'ips' || s.includes('pengetahuan sosial')) res = 'Ilmu Pengetahuan Sosial (IPS)';
+  else if (s === 'b. inggris' || s === 'bahasa inggris' || s === 'bing' || s.includes('inggris')) res = 'Bahasa Inggris';
+  else if (s.includes('seni') || s.includes('budaya') || s === 'sbk') res = 'Seni Budaya';
+  else if (s === 'pjok' || s.includes('jasmani') || s.includes('olahraga') || s.includes('penjas')) res = 'Pendidikan Jasmani, Olahraga, dan Kesehatan';
+  else if (s.includes('informatika') || s.includes('komputer') || s === 'infor' || s === 'tik') res = 'Informatika';
+  else if (s === 'b. daerah' || s === 'bahasa daerah' || s.includes('jawa') || s.includes('muatan lokal') || s === 'mulok' || s === 'bjawa') res = 'Muatan Lokal: Bahasa Daerah';
+  else if (s.includes('prakarya')) res = 'Prakarya';
+  else if (s.includes('aswaja') || s.includes('ke-nu-an')) res = 'Ke-NU-an / Aswaja';
+  else if (s.includes('arab')) res = 'Bahasa Arab';
+  else if (s.includes('konseling') || s === 'bk') res = 'Bimbingan Konseling';
+  else if (s.includes('kokurikuler') || s.includes('p5')) res = 'Kokurikuler';
+
+  normalizeSubjectCache.set(subj, res);
+  return res;
 };
 
 export const isSameSubject = (a?: string, b?: string): boolean => {
   if (!a || !b) return false;
-  const sA = a.toLowerCase().trim();
-  const sB = b.toLowerCase().trim();
-  if (sA === sB) return true;
-  return normalizeSubject(a).toLowerCase() === normalizeSubject(b).toLowerCase();
+  if (a === b) return true;
+  const nA = normalizeSubject(a);
+  const nB = normalizeSubject(b);
+  return nA === nB || nA.toLowerCase() === nB.toLowerCase();
 };
 
+const normClassCache = new Map<string, string>();
+
 export const normClass = (cls?: string): string => {
-  return (cls || '').replace(/[\s-]/g, '').toUpperCase();
+  if (!cls) return '';
+  const cached = normClassCache.get(cls);
+  if (cached !== undefined) return cached;
+  const res = cls.replace(/[\s-]/g, '').toUpperCase();
+  normClassCache.set(cls, res);
+  return res;
 };
 
 export const OFFICIAL_REPORT_ORDER: string[] = [
@@ -93,33 +119,41 @@ export const OFFICIAL_REPORT_ORDER: string[] = [
   'Ilmu Pengetahuan Alam (IPA)',
   'Ilmu Pengetahuan Sosial (IPS)',
   'Bahasa Inggris',
-  'Seni Budaya',
   'Pendidikan Jasmani, Olahraga, dan Kesehatan',
   'Informatika',
-  'Muatan Lokal: Bahasa Daerah'
+  'Seni Budaya',
+  'Muatan Lokal: Bahasa Daerah',
+  "Baca Tulis Al Qur'an"
 ];
 
 export const DEFAULT_REPORT_SUBJECTS: Array<{ id: string; code: string; name: string; category: string; kktp: number; orderNum: number }> = [
-  { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam', category: 'Muatan Nasional', kktp: 75, orderNum: 1 },
+  { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam dan Budi Pekerti', category: 'Muatan Nasional', kktp: 75, orderNum: 1 },
   { id: 'mapel-ppkn', code: 'PPKN', name: 'Pendidikan Pancasila', category: 'Muatan Nasional', kktp: 75, orderNum: 2 },
   { id: 'mapel-bindo', code: 'BINDO', name: 'Bahasa Indonesia', category: 'Muatan Nasional', kktp: 75, orderNum: 3 },
   { id: 'mapel-mtk', code: 'MAT', name: 'Matematika', category: 'Muatan Nasional', kktp: 75, orderNum: 4 },
   { id: 'mapel-ipa', code: 'IPA', name: 'Ilmu Pengetahuan Alam (IPA)', category: 'Muatan Nasional', kktp: 75, orderNum: 5 },
   { id: 'mapel-ips', code: 'IPS', name: 'Ilmu Pengetahuan Sosial (IPS)', category: 'Muatan Nasional', kktp: 75, orderNum: 6 },
   { id: 'mapel-bing', code: 'BING', name: 'Bahasa Inggris', category: 'Muatan Nasional', kktp: 75, orderNum: 7 },
-  { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, orderNum: 8 },
-  { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, orderNum: 9 },
-  { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, orderNum: 10 },
-  { id: 'mapel-bjawa', code: 'MULOK', name: 'Muatan Lokal: Bahasa Daerah', category: 'Muatan Lokal', kktp: 75, orderNum: 11 }
+  { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, orderNum: 8 },
+  { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, orderNum: 9 },
+  { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, orderNum: 10 },
+  { id: 'mapel-bjawa', code: 'MULOK', name: 'Muatan Lokal: Bahasa Daerah', category: 'Muatan Lokal', kktp: 75, orderNum: 11 },
+  { id: 'mapel-btq', code: 'BTQ', name: "Baca Tulis Al Qur'an", category: 'Muatan Lokal', kktp: 75, orderNum: 12 }
 ];
+
+const cleanTeacherNameCache = new Map<string, string>();
 
 export const cleanTeacherName = (name?: string): string => {
   if (!name) return '';
-  return name
+  const cached = cleanTeacherNameCache.get(name);
+  if (cached !== undefined) return cached;
+  const res = name
     .toLowerCase()
     .replace(/(s\.pd\.?i?|m\.pd\.?i?|s\.si|s\.mat|s\.sos|shi|s\.kom|a\.md|s\.s|s\.psi|dra\.|drs\.|h\.|hj\.|kh\.)/gi, '')
     .replace(/[^a-z0-9]/g, '')
     .trim();
+  cleanTeacherNameCache.set(name, res);
+  return res;
 };
 
 export const getCanonicalTeacherId = (id?: string): string => {
@@ -160,6 +194,34 @@ const getSemesterFromDate = (dateStr?: string): 'Ganjil' | 'Genap' => {
   return (m >= 7 && m <= 12) ? 'Ganjil' : 'Genap';
 };
 
+const DUMMY_SUBJECT_TEACHER_IDS = new Set([
+  'st-1', 'st-2', 'st-3', 'st-4', 'st-5', 'st-6', 'st-7'
+]);
+const DUMMY_SUBJECT_TEACHER_USERNAMES = new Set([
+  'guru_math', 'guru_english', 'guru_ipa', 'guru_ips', 'guru_indo', 'guru_agama', 'guru_pjok', 'guru_seni', 'guru_info'
+]);
+const DUMMY_SUBJECT_TEACHER_NAMES = new Set([
+  'drs. heru setyawan, m.pd',
+  'ibu lindawati, s.pd',
+  'budi wijaya, s.si',
+  'dra. siti rahma',
+  'ahmad fauzan, s.s',
+  'kh. m. syukron, s.pd.i',
+  'eko prasetyo, s.pd',
+  'dra. nurhayati',
+  'agus setyono, s.kom'
+]);
+
+const isDummySubjectTeacher = (st?: Partial<SubjectTeacher> | null): boolean => {
+  if (!st) return false;
+  const id = String(st.id || '').trim();
+  const username = String(st.username || '').trim().toLowerCase();
+  const name = String(st.name || '').trim().toLowerCase();
+  return DUMMY_SUBJECT_TEACHER_IDS.has(id) ||
+         DUMMY_SUBJECT_TEACHER_USERNAMES.has(username) ||
+         DUMMY_SUBJECT_TEACHER_NAMES.has(name);
+};
+
 interface WakaKurikulumPanelProps {
   students: Student[];
   subjectTeachers: SubjectTeacher[];
@@ -175,7 +237,7 @@ interface WakaKurikulumPanelProps {
 
 export default function WakaKurikulumPanel({
   students,
-  subjectTeachers,
+  subjectTeachers: rawSubjectTeachers,
   homerooms,
   merdekaAssessments,
   classSchedules = [],
@@ -185,12 +247,16 @@ export default function WakaKurikulumPanel({
   globalAcademicYear,
   onSelectAcademicYear
 }: WakaKurikulumPanelProps) {
+  const subjectTeachers = useMemo(
+    () => (rawSubjectTeachers || []).filter(st => !isDummySubjectTeacher(st)),
+    [rawSubjectTeachers]
+  );
   const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'status_belum_input' | 'rapor' | 'rapor_tengah_semester' | 'password'>('monitoring');
   const [masterMapelSubTab, setMasterMapelSubTab] = useState<'mapel_list' | 'bank_tp'>('mapel_list');
   const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
   const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
 
-  // Rapor Release State (Kontrol Rilis Rapor ke Akun Siswa)
+  // Rapor Release State (Kontrol Rilis Rapor ke Akun Siswa - Permanen di MySQL)
   const [reportReleaseConfig, setReportReleaseConfig] = useState<{
     midtermReleased: boolean;
     midtermReleasedAt?: string;
@@ -200,11 +266,15 @@ export default function WakaKurikulumPanel({
     finalReleasedAt?: string;
     finalReleasedBy?: string;
     finalClasses?: string[];
+    activeSemester?: string;
+    activeAcademicYear?: string;
+    explicitlyConfigured?: boolean;
   }>({
-    midtermReleased: false,
-    finalReleased: false
+    midtermReleased: true,
+    finalReleased: true
   });
   const [isUpdatingRelease, setIsUpdatingRelease] = useState<boolean>(false);
+  const [releaseFeedback, setReleaseFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchReportReleaseStatus = async () => {
     try {
@@ -212,7 +282,11 @@ export default function WakaKurikulumPanel({
       if (res.ok) {
         const data = await res.json();
         if (data && data.config) {
-          setReportReleaseConfig(data.config);
+          setReportReleaseConfig({
+            ...data.config,
+            midtermReleased: Boolean(data.config.midtermReleased),
+            finalReleased: Boolean(data.config.finalReleased)
+          });
         }
       }
     } catch (err) {
@@ -226,25 +300,17 @@ export default function WakaKurikulumPanel({
 
   const handleToggleReportRelease = async (type: 'midterm' | 'final') => {
     const isCurrentlyReleased = type === 'midterm' ? reportReleaseConfig.midtermReleased : reportReleaseConfig.finalReleased;
-    const actionLabel = isCurrentlyReleased ? 'Tarik / Kunci Rapor (Sembunyikan dari Siswa)' : 'Rilis Rapor Resmi ke Akun Siswa';
-    const reportName = type === 'midterm' ? 'Rapor Tengah Semester (PTS / STS)' : 'Rapor Akhir Semester (SAS / Akhir)';
-
-    if (!confirm(`Konfirmasi Tindakan: ${actionLabel}?\n\n${
-      isCurrentlyReleased 
-        ? `Rapor ${reportName} akan disembunyikan dari seluruh akun siswa hingga Anda merilisnya kembali.` 
-        : `Setelah dirilis, seluruh siswa dapat langsung melihat dan mengunduh lembar ${reportName} mereka di akun siswa masing-masing.`
-    }`)) {
-      return;
-    }
+    const nextReleased = !isCurrentlyReleased;
 
     setIsUpdatingRelease(true);
+    setReleaseFeedback(null);
     try {
       const res = await fetch('/api/curriculum/report-release', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type,
-          released: !isCurrentlyReleased,
+          released: nextReleased,
           releasedBy: 'Waka Kurikulum',
           semester: selectedSemester,
           academicYear: selectedAcademicYear,
@@ -254,16 +320,30 @@ export default function WakaKurikulumPanel({
       if (res.ok) {
         const data = await res.json();
         if (data && data.config) {
-          setReportReleaseConfig(data.config);
+          setReportReleaseConfig({
+            ...data.config,
+            midtermReleased: Boolean(data.config.midtermReleased),
+            finalReleased: Boolean(data.config.finalReleased)
+          });
         } else {
           await fetchReportReleaseStatus();
         }
-        alert(`Berhasil: ${data.message || 'Status rilis rapor berhasil diperbarui.'}`);
+        setReleaseFeedback({
+          type: 'success',
+          text: data?.message || 'Status rilis rapor berhasil disimpan permanen ke MySQL.'
+        });
+        setTimeout(() => setReleaseFeedback(null), 5000);
       } else {
-        alert('Gagal memperbarui status rilis rapor ke server.');
+        setReleaseFeedback({
+          type: 'error',
+          text: 'Gagal memperbarui status rilis rapor ke server.'
+        });
       }
     } catch (err: any) {
-      alert('Terjadi kesalahan: ' + err.message);
+      setReleaseFeedback({
+        type: 'error',
+        text: 'Terjadi kesalahan jaringan: ' + (err?.message || 'Gagal menghubungi server')
+      });
     } finally {
       setIsUpdatingRelease(false);
     }
@@ -632,7 +712,7 @@ export default function WakaKurikulumPanel({
     return studentId || '-';
   };
 
-  // Available Classes
+  // Available Classes & Pre-indexed Students by Class (O(1) lookup)
   const availableClasses = useMemo(() => {
     const set = new Set<string>();
     activeStudents.forEach(s => {
@@ -640,6 +720,140 @@ export default function WakaKurikulumPanel({
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [activeStudents]);
+
+  const studentsByClassMap = useMemo(() => {
+    const map = new Map<string, Student[]>();
+    activeStudents.forEach(s => {
+      if (!s.class) return;
+      const key = normClass(s.class);
+      let arr = map.get(key);
+      if (!arr) {
+        arr = [];
+        map.set(key, arr);
+      }
+      arr.push(s);
+    });
+    return map;
+  }, [activeStudents]);
+
+  // Assessment matching current sem & year (supports 'all' semester & year)
+  const filteredAssessments = useMemo(() => {
+    return liveAssessments.filter(a => {
+      const matchSem = selectedSemester === 'all' || !selectedSemester || a.semester === selectedSemester;
+      const matchYear = selectedAcademicYear === 'all' || !selectedAcademicYear || a.academicYear === selectedAcademicYear;
+      return matchSem && matchYear;
+    });
+  }, [liveAssessments, selectedSemester, selectedAcademicYear]);
+
+  // Pre-index filteredAssessments by studentId / nis / name for O(1) lookup
+  const assessmentsByStudentMap = useMemo(() => {
+    const map = new Map<string, MerdekaAssessment[]>();
+    const addToKey = (key: string, a: MerdekaAssessment) => {
+      if (!key) return;
+      let arr = map.get(key);
+      if (!arr) {
+        arr = [];
+        map.set(key, arr);
+      }
+      arr.push(a);
+    };
+    filteredAssessments.forEach(a => {
+      if (a.studentId) addToKey(a.studentId, a);
+      if (a.studentName) addToKey(`name:${a.studentName.trim().toLowerCase()}`, a);
+    });
+    return map;
+  }, [filteredAssessments]);
+
+  // Pre-index filteredAssessments by normalized subject for O(1) lookup
+  const assessmentsBySubjectMap = useMemo(() => {
+    const map = new Map<string, MerdekaAssessment[]>();
+    filteredAssessments.forEach(a => {
+      if (!a.subject) return;
+      const key = normalizeSubject(a.subject).toLowerCase();
+      let arr = map.get(key);
+      if (!arr) {
+        arr = [];
+        map.set(key, arr);
+      }
+      arr.push(a);
+    });
+    return map;
+  }, [filteredAssessments]);
+
+  const getAssessmentsForStudent = useCallback((st: Student): MerdekaAssessment[] => {
+    const byId = assessmentsByStudentMap.get(st.id);
+    const byNis = st.nis && st.nis !== st.id ? assessmentsByStudentMap.get(st.nis) : undefined;
+    const byName = st.name ? assessmentsByStudentMap.get(`name:${st.name.trim().toLowerCase()}`) : undefined;
+    if (byId && !byNis && !byName) return byId;
+    if (!byId && byNis && !byName) return byNis;
+    if (!byId && !byNis && byName) return byName;
+    if (!byId && !byNis && !byName) return [];
+    const seen = new Set<string>();
+    const res: MerdekaAssessment[] = [];
+    [byId, byNis, byName].forEach(arr => {
+      if (!arr) return;
+      arr.forEach(a => {
+        if (!seen.has(a.id)) {
+          seen.add(a.id);
+          res.push(a);
+        }
+      });
+    });
+    return res;
+  }, [assessmentsByStudentMap]);
+
+  const sortedCurriculumSubjects = useMemo(() => {
+    return [...(curriculumSubjectsList || [])].sort(
+      (a, b) => (Number(a.orderNum) || 99) - (Number(b.orderNum) || 99)
+    );
+  }, [curriculumSubjectsList]);
+
+  // Pre-index attendance logs per student for O(1) lookup
+  const studentAttendanceMap = useMemo(() => {
+    const map = new Map<string, { Sakit: number; Izin: number; Alpa: number; Terlambat: number }>();
+    if (!attendanceLogs || attendanceLogs.length === 0) return map;
+
+    const getOrInit = (key: string) => {
+      let rec = map.get(key);
+      if (!rec) {
+        rec = { Sakit: 0, Izin: 0, Alpa: 0, Terlambat: 0 };
+        map.set(key, rec);
+      }
+      return rec;
+    };
+
+    attendanceLogs.forEach(l => {
+      const d = l.date ? new Date(l.date) : null;
+      let isCurrentSemester = true;
+      if (selectedSemester && selectedSemester !== 'all' && d && !isNaN(d.getTime())) {
+        const m = d.getMonth() + 1;
+        const sem = (m >= 7 && m <= 12) ? 'Ganjil' : 'Genap';
+        isCurrentSemester = (sem === selectedSemester);
+      }
+      if (!isCurrentSemester) return;
+
+      const st = (l.status || '').trim();
+      const stLower = st.toLowerCase();
+      const isSakit = st === 'Sakit' || st === 'S';
+      const isIzin = st === 'Izin' || st === 'I';
+      const isAlpa = st === 'Alpa' || st === 'A' || stLower === 'tanpa keterangan';
+      const isTerlambat = st === 'Terlambat' || st === 'T';
+      if (!isSakit && !isIzin && !isAlpa && !isTerlambat) return;
+
+      const applyDelta = (key: string) => {
+        if (!key) return;
+        const rec = getOrInit(key);
+        if (isSakit) rec.Sakit++;
+        else if (isIzin) rec.Izin++;
+        else if (isAlpa) rec.Alpa++;
+        else if (isTerlambat) rec.Terlambat++;
+      };
+
+      if (l.studentId) applyDelta(l.studentId);
+      if ((l as any).studentName) applyDelta(`name:${(l as any).studentName.trim().toLowerCase()}`);
+    });
+    return map;
+  }, [attendanceLogs, selectedSemester]);
 
   // Helper to extract grade level / tingkat (e.g. "7", "8", "9")
   const getStudentGradeLevel = (className?: string): string => {
@@ -658,39 +872,44 @@ export default function WakaKurikulumPanel({
     return clean.split(/[- ]/)[0] || clean;
   };
 
-  const availableGrades = useMemo(() => {
-    const set = new Set<string>();
+  const studentsByGradeMap = useMemo(() => {
+    const map = new Map<string, Student[]>();
+    ['7', '8', '9'].forEach(g => map.set(g, []));
     activeStudents.forEach(s => {
       const g = getStudentGradeLevel(s.class);
-      if (g) set.add(g);
+      if (!g) return;
+      let arr = map.get(g);
+      if (!arr) {
+        arr = [];
+        map.set(g, arr);
+      }
+      arr.push(s);
     });
-    const list = Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-    return list.length > 0 ? list : ['7', '8', '9'];
+    map.forEach(arr => {
+      arr.sort((a, b) => {
+        const classCompare = (a.class || '').localeCompare(b.class || '', undefined, { numeric: true, sensitivity: 'base' });
+        if (classCompare !== 0) return classCompare;
+        return a.name.localeCompare(b.name);
+      });
+    });
+    return map;
   }, [activeStudents]);
+
+  const availableGrades = useMemo(() => {
+    return ['7', '8', '9'];
+  }, []);
 
   const [selectedRaporGradeFilter, setSelectedRaporGradeFilter] = useState<string>('all');
   const [isPrintGradeModalOpen, setIsPrintGradeModalOpen] = useState<boolean>(false);
   const [targetPrintGrade, setTargetPrintGrade] = useState<string>('7');
 
-  const getStudentsByGrade = (grade: string) => {
-    return activeStudents
-      .filter(s => s.class && getStudentGradeLevel(s.class) === grade)
-      .sort((a, b) => {
-        const classCompare = (a.class || '').localeCompare(b.class || '', undefined, { numeric: true, sensitivity: 'base' });
-        if (classCompare !== 0) return classCompare;
-        return a.name.localeCompare(b.name);
-      });
-  };
+  const getStudentsByGrade = useCallback((grade: string) => {
+    return studentsByGradeMap.get(grade) || [];
+  }, [studentsByGradeMap]);
 
-  const getClassesByGrade = (grade: string) => {
-    const set = new Set<string>();
-    activeStudents.forEach(s => {
-      if (s.class && getStudentGradeLevel(s.class) === grade) {
-        set.add(s.class.trim().toUpperCase());
-      }
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-  };
+  const getClassesByGrade = useCallback((grade: string) => {
+    return availableClasses.filter(cls => getStudentGradeLevel(cls) === grade);
+  }, [availableClasses]);
 
   const displayedRaporClasses = useMemo(() => {
     if (selectedRaporGradeFilter === 'all') {
@@ -699,27 +918,33 @@ export default function WakaKurikulumPanel({
     return availableClasses.filter(cls => getStudentGradeLevel(cls) === selectedRaporGradeFilter);
   }, [availableClasses, selectedRaporGradeFilter]);
 
-  // Rapor Tengah Semester States
+  // Rapor Tengah & Akhir Semester States (100% Tersimpan di MySQL tanpa localStorage)
   const [selectedRaporClass, setSelectedRaporClass] = useState<string>('');
   const [selectedRaporStudentId, setSelectedRaporStudentId] = useState<string>('');
   const [raporSearchQuery, setRaporSearchQuery] = useState<string>('');
   const [editingNoteStudentId, setEditingNoteStudentId] = useState<string | null>(null);
   const [editingNoteText, setEditingNoteText] = useState<string>('');
-  const [raporNotes, setRaporNotes] = useState<Record<string, string>>(() => {
-    try {
-      const saved = localStorage.getItem('waka_rapor_pts_notes');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
+  const [raporNotes, setRaporNotes] = useState<Record<string, string>>({});
+  const [tpDescriptionsList, setTpDescriptionsList] = useState<CurriculumTpDescription[]>([]);
+  const [sharedTpsList, setSharedTpsList] = useState<SharedLearningObjective[]>([]);
+  const [isSavingRaporData, setIsSavingRaporData] = useState<boolean>(false);
+
+  const [raporSemesterData, setRaporSemesterData] = useState<RaporSemesterDataConfig>({
+    settings: {
+      place: 'Pandaan',
+      midtermDate: new Date().toISOString().slice(0, 10),
+      finalDate: new Date().toISOString().slice(0, 10),
+      schoolName: schoolIdentity?.name || '',
+      schoolAddress: schoolIdentity?.address || '',
+      principalName: schoolIdentity?.principal || '',
+      fase: 'D',
+      showHomeroomNameInSig: true
+    },
+    studentRecords: {}
   });
 
-  // Tanggal Rapor untuk Tanda Tangan
+  // Tanggal Rapor untuk Tanda Tangan (tersinkron ke MySQL)
   const [raporDate, setRaporDate] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('waka_rapor_pts_date');
-      if (saved) return saved;
-    } catch {}
     const d = new Date();
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -727,11 +952,137 @@ export default function WakaKurikulumPanel({
     return `${y}-${m}-${day}`;
   });
 
+  const fetchRaporMysqlData = useCallback(async () => {
+    try {
+      const [raporRes, tpRes, sharedRes] = await Promise.all([
+        fetch(`/api/curriculum/rapor-data?_t=${Date.now()}`).catch(() => null),
+        fetch(`/api/curriculum/tp-levels?_t=${Date.now()}`).catch(() => null),
+        fetch(`/api/curriculum/shared-tps?_t=${Date.now()}`).catch(() => null)
+      ]);
+
+      if (raporRes && raporRes.ok) {
+        const rData = await raporRes.json();
+        if (rData && rData.data) {
+          setRaporSemesterData(rData.data);
+          if (rData.data.settings?.finalDate) {
+            setRaporDate(rData.data.settings.finalDate);
+          } else if (rData.data.settings?.midtermDate) {
+            setRaporDate(rData.data.settings.midtermDate);
+          }
+          if (rData.data.studentRecords) {
+            const notesMap: Record<string, string> = {};
+            Object.entries(rData.data.studentRecords).forEach(([k, val]: [string, any]) => {
+              if (val && val.note) {
+                notesMap[k] = val.note;
+                if (val.studentId) notesMap[val.studentId] = val.note;
+              }
+            });
+            setRaporNotes(notesMap);
+          }
+        }
+      }
+
+      if (tpRes && tpRes.ok) {
+        const tpData = await tpRes.json();
+        if (tpData && Array.isArray(tpData.tpDescriptions)) {
+          setTpDescriptionsList(tpData.tpDescriptions);
+        }
+      }
+
+      if (sharedRes && sharedRes.ok) {
+        const shData = await sharedRes.json();
+        if (shData && Array.isArray(shData.tps)) {
+          setSharedTpsList(shData.tps);
+        }
+      }
+    } catch (err) {
+      console.warn('Gagal memuat data rapor dari MySQL:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRaporMysqlData();
+  }, [fetchRaporMysqlData]);
+
+  const saveSettingsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const saveRaporSettingsToMysql = (partialSettings: Partial<RaporSemesterDataConfig['settings']>) => {
+    setRaporSemesterData(prev => {
+      const nextSettings = {
+        ...prev.settings,
+        ...partialSettings
+      };
+      if (saveSettingsTimerRef.current) {
+        clearTimeout(saveSettingsTimerRef.current);
+      }
+      saveSettingsTimerRef.current = setTimeout(() => {
+        fetch('/api/curriculum/rapor-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: nextSettings })
+        }).catch(err => console.warn('Gagal menyimpan pengaturan rapor ke MySQL:', err));
+      }, 350);
+      return {
+        ...prev,
+        settings: nextSettings
+      };
+    });
+  };
+
   const handleRaporDateChange = (val: string) => {
     setRaporDate(val);
+    saveRaporSettingsToMysql({
+      midtermDate: val,
+      finalDate: val
+    });
+  };
+
+  const getStudentRaporRecordKey = useCallback((st: Student) => {
+    return `${st.id}_${selectedSemester}_${selectedAcademicYear}`;
+  }, [selectedSemester, selectedAcademicYear]);
+
+  const getStudentRaporRecord = useCallback((st: Student): RaporStudentRecord | undefined => {
+    const scopedKey = getStudentRaporRecordKey(st);
+    return raporSemesterData.studentRecords[scopedKey] || raporSemesterData.studentRecords[st.id];
+  }, [getStudentRaporRecordKey, raporSemesterData.studentRecords]);
+
+  const handleSaveStudentRaporRecordToMysql = async (st: Student, partialRecord: Partial<RaporStudentRecord>) => {
+    const scopedKey = getStudentRaporRecordKey(st);
+    const existing = getStudentRaporRecord(st) || { studentId: st.id, nis: st.nis, semester: selectedSemester, academicYear: selectedAcademicYear };
+    const merged: RaporStudentRecord = {
+      ...existing,
+      ...partialRecord,
+      studentId: st.id,
+      nis: st.nis,
+      semester: selectedSemester,
+      academicYear: selectedAcademicYear,
+      updatedAt: new Date().toISOString()
+    };
+
+    setRaporSemesterData(prev => ({
+      ...prev,
+      studentRecords: {
+        ...prev.studentRecords,
+        [scopedKey]: merged,
+        [st.id]: merged
+      }
+    }));
+
+    setIsSavingRaporData(true);
     try {
-      localStorage.setItem('waka_rapor_pts_date', val);
-    } catch {}
+      await fetch('/api/curriculum/rapor-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentKey: scopedKey,
+          studentRecord: merged
+        })
+      });
+    } catch (err) {
+      console.warn('Gagal menyimpan data rapor siswa ke MySQL:', err);
+    } finally {
+      setIsSavingRaporData(false);
+    }
   };
 
   const formatIndonesianDate = (dateStr: string): string => {
@@ -754,204 +1105,288 @@ export default function WakaKurikulumPanel({
     }
   }, [availableClasses, selectedRaporClass]);
 
+  const handleChangeRaporGradeFilter = useCallback((grade: string) => {
+    setSelectedRaporGradeFilter(grade);
+    if (grade === 'all') {
+      if (selectedRaporClass.startsWith('ALL_GRADE_')) {
+        setSelectedRaporClass(availableClasses[0] || 'ALL');
+      }
+    } else {
+      const gradeClasses = availableClasses.filter(cls => getStudentGradeLevel(cls) === grade);
+      const currentGrade = selectedRaporClass.startsWith('ALL_GRADE_')
+        ? selectedRaporClass.replace('ALL_GRADE_', '')
+        : getStudentGradeLevel(selectedRaporClass);
+      if (currentGrade !== grade) {
+        setSelectedRaporClass(gradeClasses[0] || `ALL_GRADE_${grade}`);
+      }
+    }
+  }, [availableClasses, selectedRaporClass]);
+
   // Students for chosen Rapor class or chosen Tingkat
   const raporStudents = useMemo(() => {
-    if (!selectedRaporClass) return [];
+    if (!selectedRaporClass) {
+      if (selectedRaporGradeFilter !== 'all') {
+        return getStudentsByGrade(selectedRaporGradeFilter);
+      }
+      return [];
+    }
+    if (selectedRaporClass === 'ALL') {
+      if (selectedRaporGradeFilter !== 'all') {
+        return getStudentsByGrade(selectedRaporGradeFilter);
+      }
+      return [...activeStudents].sort((a, b) => {
+        const classCompare = (a.class || '').localeCompare(b.class || '', undefined, { numeric: true, sensitivity: 'base' });
+        if (classCompare !== 0) return classCompare;
+        return a.name.localeCompare(b.name);
+      });
+    }
     if (selectedRaporClass.startsWith('ALL_GRADE_')) {
       const g = selectedRaporClass.replace('ALL_GRADE_', '');
       return getStudentsByGrade(g);
     }
-    return activeStudents
-      .filter(s => s.class && normClass(s.class) === normClass(selectedRaporClass))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [activeStudents, selectedRaporClass]);
+    const clsStudents = studentsByClassMap.get(normClass(selectedRaporClass)) || [];
+    return [...clsStudents].sort((a, b) => a.name.localeCompare(b.name));
+  }, [studentsByClassMap, selectedRaporClass, selectedRaporGradeFilter, getStudentsByGrade, activeStudents]);
+
+  // Filtered students for Rapor (respecting Tingkat Kelas, Kelas Rombel, and Search Query)
+  const filteredRaporStudents = useMemo(() => {
+    const q = raporSearchQuery.trim().toLowerCase();
+    if (!q) return raporStudents;
+    return raporStudents.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      (s.nis && s.nis.toLowerCase().includes(q)) ||
+      (s.nisn && s.nisn.toLowerCase().includes(q)) ||
+      (s.class && s.class.toLowerCase().includes(q))
+    );
+  }, [raporStudents, raporSearchQuery]);
+
+  const activeRaporFilterLabel = useMemo(() => {
+    let base = '';
+    if (selectedRaporClass === 'ALL') {
+      base = selectedRaporGradeFilter !== 'all'
+        ? `Semua Kelas Tingkat ${selectedRaporGradeFilter}`
+        : 'Semua Kelas (Tingkat 7, 8, 9)';
+    } else if (selectedRaporClass.startsWith('ALL_GRADE_')) {
+      const g = selectedRaporClass.replace('ALL_GRADE_', '');
+      base = `Semua Kelas Tingkat ${g}`;
+    } else if (selectedRaporClass) {
+      base = `Kelas ${selectedRaporClass}`;
+    } else {
+      base = 'Sesuai Filter';
+    }
+    if (raporSearchQuery.trim()) {
+      base += ` • Cari: "${raporSearchQuery.trim()}"`;
+    }
+    return base;
+  }, [selectedRaporClass, selectedRaporGradeFilter, raporSearchQuery]);
 
   // Sync selected student ID
   useEffect(() => {
-    if (raporStudents.length > 0) {
+    if (filteredRaporStudents.length > 0) {
+      if (!selectedRaporStudentId || !filteredRaporStudents.some(s => s.id === selectedRaporStudentId)) {
+        setSelectedRaporStudentId(filteredRaporStudents[0].id);
+      }
+    } else if (raporStudents.length > 0) {
       if (!selectedRaporStudentId || !raporStudents.some(s => s.id === selectedRaporStudentId)) {
         setSelectedRaporStudentId(raporStudents[0].id);
       }
     } else {
       setSelectedRaporStudentId('');
     }
-  }, [raporStudents, selectedRaporStudentId]);
+  }, [filteredRaporStudents, raporStudents, selectedRaporStudentId]);
 
   const selectedRaporStudent = useMemo(() => {
-    return raporStudents.find(s => s.id === selectedRaporStudentId) || (raporStudents.length > 0 ? raporStudents[0] : null);
-  }, [raporStudents, selectedRaporStudentId]);
+    return (
+      filteredRaporStudents.find(s => s.id === selectedRaporStudentId) ||
+      raporStudents.find(s => s.id === selectedRaporStudentId) ||
+      (filteredRaporStudents.length > 0 ? filteredRaporStudents[0] : (raporStudents.length > 0 ? raporStudents[0] : null))
+    );
+  }, [filteredRaporStudents, raporStudents, selectedRaporStudentId]);
 
   const handleSaveStudentNote = (studentId: string, note: string) => {
-    setRaporNotes(prev => {
-      const next = { ...prev, [studentId]: note };
-      try {
-        localStorage.setItem('waka_rapor_pts_notes', JSON.stringify(next));
-      } catch (e) {
-        console.warn('Failed to save rapor note to localStorage', e);
-      }
-      return next;
-    });
+    setRaporNotes(prev => ({ ...prev, [studentId]: note }));
+    const targetSt = activeStudents.find(s => s.id === studentId);
+    if (targetSt) {
+      handleSaveStudentRaporRecordToMysql(targetSt, { note });
+    } else {
+      fetch('/api/curriculum/rapor-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentKey: studentId,
+          studentRecord: { studentId, note }
+        })
+      }).catch(() => {});
+    }
   };
 
-  // Rekap kehadiran otomatis dari data harian presensi wali kelas
-  const getStudentAttendance = (student: Student | string) => {
-    const targetId = typeof student === 'string' ? student : student.id;
-    const targetNis = typeof student === 'string' ? '' : (student.nis || '');
-    const targetName = typeof student === 'string' ? '' : (student.name || '').trim().toLowerCase();
-
-    const att = { Sakit: 0, Izin: 0, Alpa: 0, Terlambat: 0 };
-    if (!attendanceLogs || attendanceLogs.length === 0) return att;
-
-    attendanceLogs.forEach(l => {
-      const match =
-        (l.studentId && (l.studentId === targetId || (targetNis && l.studentId === targetNis))) ||
-        (targetName && (l as any).studentName && (l as any).studentName.trim().toLowerCase() === targetName);
-
-      if (match) {
-        const d = l.date ? new Date(l.date) : null;
-        let isCurrentSemester = true;
-        if (selectedSemester && selectedSemester !== 'all' && d && !isNaN(d.getTime())) {
-          const m = d.getMonth() + 1;
-          const sem = (m >= 7 && m <= 12) ? 'Ganjil' : 'Genap';
-          isCurrentSemester = (sem === selectedSemester);
-        }
-
-        if (isCurrentSemester) {
-          const st = (l.status || '').trim();
-          if (st === 'Sakit' || st === 'S') att.Sakit++;
-          else if (st === 'Izin' || st === 'I') att.Izin++;
-          else if (st === 'Alpa' || st === 'A' || st.toLowerCase() === 'tanpa keterangan') att.Alpa++;
-          else if (st === 'Terlambat' || st === 'T') att.Terlambat++;
-        }
-      }
-    });
-    return att;
-  };
-
-  const getStudentAssessmentsForRapor = (st: Student) => {
-    const matched = filteredAssessments.filter(a =>
-      (a.studentId === st.id || a.studentId === st.nis || (a.studentName && a.studentName.trim().toLowerCase() === st.name.trim().toLowerCase())) &&
-      (!selectedSemester || selectedSemester === 'all' || a.semester === selectedSemester) &&
-      (!selectedAcademicYear || selectedAcademicYear === 'all' || a.academicYear === selectedAcademicYear)
+  // Rekap kehadiran otomatis dari data harian presensi wali kelas (O(1) Map lookup)
+  const getStudentAttendance = useCallback((student: Student | string) => {
+    const empty = { Sakit: 0, Izin: 0, Alpa: 0, Terlambat: 0 };
+    if (typeof student === 'string') {
+      return studentAttendanceMap.get(student) || empty;
+    }
+    return (
+      studentAttendanceMap.get(student.id) ||
+      (student.nis ? studentAttendanceMap.get(student.nis) : undefined) ||
+      (student.name ? studentAttendanceMap.get(`name:${student.name.trim().toLowerCase()}`) : undefined) ||
+      empty
     );
+  }, [studentAttendanceMap]);
 
-    // Source master subjects from curriculumSubjectsList, with fallback to DEFAULT_REPORT_SUBJECTS
-    const rawSubjects = (curriculumSubjectsList && curriculumSubjectsList.length > 0)
-      ? [...curriculumSubjectsList]
-      : [...DEFAULT_REPORT_SUBJECTS];
+  // Lightweight O(1) stats per student for left sidebar badges in Rapor (avoids running full TP descriptions for all students)
+  const raporStudentStatsMap = useMemo(() => {
+    const map = new Map<string, { ptsFilledCount: number; akhirFilledCount: number; hasPtsScores: boolean; totalSubjects: number }>();
+    const totalSubjects = sortedCurriculumSubjects.length;
+    raporStudents.forEach(st => {
+      const matched = getAssessmentsForStudent(st);
+      let ptsFilledCount = 0;
+      let akhirFilledCount = 0;
+      let hasPtsScores = false;
 
-    // Filter out legacy or excluded subjects
-    const baseSubjects = rawSubjects.filter(s => {
-      const c = (s.code || '').toUpperCase();
-      const n = (s.name || '').toLowerCase();
-      return c !== 'BARAB' && c !== 'ASWAJA' && !n.includes('bahasa arab') && !n.includes('aswaja') && !n.includes('ke-nu-an');
+      sortedCurriculumSubjects.forEach(cs => {
+        const a = matched.find(m => isSameSubject(m.subject, cs.name) || isSameSubject(m.subject, cs.code));
+        if (!a) return;
+        const avgTp = a.nilaiRataTp !== undefined && a.nilaiRataTp !== null ? Number(a.nilaiRataTp) : 0;
+        const koku = a.nilaiKokurikuler !== undefined && a.nilaiKokurikuler !== null ? Number(a.nilaiKokurikuler) : 0;
+        const pts = a.nilaiPts !== undefined && a.nilaiPts !== null ? Number(a.nilaiPts) : 0;
+        const pas = a.nilaiPas !== undefined && a.nilaiPas !== null ? Number(a.nilaiPas) : 0;
+        const naMapel = a.nilaiAkhirMapel !== undefined && a.nilaiAkhirMapel !== null ? Number(a.nilaiAkhirMapel) : 0;
+
+        if (pts > 0) hasPtsScores = true;
+        const hasNaPts = avgTp > 0 || pts > 0 || naMapel > 0;
+        const hasNaAkhir = naMapel > 0 || avgTp > 0 || koku > 0 || pts > 0 || pas > 0;
+        if (hasNaPts) ptsFilledCount++;
+        if (hasNaAkhir) akhirFilledCount++;
+      });
+
+      map.set(st.id, { ptsFilledCount, akhirFilledCount, hasPtsScores, totalSubjects });
     });
+    return map;
+  }, [raporStudents, sortedCurriculumSubjects, getAssessmentsForStudent]);
 
-    // Strictly sort subjects: Official 11 order first, then remaining master subjects by orderNum
-    baseSubjects.sort((a, b) => {
-      const idxA = OFFICIAL_REPORT_ORDER.findIndex(o => isSameSubject(o, a.name) || isSameSubject(o, a.code));
-      const idxB = OFFICIAL_REPORT_ORDER.findIndex(o => isSameSubject(o, b.name) || isSameSubject(o, b.code));
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
-      return (Number(a.orderNum) || 99) - (Number(b.orderNum) || 99);
-    });
+  const getStudentAssessmentsForRapor = useCallback((st: Student): (RaporSubjectRow & { desc: string })[] => {
+    const matched = getAssessmentsForStudent(st);
+    const studentGrade = getStudentGradeLevel(st.class) || '7';
 
-    // Map each master subject to the student's assessment
-    const reportRows = baseSubjects.map(cs => {
+    const reportRows: (RaporSubjectRow & { desc: string })[] = sortedCurriculumSubjects.map((cs, idx) => {
       const a = matched.find(m => isSameSubject(m.subject, cs.name) || isSameSubject(m.subject, cs.code));
+      const normSubjKey = normalizeSubject(cs.name).toLowerCase();
+      const normCodeKey = cs.code ? normalizeSubject(cs.code).toLowerCase() : '';
+      const allAssForSubj = assessmentsBySubjectMap.get(normSubjKey) || (normCodeKey ? assessmentsBySubjectMap.get(normCodeKey) : undefined) || [];
       const kktp = cs.kktp || (a ? (a as any).kktp : 75) || 75;
       const avgTp = a && a.nilaiRataTp !== undefined && a.nilaiRataTp !== null ? Number(a.nilaiRataTp) : 0;
       const koku = a && a.nilaiKokurikuler !== undefined && a.nilaiKokurikuler !== null ? Number(a.nilaiKokurikuler) : 0;
       const pts = a && a.nilaiPts !== undefined && a.nilaiPts !== null ? Number(a.nilaiPts) : 0;
+      const pas = a && a.nilaiPas !== undefined && a.nilaiPas !== null ? Number(a.nilaiPas) : 0;
 
+      // Rumus NA Rapor Tengah Semester tetap: (Rata-rata TP x 80%) + (ASTS x 20%)
       let naPts = 0;
       if (avgTp > 0 && pts > 0) {
-        // Perhitungan NA khusus Rapor Tengah Semester: (Rata-rata TP x 80%) + (ASTS x 20%)
         naPts = Math.round((avgTp * 0.8) + (pts * 0.2));
       } else if (avgTp > 0 && pts === 0) {
-        // Jika ASTS belum diisi, gunakan Rata-rata TP
         naPts = Math.round(avgTp);
       } else if (pts > 0 && avgTp === 0) {
-        // Jika TP belum diisi, gunakan ASTS
         naPts = Math.round(pts);
       } else if (a && a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0) {
         naPts = Number(a.nilaiAkhirMapel);
       }
 
-      let desc = '';
-      if (a && a.deskripsiCapaian && a.deskripsiCapaian.trim()) {
-        desc = a.deskripsiCapaian.trim();
-      } else if (naPts >= 85) {
-        desc = `Menunjukkan pemahaman prima dalam seluruh materi dan tujuan pembelajaran tengah semester.`;
-      } else if (naPts >= 75) {
-        desc = `Menunjukkan capaian kompetensi yang tuntas dan pemahaman materi tengah semester yang baik.`;
-      } else if (naPts > 0) {
-        desc = `Perlu bimbingan dan pendampingan remedial pada capaian materi tengah semester.`;
-      } else {
-        desc = `-`;
+      // Rumus NA Rapor Akhir Semester tetap sesuai aplikasi penilaian: ((Rata-rata TP * 3) + Kokurikuler + PTS + PAS) / 6
+      let naAkhir = 0;
+      if (a && a.nilaiAkhirMapel !== undefined && a.nilaiAkhirMapel !== null && Number(a.nilaiAkhirMapel) > 0) {
+        naAkhir = Number(a.nilaiAkhirMapel);
+      } else if (avgTp > 0 || koku > 0 || pts > 0 || pas > 0) {
+        naAkhir = Math.round(((avgTp * 3) + koku + pts + pas) / 6);
       }
+
+      let descPts = '';
+      if (a && a.deskripsiCapaian && a.deskripsiCapaian.trim() && a.deskripsiCapaian.trim() !== 'Telah menunjukkan kompetensi sesuai kriteria.') {
+        descPts = a.deskripsiCapaian.trim();
+      } else if (naPts >= 85) {
+        descPts = `Menunjukkan pemahaman prima dalam seluruh materi dan tujuan pembelajaran tengah semester.`;
+      } else if (naPts >= kktp) {
+        descPts = `Menunjukkan capaian kompetensi yang tuntas dan pemahaman materi tengah semester yang baik.`;
+      } else if (naPts > 0) {
+        descPts = `Perlu bimbingan dan pendampingan remedial pada capaian materi tengah semester.`;
+      } else {
+        descPts = `-`;
+      }
+
+      const capaianResult = buildCapaianTujuanPembelajaran({
+        assessment: a,
+        allAssessmentsForSubject: allAssForSubj,
+        tpDescriptions: tpDescriptionsList,
+        sharedTps: sharedTpsList,
+        subjectName: cs.name,
+        subjectCode: cs.code,
+        gradeLevel: studentGrade,
+        semester: selectedSemester,
+        academicYear: selectedAcademicYear,
+        kktp,
+        naAkhir: naAkhir > 0 ? naAkhir : naPts
+      });
 
       return {
         id: a ? a.id : `subj-${cs.id || cs.code}-${st.id}`,
+        orderNo: idx + 1,
         subject: cs.name,
-        code: cs.code,
+        displayName: cleanSubjectDisplayName(cs.name, (cs.category || '').toLowerCase().includes('lokal')),
+        code: cs.code || '',
+        category: cs.category || 'Muatan Nasional',
         kktp,
         avgTp,
         koku,
         pts,
+        pas,
         naPts,
-        desc,
+        naAkhir,
+        descPts,
+        descAkhir: capaianResult.descAkhir,
+        desc: capaianResult.descAkhir !== '-' ? capaianResult.descAkhir : descPts,
+        highestTpText: capaianResult.highestTpText,
+        highestTpScore: capaianResult.highestTpScore,
+        lowestTpText: capaianResult.lowestTpText,
+        lowestTpScore: capaianResult.lowestTpScore,
         hasAssessment: !!a
       };
     });
 
-    // Append any extra subjects that were assessed but not present in baseSubjects (excluding deprecated subjects)
-    matched.forEach(a => {
-      const subLower = (a.subject || '').toLowerCase();
-      if (subLower.includes('bahasa arab') || subLower.includes('aswaja') || subLower.includes('ke-nu-an')) return;
-      const exists = reportRows.some(r => isSameSubject(r.subject, a.subject) || isSameSubject(r.code, a.subject));
-      if (!exists) {
-        const avgTp = a.nilaiRataTp !== undefined && a.nilaiRataTp !== null ? Number(a.nilaiRataTp) : 0;
-        const koku = a.nilaiKokurikuler !== undefined && a.nilaiKokurikuler !== null ? Number(a.nilaiKokurikuler) : 0;
-        const pts = a.nilaiPts !== undefined && a.nilaiPts !== null ? Number(a.nilaiPts) : 0;
-
-        let naPts = 0;
-        if (avgTp > 0 && pts > 0) {
-          // Perhitungan NA khusus Rapor Tengah Semester: (Rata-rata TP x 80%) + (ASTS x 20%)
-          naPts = Math.round((avgTp * 0.8) + (pts * 0.2));
-        } else if (avgTp > 0 && pts === 0) {
-          naPts = Math.round(avgTp);
-        } else if (pts > 0 && avgTp === 0) {
-          naPts = Math.round(pts);
-        } else if (a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0) {
-          naPts = Number(a.nilaiAkhirMapel);
-        }
-
-        let desc = a.deskripsiCapaian || (naPts >= 75 ? 'Menunjukkan capaian kompetensi yang tuntas.' : '-');
-        reportRows.push({
-          id: a.id,
-          subject: a.subject,
-          code: '',
-          kktp: (a as any).kktp || 75,
-          avgTp,
-          koku,
-          pts,
-          naPts,
-          desc,
-          hasAssessment: true
-        });
-      }
-    });
-
     return reportRows;
-  };
+  }, [getAssessmentsForStudent, sortedCurriculumSubjects, assessmentsBySubjectMap, tpDescriptionsList, sharedTpsList, selectedSemester, selectedAcademicYear]);
+
+  // Memoize Rapor rows & attendance only for the single currently selected student
+  const selectedStudentRaporRows = useMemo(() => {
+    if (!selectedRaporStudent) return [];
+    return getStudentAssessmentsForRapor(selectedRaporStudent);
+  }, [selectedRaporStudent, getStudentAssessmentsForRapor]);
+
+  const selectedStudentAttendance = useMemo(() => {
+    if (!selectedRaporStudent) return { Sakit: 0, Izin: 0, Alpa: 0, Terlambat: 0 };
+    return getStudentAttendance(selectedRaporStudent);
+  }, [selectedRaporStudent, getStudentAttendance]);
 
   const printMidtermReport = (
     studentsToPrint: Student[],
     titleLabel?: string,
     reportType: 'tengah_semester' | 'akhir_semester' = 'tengah_semester'
   ) => {
+    if (reportType === 'akhir_semester') {
+      const printDateStr = formatIndonesianDate(raporDate) || new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      printRaporAkhirSemesterF4({
+        studentsToPrint,
+        getStudentSubjectRows: (st) => getStudentAssessmentsForRapor(st),
+        getStudentAttendance: (st) => getStudentAttendance(st),
+        getStudentRaporRecord: (st) => getStudentRaporRecord(st),
+        getHomeroomTeacherName: (st) => homerooms.find(h => h.className && normClass(h.className) === normClass(st.class))?.name || 'Wali Kelas',
+        raporSettings: raporSemesterData.settings,
+        semester: selectedSemester,
+        academicYear: selectedAcademicYear,
+        schoolIdentity,
+        formattedDateStr: printDateStr
+      });
+      return;
+    }
     if (studentsToPrint.length === 0) {
       alert("Tidak ada siswa yang dipilih untuk dicetak rapornya.");
       return;
@@ -965,7 +1400,7 @@ export default function WakaKurikulumPanel({
     const printDateStr = formatIndonesianDate(raporDate) || new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
     const city = "Pandaan";
     const principalName = schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd";
-    const isAkhir = reportType === 'akhir_semester';
+    const isAkhir = false;
 
     const officialKopHtml = schoolIdentity?.letterhead
       ? `<div style="width: 100%; margin: 0 0 8px 0; padding: 0;">
@@ -1287,15 +1722,6 @@ export default function WakaKurikulumPanel({
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'id'));
   }, [subjectTeachers, classSchedules, liveAssessments]);
 
-  // Assessment matching current sem & year (supports 'all' semester & year)
-  const filteredAssessments = useMemo(() => {
-    return liveAssessments.filter(a => {
-      const matchSem = selectedSemester === 'all' || !selectedSemester || a.semester === selectedSemester;
-      const matchYear = selectedAcademicYear === 'all' || !selectedAcademicYear || a.academicYear === selectedAcademicYear;
-      return matchSem && matchYear;
-    });
-  }, [liveAssessments, selectedSemester, selectedAcademicYear]);
-
   // Distinct Teacher Options for filter dropdown (using username/ID as value, displaying teacher Name & username)
   const allTeacherOptions = useMemo(() => {
     interface TeacherOpt {
@@ -1495,24 +1921,21 @@ export default function WakaKurikulumPanel({
     return Array.from(classesSet);
   }, [classSchedules, filteredAssessments]);
 
-  // Detailed Filtered Assessments for Waka Kurikulum Inspection
+  // Detailed Filtered Assessments for Waka Kurikulum Inspection (Lazy: only computed when detail_nilai tab is active)
   const detailedAssessmentsList = useMemo(() => {
+    if (activeTab !== 'detail_nilai') return [];
     return filteredAssessments.filter(a => {
-      // 1. Must have assessment data
       const hasTp = hasAssessmentData(a);
       if (!hasTp) return false;
 
-      // 2. Class filter (using normalized class matcher)
       if (detailClassFilter !== 'all') {
         if (normClass(a.className) !== normClass(detailClassFilter)) return false;
       }
 
-      // 3. Subject filter (using robust subject matcher)
       if (detailSubjectFilter !== 'all') {
         if (!isSameSubject(a.subject, detailSubjectFilter)) return false;
       }
 
-      // Resolve authoritative scheduled teacher for this assessment's class and subject
       const sched = classSchedules.find(s => 
         normClass(s.className) === normClass(a.className) && 
         isSameSubject(s.subject, a.subject)
@@ -1520,24 +1943,20 @@ export default function WakaKurikulumPanel({
       const scheduledTeacherName = sched?.teacherName?.trim();
       const scheduledTeacherId = sched?.teacherId ? getCanonicalTeacherId(sched.teacherId) : '';
 
-      // Resolve homeroom teacher for this assessment's class
       const hrTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(a.className));
       const homeroomTeacherName = hrTeacher?.name?.trim();
       const homeroomTeacherId = hrTeacher?.id ? getCanonicalTeacherId(hrTeacher.id) : '';
 
-      // Check score types
       const hasSubjectScores = (a.nilaiRataTp && Number(a.nilaiRataTp) > 0) ||
         Boolean(a.tp1Uh || a.tp1Tugas1 || a.tp1Tugas2 || a.tp2Uh || a.tp2Tugas1 || a.tp2Tugas2 || a.tp3Uh || a.tp3Tugas1 || a.tp4Uh || a.tp4Tugas1 || a.nilaiTp1 || a.nilaiTp2 || (a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0));
       const hasKokuScore = Boolean(a.nilaiKokurikuler && Number(a.nilaiKokurikuler) > 0);
 
-      // 4. Role filter
       if (detailRoleFilter === 'subject_teacher') {
         if (!hasSubjectScores) return false;
       } else if (detailRoleFilter === 'homeroom') {
         if (!hasKokuScore) return false;
       }
 
-      // 5. Teacher filter (using Username and ID as primary anchors, strict exact Name matching fallback)
       if (detailTeacherFilter !== 'all') {
         const targetUsername = (selectedTeacherObj?.username || detailTeacherFilter).trim().toLowerCase();
         const targetUsernames = selectedTeacherObj 
@@ -1552,7 +1971,6 @@ export default function WakaKurikulumPanel({
           ? cleanTeacherName(selectedTeacherObj.name) 
           : cleanTeacherName(detailTeacherFilter);
 
-        // a. Direct match with assessment recorded teacher
         const actualTeacherId = a.teacherId ? getCanonicalTeacherId(a.teacherId) : '';
         const cleanActual = cleanTeacherName(a.teacherName);
         const cleanSched = cleanTeacherName(scheduledTeacherName);
@@ -1572,7 +1990,6 @@ export default function WakaKurikulumPanel({
           (cleanActual.length > 0 && targetCleanName.length > 0 && cleanActual === targetCleanName)
         );
 
-        // b. Scheduled teacher match for this class and subject
         const scheduledTeacherEntity = allTeacherOptions.find(t => 
           (scheduledTeacherId && (t.username.toLowerCase() === scheduledTeacherId.toLowerCase() || t.id === scheduledTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === scheduledTeacherId))) ||
           (cleanSched && cleanTeacherName(t.name) === cleanSched)
@@ -1588,7 +2005,6 @@ export default function WakaKurikulumPanel({
           (cleanSched.length > 0 && targetCleanName.length > 0 && cleanSched === targetCleanName)
         );
 
-        // c. Homeroom match for this student's class
         const hrTeacherEntity = allTeacherOptions.find(t => 
           (homeroomTeacherId && (t.username.toLowerCase() === homeroomTeacherId.toLowerCase() || t.id === homeroomTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === homeroomTeacherId))) ||
           (cleanHr && cleanTeacherName(t.name) === cleanHr)
@@ -1605,15 +2021,10 @@ export default function WakaKurikulumPanel({
         );
 
         if (detailRoleFilter === 'homeroom') {
-          // Explicitly inspecting Wali Kelas (Kokurikuler)
           if (!isHomeroomMatch) return false;
         } else if (detailRoleFilter === 'subject_teacher') {
-          // Explicitly inspecting Guru Mapel:
-          // Must be the direct teacher who inputted OR the scheduled teacher for this subject & class
           if (!isDirectTeacher && !isScheduled) return false;
         } else {
-          // Role is 'all':
-          // Subject assessments ONLY match the subject teacher! Never show another teacher's subject assessment just because the teacher is homeroom.
           const matchesAsSubject = isDirectTeacher || isScheduled;
           const matchesAsHomeroom = isHomeroomMatch && hasKokuScore && (
             detailSubjectFilter === 'all' || isSameSubject(a.subject, 'Kokurikuler')
@@ -1625,14 +2036,12 @@ export default function WakaKurikulumPanel({
         }
       }
 
-      // 6. Status filter
       const isComplete = hasSubjectScores && hasKokuScore;
       if (detailStatusFilter === 'complete' && !isComplete) return false;
       if (detailStatusFilter === 'incomplete' && isComplete) return false;
       if (detailStatusFilter === 'mapel_filled' && !hasSubjectScores) return false;
       if (detailStatusFilter === 'koku_filled' && !hasKokuScore) return false;
 
-      // 7. Text Search Query (supports Student Name, NIS, Subject, Teacher Name, and Teacher Username / @username)
       if (detailSearchQuery.trim()) {
         const rawQ = detailSearchQuery.toLowerCase().trim();
         const cleanQ = rawQ.replace(/^@/, '');
@@ -1644,7 +2053,6 @@ export default function WakaKurikulumPanel({
           (homeroomTeacherName && homeroomTeacherName.toLowerCase().includes(rawQ));
         const classMatch = a.className?.toLowerCase().includes(rawQ) || normClass(a.className).includes(normClass(rawQ));
 
-        // Match teacher username (exact or partial, with or without '@')
         const teacherUserMatch = allTeacherOptions.some(t => {
           const uMatch = t.username.toLowerCase() === cleanQ || 
             t.username.toLowerCase().includes(cleanQ) || 
@@ -1669,10 +2077,11 @@ export default function WakaKurikulumPanel({
 
       return true;
     });
-  }, [filteredAssessments, detailRoleFilter, detailTeacherFilter, detailSubjectFilter, detailClassFilter, detailStatusFilter, detailSearchQuery, homerooms, classSchedules, selectedTeacherObj]);
+  }, [activeTab, filteredAssessments, detailRoleFilter, detailTeacherFilter, detailSubjectFilter, detailClassFilter, detailStatusFilter, detailSearchQuery, homerooms, classSchedules, selectedTeacherObj, allTeacherOptions]);
 
-  // Monitoring Stats for Subject Teachers
+  // Monitoring Stats for Subject Teachers (O(1) student lookup, lazy when monitoring tab is active)
   const teacherProgressList = useMemo(() => {
+    if (activeTab !== 'monitoring') return [];
     return subjectTeachers.map(teacher => {
       const assignedClasses = getTeacherClasses(teacher.name, teacher.subject, teacher.className);
       const cleanTarget = cleanTeacherName(teacher.name);
@@ -1686,18 +2095,15 @@ export default function WakaKurikulumPanel({
 
       let classStudentsList = activeStudents;
       if (selectedClassFilter !== 'all') {
-        // If a specific class filter is selected in header
-        classStudentsList = activeStudents.filter(s => s.class && normClass(s.class) === normClass(selectedClassFilter));
+        classStudentsList = studentsByClassMap.get(normClass(selectedClassFilter)) || [];
       } else if (assignedClasses.length > 0) {
-        // Filter students belonging to this teacher's assigned classes
-        classStudentsList = activeStudents.filter(s => s.class && assignedClasses.some(c => normClass(c) === normClass(s.class)));
+        classStudentsList = assignedClasses.flatMap(c => studentsByClassMap.get(normClass(c)) || []);
       } else if (teacher.className && teacher.className !== 'SEMUA KELAS') {
-        classStudentsList = activeStudents.filter(s => s.class && normClass(s.class) === normClass(teacher.className));
+        classStudentsList = studentsByClassMap.get(normClass(teacher.className)) || [];
       }
 
       const totalStudentsInClass = classStudentsList.length;
 
-      // Helper to test if an assessment belongs to this teacher
       const matchesThisTeacher = (a: MerdekaAssessment) => {
         if (!isSameSubject(a.subject, teacher.subject) || !hasAssessmentData(a)) {
           return false;
@@ -1724,19 +2130,19 @@ export default function WakaKurikulumPanel({
         return isDirect || isSched || isGenericMatch;
       };
 
-      // Count students with assessment completed for this teacher's subject & class
       const assessedCount = classStudentsList.filter(s => {
-        return filteredAssessments.some(a => a.studentId === s.id && matchesThisTeacher(a));
+        const stAss = getAssessmentsForStudent(s);
+        return stAss.some(a => matchesThisTeacher(a));
       }).length;
 
-      // Detect per-class breakdown of filled assessments for this teacher's classes
       const assessedClassesBadges: Array<{ cls: string; count: number; total: number }> = [];
       const classesToEvaluate = assignedClasses.length > 0 ? assignedClasses : availableClasses;
 
       classesToEvaluate.forEach(cls => {
-        const cStudents = activeStudents.filter(s => s.class && normClass(s.class) === normClass(cls));
+        const cStudents = studentsByClassMap.get(normClass(cls)) || [];
         const cAssessed = cStudents.filter(s => {
-          return filteredAssessments.some(a => a.studentId === s.id && matchesThisTeacher(a));
+          const stAss = getAssessmentsForStudent(s);
+          return stAss.some(a => matchesThisTeacher(a));
         }).length;
 
         if (cAssessed > 0) {
@@ -1764,10 +2170,11 @@ export default function WakaKurikulumPanel({
         status
       };
     });
-  }, [subjectTeachers, activeStudents, filteredAssessments, selectedClassFilter, availableClasses, getTeacherClasses, classSchedules]);
+  }, [activeTab, subjectTeachers, activeStudents, studentsByClassMap, getAssessmentsForStudent, selectedClassFilter, availableClasses, getTeacherClasses, classSchedules]);
 
-  // Monitoring Stats for Wali Kelas (Kokurikuler & Penilaian Rapor Merdeka Lintas Mapel)
+  // Monitoring Stats for Wali Kelas (O(1) student lookup, lazy when monitoring tab is active)
   const homeroomProgressList = useMemo(() => {
+    if (activeTab !== 'monitoring') return [];
     const allClassesSet = new Set<string>();
     homerooms.forEach(hr => {
       if (hr.className) allClassesSet.add(hr.className.trim().toUpperCase());
@@ -1778,26 +2185,25 @@ export default function WakaKurikulumPanel({
 
     return Array.from(allClassesSet).sort().map(clsName => {
       const primaryHr = homerooms.find(hr => hr.className && normClass(hr.className) === normClass(clsName));
-      const clsStudents = activeStudents.filter(s => s.class && normClass(s.class) === normClass(clsName));
+      const clsStudents = studentsByClassMap.get(normClass(clsName)) || [];
       const totalStudents = clsStudents.length;
 
-      // Count students with Kokurikuler score inputted (> 0)
-      const kokuCount = clsStudents.filter(s => {
-        return filteredAssessments.some(a => a.studentId === s.id && a.nilaiKokurikuler !== undefined && a.nilaiKokurikuler > 0);
-      }).length;
-
-      // Count distinct subjects evaluated for this class & breakdown badges
+      let kokuCount = 0;
       const evaluatedSubjectsMap: Record<string, number> = {};
       const assessedStudentIds = new Set<string>();
 
-      filteredAssessments.forEach(a => {
-        if (clsStudents.some(s => s.id === a.studentId)) {
+      clsStudents.forEach(s => {
+        const stAss = getAssessmentsForStudent(s);
+        if (stAss.some(a => a.nilaiKokurikuler !== undefined && Number(a.nilaiKokurikuler) > 0)) {
+          kokuCount++;
+        }
+        stAss.forEach(a => {
           if (hasAssessmentData(a)) {
-            assessedStudentIds.add(a.studentId);
+            assessedStudentIds.add(s.id);
             const stdSubj = normalizeSubject(a.subject) || a.subject;
             evaluatedSubjectsMap[stdSubj] = (evaluatedSubjectsMap[stdSubj] || 0) + 1;
           }
-        }
+        });
       });
 
       const evaluatedSubjectsBadges = Object.entries(evaluatedSubjectsMap).map(([name, count]) => ({
@@ -1826,11 +2232,10 @@ export default function WakaKurikulumPanel({
         isCrossClass: !primaryHr || (primaryHr && Object.keys(evaluatedSubjectsMap).length > 0)
       };
     });
-  }, [homerooms, availableClasses, activeStudents, filteredAssessments]);
+  }, [activeTab, homerooms, availableClasses, studentsByClassMap, getAssessmentsForStudent]);
 
-  // UNFILLED / INCOMPLETE GRADES MONITORING LOGIC
+  // UNFILLED / INCOMPLETE GRADES MONITORING LOGIC (O(1) student & assessment lookup)
   const unfilledGradesAnalysis = useMemo(() => {
-    // 1. Process Subject Teachers
     const teacherSummaries: any[] = [];
     const allUnfilledStudents: any[] = [];
     const classSubjectSummaries: any[] = [];
@@ -1860,7 +2265,7 @@ export default function WakaKurikulumPanel({
       const byClassList: any[] = [];
 
       classesToProcess.forEach(clsName => {
-        const clsStudents = activeStudents.filter(s => s.class && normClass(s.class) === normClass(clsName));
+        const clsStudents = studentsByClassMap.get(normClass(clsName)) || [];
         if (clsStudents.length === 0) return;
 
         let classFilledCount = 0;
@@ -1881,11 +2286,9 @@ export default function WakaKurikulumPanel({
         clsStudents.forEach(s => {
           teacherTotalExpected++;
 
-          // Find assessment
-          const a = filteredAssessments.find(item => {
-            if (item.studentId !== s.id && item.studentId !== s.nis) return false;
+          const stAss = getAssessmentsForStudent(s);
+          const a = stAss.find(item => {
             if (!isSameSubject(item.subject, teacher.subject)) return false;
-            
             const cleanA = cleanTeacherName(item.teacherName);
             const isDirect = (item.teacherName && item.teacherName.toLowerCase().trim() === teacher.name.toLowerCase().trim()) ||
               (cleanA.length > 0 && cleanTarget.length > 0 && cleanA === cleanTarget) ||
@@ -2032,17 +2435,15 @@ export default function WakaKurikulumPanel({
       const clsName = hr.className?.trim().toUpperCase();
       if (!clsName) return;
 
-      const clsStudents = activeStudents.filter(s => s.class && normClass(s.class) === normClass(clsName));
+      const clsStudents = studentsByClassMap.get(normClass(clsName)) || [];
       if (clsStudents.length === 0) return;
 
       let filledKokuCount = 0;
       const missingKokuStudents: any[] = [];
 
       clsStudents.forEach(s => {
-        const hasKoku = filteredAssessments.some(a => {
-          if (a.studentId !== s.id && a.studentId !== s.nis) return false;
-          return a.nilaiKokurikuler !== undefined && a.nilaiKokurikuler !== null && Number(a.nilaiKokurikuler) > 0;
-        });
+        const stAss = getAssessmentsForStudent(s);
+        const hasKoku = stAss.some(a => a.nilaiKokurikuler !== undefined && a.nilaiKokurikuler !== null && Number(a.nilaiKokurikuler) > 0);
 
         if (hasKoku) {
           filledKokuCount++;
@@ -2076,10 +2477,8 @@ export default function WakaKurikulumPanel({
       });
     });
 
-    // Sort teachers: lowest completion percentage first
     teacherSummaries.sort((a, b) => a.completionPercentage - b.completionPercentage);
 
-    // Filter incomplete teachers
     const incompleteTeachers = teacherSummaries.filter(t => t.completionPercentage < 100);
     const incompleteClasses = classSubjectSummaries.filter(c => c.completionPercentage < 100);
     const incompleteHomerooms = homeroomSummaries.filter(h => h.completionPercentage < 100);
@@ -5966,19 +6365,105 @@ export default function WakaKurikulumPanel({
 
                     <button
                       type="button"
-                      disabled={raporStudents.length === 0}
-                      onClick={() => printMidtermReport(raporStudents)}
+                      disabled={filteredRaporStudents.length === 0}
+                      onClick={() => printMidtermReport(filteredRaporStudents, activeRaporFilterLabel)}
                       className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm"
-                      title="Cetak lembar rapor seluruh siswa kelas ini sekaligus (tiap siswa terpisah 1 halaman)"
+                      title={`Cetak lembar rapor sesuai filter aktif: ${activeRaporFilterLabel}`}
                     >
                       <Printer size={15} />
-                      <span>Cetak Rapor 1 Kelas ({raporStudents.length} Siswa)</span>
+                      <span>Cetak Rapor Sesuai Filter ({filteredRaporStudents.length} Siswa)</span>
                     </button>
+                  </div>
+                </div>
+                {releaseFeedback && (
+                  <div className={`mt-3 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between ${
+                    releaseFeedback.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                  }`}>
+                    <span>{releaseFeedback.text}</span>
+                    <button type="button" onClick={() => setReleaseFeedback(null)} className="text-slate-400 hover:text-slate-600 font-black ml-3">✕</button>
+                  </div>
+                )}
+
+                {/* Quick Filter Tingkat Kelas 7, 8, 9 & Cetak Per Tingkat */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-2 pb-3 border-b border-slate-100">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider mr-1">
+                      Filter Tingkat Kelas:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleChangeRaporGradeFilter('all')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                        selectedRaporGradeFilter === 'all'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      Semua Tingkat ({activeStudents.length})
+                    </button>
+                    {['7', '8', '9'].map(g => {
+                      const count = getStudentsByGrade(g).length;
+                      const isActive = selectedRaporGradeFilter === g;
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => handleChangeRaporGradeFilter(g)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                            isActive
+                              ? 'bg-indigo-600 text-white shadow-xs'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          Kelas {g} ({count} Siswa)
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider mr-1">
+                      Cetak Cepat Tingkat:
+                    </span>
+                    {['7', '8', '9'].map(g => {
+                      const gStudents = getStudentsByGrade(g);
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          disabled={gStudents.length === 0}
+                          onClick={() => printMidtermReport(gStudents, `Tingkat Kelas ${g}`)}
+                          className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 text-indigo-700 border border-indigo-200 rounded-xl text-[11px] font-extrabold flex items-center gap-1 cursor-pointer transition-colors"
+                          title={`Cetak seluruh Rapor Tengah Semester siswa Tingkat Kelas ${g}`}
+                        >
+                          <Printer size={12} />
+                          <span>Cetak Kelas {g} ({gStudents.length})</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
             {/* Filter Controls Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-3">
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
+                  Tingkat Kelas (7 / 8 / 9)
+                </label>
+                <select
+                  value={selectedRaporGradeFilter}
+                  onChange={(e) => handleChangeRaporGradeFilter(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                >
+                  <option value="all">Semua Tingkat (Kelas 7, 8, 9)</option>
+                  <option value="7">Tingkat Kelas 7 ({getStudentsByGrade('7').length} Siswa)</option>
+                  <option value="8">Tingkat Kelas 8 ({getStudentsByGrade('8').length} Siswa)</option>
+                  <option value="9">Tingkat Kelas 9 ({getStudentsByGrade('9').length} Siswa)</option>
+                </select>
+              </div>
+
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
                   Pilih Kelas Rombel
@@ -5988,9 +6473,21 @@ export default function WakaKurikulumPanel({
                   onChange={(e) => setSelectedRaporClass(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
                 >
-                  {availableClasses.map(cls => (
+                  {selectedRaporGradeFilter === 'all' ? (
+                    <>
+                      <option value="ALL">Semua Kelas Rombel ({activeStudents.length} Siswa)</option>
+                      <option value="ALL_GRADE_7">Semua Kelas Tingkat 7 ({getStudentsByGrade('7').length} Siswa)</option>
+                      <option value="ALL_GRADE_8">Semua Kelas Tingkat 8 ({getStudentsByGrade('8').length} Siswa)</option>
+                      <option value="ALL_GRADE_9">Semua Kelas Tingkat 9 ({getStudentsByGrade('9').length} Siswa)</option>
+                    </>
+                  ) : (
+                    <option value={`ALL_GRADE_${selectedRaporGradeFilter}`}>
+                      Semua Kelas Tingkat {selectedRaporGradeFilter} ({getStudentsByGrade(selectedRaporGradeFilter).length} Siswa)
+                    </option>
+                  )}
+                  {displayedRaporClasses.map(cls => (
                     <option key={cls} value={cls}>
-                      Kelas {cls} ({activeStudents.filter(s => s.class && normClass(s.class) === normClass(cls)).length} Siswa)
+                      Kelas {cls} ({(studentsByClassMap.get(normClass(cls)) || []).length} Siswa)
                     </option>
                   ))}
                 </select>
@@ -6046,9 +6543,9 @@ export default function WakaKurikulumPanel({
               <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm flex flex-col gap-3">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                   <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                    Daftar Siswa Kelas {selectedRaporClass} ({raporStudents.length})
+                    Daftar Siswa ({filteredRaporStudents.length})
                   </span>
-                  {selectedRaporClass && (
+                  {selectedRaporClass && !selectedRaporClass.startsWith('ALL') && (
                     <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
                       {homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporClass))?.name || 'Wali Kelas'}
                     </span>
@@ -6069,21 +6566,15 @@ export default function WakaKurikulumPanel({
 
                 {/* Student Buttons List */}
                 <div className="flex flex-col gap-1.5 max-h-[560px] overflow-y-auto pr-1">
-                  {raporStudents.length === 0 ? (
+                  {filteredRaporStudents.length === 0 ? (
                     <div className="py-8 text-center text-slate-400 text-xs font-semibold">
-                      Tidak ada siswa aktif terdaftar di kelas {selectedRaporClass}.
+                      Tidak ada siswa aktif yang sesuai filter saat ini.
                     </div>
                   ) : (
-                    raporStudents
-                      .filter(s => {
-                        if (!raporSearchQuery) return true;
-                        const q = raporSearchQuery.toLowerCase();
-                        return s.name.toLowerCase().includes(q) || (s.nis && s.nis.toLowerCase().includes(q));
-                      })
-                      .map((st, idx) => {
+                    filteredRaporStudents.map((st, idx) => {
                         const isSelected = selectedRaporStudentId === st.id;
-                        const stAssessments = getStudentAssessmentsForRapor(st);
-                        const hasPtsScores = stAssessments.some(a => a.pts > 0);
+                        const stStats = raporStudentStatsMap.get(st.id) || { ptsFilledCount: 0, akhirFilledCount: 0, hasPtsScores: false, totalSubjects: sortedCurriculumSubjects.length };
+                        const hasPtsScores = stStats.hasPtsScores;
 
                         return (
                           <button
@@ -6105,7 +6596,7 @@ export default function WakaKurikulumPanel({
                               <div className="min-w-0">
                                 <div className="font-extrabold text-xs truncate leading-tight">{st.name}</div>
                                 <div className={`text-[9px] font-mono mt-0.5 ${isSelected ? 'text-slate-400' : 'text-slate-400'}`}>
-                                  NIS: {st.nis || '-'}
+                                  Kelas {st.class || '-'} &bull; NIS: {st.nis || '-'}
                                 </div>
                               </div>
                             </div>
@@ -6118,7 +6609,7 @@ export default function WakaKurikulumPanel({
                                     ? 'bg-emerald-50 text-emerald-700'
                                     : 'bg-slate-200 text-slate-600'
                               }`}>
-                                {stAssessments.filter(a => a.naPts > 0).length} / {stAssessments.length} Mapel
+                                {stStats.ptsFilledCount} / {stStats.totalSubjects} Mapel
                               </span>
                               {hasPtsScores && (
                                 <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-wider">
@@ -6137,8 +6628,8 @@ export default function WakaKurikulumPanel({
             {/* Right Column: Interactive Report Card Preview (8 Cols) */}
             <div className="lg:col-span-8 flex flex-col gap-4">
               {selectedRaporStudent ? (() => {
-                const att = getStudentAttendance(selectedRaporStudent);
-                const scores = getStudentAssessmentsForRapor(selectedRaporStudent);
+                const att = selectedStudentAttendance;
+                const scores = selectedStudentRaporRows;
                 const homeroomTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporStudent.class));
                 const homeroomTeacherName = homeroomTeacher?.name || 'Wali Kelas';
                 // Catatan wali kelas dikosongkan pada Rapor Tengah Semester sesuai ketentuan
@@ -6463,20 +6954,25 @@ export default function WakaKurikulumPanel({
           </div>
         </div>
       ) : (
-            /* SUB TAB: RAPOR AKHIR SEMESTER (SAS / RAPOR LENGKAP) */
+            /* SUB TAB: RAPOR AKHIR SEMESTER (SAS / RAPOR LENGKAP F4 2 HALAMAN) */
             <div className="space-y-6">
               {/* Header Controls Card */}
               <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600" />
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                   <div>
-                    <span className="text-[10px] font-black uppercase text-purple-600 tracking-wider">Modul Waka Kurikulum</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase text-purple-600 tracking-wider">Modul Waka Kurikulum</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Tersimpan Langsung di MySQL (Tanpa Penyimpanan Lokal)
+                      </span>
+                    </div>
                     <h2 className="font-extrabold text-xl text-slate-900 mt-1 flex items-center gap-2">
                       <Award className="text-purple-600" size={24} />
-                      <span>Rapor Akhir Semester (Sumatif Akhir Semester / SAS)</span>
+                      <span>Rapor Akhir Semester (Kertas F4 Custom 21,59 x 32,04 cm — 2 Halaman)</span>
                     </h2>
                     <p className="text-slate-500 text-xs mt-0.5">
-                      Laporan hasil belajar lengkap akhir semester Kurikulum Merdeka. Memuat Nilai Akhir Rapor, Capaian Kompetensi, Nilai Projek Kokurikuler (P5), serta tanda tangan resmi.
+                      Format 2 Halaman Tanpa KOP (Kertas Ber-KOP: Margin Atas 3,96 cm, Kiri 1,71 cm, Kanan 1,58 cm, Bawah 2,25 cm). Halaman 1: Mapel 1–9, Halaman 2: Mapel 10, Muatan Lokal 11–12, Ekstrakurikuler, Ketidakhadiran &amp; TTD.
                     </p>
                   </div>
 
@@ -6503,21 +6999,107 @@ export default function WakaKurikulumPanel({
 
                     <button
                       type="button"
-                      disabled={raporStudents.length === 0}
-                      onClick={() => printMidtermReport(raporStudents)}
+                      disabled={filteredRaporStudents.length === 0}
+                      onClick={() => printMidtermReport(filteredRaporStudents, activeRaporFilterLabel, 'akhir_semester')}
                       className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm"
-                      title="Cetak lembar rapor seluruh siswa kelas ini sekaligus"
+                      title={`Cetak lembar rapor F4 (2 halaman) sesuai filter aktif: ${activeRaporFilterLabel}`}
                     >
                       <Printer size={15} />
-                      <span>Cetak Rapor 1 Kelas ({raporStudents.length} Siswa)</span>
+                      <span>Cetak Rapor Sesuai Filter ({filteredRaporStudents.length} Siswa)</span>
                     </button>
                   </div>
                 </div>
+                {releaseFeedback && (
+                  <div className={`mt-3 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between ${
+                    releaseFeedback.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                  }`}>
+                    <span>{releaseFeedback.text}</span>
+                    <button type="button" onClick={() => setReleaseFeedback(null)} className="text-slate-400 hover:text-slate-600 font-black ml-3">✕</button>
+                  </div>
+                )}
 
-                {/* Filter Controls Row */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 pt-2">
+                {/* Quick Filter Tingkat Kelas 7, 8, 9 & Cetak Cepat Per Tingkat */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-2 pb-3 border-b border-slate-100">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider mr-1">
+                      Filter Tingkat Kelas:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleChangeRaporGradeFilter('all')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                        selectedRaporGradeFilter === 'all'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      Semua Tingkat ({activeStudents.length})
+                    </button>
+                    {['7', '8', '9'].map(g => {
+                      const count = getStudentsByGrade(g).length;
+                      const isActive = selectedRaporGradeFilter === g;
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          onClick={() => handleChangeRaporGradeFilter(g)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                            isActive
+                              ? 'bg-purple-600 text-white shadow-xs'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          Kelas {g} ({count} Siswa)
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider mr-1">
+                      Cetak Cepat Tingkat:
+                    </span>
+                    {['7', '8', '9'].map(g => {
+                      const gStudents = getStudentsByGrade(g);
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          disabled={gStudents.length === 0}
+                          onClick={() => printMidtermReport(gStudents, `Tingkat Kelas ${g}`, 'akhir_semester')}
+                          className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 disabled:opacity-40 text-purple-700 border border-purple-200 rounded-xl text-[11px] font-extrabold flex items-center gap-1 cursor-pointer transition-colors"
+                          title={`Cetak seluruh Rapor Akhir Semester F4 siswa Tingkat Kelas ${g}`}
+                        >
+                          <Printer size={12} />
+                          <span>Cetak Kelas {g} ({gStudents.length})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Filter & Pengaturan Rapor (Tersimpan langsung di MySQL) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 mt-3">
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                      Tingkat Kelas (7 / 8 / 9)
+                    </label>
+                    <select
+                      value={selectedRaporGradeFilter}
+                      onChange={(e) => handleChangeRaporGradeFilter(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                    >
+                      <option value="all">Semua Tingkat (7, 8, 9)</option>
+                      <option value="7">Tingkat Kelas 7 ({getStudentsByGrade('7').length} Siswa)</option>
+                      <option value="8">Tingkat Kelas 8 ({getStudentsByGrade('8').length} Siswa)</option>
+                      <option value="9">Tingkat Kelas 9 ({getStudentsByGrade('9').length} Siswa)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
                       Pilih Kelas Rombel
                     </label>
                     <select
@@ -6525,16 +7107,28 @@ export default function WakaKurikulumPanel({
                       onChange={(e) => setSelectedRaporClass(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
                     >
-                      {availableClasses.map(cls => (
+                      {selectedRaporGradeFilter === 'all' ? (
+                        <>
+                          <option value="ALL">Semua Kelas Rombel ({activeStudents.length} Siswa)</option>
+                          <option value="ALL_GRADE_7">Semua Kelas Tingkat 7 ({getStudentsByGrade('7').length} Siswa)</option>
+                          <option value="ALL_GRADE_8">Semua Kelas Tingkat 8 ({getStudentsByGrade('8').length} Siswa)</option>
+                          <option value="ALL_GRADE_9">Semua Kelas Tingkat 9 ({getStudentsByGrade('9').length} Siswa)</option>
+                        </>
+                      ) : (
+                        <option value={`ALL_GRADE_${selectedRaporGradeFilter}`}>
+                          Semua Kelas Tingkat {selectedRaporGradeFilter} ({getStudentsByGrade(selectedRaporGradeFilter).length} Siswa)
+                        </option>
+                      )}
+                      {displayedRaporClasses.map(cls => (
                         <option key={cls} value={cls}>
-                          Kelas {cls} ({activeStudents.filter(s => s.class && normClass(s.class) === normClass(cls)).length} Siswa)
+                          Kelas {cls} ({(studentsByClassMap.get(normClass(cls)) || []).length} Siswa)
                         </option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
                       Semester
                     </label>
                     <select
@@ -6548,8 +7142,8 @@ export default function WakaKurikulumPanel({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
-                      Tahun Ajaran
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                      Tahun Pelajaran
                     </label>
                     <select
                       value={selectedAcademicYear}
@@ -6563,14 +7157,46 @@ export default function WakaKurikulumPanel({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
-                      Tanggal Rapor (Untuk TTD)
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                      Tempat Rapor (MySQL)
+                    </label>
+                    <input
+                      type="text"
+                      value={raporSemesterData.settings?.place ?? 'Pandaan'}
+                      onChange={(e) => saveRaporSettingsToMysql({ place: e.target.value })}
+                      placeholder="Pandaan"
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                      Tanggal Rapor (MySQL)
                     </label>
                     <input
                       type="date"
                       value={raporDate}
                       onChange={(e) => handleRaporDateChange(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                      Kepala Sekolah (MySQL)
+                    </label>
+                    <input
+                      type="text"
+                      value={
+                        (raporSemesterData.settings?.principalName && raporSemesterData.settings.principalName !== 'H. Lasudi, S.Pd.'
+                          ? raporSemesterData.settings.principalName
+                          : '') ||
+                        schoolIdentity?.principal ||
+                        ''
+                      }
+                      onChange={(e) => saveRaporSettingsToMysql({ principalName: e.target.value })}
+                      placeholder={schoolIdentity?.principal || 'Nama Kepala Sekolah'}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
                     />
                   </div>
                 </div>
@@ -6583,9 +7209,9 @@ export default function WakaKurikulumPanel({
                   <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm flex flex-col gap-3">
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                        Daftar Siswa Kelas {selectedRaporClass} ({raporStudents.length})
+                        Daftar Siswa ({filteredRaporStudents.length})
                       </span>
-                      {selectedRaporClass && (
+                      {selectedRaporClass && !selectedRaporClass.startsWith('ALL') && (
                         <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
                           {homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporClass))?.name || 'Wali Kelas'}
                         </span>
@@ -6604,20 +7230,14 @@ export default function WakaKurikulumPanel({
                     </div>
 
                     <div className="flex flex-col gap-1.5 max-h-[560px] overflow-y-auto pr-1">
-                      {raporStudents.length === 0 ? (
+                      {filteredRaporStudents.length === 0 ? (
                         <div className="py-8 text-center text-slate-400 text-xs font-semibold">
-                          Tidak ada siswa aktif terdaftar di kelas {selectedRaporClass}.
+                          Tidak ada siswa aktif yang sesuai filter saat ini.
                         </div>
                       ) : (
-                        raporStudents
-                          .filter(s => {
-                            if (!raporSearchQuery) return true;
-                            const q = raporSearchQuery.toLowerCase();
-                            return s.name.toLowerCase().includes(q) || (s.nis && s.nis.toLowerCase().includes(q));
-                          })
-                          .map((st, idx) => {
+                        filteredRaporStudents.map((st, idx) => {
                             const isSelected = selectedRaporStudentId === st.id;
-                            const stAssessments = getStudentAssessmentsForRapor(st);
+                            const stStats = raporStudentStatsMap.get(st.id) || { ptsFilledCount: 0, akhirFilledCount: 0, hasPtsScores: false, totalSubjects: sortedCurriculumSubjects.length };
 
                             return (
                               <button
@@ -6639,7 +7259,7 @@ export default function WakaKurikulumPanel({
                                   <div className="min-w-0">
                                     <div className="font-extrabold text-xs truncate leading-tight">{st.name}</div>
                                     <div className="text-[9px] font-mono mt-0.5 text-slate-400">
-                                      NIS: {st.nis || '-'}
+                                      Kelas {st.class || '-'} &bull; NIS/NISN: {st.nis || '-'} / {st.nisn || '-'}
                                     </div>
                                   </div>
                                 </div>
@@ -6650,7 +7270,7 @@ export default function WakaKurikulumPanel({
                                       ? 'bg-purple-600 text-white'
                                       : 'bg-emerald-50 text-emerald-700'
                                   }`}>
-                                    {stAssessments.filter(a => a.naPts > 0).length} / {stAssessments.length} Mapel
+                                    {stStats.akhirFilledCount} / {stStats.totalSubjects} Mapel
                                   </span>
                                 </div>
                               </button>
@@ -6661,26 +7281,25 @@ export default function WakaKurikulumPanel({
                   </div>
                 </div>
 
-                {/* Right Column: Report Card Preview */}
+                {/* Right Column: Report Card Preview (F4 2 Halaman) */}
                 <div className="lg:col-span-8 flex flex-col gap-4">
                   {selectedRaporStudent ? (() => {
-                    const att = getStudentAttendance(selectedRaporStudent);
-                    const scores = getStudentAssessmentsForRapor(selectedRaporStudent);
+                    const att = selectedStudentAttendance;
+                    const scores = selectedStudentRaporRows;
                     const homeroomTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporStudent.class));
                     const homeroomTeacherName = homeroomTeacher?.name || 'Wali Kelas';
-                    const defaultNote = "Ananda telah menuntaskan seluruh proses pembelajaran Kurikulum Merdeka pada semester ini dengan penuh dedikasi. Terus kembangkan potensi diri, pertahankan akhlak mulia dan prestasi pada semester berikutnya.";
-                    const studentNote = raporNotes[selectedRaporStudent.id] || defaultNote;
+                    const studentRaporRecord = getStudentRaporRecord(selectedRaporStudent);
 
                     return (
                       <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-5">
                         <div className="flex items-center justify-between pb-4 border-b border-slate-100 flex-wrap gap-3">
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-[10px] font-black text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                                Pratinjau Rapor Akhir Semester
+                                Pratinjau Rapor Akhir Semester (F4 — 2 Halaman)
                               </span>
                               <span className="text-[10px] font-bold text-slate-400">
-                                Kelas {selectedRaporStudent.class} &bull; Semester {selectedSemester}
+                                Kelas {selectedRaporStudent.class} &bull; Semester {selectedSemester} &bull; NIS/NISN: {[selectedRaporStudent.nis, selectedRaporStudent.nisn].filter(Boolean).join(' / ') || '-'}
                               </span>
                             </div>
                             <h3 className="font-black text-slate-900 text-lg leading-tight mt-1">
@@ -6690,118 +7309,34 @@ export default function WakaKurikulumPanel({
 
                           <button
                             type="button"
-                            onClick={() => printMidtermReport([selectedRaporStudent])}
-                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs"
+                            onClick={() => printMidtermReport([selectedRaporStudent], undefined, 'akhir_semester')}
+                            className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs"
                           >
-                            <Printer size={14} />
-                            <span>Cetak Rapor Akhir</span>
+                            <Printer size={15} />
+                            <span>Cetak Rapor Akhir (F4 - 2 Halaman)</span>
                           </button>
                         </div>
 
-                        {/* Report Card Document Simulation */}
-                        <div className="bg-white border-2 border-slate-300 rounded-2xl p-6 sm:p-8 shadow-xs text-black font-sans text-xs select-text">
-                          {schoolIdentity?.letterhead ? (
-                            <div className="w-full mb-3">
-                              <img src={schoolIdentity.letterhead} alt="KOP Resmi" className="w-full h-auto object-contain" />
-                            </div>
-                          ) : (
-                            <div className="text-center mb-3 border-b-2 border-black pb-2">
-                              <h2 className="font-black text-base uppercase">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h2>
-                              <p className="text-[11px] text-slate-600">{schoolIdentity?.address || "Pandaan, Pasuruan"}</p>
-                            </div>
-                          )}
-
-                          <div className="text-center my-3">
-                            <h3 className="font-extrabold text-sm uppercase underline tracking-wider">LAPORAN HASIL BELAJAR AKHIR SEMESTER</h3>
-                            <p className="text-[11px] text-slate-600 mt-0.5">Tahun Ajaran {selectedAcademicYear} &bull; Semester {selectedSemester}</p>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2 text-[11px] mb-4">
-                            <div>Nama: <strong>{selectedRaporStudent.name}</strong></div>
-                            <div>Kelas: <strong>{selectedRaporStudent.class}</strong></div>
-                            <div>NIS / NISN: <strong>{selectedRaporStudent.nis || '-'} / {selectedRaporStudent.nisn || '-'}</strong></div>
-                            <div>Fase: <strong>D (SMP)</strong></div>
-                          </div>
-
-                          {/* Table of Grades */}
-                          <table className="w-full border-collapse border border-black text-[11px] mb-4">
-                            <thead>
-                              <tr className="bg-slate-100 text-center font-bold">
-                                <th className="border border-black px-2 py-1.5 w-8">No</th>
-                                <th className="border border-black px-2 py-1.5 text-left">Mata Pelajaran</th>
-                                <th className="border border-black px-2 py-1.5 w-16">KKTP</th>
-                                <th className="border border-black px-2 py-1.5 w-20">Nilai Akhir</th>
-                                <th className="border border-black px-2 py-1.5 text-left">Capaian Kompetensi</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {scores.map((sc, sIdx) => (
-                                <tr key={sc.id}>
-                                  <td className="border border-black px-2 py-1 text-center font-mono">{sIdx + 1}</td>
-                                  <td className="border border-black px-2 py-1 font-semibold">{sc.subject}</td>
-                                  <td className="border border-black px-2 py-1 text-center font-mono">{sc.kktp}</td>
-                                  <td className="border border-black px-2 py-1 text-center font-mono font-bold text-slate-900">
-                                    {sc.naPts > 0 ? sc.naPts : '-'}
-                                  </td>
-                                  <td className="border border-black px-2 py-1 text-slate-700 leading-snug">
-                                    {sc.desc}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-
-                          {/* Attendance & Notes */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] mb-4">
-                            <div className="border border-black p-2.5 rounded-lg">
-                              <div className="font-bold border-b border-black pb-1 mb-1.5">Ketidakhadiran (Presensi)</div>
-                              <div className="flex justify-between py-0.5"><span>Sakit (S):</span><strong>{att.Sakit} hari</strong></div>
-                              <div className="flex justify-between py-0.5"><span>Izin (I):</span><strong>{att.Izin} hari</strong></div>
-                              <div className="flex justify-between py-0.5"><span>Tanpa Keterangan (A):</span><strong>{att.Alpa} hari</strong></div>
-                            </div>
-
-                            <div className="border border-black p-2.5 rounded-lg">
-                              <div className="font-bold border-b border-black pb-1 mb-1.5">Catatan Wali Kelas</div>
-                              <p className="italic text-slate-700 leading-relaxed">{studentNote}</p>
-                            </div>
-                          </div>
-
-                          {/* Signatures */}
-                          <div className="grid grid-cols-3 gap-2 text-center text-[10.5px] mt-6 pt-2">
-                            <div>
-                              <div>Mengetahui,</div>
-                              <div>Orang Tua / Wali Murid</div>
-                              <div className="h-14" />
-                              <div>( .................................... )</div>
-                            </div>
-
-                            <div>
-                              <div>Wali Kelas {selectedRaporStudent.class}</div>
-                              <div className="h-14 flex items-center justify-center">
-                                {schoolIdentity?.principalSignature && (
-                                  <span className="text-[9px] text-slate-400 italic">[Terverifikasi Sistem]</span>
-                                )}
-                              </div>
-                              <u><strong>{homeroomTeacherName}</strong></u>
-                            </div>
-
-                            <div>
-                              <div>Pandaan, {formatIndonesianDate(raporDate) || new Date().toLocaleDateString('id-ID')}</div>
-                              <div>Kepala Sekolah</div>
-                              <div className="h-14 flex items-center justify-center">
-                                {schoolIdentity?.principalSignature ? (
-                                  <img src={schoolIdentity.principalSignature} alt="TTD" className="max-h-12 object-contain mx-auto" />
-                                ) : null}
-                              </div>
-                              <u><strong>{schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd"}</strong></u>
-                            </div>
-                          </div>
-                        </div>
+                        <RaporAkhirF4Preview
+                          student={selectedRaporStudent}
+                          subjectRows={scores}
+                          rawAttendance={att}
+                          studentRecord={studentRaporRecord}
+                          raporSettings={raporSemesterData.settings}
+                          semester={selectedSemester}
+                          academicYear={selectedAcademicYear}
+                          homeroomTeacherName={homeroomTeacherName}
+                          schoolIdentity={schoolIdentity}
+                          formattedDateStr={formatIndonesianDate(raporDate) || new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          editable={true}
+                          isSavingRaporData={isSavingRaporData}
+                          onSaveStudentRecord={(record) => handleSaveStudentRaporRecordToMysql(selectedRaporStudent, record)}
+                        />
                       </div>
                     );
                   })() : (
                     <div className="py-24 text-center text-slate-400 font-semibold bg-white border border-slate-200 rounded-3xl shadow-sm text-xs">
-                      Pilih siswa di sebelah kiri untuk melihat pratinjau lembar Rapor Akhir Semester.
+                      Pilih siswa di sebelah kiri untuk melihat pratinjau lembar Rapor Akhir Semester (F4 2 Halaman).
                     </div>
                   )}
                 </div>

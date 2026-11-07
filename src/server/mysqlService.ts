@@ -2542,8 +2542,9 @@ export async function pullDataFromMysql(): Promise<{
       const [rows]: any = await connection.query('SELECT * FROM `curriculum_tp_levels`');
       resultData.curriculumTpDescriptions = rows.map((r: any) => ({
         id: r.id,
-        subject: r.subject,
-        gradeLevel: r.grade_level,
+        subject: r.subject_name || r.subject || '',
+        subjectId: r.subject_id || undefined,
+        gradeLevel: String(r.grade_level || '7'),
         semester: r.semester || 'Ganjil',
         academicYear: r.academic_year || '2026/2027',
         tp1Name: r.tp1_name || '',

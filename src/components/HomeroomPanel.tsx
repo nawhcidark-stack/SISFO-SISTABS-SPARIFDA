@@ -839,10 +839,10 @@ export default function HomeroomPanel({
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedGrades]);
-  const [tp1InputName, setTp1InputName] = useState<string>('Memahami konsep dasar dan penerapannya');
-  const [tp2InputName, setTp2InputName] = useState<string>('Menganalisis materi dan studi kasus');
-  const [tp3InputName, setTp3InputName] = useState<string>('Praktik dan refleksi pembiasaan');
-  const [tp4InputName, setTp4InputName] = useState<string>('Evaluasi & pengerjaan proyek');
+  const [tp1InputName, setTp1InputName] = useState<string>('');
+  const [tp2InputName, setTp2InputName] = useState<string>('');
+  const [tp3InputName, setTp3InputName] = useState<string>('');
+  const [tp4InputName, setTp4InputName] = useState<string>('');
   const [tp1Id, setTp1Id] = useState<string>('');
   const [tp2Id, setTp2Id] = useState<string>('');
   const [tp3Id, setTp3Id] = useState<string>('');

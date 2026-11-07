@@ -2,6 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue, MiscBill, ClassSchedule, HomeroomTeacher, SubjectTeacher, MerdekaAssessment } from '../types';
 import { isSameSubject } from '../utils/subjectMatcher';
 import { DEFAULT_REPORT_SUBJECTS, OFFICIAL_REPORT_ORDER } from './WakaKurikulumPanel';
+import { RaporAkhirF4Preview } from './RaporAkhirF4Preview';
+import {
+  RaporSemesterDataConfig,
+  RaporSubjectRow,
+  buildCapaianTujuanPembelajaran,
+  cleanSubjectDisplayName,
+  printRaporAkhirSemesterF4
+} from '../utils/raporAkhirPrint';
 import { motion, AnimatePresence } from 'motion/react';
 import { GraduationCap, Award, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone, LogOut } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -146,18 +154,27 @@ export default function StudentPanel({
     activeAcademicYear?: string;
     midtermDate?: string;
     finalDate?: string;
-  }>({});
+  }>({
+    midtermReleased: true,
+    finalReleased: true,
+    activeSemester: 'Ganjil',
+    activeAcademicYear: '2026/2027'
+  });
   const [isRefreshingRaporStatus, setIsRefreshingRaporStatus] = useState<boolean>(false);
   const [liveAssessments, setLiveAssessments] = useState<MerdekaAssessment[]>(merdekaAssessments);
 
   const fetchReportReleaseStatus = async () => {
     try {
       setIsRefreshingRaporStatus(true);
-      const res = await fetch('/api/curriculum/report-status');
+      const res = await fetch(`/api/curriculum/report-status?_t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
         if (data && data.config) {
-          setReportReleaseConfig(data.config);
+          setReportReleaseConfig({
+            ...data.config,
+            midtermReleased: Boolean(data.config.midtermReleased),
+            finalReleased: Boolean(data.config.finalReleased)
+          });
         }
       }
     } catch (err) {
@@ -211,9 +228,25 @@ export default function StudentPanel({
   };
 
   const [curriculumSubjectsList, setCurriculumSubjectsList] = useState<any[]>([]);
+  const [tpLevelsList, setTpLevelsList] = useState<any[]>([]);
+  const [sharedTpsList, setSharedTpsList] = useState<any[]>([]);
+  const [raporSemesterData, setRaporSemesterData] = useState<RaporSemesterDataConfig>({
+    settings: {
+      place: 'Pandaan',
+      midtermDate: new Date().toISOString().split('T')[0],
+      finalDate: new Date().toISOString().split('T')[0],
+      schoolName: schoolIdentity?.name || '',
+      schoolAddress: schoolIdentity?.address || '',
+      principalName: schoolIdentity?.principal || '',
+      fase: 'D',
+      showHomeroomNameInSig: true
+    },
+    studentRecords: {}
+  });
 
   useEffect(() => {
-    fetch(`/api/curriculum/subjects?_t=${Date.now()}`)
+    const ts = Date.now();
+    fetch(`/api/curriculum/subjects?_t=${ts}`)
       .then(res => res.json())
       .then(data => {
         if (data && Array.isArray(data.subjects) && data.subjects.length > 0) {
@@ -221,37 +254,58 @@ export default function StudentPanel({
         }
       })
       .catch(() => {});
+
+    fetch(`/api/curriculum/rapor-data?_t=${ts}`)
+      .then(res => res.json())
+      .then(data => {
+        const payload = data?.data || data?.raporData;
+        if (payload) {
+          setRaporSemesterData(prev => ({
+            settings: { ...prev.settings, ...(payload.settings || {}) },
+            studentRecords: payload.studentRecords || {}
+          }));
+        }
+      })
+      .catch(() => {});
+
+    fetch(`/api/curriculum/tp-levels?_t=${ts}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.tpDescriptions)) {
+          setTpLevelsList(data.tpDescriptions);
+        }
+      })
+      .catch(() => {});
+
+    fetch(`/api/curriculum/shared-tps?_t=${ts}`)
+      .then(res => res.json())
+      .then(data => {
+        const list = data?.tps || data?.sharedTps;
+        if (Array.isArray(list)) {
+          setSharedTpsList(list);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  // Catatan wali kelas tersimpan oleh Waka Kurikulum / Wali Kelas
+  // Catatan wali kelas tersimpan langsung di MySQL (tanpa localStorage)
   const studentNote = useMemo(() => {
     if (!currentStudent) return '';
-    try {
-      const saved = localStorage.getItem('waka_rapor_pts_notes');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed[currentStudent.id]) {
-          return parsed[currentStudent.id];
-        }
-      }
-    } catch {}
-    return '';
-  }, [currentStudent]);
+    const rec = raporSemesterData.studentRecords?.[currentStudent.id];
+    return rec?.note || '';
+  }, [currentStudent, raporSemesterData]);
 
-  // Tanggal Rapor Tersinkron
+  // Tanggal Rapor Tersinkron dari MySQL
   const raporDateStr = useMemo(() => {
-    try {
-      const saved = localStorage.getItem('waka_rapor_pts_date');
-      if (saved) return formatIndonesianDate(saved);
-    } catch {}
-    if (raporSubTab === 'akhir_semester' && reportReleaseConfig.finalDate) {
-      return formatIndonesianDate(reportReleaseConfig.finalDate);
-    }
-    if (reportReleaseConfig.midtermDate) {
-      return formatIndonesianDate(reportReleaseConfig.midtermDate);
+    if (raporSubTab === 'akhir_semester') {
+      const d = raporSemesterData.settings?.finalDate || reportReleaseConfig.finalDate;
+      if (d) return formatIndonesianDate(d);
+    } else {
+      const d = raporSemesterData.settings?.midtermDate || reportReleaseConfig.midtermDate;
+      if (d) return formatIndonesianDate(d);
     }
     return new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-  }, [reportReleaseConfig, raporSubTab]);
+  }, [reportReleaseConfig, raporSubTab, raporSemesterData]);
 
   const studentHomeroom = useMemo(() => {
     if (!currentStudent || !currentStudent.class) return null;
@@ -261,7 +315,7 @@ export default function StudentPanel({
   const homeroomTeacherName = studentHomeroom?.name || 'Wali Kelas';
 
   // Memoized Rapor calculations for logged in student (Exact sync with WakaKurikulumPanel)
-  const studentAssessmentsForRapor = useMemo(() => {
+  const studentAssessmentsForRapor = useMemo<RaporSubjectRow[]>(() => {
     if (!currentStudent) return [];
     const activeSem = reportReleaseConfig.activeSemester || 'Ganjil';
     const activeYear = selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027';
@@ -272,30 +326,13 @@ export default function StudentPanel({
       (!activeYear || activeYear === 'all' || a.academicYear === activeYear)
     );
 
-    // Source master subjects from curriculumSubjectsList, with fallback to DEFAULT_REPORT_SUBJECTS
-    const rawSubjects = (curriculumSubjectsList && curriculumSubjectsList.length > 0)
-      ? [...curriculumSubjectsList]
-      : [...DEFAULT_REPORT_SUBJECTS];
+    // Tampilkan mata pelajaran murni sesuai yang ada di Master Data Mapel Waka Kurikulum
+    const baseSubjects = [...(curriculumSubjectsList || [])];
+    baseSubjects.sort((a, b) => (Number(a.orderNum) || 99) - (Number(b.orderNum) || 99));
 
-    // Filter out legacy or excluded subjects (Bahasa Arab & Aswaja)
-    const baseSubjects = rawSubjects.filter(s => {
-      const c = (s.code || '').toUpperCase();
-      const n = (s.name || '').toLowerCase();
-      return c !== 'BARAB' && c !== 'ASWAJA' && !n.includes('bahasa arab') && !n.includes('aswaja') && !n.includes('ke-nu-an');
-    });
+    const studentRecord = raporSemesterData.studentRecords?.[currentStudent.id];
 
-    // Strictly sort subjects: Official 11 order first, then remaining master subjects by orderNum
-    baseSubjects.sort((a, b) => {
-      const idxA = OFFICIAL_REPORT_ORDER.findIndex(o => isSameSubject(o, a.name) || isSameSubject(o, a.code));
-      const idxB = OFFICIAL_REPORT_ORDER.findIndex(o => isSameSubject(o, b.name) || isSameSubject(o, b.code));
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
-      return (Number(a.orderNum) || 99) - (Number(b.orderNum) || 99);
-    });
-
-    // Map each master subject to the student's assessment
-    const reportRows = baseSubjects.map(cs => {
+    const reportRows: RaporSubjectRow[] = baseSubjects.map((cs, index) => {
       const a = matched.find(m => isSameSubject(m.subject, cs.name) || isSameSubject(m.subject, cs.code));
       const kktp = cs.kktp || (a ? (a as any).kktp : 75) || 75;
       const avgTp = a && a.nilaiRataTp !== undefined && a.nilaiRataTp !== null ? Number(a.nilaiRataTp) : 0;
@@ -303,46 +340,77 @@ export default function StudentPanel({
       const pts = a && a.nilaiPts !== undefined && a.nilaiPts !== null ? Number(a.nilaiPts) : 0;
       const pas = a && a.nilaiPas !== undefined && a.nilaiPas !== null ? Number(a.nilaiPas) : 0;
 
+      // Rumus NA Rapor Tengah Semester tetap (tidak ada perubahan)
       let naPts = 0;
       if (avgTp > 0 && pts > 0) {
-        // Perhitungan NA khusus Rapor Tengah Semester: (Rata-rata TP x 80%) + (ASTS x 20%)
         naPts = Math.round((avgTp * 0.8) + (pts * 0.2));
       } else if (avgTp > 0 && pts === 0) {
-        // Jika ASTS belum diisi, gunakan Rata-rata TP
         naPts = Math.round(avgTp);
       } else if (pts > 0 && avgTp === 0) {
-        // Jika TP belum diisi, gunakan ASTS
         naPts = Math.round(pts);
       } else if (a && a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0) {
         naPts = Number(a.nilaiAkhirMapel);
       }
 
+      // Rumus NA Rapor Akhir Semester tetap (tidak ada perubahan)
       let naAkhir = 0;
       if (a && a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0) {
         naAkhir = Number(a.nilaiAkhirMapel);
-      } else if (avgTp > 0 && (pts > 0 || pas > 0)) {
-        naAkhir = Math.round((avgTp * 2 + (pts > 0 ? pts : avgTp) + (pas > 0 ? pas : avgTp)) / 4);
+      } else if (avgTp > 0 || koku > 0 || pts > 0 || pas > 0) {
+        naAkhir = Math.round(((avgTp * 3) + koku + pts + pas) / 6);
       } else if (naPts > 0) {
         naAkhir = naPts;
       }
 
-      let desc = '';
+      let descPts = '';
       if (a && a.deskripsiCapaian && a.deskripsiCapaian.trim()) {
-        desc = a.deskripsiCapaian.trim();
+        descPts = a.deskripsiCapaian.trim();
       } else if (naPts >= 85) {
-        desc = `Menunjukkan pemahaman prima dalam seluruh materi dan tujuan pembelajaran tengah semester.`;
+        descPts = `Menunjukkan pemahaman prima dalam seluruh materi dan tujuan pembelajaran tengah semester.`;
       } else if (naPts >= 75) {
-        desc = `Menunjukkan capaian kompetensi yang tuntas dan pemahaman materi tengah semester yang baik.`;
+        descPts = `Menunjukkan capaian kompetensi yang tuntas dan pemahaman materi tengah semester yang baik.`;
       } else if (naPts > 0) {
-        desc = `Perlu bimbingan dan pendampingan remedial pada capaian materi tengah semester.`;
+        descPts = `Perlu bimbingan dan pendampingan remedial pada capaian materi tengah semester.`;
       } else {
-        desc = `-`;
+        descPts = `-`;
       }
+
+      const clsUpper = (currentStudent.class || '').toUpperCase();
+      const studentGrade = (clsUpper.includes('9') || clsUpper.includes('IX'))
+        ? '9'
+        : (clsUpper.includes('8') || clsUpper.includes('VIII'))
+        ? '8'
+        : '7';
+      const allAssForSubj = liveAssessments.filter(m => isSameSubject(m.subject, cs.name) || isSameSubject(m.subject, cs.code));
+
+      const capaianResult = buildCapaianTujuanPembelajaran({
+        assessment: a,
+        allAssessmentsForSubject: allAssForSubj,
+        tpDescriptions: tpLevelsList,
+        sharedTps: sharedTpsList,
+        subjectName: cs.name,
+        subjectCode: cs.code,
+        gradeLevel: studentGrade,
+        semester: activeSem,
+        academicYear: activeYear,
+        kktp,
+        naAkhir: naAkhir > 0 ? naAkhir : naPts
+      });
+
+      const orderNo = index + 1;
+      const isMulok =
+        (cs.category || '').toLowerCase().includes('lokal') ||
+        orderNo >= 11 ||
+        isSameSubject(cs.name, 'Bahasa Daerah') ||
+        isSameSubject(cs.name, "Baca Tulis Al Qur'an");
 
       return {
         id: a ? a.id : `subj-${cs.id || cs.code}-${currentStudent.id}`,
+        orderNo,
         subject: cs.name,
-        code: cs.code,
+        displayName: cleanSubjectDisplayName(cs.name, isMulok),
+        code: cs.code || '',
+        category: isMulok ? 'Muatan Lokal' : 'Wajib',
         kktp,
         avgTp,
         koku,
@@ -350,62 +418,19 @@ export default function StudentPanel({
         pas,
         naPts,
         naAkhir,
-        desc,
+        descPts,
+        descAkhir: capaianResult.descAkhir,
+        desc: raporSubTab === 'akhir_semester' ? capaianResult.descAkhir : descPts,
+        highestTpText: capaianResult.highestTpText,
+        highestTpScore: capaianResult.highestTpScore,
+        lowestTpText: capaianResult.lowestTpText,
+        lowestTpScore: capaianResult.lowestTpScore,
         hasAssessment: !!a
-      };
-    });
-
-    // Append any extra subjects that were assessed but not present in baseSubjects (excluding deprecated subjects)
-    matched.forEach(a => {
-      const subLower = (a.subject || '').toLowerCase();
-      if (subLower.includes('bahasa arab') || subLower.includes('aswaja') || subLower.includes('ke-nu-an')) return;
-      const exists = reportRows.some(r => isSameSubject(r.subject, a.subject) || isSameSubject(r.code, a.subject));
-      if (!exists) {
-        const avgTp = a.nilaiRataTp !== undefined && a.nilaiRataTp !== null ? Number(a.nilaiRataTp) : 0;
-        const koku = a.nilaiKokurikuler !== undefined && a.nilaiKokurikuler !== null ? Number(a.nilaiKokurikuler) : 0;
-        const pts = a.nilaiPts !== undefined && a.nilaiPts !== null ? Number(a.nilaiPts) : 0;
-        const pas = a.nilaiPas !== undefined && a.nilaiPas !== null ? Number(a.nilaiPas) : 0;
-
-        let naPts = 0;
-        if (avgTp > 0 && pts > 0) {
-          naPts = Math.round((avgTp * 0.8) + (pts * 0.2));
-        } else if (avgTp > 0 && pts === 0) {
-          naPts = Math.round(avgTp);
-        } else if (pts > 0 && avgTp === 0) {
-          naPts = Math.round(pts);
-        } else if (a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0) {
-          naPts = Number(a.nilaiAkhirMapel);
-        }
-
-        let naAkhir = 0;
-        if (a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0) {
-          naAkhir = Number(a.nilaiAkhirMapel);
-        } else if (avgTp > 0 && (pts > 0 || pas > 0)) {
-          naAkhir = Math.round((avgTp * 2 + (pts > 0 ? pts : avgTp) + (pas > 0 ? pas : avgTp)) / 4);
-        } else if (naPts > 0) {
-          naAkhir = naPts;
-        }
-
-        let desc = a.deskripsiCapaian || (naPts >= 75 ? 'Menunjukkan capaian kompetensi yang tuntas.' : '-');
-        reportRows.push({
-          id: a.id,
-          subject: a.subject,
-          code: '',
-          kktp: (a as any).kktp || 75,
-          avgTp,
-          koku,
-          pts,
-          pas,
-          naPts,
-          naAkhir,
-          desc,
-          hasAssessment: true
-        });
-      }
+      } as RaporSubjectRow & { desc: string };
     });
 
     return reportRows;
-  }, [currentStudent, liveAssessments, reportReleaseConfig, curriculumSubjectsList]);
+  }, [currentStudent, liveAssessments, reportReleaseConfig, curriculumSubjectsList, raporSemesterData, tpLevelsList, sharedTpsList, raporSubTab, selectedAcademicYear, schoolIdentity]);
 
   // Total dan Rata-rata Nilai Rapor
   const { totalScore, avgScore } = useMemo(() => {
@@ -453,20 +478,39 @@ export default function StudentPanel({
     return att;
   }, [attendanceLogs, currentStudent, reportReleaseConfig]);
 
-  // Fungsi Cetak Lembar Rapor Resmi A4 (Sama persis dengan Waka Kurikulum)
+  // Fungsi Cetak Lembar Rapor Resmi (Tengah Semester A4 & Akhir Semester F4 2 Halaman)
   const handlePrintStudentReport = (reportType: 'tengah_semester' | 'akhir_semester' = raporSubTab) => {
     if (!currentStudent) return;
+    const activeSem = reportReleaseConfig.activeSemester || 'Ganjil';
+    const activeYear = selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027';
+
+    if (reportType === 'akhir_semester') {
+      printRaporAkhirSemesterF4({
+        studentsToPrint: [currentStudent],
+        getStudentSubjectRows: () => studentAssessmentsForRapor,
+        getStudentAttendance: () => studentRaporAttendance,
+        getStudentRaporRecord: (st) =>
+          raporSemesterData.studentRecords?.[st.id] ||
+          (st.nis ? raporSemesterData.studentRecords?.[st.nis] : undefined),
+        getHomeroomTeacherName: () => homeroomTeacherName,
+        raporSettings: raporSemesterData.settings,
+        schoolIdentity,
+        semester: activeSem,
+        academicYear: activeYear,
+        formattedDateStr: raporDateStr
+      });
+      return;
+    }
+
     const printWin = window.open('', '_blank');
     if (!printWin) {
       alert("Gagal membuka jendela cetak. Pastikan pop-up diizinkan pada browser Anda.");
       return;
     }
 
-    const city = "Pandaan";
-    const principalName = schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd";
-    const isAkhir = reportType === 'akhir_semester';
-    const activeSem = reportReleaseConfig.activeSemester || 'Ganjil';
-    const activeYear = selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027';
+    const city = raporSemesterData.settings?.place || "Pandaan";
+    const principalName = raporSemesterData.settings?.principalName || schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd";
+    const isAkhir = false;
 
     const officialKopHtml = schoolIdentity?.letterhead
       ? `<div style="width: 100%; margin: 0 0 8px 0; padding: 0;">
@@ -493,7 +537,7 @@ export default function StudentPanel({
               <td style="border: 1px solid #000; padding: 3.5px 6px; font-weight: bold; width: 26%;">${s.subject}</td>
               <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 600; width: 10%;">${s.kktp || 75}</td>
               <td style="text-align: center; border: 1px solid #000; padding: 3.5px 3px; font-weight: 800; background-color: #f8fafc; width: 12%;">${(s.naAkhir > 0 ? s.naAkhir : s.naPts) > 0 ? (s.naAkhir > 0 ? s.naAkhir : s.naPts) : '-'}</td>
-              <td style="border: 1px solid #000; padding: 3.5px 6px; font-size: 7.2pt; line-height: 1.25; color: #334155; width: 46%;">${s.desc}</td>
+              <td style="border: 1px solid #000; padding: 3.5px 6px; font-size: 7.2pt; line-height: 1.25; color: #334155; width: 46%;">${s.descAkhir || s.descPts}</td>
             </tr>
           `).join('')
         : studentAssessmentsForRapor.map((s, idx) => `
@@ -5407,12 +5451,12 @@ export default function StudentPanel({
                           {/* Action Toolbar */}
                           <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                                  Pratinjau Lembar Rapor Resmi
+                                  Pratinjau Rapor Akhir Semester (F4 — 2 Halaman)
                                 </span>
                                 <span className="text-[10px] font-bold text-slate-400">
-                                  Kelas {currentStudent.class} &bull; Semester {reportReleaseConfig.activeSemester || 'Ganjil'}
+                                  Kelas {currentStudent.class} &bull; Semester {reportReleaseConfig.activeSemester || 'Ganjil'} &bull; NIS/NISN: {[currentStudent.nis, currentStudent.nisn].filter(Boolean).join(' / ') || '-'}
                                 </span>
                               </div>
                               <h3 className="font-black text-slate-900 text-lg leading-tight mt-1">
@@ -5423,236 +5467,27 @@ export default function StudentPanel({
                             <button
                               type="button"
                               onClick={() => handlePrintStudentReport('akhir_semester')}
-                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs self-start sm:self-auto"
+                              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs self-start sm:self-auto"
                             >
                               <Printer size={14} />
-                              <span>Cetak Lembar Rapor Resmi (A4)</span>
+                              <span>Cetak Rapor Akhir (F4 - 2 Halaman)</span>
                             </button>
                           </div>
 
-                          {/* Report Card Document Simulation (A4 Look - Exact Sync with WakaKurikulumPanel) */}
-                          <div className="bg-white border-2 border-slate-300 rounded-2xl p-6 sm:p-8 shadow-xs text-black font-sans text-xs select-text">
-                            {/* 1. KOP Resmi Sekolah */}
-                            {schoolIdentity?.letterhead ? (
-                              <div className="-mx-6 -mt-6 sm:-mx-8 sm:-mt-8 mb-5 overflow-hidden rounded-t-2xl">
-                                <img
-                                  src={schoolIdentity.letterhead}
-                                  alt="KOP Resmi Sekolah"
-                                  className="w-full h-auto block"
-                                  style={{ width: '100%', display: 'block' }}
-                                />
-                              </div>
-                            ) : (
-                              <div className="w-full text-center mb-4">
-                                <div className="text-xs font-bold tracking-wider uppercase">LEMBAGA PENDIDIKAN MA'ARIF NU</div>
-                                <div className="text-base font-black uppercase mt-0.5">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</div>
-                                <div className="text-[10px] text-slate-600 mt-0.5">
-                                  NPSN: {schoolIdentity?.npsn || '20519280'} &bull; Status Akreditasi: {schoolIdentity?.accreditation || 'A (Unggul)'}
-                                </div>
-                                <div className="text-[10px] text-slate-600">
-                                  {schoolIdentity?.address || "Jl. Dr. Sutomo No. 1 Pandaan, Pasuruan"} &bull; Telp: {schoolIdentity?.phone || "0343-631234"}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* 2. Judul Dokumen Rapor */}
-                            <div className="text-center my-3">
-                              <h4 className="font-extrabold text-sm uppercase underline tracking-wide">
-                                LAPORAN HASIL BELAJAR AKHIR SEMESTER
-                              </h4>
-                              <p className="font-bold text-xs uppercase mt-0.5">
-                                (SUMATIF AKHIR SEMESTER / SAS)
-                              </p>
-                            </div>
-
-                            {/* 3. Grid Metadata Identitas Siswa & Sekolah (Dua Kolom) */}
-                            {(() => {
-                              const nameLen = (currentStudent.name || '').trim().length;
-                              const nameSizeClass = nameLen > 36
-                                ? 'text-[10px]'
-                                : nameLen > 28
-                                ? 'text-[11px]'
-                                : nameLen > 22
-                                ? 'text-[11.5px]'
-                                : 'text-xs';
-                              return (
-                                <div className="flex justify-between items-start mb-3 text-xs leading-relaxed w-full">
-                                  <table className="border-collapse">
-                                    <tbody>
-                                      <tr>
-                                        <td className="font-semibold py-0.5 whitespace-nowrap pr-2">Nama Murid</td>
-                                        <td className="py-0.5 whitespace-nowrap">
-                                          : <strong className={`${nameSizeClass} inline-block whitespace-nowrap align-middle`}>
-                                              {currentStudent.name}
-                                            </strong>
-                                        </td>
-                                      </tr>
-                                      <tr>
-                                        <td className="font-semibold py-0.5 whitespace-nowrap pr-2">NIS</td>
-                                        <td className="py-0.5 font-mono whitespace-nowrap">: {currentStudent.nis || "-"}</td>
-                                      </tr>
-                                      <tr>
-                                        <td className="font-semibold py-0.5 whitespace-nowrap pr-2">Nama Sekolah</td>
-                                        <td className="py-0.5 whitespace-nowrap">: {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-
-                                  <table className="border-collapse ml-auto">
-                                    <tbody>
-                                      <tr>
-                                        <td className="font-semibold py-0.5 whitespace-nowrap pr-2">Tahun Ajaran</td>
-                                        <td className="py-0.5 whitespace-nowrap text-left">: {selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'}</td>
-                                      </tr>
-                                      <tr>
-                                        <td className="font-semibold py-0.5 whitespace-nowrap pr-2">Kelas / Fase</td>
-                                        <td className="py-0.5 whitespace-nowrap text-left">: {currentStudent.class} / Fase D</td>
-                                      </tr>
-                                      <tr>
-                                        <td className="font-semibold py-0.5 whitespace-nowrap pr-2">Semester</td>
-                                        <td className="py-0.5 whitespace-nowrap text-left">: {reportReleaseConfig.activeSemester || 'Ganjil'}</td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                </div>
-                              );
-                            })()}
-
-                            {/* 4. Tabel Hasil Belajar Akhir Semester */}
-                            <div className="font-bold uppercase text-[11px] mb-1">
-                              A. CAPAIAN HASIL BELAJAR AKHIR SEMESTER
-                            </div>
-                            <div className="overflow-x-auto border border-black mb-3">
-                              <table className="w-full text-xs border-collapse">
-                                <thead>
-                                  <tr className="bg-slate-100 text-center font-bold">
-                                    <th className="border border-black py-1.5 px-1 w-10">NO</th>
-                                    <th className="border border-black py-1.5 px-3 text-left">MATA PELAJARAN</th>
-                                    <th className="border border-black py-1.5 px-2 w-20">KKTP</th>
-                                    <th className="border border-black py-1.5 px-2 w-28 bg-slate-200">NILAI AKHIR</th>
-                                    <th className="border border-black py-1.5 px-3 text-left">CAPAIAN KOMPETENSI</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {studentAssessmentsForRapor.length === 0 ? (
-                                    <tr>
-                                      <td colSpan={5} className="border border-black py-8 text-center text-slate-500 italic">
-                                        Belum ada data penilaian mata pelajaran untuk akhir semester ini.
-                                      </td>
-                                    </tr>
-                                  ) : (
-                                    studentAssessmentsForRapor.map((s, idx) => {
-                                      const na = s.naAkhir > 0 ? s.naAkhir : s.naPts;
-                                      return (
-                                        <tr key={s.id || idx} className="hover:bg-slate-50">
-                                          <td className="border border-black py-1.5 px-1 text-center font-medium">{idx + 1}</td>
-                                          <td className="border border-black py-1.5 px-3 font-bold">{s.subject}</td>
-                                          <td className="border border-black py-1.5 px-2 text-center font-semibold text-slate-700">{s.kktp}</td>
-                                          <td className="border border-black py-1.5 px-2 text-center font-black bg-slate-100">
-                                            {na > 0 ? na : '-'}
-                                          </td>
-                                          <td className="border border-black py-1.5 px-3 text-slate-700 leading-snug">
-                                            {s.desc}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })
-                                  )}
-                                </tbody>
-                                {studentAssessmentsForRapor.length > 0 && (
-                                  <tfoot>
-                                    <tr className="bg-slate-50 font-bold text-center">
-                                      <td colSpan={3} className="border border-black py-1.5 px-3 text-right">RATA-RATA NILAI AKHIR</td>
-                                      <td className="border border-black py-1.5 px-2 font-black">{avgScore}</td>
-                                      <td className="border border-black py-1.5 px-3 text-left text-[11px] font-normal italic text-slate-600">
-                                        Tuntas Capaian Pembelajaran Fase D
-                                      </td>
-                                    </tr>
-                                  </tfoot>
-                                )}
-                              </table>
-                            </div>
-
-                            {/* 5. REKAPITULASI KEHADIRAN (ABSENSI) SEBELUM CATATAN WALI KELAS */}
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-4 items-stretch">
-                              {/* Absensi (5 Cols) */}
-                              <div className="md:col-span-5 flex flex-col">
-                                <div className="font-bold uppercase text-[11px] mb-1">
-                                  B. REKAPITULASI KEHADIRAN
-                                </div>
-                                <table className="w-full text-xs border border-black border-collapse h-full">
-                                  <tbody>
-                                    <tr>
-                                      <td className="border border-black py-1 px-2 w-7/12">Sakit (S)</td>
-                                      <td className="border border-black py-1 px-2 text-center font-bold">{studentRaporAttendance.Sakit} Hari</td>
-                                    </tr>
-                                    <tr>
-                                      <td className="border border-black py-1 px-2">Izin (I)</td>
-                                      <td className="border border-black py-1 px-2 text-center font-bold">{studentRaporAttendance.Izin} Hari</td>
-                                    </tr>
-                                    <tr>
-                                      <td className="border border-black py-1 px-2">Tanpa Keterangan (A)</td>
-                                      <td className="border border-black py-1 px-2 text-center font-bold">{studentRaporAttendance.Alpa} Hari</td>
-                                    </tr>
-                                    <tr className="bg-slate-100 font-bold">
-                                      <td className="border border-black py-1 px-2">Jumlah Tidak Hadir</td>
-                                      <td className="border border-black py-1 px-2 text-center">
-                                        {studentRaporAttendance.Sakit + studentRaporAttendance.Izin + studentRaporAttendance.Alpa} Hari
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-
-                              {/* Catatan Wali Kelas (7 Cols) */}
-                              <div className="md:col-span-7 flex flex-col">
-                                <div className="font-bold uppercase text-[11px] mb-1">
-                                  C. CATATAN WALI KELAS
-                                </div>
-                                <div className="border border-black p-3 text-xs leading-relaxed italic bg-white flex-1 min-h-[70px]">
-                                  "{studentNote || "Ananda telah menuntaskan seluruh proses pembelajaran Kurikulum Merdeka pada semester ini dengan penuh dedikasi. Terus kembangkan potensi diri, pertahankan akhlak mulia dan prestasi pada semester berikutnya."}"
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* 6. Kolom Tanda Tangan (3 Kolom: Orang Tua, Wali Kelas, Kepala Sekolah) */}
-                            <table className="w-full text-xs mt-6 border-collapse">
-                              <tbody>
-                                <tr>
-                                  <td className="w-1/3 text-center align-top">
-                                    Mengetahui,<br />
-                                    Orang Tua / Wali Murid
-                                    <div className="h-14"></div>
-                                    ( .................................................. )
-                                  </td>
-                                  <td className="w-1/3 text-center align-top">
-                                    Pandaan, {raporDateStr}<br />
-                                    Wali Kelas {currentStudent.class}
-                                    <div className="h-14 flex items-center justify-center">
-                                      {schoolIdentity?.principalSignature && (
-                                        <span className="text-[9px] text-slate-400 italic">[Terverifikasi Sistem]</span>
-                                      )}
-                                    </div>
-                                    <u><strong>{homeroomTeacherName}</strong></u>
-                                  </td>
-                                  <td className="w-1/3 text-center align-top">
-                                    Mengetahui,<br />
-                                    Kepala Sekolah
-                                    <div className="h-14 flex items-center justify-center">
-                                      {schoolIdentity?.principalSignature ? (
-                                        <img
-                                          src={schoolIdentity.principalSignature}
-                                          alt="TTD Kepala Sekolah"
-                                          className="max-h-12 max-w-[120px] object-contain mx-auto"
-                                        />
-                                      ) : null}
-                                    </div>
-                                    <u><strong>{schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd"}</strong></u>
-                                  </td>
-                                </tr>
-                              </tbody>
-                            </table>
-                          </div>
+                          {/* Report Card Document Simulation (F4 2 Halaman - Exact Sync with WakaKurikulumPanel) */}
+                          <RaporAkhirF4Preview
+                            student={currentStudent}
+                            subjectRows={studentAssessmentsForRapor}
+                            rawAttendance={studentRaporAttendance}
+                            studentRecord={raporSemesterData.studentRecords?.[currentStudent.id]}
+                            raporSettings={raporSemesterData.settings}
+                            semester={reportReleaseConfig.activeSemester || 'Ganjil'}
+                            academicYear={selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'}
+                            homeroomTeacherName={homeroomTeacherName}
+                            schoolIdentity={schoolIdentity}
+                            formattedDateStr={raporDateStr}
+                            editable={false}
+                          />
                         </div>
                       )}
                     </>

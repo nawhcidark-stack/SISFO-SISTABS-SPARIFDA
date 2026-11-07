@@ -99,34 +99,53 @@ const homeroomTeachers: HomeroomTeacher[] = [
 ];
 
 export const DEFAULT_CURRICULUM_SUBJECTS: CurriculumSubject[] = [
-  { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 1 },
+  { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam dan Budi Pekerti', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 1 },
   { id: 'mapel-ppkn', code: 'PPKN', name: 'Pendidikan Pancasila', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 2 },
   { id: 'mapel-bindo', code: 'BINDO', name: 'Bahasa Indonesia', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 3 },
   { id: 'mapel-mtk', code: 'MAT', name: 'Matematika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 4 },
   { id: 'mapel-ipa', code: 'IPA', name: 'Ilmu Pengetahuan Alam (IPA)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 5 },
   { id: 'mapel-ips', code: 'IPS', name: 'Ilmu Pengetahuan Sosial (IPS)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 6 },
   { id: 'mapel-bing', code: 'BING', name: 'Bahasa Inggris', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 7 },
-  { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 8 },
-  { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 9 },
-  { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 10 },
+  { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 8 },
+  { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 9 },
+  { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 10 },
   { id: 'mapel-bjawa', code: 'MULOK', name: 'Muatan Lokal: Bahasa Daerah', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 11 },
-  { id: 'mapel-barab', code: 'BARAB', name: 'Bahasa Arab', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 12 },
-  { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 13 }
+  { id: 'mapel-btq', code: 'BTQ', name: "Baca Tulis Al Qur'an", category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 12 }
 ];
 
 const curriculumSubjects: CurriculumSubject[] = [];
 const curriculumTpDescriptions: CurriculumTpDescription[] = [];
 const sharedLearningObjectives: SharedLearningObjective[] = [];
 
-const subjectTeachers: SubjectTeacher[] = [
-  { id: "st-1", username: "guru_math", name: "Drs. Heru Setyawan, M.Pd", subject: "Matematika", subjectId: "mapel-mtk", password: "mapel123" },
-  { id: "st-2", username: "guru_english", name: "Ibu Lindawati, S.Pd", subject: "Bahasa Inggris", subjectId: "mapel-bing", password: "mapel123" },
-  { id: "st-3", username: "guru_ipa", name: "Budi Wijaya, S.Si", subject: "Ilmu Pengetahuan Alam", subjectId: "mapel-ipa", password: "mapel123" },
-  { id: "st-4", username: "guru_ips", name: "Dra. Siti Rahma", subject: "Ilmu Pengetahuan Sosial", subjectId: "mapel-ips", password: "mapel123" },
-  { id: "st-5", username: "guru_indo", name: "Ahmad Fauzan, S.S", subject: "Bahasa Indonesia", subjectId: "mapel-bindo", password: "mapel123" },
-  { id: "st-6", username: "guru_agama", name: "KH. M. Syukron, S.Pd.I", subject: "Pendidikan Agama Islam", subjectId: "mapel-pai", password: "mapel123" },
-  { id: "st-7", username: "guru_pjok", name: "Eko Prasetyo, S.Pd", subject: "Pendidikan Jasmani & OR", subjectId: "mapel-pjok", password: "mapel123" }
-];
+const DUMMY_SUBJECT_TEACHER_IDS = new Set([
+  "st-1", "st-2", "st-3", "st-4", "st-5", "st-6", "st-7"
+]);
+const DUMMY_SUBJECT_TEACHER_USERNAMES = new Set([
+  "guru_math", "guru_english", "guru_ipa", "guru_ips", "guru_indo", "guru_agama", "guru_pjok", "guru_seni", "guru_info"
+]);
+const DUMMY_SUBJECT_TEACHER_NAMES = new Set([
+  "drs. heru setyawan, m.pd",
+  "ibu lindawati, s.pd",
+  "budi wijaya, s.si",
+  "dra. siti rahma",
+  "ahmad fauzan, s.s",
+  "kh. m. syukron, s.pd.i",
+  "eko prasetyo, s.pd",
+  "dra. nurhayati",
+  "agus setyono, s.kom"
+]);
+
+function isDummySubjectTeacher(st: any): boolean {
+  if (!st) return false;
+  const id = String(st.id || "").trim();
+  const username = String(st.username || "").trim().toLowerCase();
+  const name = String(st.name || "").trim().toLowerCase();
+  return DUMMY_SUBJECT_TEACHER_IDS.has(id) ||
+         DUMMY_SUBJECT_TEACHER_USERNAMES.has(username) ||
+         DUMMY_SUBJECT_TEACHER_NAMES.has(name);
+}
+
+const subjectTeachers: SubjectTeacher[] = [];
 
 const teacherSalaries: TeacherSalary[] = [];
 let salaryConfig: SalaryConfig = {
@@ -267,38 +286,7 @@ const principalWorkPrograms: any[] = [
   }
 ];
 
-const teacherEvaluations: any[] = [
-  {
-    id: "te-1",
-    teacherType: "homeroom",
-    teacherId: "ht-1",
-    teacherName: "Budi Santoso, S.Pd",
-    evaluatorName: "H. Ahmad Fuad, S.Pd, M.PdI",
-    date: "2026-05-20",
-    academicYear: "2025/2026",
-    pedagogicScore: 92,
-    professionalScore: 88,
-    personalScore: 95,
-    socialScore: 90,
-    notes: "Sangat baik dalam pengelolaan kelas 7-A dan memiliki kepribadian serta interaksi sosial yang hangat bersama murid dan wali murid. Perlu mempertahankan materi ajar digital demi memicu inovasi tinggi.",
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: "te-2",
-    teacherType: "subject_teacher",
-    teacherId: "st-1",
-    teacherName: "Drs. Heru Setyawan, M.Pd",
-    evaluatorName: "H. Ahmad Fuad, S.Pd, M.PdI",
-    date: "2026-05-22",
-    academicYear: "2025/2026",
-    pedagogicScore: 89,
-    professionalScore: 91,
-    personalScore: 88,
-    socialScore: 87,
-    notes: "Kemampuan memahamkan siswa terhadap konsep-konsep Aljabar dan Persamaan Linear sangat baik. Disarankan mengintegrasikan alat peraga digital interaktif.",
-    createdAt: new Date().toISOString()
-  }
-];
+const teacherEvaluations: any[] = [];
 
 const sarprasItems: any[] = [
   {
@@ -392,30 +380,7 @@ const sarprasProposals: any[] = [
   }
 ];
 
-const sarprasLoans: any[] = [
-  {
-    id: "loan-1",
-    itemId: "item-1",
-    itemName: "Proyektor Epson EB-X400",
-    borrowerId: "st-1",
-    borrowerName: "Drs. Heru Setyawan, M.Pd",
-    qty: 1,
-    loanDate: "2026-05-26",
-    status: "dipinjam",
-    notes: "Untuk pelajaran aljabar kelas 7-A"
-  },
-  {
-    id: "loan-2",
-    itemId: "item-5",
-    itemName: "Speaker Portable Polytron PTS-112",
-    borrowerId: "st-2",
-    borrowerName: "Ibu Lindawati, S.Pd",
-    qty: 1,
-    loanDate: "2026-05-27",
-    status: "dipinjam",
-    notes: "Listening practice kelas 8-B"
-  }
-];
+const sarprasLoans: any[] = [];
 
 // Pre-populate SPP bills (Juli 2025 to Juni 2026)
 const months = [
@@ -519,17 +484,112 @@ export interface ReportReleaseConfig {
   finalClasses?: string[];
   activeSemester?: string;
   activeAcademicYear?: string;
+  explicitlyConfigured?: boolean;
+  updatedAt?: string;
 }
 
 let reportReleaseConfig: ReportReleaseConfig = {
-  midtermReleased: false,
-  midtermReleasedAt: undefined,
-  midtermReleasedBy: undefined,
-  midtermClasses: [],
-  finalReleased: false,
-  finalReleasedAt: undefined,
-  finalReleasedBy: undefined,
-  finalClasses: []
+  midtermReleased: true,
+  midtermReleasedAt: "2026-11-07T00:00:00.000Z",
+  midtermReleasedBy: "Waka Kurikulum",
+  midtermClasses: ["all"],
+  finalReleased: true,
+  finalReleasedAt: "2026-11-07T00:00:00.000Z",
+  finalReleasedBy: "Waka Kurikulum",
+  finalClasses: ["all"],
+  activeSemester: "Ganjil",
+  activeAcademicYear: "2026/2027",
+  explicitlyConfigured: true
+};
+
+// Helper: Pastikan status rilis rapor tetap permanen dan tidak pernah ter-reset oleh seed default lama
+function applyAuthoritativeReportReleaseConfig(rawCfg: any): boolean {
+  if (!rawCfg || typeof rawCfg !== "object") return false;
+  const isLegacyUnconfiguredDefault =
+    !rawCfg.explicitlyConfigured &&
+    !rawCfg.midtermReleased &&
+    !rawCfg.finalReleased &&
+    !rawCfg.midtermReleasedAt &&
+    !rawCfg.finalReleasedAt;
+
+  if (isLegacyUnconfiguredDefault) {
+    reportReleaseConfig.midtermReleased = true;
+    reportReleaseConfig.midtermReleasedAt = reportReleaseConfig.midtermReleasedAt || "2026-11-07T00:00:00.000Z";
+    reportReleaseConfig.midtermReleasedBy = reportReleaseConfig.midtermReleasedBy || "Waka Kurikulum";
+    reportReleaseConfig.midtermClasses = ["all"];
+    reportReleaseConfig.finalReleased = true;
+    reportReleaseConfig.finalReleasedAt = reportReleaseConfig.finalReleasedAt || "2026-11-07T00:00:00.000Z";
+    reportReleaseConfig.finalReleasedBy = reportReleaseConfig.finalReleasedBy || "Waka Kurikulum";
+    reportReleaseConfig.finalClasses = ["all"];
+    reportReleaseConfig.activeSemester = rawCfg.activeSemester || reportReleaseConfig.activeSemester || "Ganjil";
+    reportReleaseConfig.activeAcademicYear = rawCfg.activeAcademicYear || reportReleaseConfig.activeAcademicYear || "2026/2027";
+    reportReleaseConfig.explicitlyConfigured = true;
+    return true; // Perlu disimpan kembali ke MySQL agar seed default lama diperbarui permanen
+  }
+
+  Object.assign(reportReleaseConfig, {
+    ...rawCfg,
+    midtermReleased: Boolean(rawCfg.midtermReleased),
+    finalReleased: Boolean(rawCfg.finalReleased),
+    midtermClasses: Array.isArray(rawCfg.midtermClasses) && rawCfg.midtermClasses.length > 0 ? rawCfg.midtermClasses : ["all"],
+    finalClasses: Array.isArray(rawCfg.finalClasses) && rawCfg.finalClasses.length > 0 ? rawCfg.finalClasses : ["all"],
+    activeSemester: rawCfg.activeSemester || reportReleaseConfig.activeSemester || "Ganjil",
+    activeAcademicYear: rawCfg.activeAcademicYear || reportReleaseConfig.activeAcademicYear || "2026/2027",
+    explicitlyConfigured: true
+  });
+  return false;
+}
+
+// Data Rapor Semester (Disimpan 100% langsung di MySQL app_configs tanpa localStorage)
+export interface RaporExtracurricularItem {
+  no: number;
+  name: string;
+  predicate: string;
+  description: string;
+}
+
+export interface RaporStudentRecord {
+  studentId: string;
+  nis?: string;
+  semester?: string;
+  academicYear?: string;
+  note?: string;
+  extracurriculars?: RaporExtracurricularItem[];
+  attendanceOverride?: {
+    sakit?: number | null;
+    izin?: number | null;
+    alpa?: number | null;
+  };
+  customDescriptions?: Record<string, string>;
+  updatedAt?: string;
+}
+
+export interface RaporSemesterDataConfig {
+  settings: {
+    place: string;
+    midtermDate: string;
+    finalDate: string;
+    schoolName: string;
+    schoolAddress: string;
+    principalName: string;
+    fase: string;
+    showHomeroomNameInSig?: boolean;
+  };
+  studentRecords: Record<string, RaporStudentRecord>;
+}
+
+let raporSemesterData: RaporSemesterDataConfig = {
+  settings: {
+    place: "Pandaan",
+    midtermDate: new Date().toISOString().slice(0, 10),
+    finalDate: new Date().toISOString().slice(0, 10),
+    schoolName: "",
+    schoolAddress: "",
+    principalName: "",
+    fase: "D",
+    showHomeroomNameInSig: true
+  },
+  studentRecords: {}
 };
 
 // Admin Credentials Config
@@ -1832,7 +1892,12 @@ async function refreshConfigsFromMysql(): Promise<void> {
     if (configs.curriculumConfig) Object.assign(curriculumConfig, configs.curriculumConfig);
     if (configs.adminConfig) Object.assign(adminConfig, configs.adminConfig);
     if (configs.spmbConfig) Object.assign(spmbConfig, configs.spmbConfig);
-    if (configs.reportReleaseConfig) Object.assign(reportReleaseConfig, configs.reportReleaseConfig);
+    if (configs.reportReleaseConfig) {
+      const needsUpgrade = applyAuthoritativeReportReleaseConfig(configs.reportReleaseConfig);
+      if (needsUpgrade) {
+        saveConfigToMysql("reportReleaseConfig", reportReleaseConfig).catch(() => {});
+      }
+    }
     if (configs.backupConfig) Object.assign(backupConfig, configs.backupConfig);
   } catch (err) {
     // Non-blocking fallback to in-memory state
@@ -1909,9 +1974,17 @@ function applyDataFromMysql(pulledData: any) {
       });
     }
 
-    if (Array.isArray(pulledData.subjectTeachers) && pulledData.subjectTeachers.length > 0) {
+    if (Array.isArray(pulledData.subjectTeachers)) {
+      const dummyStIds = pulledData.subjectTeachers
+        .filter((st: any) => isDummySubjectTeacher(st))
+        .map((st: any) => String(st.id || "").trim())
+        .filter(Boolean);
+      if (dummyStIds.length > 0) {
+        directDeleteEntitiesBatchFromMysql('subject_teacher', dummyStIds).catch(() => {});
+      }
+      const cleanPulledSt = pulledData.subjectTeachers.filter((st: any) => !isDummySubjectTeacher(st));
       subjectTeachers.length = 0;
-      subjectTeachers.push(...pulledData.subjectTeachers);
+      subjectTeachers.push(...cleanPulledSt);
     }
 
     // Ensure all homeroom teachers are synchronized into subjectTeachers
@@ -2079,7 +2152,12 @@ function applyDataFromMysql(pulledData: any) {
       if (pulledData.configs.curriculumConfig) Object.assign(curriculumConfig, pulledData.configs.curriculumConfig);
       if (pulledData.configs.adminConfig) Object.assign(adminConfig, pulledData.configs.adminConfig);
       if (pulledData.configs.spmbConfig) Object.assign(spmbConfig, pulledData.configs.spmbConfig);
-      if (pulledData.configs.reportReleaseConfig) Object.assign(reportReleaseConfig, pulledData.configs.reportReleaseConfig);
+      if (pulledData.configs.reportReleaseConfig) {
+        const needsUpgrade = applyAuthoritativeReportReleaseConfig(pulledData.configs.reportReleaseConfig);
+        if (needsUpgrade) {
+          saveConfigToMysql("reportReleaseConfig", reportReleaseConfig).catch(() => {});
+        }
+      }
       if (pulledData.configs.backupConfig) Object.assign(backupConfig, pulledData.configs.backupConfig);
     }
 
@@ -3159,7 +3237,9 @@ async function startServer() {
       bkConfig,
       curriculumConfig,
       adminConfig,
-      spmbConfig
+      spmbConfig,
+      reportReleaseConfig,
+      raporSemesterData
     };
 
     const counts = {
@@ -3310,7 +3390,10 @@ async function startServer() {
     if (hrArr) { homeroomTeachers.length = 0; homeroomTeachers.push(...hrArr); }
 
     const sjArr = getArray(["subjectTeachers", "subject_teachers"]);
-    if (sjArr) { subjectTeachers.length = 0; subjectTeachers.push(...sjArr); }
+    if (sjArr) {
+      subjectTeachers.length = 0;
+      subjectTeachers.push(...sjArr.filter((st: any) => !isDummySubjectTeacher(st)));
+    }
 
     const tjArr = getArray(["teachingJournals", "teaching_journals"]);
     if (tjArr) { teachingJournals.length = 0; teachingJournals.push(...tjArr); }
@@ -3392,6 +3475,10 @@ async function startServer() {
     if (snapshot.curriculumConfig) Object.assign(curriculumConfig, snapshot.curriculumConfig);
     if (snapshot.adminConfig) Object.assign(adminConfig, snapshot.adminConfig);
     if (snapshot.spmbConfig) Object.assign(spmbConfig, snapshot.spmbConfig);
+    if (snapshot.reportReleaseConfig) {
+      applyAuthoritativeReportReleaseConfig(snapshot.reportReleaseConfig);
+      saveConfigToMysql("reportReleaseConfig", reportReleaseConfig).catch(() => {});
+    }
 
     // Apply default initial authoritative map ONLY for students who have no savingsBalance defined
     applyAuthoritativeSavingsBalances(students);
@@ -4875,44 +4962,18 @@ async function startServer() {
     const id = req.params.id;
     const idx = subjectTeachers.findIndex(st => st.id === id);
     if (idx === -1) {
+      directDeleteEntityFromMysql('subject_teacher', id).catch(() => {});
       return res.status(404).json({ error: "Guru mapel tidak ditemukan." });
     }
 
     const removed = subjectTeachers.splice(idx, 1)[0];
     saveState();
+    directDeleteEntityFromMysql('subject_teacher', id).catch(() => {});
     res.json({ success: true, subjectTeachers, removed });
   });
 
   app.post("/api/admin/subject-teachers/auto-generate", (req, res) => {
-    const list = [
-      { name: "Drs. Heru Setyawan, M.Pd", subject: "Matematika", username: "guru_math" },
-      { name: "Ibu Lindawati, S.Pd", subject: "Bahasa Inggris", username: "guru_english" },
-      { name: "Budi Wijaya, S.Si", subject: "Ilmu Pengetahuan Alam", username: "guru_ipa" },
-      { name: "Dra. Siti Rahma", subject: "Ilmu Pengetahuan Sosial", username: "guru_ips" },
-      { name: "Ahmad Fauzan, S.S", subject: "Bahasa Indonesia", username: "guru_indo" },
-      { name: "KH. M. Syukron, S.Pd.I", subject: "Pendidikan Agama Islam", username: "guru_agama" },
-      { name: "Eko Prasetyo, S.Pd", subject: "Pendidikan Jasmani & OR", username: "guru_pjok" },
-      { name: "Dra. Nurhayati", subject: "Seni Budaya", username: "guru_seni" },
-      { name: "Agus Setyono, S.Kom", subject: "Informatika", username: "guru_info" }
-    ];
-
-    let addedCount = 0;
-    list.forEach(item => {
-      const exists = subjectTeachers.some(t => t.username.toLowerCase() === item.username.toLowerCase());
-      if (!exists) {
-        subjectTeachers.push({
-          id: `st-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          username: item.username,
-          name: item.name,
-          subject: item.subject,
-          password: "mapel123"
-        });
-        addedCount++;
-      }
-    });
-
-    saveState();
-    res.json({ success: true, subjectTeachers, addedCount });
+    res.json({ success: true, subjectTeachers, addedCount: 0 });
   });
 
   // --- TEACHER ROLE TRANSITION (WALI KELAS <-> GURU MAPEL) ---
@@ -6343,7 +6404,14 @@ async function startServer() {
     try {
       const mysqlCfg = await getConfigFromMysql("reportReleaseConfig");
       if (mysqlCfg && typeof mysqlCfg === 'object') {
-        Object.assign(reportReleaseConfig, mysqlCfg);
+        const needsUpgrade = applyAuthoritativeReportReleaseConfig(mysqlCfg);
+        if (needsUpgrade) {
+          await saveConfigToMysql("reportReleaseConfig", reportReleaseConfig);
+        }
+      } else {
+        // Jika belum ada di MySQL, simpan konfigurasi rilis permanen saat ini ke MySQL
+        reportReleaseConfig.explicitlyConfigured = true;
+        await saveConfigToMysql("reportReleaseConfig", reportReleaseConfig);
       }
     } catch (err: any) {
       console.warn("[MySQL Report Status Fetch Warning]:", err?.message || err);
@@ -6358,6 +6426,14 @@ async function startServer() {
   app.post("/api/curriculum/report-release", async (req, res) => {
     const { type, released, releasedBy, classes, semester, academicYear } = req.body;
     const now = new Date().toISOString();
+
+    // Muat state terbaru dari MySQL terlebih dahulu agar perubahan 1 jenis rapor tidak mereset jenis rapor lainnya
+    try {
+      const existingMysqlCfg = await getConfigFromMysql("reportReleaseConfig");
+      if (existingMysqlCfg && typeof existingMysqlCfg === 'object') {
+        applyAuthoritativeReportReleaseConfig(existingMysqlCfg);
+      }
+    } catch (_) {}
     
     if (type === 'midterm') {
       reportReleaseConfig.midtermReleased = Boolean(released);
@@ -6377,12 +6453,14 @@ async function startServer() {
 
     if (semester) reportReleaseConfig.activeSemester = semester;
     if (academicYear) reportReleaseConfig.activeAcademicYear = academicYear;
+    reportReleaseConfig.explicitlyConfigured = true;
+    reportReleaseConfig.updatedAt = now;
 
-    // 1. Simpan langsung seketika ke database MySQL tabel app_configs
+    // 1. Simpan langsung seketika ke database MySQL tabel app_configs secara permanen
     let mysqlSaved = false;
     try {
       mysqlSaved = await saveConfigToMysql("reportReleaseConfig", reportReleaseConfig);
-      console.log(`[MySQL Report Release] Status rilis rapor (${type}: ${released ? 'RILIS' : 'KUNCI'}) berhasil disimpan langsung ke MySQL app_configs.`);
+      console.log(`[MySQL Report Release] Status rilis rapor (${type}: ${released ? 'RILIS' : 'KUNCI'}) berhasil disimpan permanen ke MySQL app_configs.`);
     } catch (err: any) {
       console.warn("[MySQL Report Release Warning]: Gagal menyimpan langsung ke MySQL:", err?.message || err);
     }
@@ -6392,16 +6470,125 @@ async function startServer() {
 
     res.json({
       success: true,
-      message: `Status rilis ${type === 'midterm' ? 'Rapor Tengah Semester' : 'Rapor Akhir Semester'} berhasil ${released ? 'DIRILIS ke Akun Siswa & disimpan ke MySQL' : 'DITARIK / DISEMBUNYIKAN dari Akun Siswa & disimpan ke MySQL'}.`,
+      message: `Status rilis ${type === 'midterm' ? 'Rapor Tengah Semester' : 'Rapor Akhir Semester'} berhasil ${released ? 'DIRILIS secara permanen ke Akun Siswa & disimpan di MySQL' : 'DITARIK / DISEMBUNYIKAN dari Akun Siswa & disimpan di MySQL'}.`,
       mysqlSaved,
       config: reportReleaseConfig
     });
   });
 
+  // --- DATA RAPOR SEMESTER (MURNI DISIMPAN DI MYSQL TANPA LOCALSTORAGE) ---
+  app.get("/api/curriculum/rapor-data", async (req, res) => {
+    try {
+      const mysqlRapor = await getConfigFromMysql("raporSemesterData");
+      if (mysqlRapor && typeof mysqlRapor === "object") {
+        if (mysqlRapor.settings && typeof mysqlRapor.settings === "object") {
+          raporSemesterData.settings = {
+            ...raporSemesterData.settings,
+            ...mysqlRapor.settings
+          };
+        }
+        if (mysqlRapor.studentRecords && typeof mysqlRapor.studentRecords === "object") {
+          raporSemesterData.studentRecords = {
+            ...raporSemesterData.studentRecords,
+            ...mysqlRapor.studentRecords
+          };
+        }
+      }
+    } catch (err: any) {
+      console.warn("[MySQL Rapor Data Fetch Warning]:", err?.message || err);
+    }
+    res.json({
+      success: true,
+      data: raporSemesterData
+    });
+  });
+
+  app.post("/api/curriculum/rapor-data", async (req, res) => {
+    try {
+      // Pull latest from MySQL first so concurrent updates from different devices merge cleanly
+      try {
+        const mysqlRapor = await getConfigFromMysql("raporSemesterData");
+        if (mysqlRapor && typeof mysqlRapor === "object") {
+          if (mysqlRapor.settings) {
+            raporSemesterData.settings = { ...raporSemesterData.settings, ...mysqlRapor.settings };
+          }
+          if (mysqlRapor.studentRecords) {
+            raporSemesterData.studentRecords = { ...raporSemesterData.studentRecords, ...mysqlRapor.studentRecords };
+          }
+        }
+      } catch {}
+
+      const { settings, studentKey, studentRecord, studentRecords } = req.body || {};
+
+      if (settings && typeof settings === "object") {
+        raporSemesterData.settings = {
+          ...raporSemesterData.settings,
+          ...settings
+        };
+      }
+
+      if (studentKey && studentRecord && typeof studentRecord === "object") {
+        const existing = raporSemesterData.studentRecords[studentKey] || { studentId: studentRecord.studentId || studentKey };
+        raporSemesterData.studentRecords[studentKey] = {
+          ...existing,
+          ...studentRecord,
+          updatedAt: new Date().toISOString()
+        };
+        // Also keep a base studentId entry for easy fallback
+        if (studentRecord.studentId) {
+          const baseExisting = raporSemesterData.studentRecords[studentRecord.studentId] || { studentId: studentRecord.studentId };
+          raporSemesterData.studentRecords[studentRecord.studentId] = {
+            ...baseExisting,
+            ...studentRecord,
+            updatedAt: new Date().toISOString()
+          };
+        }
+      }
+
+      if (studentRecords && typeof studentRecords === "object") {
+        Object.entries(studentRecords).forEach(([k, val]: [string, any]) => {
+          if (val && typeof val === "object") {
+            const existing = raporSemesterData.studentRecords[k] || { studentId: val.studentId || k };
+            raporSemesterData.studentRecords[k] = {
+              ...existing,
+              ...val,
+              updatedAt: new Date().toISOString()
+            };
+          }
+        });
+      }
+
+      const mysqlSaved = await saveConfigToMysql("raporSemesterData", raporSemesterData);
+      res.json({
+        success: true,
+        mysqlSaved,
+        message: "Data rapor berhasil disimpan langsung ke database MySQL.",
+        data: raporSemesterData
+      });
+    } catch (err: any) {
+      console.error("[MySQL Rapor Data Save Error]:", err?.message || err);
+      res.status(500).json({ error: "Gagal menyimpan data rapor ke MySQL: " + (err?.message || String(err)) });
+    }
+  });
+
   // --- TUJUAN PEMBELAJARAN (TP) PER TINGKAT (WAKA KURIKULUM, GURU MAPEL & WALI KELAS) ---
   app.get(["/api/curriculum/tp-levels", "/api/tp-descriptions"], (req, res) => {
     const { gradeLevel, subject, semester, academicYear, className } = req.query;
-    let list = [...curriculumTpDescriptions];
+    let list = [...curriculumTpDescriptions]
+      .filter(tp => tp && typeof tp === 'object')
+      .map(tp => {
+        let resolvedSubject = String(tp.subject || '').trim();
+        if (!resolvedSubject && tp.id) {
+          const m = String(tp.id).match(/^tpl-\d+-(.+?)-(ganjil|genap)-/i);
+          if (m && m[1]) {
+            resolvedSubject = m[1].replace(/_/g, ' ').trim();
+          }
+        }
+        return {
+          ...tp,
+          subject: resolvedSubject
+        };
+      });
 
     let targetGrade = gradeLevel ? String(gradeLevel).trim() : '';
     if (!targetGrade && className) {
@@ -6410,29 +6597,30 @@ async function startServer() {
     }
 
     if (targetGrade) {
-      list = list.filter(tp => String(tp.gradeLevel).trim() === targetGrade);
+      list = list.filter(tp => String(tp.gradeLevel || '').trim() === targetGrade);
     }
     if (subject) {
       const s = String(subject).trim().toLowerCase();
-      list = list.filter(tp => tp.subject.trim().toLowerCase() === s);
+      list = list.filter(tp => String(tp.subject || '').trim().toLowerCase() === s);
     }
     if (semester) {
       const sem = String(semester).trim().toLowerCase();
-      list = list.filter(tp => tp.semester.trim().toLowerCase() === sem);
+      list = list.filter(tp => String(tp.semester || '').trim().toLowerCase() === sem);
     }
     if (academicYear) {
       const y = String(academicYear).trim().toLowerCase();
-      list = list.filter(tp => tp.academicYear.trim().toLowerCase() === y);
+      list = list.filter(tp => String(tp.academicYear || '').trim().toLowerCase() === y);
     }
 
     // Build legacy descMap for backward compatibility
     const descMap: Record<string, any> = { ...((curriculumConfig as any).tpDescriptions || {}) };
     curriculumTpDescriptions.forEach(tp => {
+      if (!tp || !tp.subject) return;
       tp.isLocked = false;
-      const subKey = tp.subject.trim().toLowerCase();
-      const semKey = (tp.semester || "ganjil").trim().toLowerCase();
-      const yearKey = (tp.academicYear || "2026/2027").trim().toLowerCase();
-      const gradeKey = `tingkat_${tp.gradeLevel}_${subKey}_${semKey}_${yearKey}`;
+      const subKey = String(tp.subject || '').trim().toLowerCase();
+      const semKey = String(tp.semester || "ganjil").trim().toLowerCase();
+      const yearKey = String(tp.academicYear || "2026/2027").trim().toLowerCase();
+      const gradeKey = `tingkat_${tp.gradeLevel || '7'}_${subKey}_${semKey}_${yearKey}`;
       descMap[gradeKey] = { ...tp, isLocked: false };
       if (!descMap[subKey]) descMap[subKey] = { ...tp, isLocked: false };
     });

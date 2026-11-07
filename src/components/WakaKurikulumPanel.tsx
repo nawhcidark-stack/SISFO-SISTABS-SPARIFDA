@@ -6972,7 +6972,7 @@ export default function WakaKurikulumPanel({
                       <span>Rapor Akhir Semester (Kertas F4 Custom 21,59 x 32,04 cm — 2 Halaman)</span>
                     </h2>
                     <p className="text-slate-500 text-xs mt-0.5">
-                      Format 2 Halaman Tanpa KOP (Kertas Ber-KOP: Margin Atas 3,96 cm, Kiri 1,71 cm, Kanan 1,58 cm, Bawah 2,25 cm). Halaman 1: Mapel 1–9, Halaman 2: Mapel 10, Muatan Lokal 11–12, Ekstrakurikuler, Ketidakhadiran &amp; TTD.
+                      Format 2 Halaman Tanpa KOP (Kertas Ber-KOP: Margin Atas 3,96 cm, Kiri 1,71 cm, Kanan 1,58 cm, Bawah sampai Tabel 2,22 cm, Bawah sampai batas Footer 1,26 cm). Halaman 1: Mapel 1–9, Halaman 2: Mapel 10, Muatan Lokal 11–12, Ekstrakurikuler, Ketidakhadiran &amp; TTD.
                     </p>
                   </div>
 

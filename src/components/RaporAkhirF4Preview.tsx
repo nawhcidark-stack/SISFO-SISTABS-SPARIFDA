@@ -110,7 +110,7 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
   const classDisplay = formatClassLabelForRapor(student.class);
 
   const renderIdentityBox = () => (
-    <div className="border-t border-b border-black py-1.5 mb-2.5 text-[11.5pt] leading-snug text-black shrink-0">
+    <div className="border-t border-b border-black py-1.5 mb-2.5 text-[11pt] leading-snug text-black shrink-0">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-y-0.5">
         <div className="md:col-span-8 grid grid-cols-12">
           <div className="col-span-4">Nama Peserta Didik</div>
@@ -142,12 +142,12 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
     return (
       <tr
         key={`${s.orderNo}-${s.id}`}
-        className={`hover:bg-slate-50/70 ${isPage1 ? 'h-[88px]' : 'h-[76px]'}`}
+        className={`hover:bg-slate-50/70 ${isPage1 ? 'min-h-[64px]' : 'min-h-[56px]'}`}
       >
-        <td className="border border-black px-2 py-2 text-center align-middle w-12 text-[12pt]">{s.orderNo}</td>
-        <td className="border border-black px-3 py-2 align-middle w-60 text-[12pt] leading-snug">{s.displayName}</td>
-        <td className="border border-black px-2 py-2 text-center align-middle w-20 font-medium text-[12pt]">{val}</td>
-        <td className="border border-black px-3 py-2 align-middle text-[12pt] leading-snug text-justify">
+        <td className="border border-black px-2 py-1.5 text-center align-middle w-12 text-[11pt]">{s.orderNo}</td>
+        <td className="border border-black px-3 py-1.5 align-middle w-56 text-[11pt] leading-tight">{s.displayName}</td>
+        <td className="border border-black px-2 py-1.5 text-center align-middle w-20 font-medium text-[11pt]">{val}</td>
+        <td className="border border-black px-3 py-1.5 align-middle text-[11pt] leading-tight text-justify">
           {s.descAkhir || '-'}
         </td>
       </tr>
@@ -268,53 +268,53 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
       )}
 
       {/* ================= PRATINJAU HALAMAN 1 (KERTAS F4 CUSTOM: MAPEL 1 - 9, TANPA KOP, FULL SAMPAI SEBELUM FOOTER) ================= */}
-      <div className="bg-white border-2 border-slate-300 rounded-2xl p-6 sm:p-8 shadow-sm text-black font-sans text-[12pt] select-text relative min-h-[1080px] flex flex-col justify-between">
-        <div className="flex-1 flex flex-col">
+      <div className="bg-white border-2 border-slate-300 rounded-2xl pt-6 sm:pt-8 px-6 sm:px-8 pb-[12.6mm] shadow-sm text-black font-sans text-[11pt] select-text relative min-h-[1080px] flex flex-col justify-between overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 mb-[5.6mm]">
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-dashed border-slate-200 text-[10px] text-slate-400 font-mono shrink-0">
-            <span>LEMBAR 1 &bull; KERTAS F4 (21,59 cm &times; 32,04 cm) &bull; FONT 12pt &bull; TANPA KOP (Margin Atas 3,96 cm)</span>
+            <span>LEMBAR 1 &bull; KERTAS F4 (21,59 &times; 32,04 cm) &bull; FONT 11pt &bull; MARGIN BAWAH TABEL 2,22 cm &bull; FOOTER 1,26 cm</span>
             <span className="font-bold text-purple-600">HALAMAN 1 (Mapel No. 1 - 9)</span>
           </div>
 
           {/* Identitas Rapor Halaman 1 */}
           {renderIdentityBox()}
 
-          <div className="text-center font-bold text-[12.5pt] my-2 tracking-wide shrink-0">
+          <div className="text-center font-bold text-[11pt] my-1.5 tracking-wide shrink-0">
             LAPORAN HASIL BELAJAR
           </div>
 
-          <div className="font-bold text-[12pt] mb-1.5 shrink-0">
+          <div className="font-bold text-[11pt] mb-1.5 shrink-0">
             A. &nbsp;INTRAKURIKULER
           </div>
 
-          <div className="flex-1 flex flex-col overflow-x-auto">
-            <table className="w-full flex-1 h-full border-collapse border border-black text-[12pt]">
+          <div className="flex-1 min-h-0 flex flex-col overflow-x-auto">
+            <table className="w-full flex-1 border-collapse border border-black text-[11pt]">
               <thead>
                 <tr className="text-center font-bold">
-                  <th className="border border-black px-2 py-2 w-12 text-[12pt]">No</th>
-                  <th className="border border-black px-3 py-2 w-60 text-[12pt]">Muatan Pelajaran</th>
-                  <th className="border border-black px-2 py-2 w-20 leading-tight text-[12pt]">Nilai<br />Akhir</th>
-                  <th className="border border-black px-3 py-2 text-[12pt]">Capaian Tujuan Pembelajaran</th>
+                  <th className="border border-black px-2 py-1.5 w-12 text-[11pt]">No</th>
+                  <th className="border border-black px-3 py-1.5 w-56 text-[11pt]">Muatan Pelajaran</th>
+                  <th className="border border-black px-2 py-1.5 w-20 leading-tight text-[11pt]">Nilai<br />Akhir</th>
+                  <th className="border border-black px-3 py-1.5 text-[11pt]">Capaian Tujuan Pembelajaran</th>
                 </tr>
               </thead>
-              <tbody className="h-full">
+              <tbody>
                 {page1Subjects.map(s => renderSubjectRow(s, true))}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Footer Halaman 1 (Tepat di bawah tabel Halaman 1) */}
-        <div className="mt-1.5 pt-1.5 border-t border-slate-600 flex items-center justify-between font-mono text-[10px] text-slate-700 shrink-0">
+        {/* Footer Halaman 1 (Terpisah dengan jarak 5,6 mm di bawah tabel agar tabel tidak pernah masuk ke footer) */}
+        <div className="pt-1 border-t border-slate-600 flex items-center justify-between font-mono text-[10px] text-slate-700 shrink-0 bg-white relative z-10">
           <span>{classDisplay} | {(student.name || '').toUpperCase()} | {student.nis || '-'}</span>
           <span>Halaman | 1</span>
         </div>
       </div>
 
       {/* ================= PRATINJAU HALAMAN 2 (KERTAS F4 CUSTOM: MAPEL 10, MULOK 11-12, EKSKUL, KEHADIRAN, TTD) ================= */}
-      <div className="bg-white border-2 border-slate-300 rounded-2xl p-6 sm:p-8 shadow-sm text-black font-sans text-[12pt] select-text relative min-h-[1080px] flex flex-col justify-between">
+      <div className="bg-white border-2 border-slate-300 rounded-2xl pt-6 sm:pt-8 px-6 sm:px-8 pb-[12.6mm] shadow-sm text-black font-sans text-[11pt] select-text relative min-h-[1080px] flex flex-col justify-between">
         <div className="flex-1 flex flex-col">
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-dashed border-slate-200 text-[10px] text-slate-400 font-mono shrink-0">
-            <span>LEMBAR 2 &bull; KERTAS F4 (21,59 cm &times; 32,04 cm) &bull; FONT 12pt &bull; TANPA KOP (Margin Atas 3,96 cm)</span>
+            <span>LEMBAR 2 &bull; KERTAS F4 (21,59 &times; 32,04 cm) &bull; FONT 11pt &bull; MARGIN BAWAH TABEL 2,22 cm &bull; FOOTER 1,26 cm</span>
             <span className="font-bold text-purple-600">HALAMAN 2 (Mapel No. 10, Mulok 11-12, Ekskul, Absensi &amp; TTD)</span>
           </div>
 
@@ -323,13 +323,13 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
 
           {/* Tabel Lanjutan Mapel No 10 & Muatan Lokal No 11-12 */}
           <div className="overflow-x-auto mt-2">
-            <table className="w-full border-collapse border border-black text-[12pt]">
+            <table className="w-full border-collapse border border-black text-[11pt]">
               <thead>
                 <tr className="text-center font-bold">
-                  <th className="border border-black px-2 py-2 w-12 text-[12pt]">No</th>
-                  <th className="border border-black px-3 py-2 w-60 text-[12pt]">Muatan Pelajaran</th>
-                  <th className="border border-black px-2 py-2 w-20 leading-tight text-[12pt]">Nilai<br />Akhir</th>
-                  <th className="border border-black px-3 py-2 text-[12pt]">Capaian Kompetensi</th>
+                  <th className="border border-black px-2 py-2 w-12 text-[11pt]">No</th>
+                  <th className="border border-black px-3 py-2 w-60 text-[11pt]">Muatan Pelajaran</th>
+                  <th className="border border-black px-2 py-2 w-20 leading-tight text-[11pt]">Nilai<br />Akhir</th>
+                  <th className="border border-black px-3 py-2 text-[11pt]">Capaian Kompetensi</th>
                 </tr>
               </thead>
               <tbody>
@@ -337,7 +337,7 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
                 {page2MulokSubjects.length > 0 && (
                   <>
                     <tr>
-                      <td colSpan={4} className="border border-black px-3 py-1.5 font-bold uppercase text-[12pt]">
+                      <td colSpan={4} className="border border-black px-3 py-1.5 font-bold uppercase text-[11pt]">
                         MUATAN LOKAL
                       </td>
                     </tr>
@@ -349,26 +349,26 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
           </div>
 
           {/* B. EKSTRAKURIKULER */}
-          <div className="font-bold text-[12pt] mt-3.5 mb-1">
+          <div className="font-bold text-[11pt] mt-3.5 mb-1">
             B. &nbsp;EKSTRAKURIKULER
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse border border-black text-[12pt]">
+            <table className="w-full border-collapse border border-black text-[11pt]">
               <thead>
                 <tr className="text-center font-bold">
-                  <th className="border border-black px-2 py-1.5 w-12 text-[12pt]">No</th>
-                  <th className="border border-black px-3 py-1.5 w-60 text-[12pt]">Ekstrakurikuler</th>
-                  <th className="border border-black px-2 py-1.5 w-24 text-[12pt]">Predikat</th>
-                  <th className="border border-black px-3 py-1.5 text-[12pt]">Keterangan</th>
+                  <th className="border border-black px-2 py-1.5 w-12 text-[11pt]">No</th>
+                  <th className="border border-black px-3 py-1.5 w-60 text-[11pt]">Ekstrakurikuler</th>
+                  <th className="border border-black px-2 py-1.5 w-24 text-[11pt]">Predikat</th>
+                  <th className="border border-black px-3 py-1.5 text-[11pt]">Keterangan</th>
                 </tr>
               </thead>
               <tbody>
                 {activeEkskul.map((ek) => (
                   <tr key={ek.no}>
-                    <td className="border border-black px-2 py-1.5 text-center text-[12pt]">{ek.no}</td>
-                    <td className="border border-black px-3 py-1.5 text-[12pt]">{ek.name}</td>
-                    <td className="border border-black px-2 py-1.5 text-center text-[12pt]">{ek.predicate}</td>
-                    <td className="border border-black px-3 py-1.5 leading-snug text-[12pt]">{ek.description}</td>
+                    <td className="border border-black px-2 py-1.5 text-center text-[11pt]">{ek.no}</td>
+                    <td className="border border-black px-3 py-1.5 text-[11pt]">{ek.name}</td>
+                    <td className="border border-black px-2 py-1.5 text-center text-[11pt]">{ek.predicate}</td>
+                    <td className="border border-black px-3 py-1.5 leading-snug text-[11pt]">{ek.description}</td>
                   </tr>
                 ))}
               </tbody>
@@ -376,34 +376,34 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
           </div>
 
           {/* C. KETIDAKHADIRAN (Otomatis dari Sistem Absensi) */}
-          <div className="font-bold text-[12pt] mt-3.5 mb-1">
+          <div className="font-bold text-[11pt] mt-3.5 mb-1">
             C. &nbsp;KETIDAKHADIRAN
           </div>
           <div className="max-w-sm">
-            <table className="w-full border-collapse border border-black text-[12pt]">
+            <table className="w-full border-collapse border border-black text-[11pt]">
               <thead>
                 <tr>
-                  <th colSpan={2} className="border border-black px-3 py-1.5 text-center font-bold text-[12pt]">
+                  <th colSpan={2} className="border border-black px-3 py-1.5 text-center font-bold text-[11pt]">
                     Ketidakhadiran
                   </th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td className="border border-black px-3 py-1 w-2/3 text-[12pt]">Sakit</td>
-                  <td className="border border-black px-3 py-1 w-1/3 text-[12pt]">
+                  <td className="border border-black px-3 py-1 w-2/3 text-[11pt]">Sakit</td>
+                  <td className="border border-black px-3 py-1 w-1/3 text-[11pt]">
                     <span className="inline-block w-6 text-center">{sakitVal > 0 ? sakitVal : '-'}</span> hari
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-black px-3 py-1 text-[12pt]">Izin</td>
-                  <td className="border border-black px-3 py-1 text-[12pt]">
+                  <td className="border border-black px-3 py-1 text-[11pt]">Izin</td>
+                  <td className="border border-black px-3 py-1 text-[11pt]">
                     <span className="inline-block w-6 text-center">{izinVal > 0 ? izinVal : '-'}</span> hari
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-black px-3 py-1 text-[12pt]">Tanpa Keterangan</td>
-                  <td className="border border-black px-3 py-1 text-[12pt]">
+                  <td className="border border-black px-3 py-1 text-[11pt]">Tanpa Keterangan</td>
+                  <td className="border border-black px-3 py-1 text-[11pt]">
                     <span className="inline-block w-6 text-center">{alpaVal > 0 ? alpaVal : '-'}</span> hari
                   </td>
                 </tr>
@@ -411,50 +411,47 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
             </table>
           </div>
 
-          {/* TANDA TANGAN RAPOR */}
-          <div className="grid grid-cols-3 gap-4 text-center text-[12pt] mt-6 pt-1">
-            <div className="flex flex-col items-center">
-              <div className="h-9" />
-              <div>Wali Murid</div>
-              <div className="h-14" />
-              <div>_____________________</div>
-            </div>
-
-            <div className="flex flex-col items-center">
-              <div className="h-9" />
-              <div>Wali Kelas</div>
-              <div className="h-14" />
-              <div>
-                {homeroomTeacherName && homeroomTeacherName !== 'Wali Kelas' ? (
-                  <u><strong>{homeroomTeacherName}</strong></u>
-                ) : (
-                  '_____________________'
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col items-center">
-              <div>{place}, {formattedDateStr}</div>
-              <div>Mengetahui,</div>
-              <div>Kepala {schoolIdentity?.name || 'SMP Maarif NU Pandaan'}</div>
-              <div className="h-14 flex items-center justify-center">
-                {schoolIdentity?.principalSignature ? (
-                  <img
-                    src={schoolIdentity.principalSignature}
-                    alt="TTD Kepala Sekolah"
-                    className="max-h-13 object-contain mx-auto"
-                  />
-                ) : null}
-              </div>
-              <div>
-                <u><strong>{principalName}</strong></u>
-              </div>
-            </div>
-          </div>
+          {/* TANDA TANGAN RAPOR (Sama dengan Format Rapor Tengah Semester) */}
+          <table className="w-full border-collapse text-center text-[11pt] mt-6">
+            <tbody>
+              <tr>
+                <td className="w-1/3 text-center align-top">
+                  Mengetahui,<br />
+                  Orang Tua / Wali Murid
+                  <div className="h-14" />
+                  ( ........................................ )
+                </td>
+                <td className="w-1/3 text-center align-top">
+                  {place}, {formattedDateStr}<br />
+                  Wali Kelas {classDisplay}
+                  <div className="h-14" />
+                  {homeroomTeacherName && homeroomTeacherName !== 'Wali Kelas' ? (
+                    <u><strong>{homeroomTeacherName}</strong></u>
+                  ) : (
+                    '( ........................................ )'
+                  )}
+                </td>
+                <td className="w-1/3 text-center align-top">
+                  Mengetahui,<br />
+                  Kepala Sekolah
+                  <div className="h-14 flex items-center justify-center">
+                    {schoolIdentity?.principalSignature ? (
+                      <img
+                        src={schoolIdentity.principalSignature}
+                        alt="TTD Kepala Sekolah"
+                        className="max-h-13 object-contain mx-auto"
+                      />
+                    ) : null}
+                  </div>
+                  <u><strong>{principalName}</strong></u>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         {/* Footer Halaman 2 */}
-        <div className="mt-4 pt-1.5 border-t border-slate-600 flex items-center justify-between font-mono text-[10px] text-slate-700 shrink-0">
+        <div className="mt-[9.6mm] pt-1 border-t border-slate-600 flex items-center justify-between font-mono text-[10px] text-slate-700 shrink-0">
           <span>{classDisplay} | {(student.name || '').toUpperCase()} | {student.nis || '-'}</span>
           <span>Halaman | 2</span>
         </div>

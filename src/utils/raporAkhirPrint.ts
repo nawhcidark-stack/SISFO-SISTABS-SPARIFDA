@@ -637,19 +637,21 @@ export function printRaporAkhirSemesterF4(params: {
           <div class="report-main-title">LAPORAN HASIL BELAJAR</div>
           <div class="section-heading">A. &nbsp;INTRAKURIKULER</div>
 
-          <table class="rapor-table rapor-table-p1">
-            <thead>
-              <tr>
-                <th class="th-no">No</th>
-                <th class="th-mapel">Muatan Pelajaran</th>
-                <th class="th-nilai">Nilai<br/>Akhir</th>
-                <th class="th-capaian">Capaian Tujuan Pembelajaran</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${page1RowsHtml}
-            </tbody>
-          </table>
+          <div class="table-p1-wrap">
+            <table class="rapor-table rapor-table-p1">
+              <thead>
+                <tr>
+                  <th class="th-no">No</th>
+                  <th class="th-mapel">Muatan Pelajaran</th>
+                  <th class="th-nilai">Nilai<br/>Akhir</th>
+                  <th class="th-capaian">Capaian Tujuan Pembelajaran</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${page1RowsHtml}
+              </tbody>
+            </table>
+          </div>
         </div>
         ${renderFooterHtml(st, 1)}
       </div>
@@ -721,29 +723,28 @@ export function printRaporAkhirSemesterF4(params: {
             </tbody>
           </table>
 
-          <!-- TANDA TANGAN RAPOR -->
+          <!-- TANDA TANGAN RAPOR (Sama dengan Format Rapor Tengah Semester) -->
           <table class="signature-table">
             <tr>
               <td style="width: 33%; text-align: center; vertical-align: top;">
-                <div style="height: 24px;"></div>
-                <div>Wali Murid</div>
+                Mengetahui,<br/>
+                Orang Tua / Wali Murid
                 <div style="height: 52px;"></div>
-                <div>_____________________</div>
-              </td>
-              <td style="width: 33%; text-align: center; vertical-align: top;">
-                <div style="height: 24px;"></div>
-                <div>Wali Kelas</div>
-                <div style="height: 52px;"></div>
-                <div>${homeroomName && homeroomName !== 'Wali Kelas' ? `<u><strong>${homeroomName}</strong></u>` : '_____________________'}</div>
+                ( ........................................ )
               </td>
               <td style="width: 34%; text-align: center; vertical-align: top;">
-                <div>${place}, ${formattedDateStr}</div>
-                <div>Mengetahui,</div>
-                <div>Kepala SMP Maarif NU Pandaan</div>
-                <div style="height: 52px; display: flex; align-items: center; justify-content: center;">
-                  ${schoolIdentity?.principalSignature ? `<img src="${schoolIdentity.principalSignature}" style="max-height: 46px; max-width: 130px; object-fit: contain;" alt="TTD" />` : ''}
+                ${place}, ${formattedDateStr}<br/>
+                Wali Kelas ${formatClassLabelForRapor(st.class)}
+                <div style="height: 52px;"></div>
+                ${homeroomName && homeroomName !== 'Wali Kelas' ? `<u><strong>${homeroomName}</strong></u>` : '( ........................................ )'}
+              </td>
+              <td style="width: 33%; text-align: center; vertical-align: top;">
+                Mengetahui,<br/>
+                Kepala Sekolah
+                <div style="height: 52px; display: flex; align-items: center; justify-content: center; position: relative;">
+                  ${schoolIdentity?.principalSignature ? `<img src="${schoolIdentity.principalSignature}" style="max-height: 46px; max-width: 130px; object-fit: contain; display: block; margin: 0 auto;" alt="TTD" />` : ''}
                 </div>
-                <div><u><strong>${principalName}</strong></u></div>
+                <u><strong>${principalName}</strong></u>
               </td>
             </tr>
           </table>
@@ -762,7 +763,7 @@ export function printRaporAkhirSemesterF4(params: {
       <title>Rapor Akhir Semester - F4 (21,59 cm x 32,04 cm)</title>
       <style>
         /* Kertas F4 Custom: Lebar 21,59 cm x Panjang 32,04 cm */
-        /* Margin: Atas 3,96 cm, Kanan 1,58 cm, Bawah 2,25 cm, Kiri 1,71 cm */
+        /* Margin: Atas 3,96 cm, Kanan 1,58 cm, Kiri 1,71 cm, Bawah sampai Tabel 2,22 cm, Bawah sampai batas Footer 1,26 cm */
         @page {
           size: 215.9mm 320.4mm;
           margin: 0mm;
@@ -776,7 +777,7 @@ export function printRaporAkhirSemesterF4(params: {
           margin: 0;
           padding: 0;
           font-family: Arial, Helvetica, sans-serif;
-          font-size: 12pt;
+          font-size: 11pt;
           color: #000;
           background: #fff;
         }
@@ -786,7 +787,7 @@ export function printRaporAkhirSemesterF4(params: {
           padding-top: 39.6mm;
           padding-left: 17.1mm;
           padding-right: 15.8mm;
-          padding-bottom: 22.5mm;
+          padding-bottom: 12.6mm;
           display: flex;
           flex-direction: column;
           justify-content: space-between;
@@ -800,31 +801,50 @@ export function printRaporAkhirSemesterF4(params: {
           page-break-after: auto;
           break-after: auto;
         }
+        /* Margin bawah sampai Tabel = 2,22 cm (22.2mm).
+           Karena padding-bottom halaman = 1,26 cm (12.6mm) dan tinggi footer = 4.0mm,
+           maka jarak (margin-bottom) dari batas bawah Tabel/page-body ke atas Footer = 22.2mm - 12.6mm - 4.0mm = 5.6mm.
+           Tinggi bersih area konten/page-body = 320.4mm - 39.6mm - 22.2mm = 258.6mm. */
         .page-body {
-          flex: 1;
+          flex: 1 1 0%;
+          height: 258.6mm;
+          max-height: 258.6mm;
+          margin-bottom: 5.6mm;
           display: flex;
           flex-direction: column;
           min-height: 0;
+          overflow: hidden;
         }
         .page-body-p1 {
-          flex: 1;
+          flex: 1 1 0%;
+          height: 258.6mm;
+          max-height: 258.6mm;
+          margin-bottom: 5.6mm;
           display: flex;
           flex-direction: column;
           min-height: 0;
-          margin-bottom: 4px;
+          overflow: hidden;
+        }
+        .table-p1-wrap {
+          flex: 1 1 0%;
+          min-height: 0;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
         }
         .identity-box {
           border-top: 1px solid #000;
           border-bottom: 1px solid #000;
-          padding: 2px 0;
-          margin-bottom: 5px;
+          padding: 1.5px 0;
+          margin-bottom: 3.5px;
           flex-shrink: 0;
         }
         .identity-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 11.5pt;
-          line-height: 1.2;
+          font-size: 11pt;
+          line-height: 1.15;
         }
         .identity-table td {
           padding: 0.5px 0;
@@ -848,31 +868,30 @@ export function printRaporAkhirSemesterF4(params: {
         }
         .report-main-title {
           text-align: center;
-          font-size: 12.5pt;
+          font-size: 11pt;
           font-weight: bold;
-          margin: 4px 0 4px 0;
+          margin: 2.5px 0;
           letter-spacing: 0.2px;
+          line-height: 1.15;
           flex-shrink: 0;
         }
         .section-heading {
-          font-size: 12pt;
+          font-size: 11pt;
           font-weight: bold;
-          margin-bottom: 3px;
+          margin-bottom: 2.5px;
+          line-height: 1.15;
           flex-shrink: 0;
         }
         .rapor-table {
           width: 100%;
           border-collapse: collapse;
           border: 1px solid #000;
-          font-size: 12pt;
+          font-size: 11pt;
         }
         .rapor-table-p1 {
-          flex: 1;
+          width: 100%;
           height: 100%;
           margin-bottom: 0;
-        }
-        .rapor-table-p1 tbody {
-          height: 100%;
         }
         .rapor-table th, .rapor-table td {
           border: 1px solid #000;
@@ -881,64 +900,66 @@ export function printRaporAkhirSemesterF4(params: {
           font-weight: bold;
           text-align: center;
           vertical-align: middle;
-          padding: 4px 6px;
-          font-size: 12pt;
-          line-height: 1.15;
+          padding: 3px 5px;
+          font-size: 11pt;
+          line-height: 1.12;
         }
         .th-no, .col-no {
-          width: 5.5%;
+          width: 5%;
           text-align: center;
           vertical-align: middle;
-          font-size: 12pt;
+          font-size: 11pt;
         }
         .th-mapel {
-          width: 26.5%;
+          width: 24%;
         }
         .col-mapel {
-          width: 26.5%;
-          padding: 4px 7px;
+          width: 24%;
+          padding: 2.5px 6px;
           vertical-align: middle;
-          font-size: 12pt;
-          line-height: 1.18;
+          font-size: 11pt;
+          line-height: 1.14;
         }
         .th-nilai, .col-nilai {
-          width: 10%;
+          width: 9%;
           text-align: center;
           vertical-align: middle;
-          font-size: 12pt;
+          font-size: 11pt;
         }
         .th-capaian {
-          width: 58%;
+          width: 62%;
         }
         .col-capaian {
-          width: 58%;
-          padding: 4px 7px;
+          width: 62%;
+          padding: 2.5px 6px;
           vertical-align: middle;
-          line-height: 1.15;
-          font-size: 12pt;
+          line-height: 1.14;
+          font-size: 11pt;
           text-align: justify;
         }
         .subject-row-p1 td {
-          height: 22.2mm;
+          padding-top: 2.5px;
+          padding-bottom: 2.5px;
         }
         .subject-row-p2 td {
-          height: 19mm;
+          padding-top: 3px;
+          padding-bottom: 3px;
         }
         .mulok-divider-cell {
           font-weight: bold;
           padding: 3px 8px;
-          font-size: 12pt;
+          font-size: 11pt;
           text-transform: uppercase;
         }
         .ekskul-table td {
-          padding: 3px 7px;
+          padding: 2.5px 6px;
           vertical-align: middle;
-          font-size: 12pt;
-          line-height: 1.18;
+          font-size: 11pt;
+          line-height: 1.14;
         }
         .ek-no {
           text-align: center;
-          width: 5.5%;
+          width: 5%;
         }
         .ek-name {
           width: 28%;
@@ -948,30 +969,35 @@ export function printRaporAkhirSemesterF4(params: {
           width: 14%;
         }
         .ek-desc {
-          width: 52.5%;
+          width: 53%;
         }
         .attendance-table {
           width: 48%;
-          font-size: 12pt;
+          font-size: 11pt;
         }
         .signature-table {
           width: 100%;
           border-collapse: collapse;
-          margin-top: 14px;
-          font-size: 12pt;
-          line-height: 1.2;
+          margin-top: 10px;
+          font-size: 11pt;
+          line-height: 1.18;
         }
         .page-footer {
+          height: 4.0mm;
           border-top: 0.75px solid #444;
-          padding-top: 3px;
+          padding-top: 2px;
           margin-top: 0;
           display: flex;
           justify-content: space-between;
           align-items: center;
           font-family: "Courier New", Courier, monospace;
           font-size: 8.5pt;
+          line-height: 1;
           color: #222;
           flex-shrink: 0;
+          background: #fff;
+          position: relative;
+          z-index: 2;
         }
         @media screen {
           body {
@@ -988,8 +1014,38 @@ export function printRaporAkhirSemesterF4(params: {
     <body>
       ${allPagesHtml}
       <script>
+        function fitPage1TablesBeforeFooter() {
+          var wraps = document.querySelectorAll('.table-p1-wrap');
+          for (var i = 0; i < wraps.length; i++) {
+            var wrap = wraps[i];
+            var table = wrap.querySelector('.rapor-table-p1');
+            if (!table) continue;
+            var maxH = wrap.clientHeight;
+            if (maxH <= 0) continue;
+
+            // Jika tinggi alami tabel melebihi batas wrap (2,22 cm dari bawah kertas),
+            // rapatkan line-height dan padding secara bertahap agar tabel pas 100% di dalam wrap dan tidak pernah menyentuh footer.
+            var cells = table.querySelectorAll('td, th');
+            if (table.offsetHeight > maxH) {
+              for (var c = 0; c < cells.length; c++) {
+                cells[c].style.paddingTop = '1.5px';
+                cells[c].style.paddingBottom = '1.5px';
+                cells[c].style.lineHeight = '1.05';
+              }
+            }
+            var fontPt = 11;
+            while (table.offsetHeight > maxH && fontPt > 9.5) {
+              fontPt -= 0.25;
+              for (var k = 0; k < cells.length; k++) {
+                cells[k].style.fontSize = fontPt + 'pt';
+              }
+            }
+          }
+        }
         window.onload = function() {
+          fitPage1TablesBeforeFooter();
           setTimeout(function() {
+            fitPage1TablesBeforeFooter();
             window.focus();
             window.print();
           }, 350);

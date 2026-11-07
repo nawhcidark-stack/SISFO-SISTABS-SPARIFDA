@@ -630,14 +630,14 @@ export function printRaporAkhirSemesterF4(params: {
 
     return `
       <!-- HALAMAN 1 -->
-      <div class="rapor-f4-page">
-        <div class="page-body">
+      <div class="rapor-f4-page rapor-f4-page-p1">
+        <div class="page-body page-body-p1">
           ${renderIdentityHeaderHtml(st)}
 
           <div class="report-main-title">LAPORAN HASIL BELAJAR</div>
           <div class="section-heading">A. &nbsp;INTRAKURIKULER</div>
 
-          <table class="rapor-table">
+          <table class="rapor-table rapor-table-p1">
             <thead>
               <tr>
                 <th class="th-no">No</th>
@@ -655,11 +655,11 @@ export function printRaporAkhirSemesterF4(params: {
       </div>
 
       <!-- HALAMAN 2 -->
-      <div class="rapor-f4-page">
+      <div class="rapor-f4-page rapor-f4-page-p2">
         <div class="page-body">
           ${renderIdentityHeaderHtml(st)}
 
-          <table class="rapor-table" style="margin-top: 10px;">
+          <table class="rapor-table" style="margin-top: 6px;">
             <thead>
               <tr>
                 <th class="th-no">No</th>
@@ -677,7 +677,7 @@ export function printRaporAkhirSemesterF4(params: {
             </tbody>
           </table>
 
-          <div class="section-heading" style="margin-top: 14px;">B. &nbsp;EKSTRAKURIKULER</div>
+          <div class="section-heading" style="margin-top: 10px;">B. &nbsp;EKSTRAKURIKULER</div>
           <table class="rapor-table ekskul-table">
             <thead>
               <tr>
@@ -692,30 +692,30 @@ export function printRaporAkhirSemesterF4(params: {
             </tbody>
           </table>
 
-          <div class="section-heading" style="margin-top: 14px;">C. &nbsp;KETIDAKHADIRAN</div>
+          <div class="section-heading" style="margin-top: 10px;">C. &nbsp;KETIDAKHADIRAN</div>
           <table class="rapor-table attendance-table">
             <thead>
               <tr>
-                <th colspan="2" style="text-align: center; padding: 4px 8px;">Ketidakhadiran</th>
+                <th colspan="2" style="text-align: center; padding: 3px 8px;">Ketidakhadiran</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td style="width: 68%; padding: 4px 8px;">Sakit</td>
-                <td style="width: 32%; padding: 4px 8px;">
-                  <span style="display: inline-block; width: 22px; text-align: center;">${sakitVal > 0 ? sakitVal : '-'}</span> hari
+                <td style="width: 68%; padding: 3px 8px;">Sakit</td>
+                <td style="width: 32%; padding: 3px 8px;">
+                  <span style="display: inline-block; width: 24px; text-align: center;">${sakitVal > 0 ? sakitVal : '-'}</span> hari
                 </td>
               </tr>
               <tr>
-                <td style="padding: 4px 8px;">Izin</td>
-                <td style="padding: 4px 8px;">
-                  <span style="display: inline-block; width: 22px; text-align: center;">${izinVal > 0 ? izinVal : '-'}</span> hari
+                <td style="padding: 3px 8px;">Izin</td>
+                <td style="padding: 3px 8px;">
+                  <span style="display: inline-block; width: 24px; text-align: center;">${izinVal > 0 ? izinVal : '-'}</span> hari
                 </td>
               </tr>
               <tr>
-                <td style="padding: 4px 8px;">Tanpa Keterangan</td>
-                <td style="padding: 4px 8px;">
-                  <span style="display: inline-block; width: 22px; text-align: center;">${alpaVal > 0 ? alpaVal : '-'}</span> hari
+                <td style="padding: 3px 8px;">Tanpa Keterangan</td>
+                <td style="padding: 3px 8px;">
+                  <span style="display: inline-block; width: 24px; text-align: center;">${alpaVal > 0 ? alpaVal : '-'}</span> hari
                 </td>
               </tr>
             </tbody>
@@ -725,23 +725,23 @@ export function printRaporAkhirSemesterF4(params: {
           <table class="signature-table">
             <tr>
               <td style="width: 33%; text-align: center; vertical-align: top;">
-                <div style="height: 32px;"></div>
+                <div style="height: 24px;"></div>
                 <div>Wali Murid</div>
-                <div style="height: 62px;"></div>
+                <div style="height: 52px;"></div>
                 <div>_____________________</div>
               </td>
               <td style="width: 33%; text-align: center; vertical-align: top;">
-                <div style="height: 32px;"></div>
+                <div style="height: 24px;"></div>
                 <div>Wali Kelas</div>
-                <div style="height: 62px;"></div>
+                <div style="height: 52px;"></div>
                 <div>${homeroomName && homeroomName !== 'Wali Kelas' ? `<u><strong>${homeroomName}</strong></u>` : '_____________________'}</div>
               </td>
               <td style="width: 34%; text-align: center; vertical-align: top;">
                 <div>${place}, ${formattedDateStr}</div>
                 <div>Mengetahui,</div>
                 <div>Kepala SMP Maarif NU Pandaan</div>
-                <div style="height: 62px; display: flex; align-items: center; justify-content: center;">
-                  ${schoolIdentity?.principalSignature ? `<img src="${schoolIdentity.principalSignature}" style="max-height: 52px; max-width: 130px; object-fit: contain;" alt="TTD" />` : ''}
+                <div style="height: 52px; display: flex; align-items: center; justify-content: center;">
+                  ${schoolIdentity?.principalSignature ? `<img src="${schoolIdentity.principalSignature}" style="max-height: 46px; max-width: 130px; object-fit: contain;" alt="TTD" />` : ''}
                 </div>
                 <div><u><strong>${principalName}</strong></u></div>
               </td>
@@ -776,6 +776,7 @@ export function printRaporAkhirSemesterF4(params: {
           margin: 0;
           padding: 0;
           font-family: Arial, Helvetica, sans-serif;
+          font-size: 12pt;
           color: #000;
           background: #fff;
         }
@@ -793,6 +794,7 @@ export function printRaporAkhirSemesterF4(params: {
           break-after: page;
           position: relative;
           background: #fff;
+          overflow: hidden;
         }
         .rapor-f4-page:last-child {
           page-break-after: auto;
@@ -802,56 +804,75 @@ export function printRaporAkhirSemesterF4(params: {
           flex: 1;
           display: flex;
           flex-direction: column;
+          min-height: 0;
+        }
+        .page-body-p1 {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+          margin-bottom: 4px;
         }
         .identity-box {
           border-top: 1px solid #000;
           border-bottom: 1px solid #000;
-          padding: 3px 0;
-          margin-bottom: 8px;
+          padding: 2px 0;
+          margin-bottom: 5px;
+          flex-shrink: 0;
         }
         .identity-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 10pt;
-          line-height: 1.25;
+          font-size: 11.5pt;
+          line-height: 1.2;
         }
         .identity-table td {
-          padding: 1px 0;
+          padding: 0.5px 0;
           vertical-align: top;
         }
         .id-label-left {
-          width: 19%;
+          width: 20%;
         }
         .id-colon {
           width: 2%;
           text-align: center;
         }
         .id-val-left {
-          width: 45%;
+          width: 44%;
         }
         .id-label-right {
-          width: 16%;
+          width: 17%;
         }
         .id-val-right {
-          width: 16%;
+          width: 15%;
         }
         .report-main-title {
           text-align: center;
-          font-size: 11pt;
+          font-size: 12.5pt;
           font-weight: bold;
-          margin: 6px 0 6px 0;
+          margin: 4px 0 4px 0;
           letter-spacing: 0.2px;
+          flex-shrink: 0;
         }
         .section-heading {
-          font-size: 10pt;
+          font-size: 12pt;
           font-weight: bold;
-          margin-bottom: 4px;
+          margin-bottom: 3px;
+          flex-shrink: 0;
         }
         .rapor-table {
           width: 100%;
           border-collapse: collapse;
           border: 1px solid #000;
-          font-size: 9.5pt;
+          font-size: 12pt;
+        }
+        .rapor-table-p1 {
+          flex: 1;
+          height: 100%;
+          margin-bottom: 0;
+        }
+        .rapor-table-p1 tbody {
+          height: 100%;
         }
         .rapor-table th, .rapor-table td {
           border: 1px solid #000;
@@ -860,59 +881,64 @@ export function printRaporAkhirSemesterF4(params: {
           font-weight: bold;
           text-align: center;
           vertical-align: middle;
-          padding: 5px 6px;
-          font-size: 9.5pt;
+          padding: 4px 6px;
+          font-size: 12pt;
+          line-height: 1.15;
         }
         .th-no, .col-no {
-          width: 6%;
+          width: 5.5%;
           text-align: center;
           vertical-align: middle;
+          font-size: 12pt;
         }
         .th-mapel {
-          width: 27%;
+          width: 26.5%;
         }
         .col-mapel {
-          width: 27%;
-          padding: 6px 8px;
+          width: 26.5%;
+          padding: 4px 7px;
           vertical-align: middle;
+          font-size: 12pt;
+          line-height: 1.18;
         }
         .th-nilai, .col-nilai {
-          width: 11%;
+          width: 10%;
           text-align: center;
           vertical-align: middle;
+          font-size: 12pt;
         }
         .th-capaian {
-          width: 56%;
+          width: 58%;
         }
         .col-capaian {
-          width: 56%;
-          padding: 6px 8px;
+          width: 58%;
+          padding: 4px 7px;
           vertical-align: middle;
-          line-height: 1.3;
-          font-size: 9pt;
+          line-height: 1.15;
+          font-size: 12pt;
           text-align: justify;
         }
         .subject-row-p1 td {
-          height: 55px;
+          height: 22.2mm;
         }
         .subject-row-p2 td {
-          height: 54px;
+          height: 19mm;
         }
         .mulok-divider-cell {
           font-weight: bold;
-          padding: 5px 8px;
-          font-size: 9.5pt;
+          padding: 3px 8px;
+          font-size: 12pt;
           text-transform: uppercase;
         }
         .ekskul-table td {
-          padding: 5px 8px;
+          padding: 3px 7px;
           vertical-align: middle;
-          font-size: 9.5pt;
-          line-height: 1.25;
+          font-size: 12pt;
+          line-height: 1.18;
         }
         .ek-no {
           text-align: center;
-          width: 6%;
+          width: 5.5%;
         }
         .ek-name {
           width: 28%;
@@ -922,29 +948,30 @@ export function printRaporAkhirSemesterF4(params: {
           width: 14%;
         }
         .ek-desc {
-          width: 52%;
+          width: 52.5%;
         }
         .attendance-table {
-          width: 44%;
-          font-size: 9.5pt;
+          width: 48%;
+          font-size: 12pt;
         }
         .signature-table {
           width: 100%;
           border-collapse: collapse;
-          margin-top: 26px;
-          font-size: 9.5pt;
-          line-height: 1.3;
+          margin-top: 14px;
+          font-size: 12pt;
+          line-height: 1.2;
         }
         .page-footer {
           border-top: 0.75px solid #444;
           padding-top: 3px;
-          margin-top: 8px;
+          margin-top: 0;
           display: flex;
           justify-content: space-between;
           align-items: center;
           font-family: "Courier New", Courier, monospace;
-          font-size: 8pt;
+          font-size: 8.5pt;
           color: #222;
+          flex-shrink: 0;
         }
         @media screen {
           body {

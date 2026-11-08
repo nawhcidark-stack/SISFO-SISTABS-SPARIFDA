@@ -1118,13 +1118,21 @@ export default function AdminSpmbManagement({
         (c.registrationNumber || '').trim() === '0156620618' || 
         (c.fullName || '').toUpperCase().includes('SYAHM AZIO')
       );
+      const isNauraOrWardah = Boolean(
+        (c.nisn || '').trim() === '0158483548' ||
+        (c.nisn || '').trim() === '0152892235' ||
+        (c.fullName || '').toUpperCase().includes('NAURA ALMAIRA') ||
+        (c.fullName || '').toUpperCase().includes('WARDAH ZAHIRA')
+      );
       const amt = isSyahm 
         ? 560000 
-        : ((Number(c.reRegistrationAmount) > 0 && Number(c.reRegistrationAmount) !== 1500000)
-            ? Number(c.reRegistrationAmount) 
-            : (Number((c as any).totalReRegistrationPaid) > 0 && Number((c as any).totalReRegistrationPaid) !== 1500000
-                ? Number((c as any).totalReRegistrationPaid) 
-                : Number((c as any).reRegistrationFee) || calculateReRegDetails(c, config).grandTotal));
+        : isNauraOrWardah
+          ? 650000
+          : ((Number(c.reRegistrationAmount) > 0 && Number(c.reRegistrationAmount) !== 1500000 && Number(c.reRegistrationAmount) !== 1100000)
+              ? Number(c.reRegistrationAmount) 
+              : (Number((c as any).totalReRegistrationPaid) > 0 && Number((c as any).totalReRegistrationPaid) !== 1500000 && Number((c as any).totalReRegistrationPaid) !== 1100000
+                  ? Number((c as any).totalReRegistrationPaid) 
+                  : Number((c as any).reRegistrationFee) || calculateReRegDetails(c, config).grandTotal));
       return sum + amt;
     }, 0);
 

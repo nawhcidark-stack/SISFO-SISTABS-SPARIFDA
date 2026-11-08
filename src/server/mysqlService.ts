@@ -1815,11 +1815,19 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
       reRegistrationPaymentMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
       reRegistrationOrderId: r.re_registration_order_id || undefined,
       reRegistrationStatus: isReregPaid ? 'paid' : (r.re_registration_status || 'unpaid'),
-      reRegistrationAmount: isSyahm ? 560000 : (r.re_registration_amount !== null && r.re_registration_amount !== undefined ? Number(r.re_registration_amount) : undefined),
-      buildingFeePaid: isSyahm ? 0 : (Number(r.building_fee_paid) || 0),
-      julySppPaid: isSyahm ? 200000 : (Number(r.july_spp_paid) || 0),
-      uniformFeePaid: isSyahm ? 360000 : (Number(r.uniform_fee_paid) || 0),
-      totalReRegistrationPaid: isSyahm ? 560000 : (Number(r.total_re_registration_paid) || 0),
+      reRegistrationAmount: isSyahm
+        ? 560000
+        : ((currentNisn === '0152892235' || currentNisn === '0158483548')
+            ? 650000
+            : (r.re_registration_amount !== null && r.re_registration_amount !== undefined ? Number(r.re_registration_amount) : undefined)),
+      buildingFeePaid: (isSyahm || currentNisn === '0152892235' || currentNisn === '0158483548') ? 0 : (Number(r.building_fee_paid) || 0),
+      julySppPaid: (isSyahm || currentNisn === '0152892235' || currentNisn === '0158483548') ? 200000 : (Number(r.july_spp_paid) || 0),
+      uniformFeePaid: isSyahm ? 360000 : ((currentNisn === '0152892235' || currentNisn === '0158483548') ? 450000 : (Number(r.uniform_fee_paid) || 0)),
+      totalReRegistrationPaid: isSyahm
+        ? 560000
+        : ((currentNisn === '0152892235' || currentNisn === '0158483548')
+            ? 650000
+            : (Number(r.total_re_registration_paid) || 0)),
       selectedUniformSize: r.selected_uniform_size || undefined,
       customUniformNote: r.custom_uniform_note || undefined,
       uniformOrders,

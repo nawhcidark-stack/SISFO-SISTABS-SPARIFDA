@@ -1456,6 +1456,31 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     }
 
+    // Khusus NISN 0158483548 (NAURA ALMAIRA BILQIS) & NISN 0152892235 (WARDAH ZAHIRAH SYAKIRA):
+    // Nominal Daftar Ulang Putri Jalur Inden (SPP Juli Rp 200.000 + Seragam Putri Rp 450.000 = Rp 650.000)
+    const upperCandName = String(c.fullName || "").toUpperCase();
+    if (
+      currentNisn === "0158483548" ||
+      currentNisn === "0152892235" ||
+      upperCandName.includes("NAURA ALMAIRA") ||
+      upperCandName.includes("WARDAH ZAHIRA")
+    ) {
+      if (
+        c.reRegistrationAmount !== 650000 ||
+        c.totalReRegistrationPaid !== 650000 ||
+        c.julySppPaid !== 200000 ||
+        c.uniformFeePaid !== 450000
+      ) {
+        c.reRegistrationAmount = 650000;
+        c.totalReRegistrationPaid = 650000;
+        c.reRegistrationFee = 650000;
+        c.buildingFeePaid = 0;
+        c.julySppPaid = 200000;
+        c.uniformFeePaid = 450000;
+        changed = true;
+      }
+    }
+
     // 1. Validasi Kelengkapan Formulir Buku Induk
     // Jika data buku induk sudah diisi lengkap, atau c.isFormCompleted sudah bernilai true, atau terdapat formCompletedAt, tandai lengkap secara permanen
     const hasRealFormData = Boolean(

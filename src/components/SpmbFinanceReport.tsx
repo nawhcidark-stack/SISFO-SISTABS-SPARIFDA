@@ -249,14 +249,23 @@ export default function SpmbFinanceReport({
       const reregDetails = calculateReRegDetails(c, config);
       const sizeKey = isSyahm ? 'L' : (c.selectedUniformSize || (c as any).uniformSize || 'L');
 
-      // Nominal Pelunasan Real / Terhitung (Khusus NISN 0156620618 selalu tepat Rp 560.000 bukan Rp 1.500.000)
+      const isNauraOrWardah = Boolean(
+        (c.nisn || '').trim() === '0158483548' ||
+        (c.nisn || '').trim() === '0152892235' ||
+        (c.fullName || '').toUpperCase().includes('NAURA ALMAIRA') ||
+        (c.fullName || '').toUpperCase().includes('WARDAH ZAHIRA')
+      );
+
+      // Nominal Pelunasan Real / Terhitung (Khusus NISN 0156620618 selalu tepat Rp 560.000, Naura Almaira & Wardah Zahira tepat Rp 650.000)
       const nominalReReg = isSyahm 
         ? 560000 
-        : ((Number(c.reRegistrationAmount) > 0 && Number(c.reRegistrationAmount) !== 1500000
-            ? Number(c.reRegistrationAmount) 
-            : (Number((c as any).totalReRegistrationPaid) > 0 && Number((c as any).totalReRegistrationPaid) !== 1500000
-                ? Number((c as any).totalReRegistrationPaid) 
-                : Number((c as any).reRegistrationFee))) || reregDetails.grandTotal);
+        : isNauraOrWardah
+          ? 650000
+          : ((Number(c.reRegistrationAmount) > 0 && Number(c.reRegistrationAmount) !== 1500000 && Number(c.reRegistrationAmount) !== 1100000
+              ? Number(c.reRegistrationAmount) 
+              : (Number((c as any).totalReRegistrationPaid) > 0 && Number((c as any).totalReRegistrationPaid) !== 1500000 && Number((c as any).totalReRegistrationPaid) !== 1100000
+                  ? Number((c as any).totalReRegistrationPaid) 
+                  : Number((c as any).reRegistrationFee))) || reregDetails.grandTotal);
 
       // Alokasi rincian komponen biaya yang selalu akurat dan sinkron dengan nominalReReg
       let candBuildingNet = 0;

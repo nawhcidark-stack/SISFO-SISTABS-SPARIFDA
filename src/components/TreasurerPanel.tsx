@@ -5,15 +5,13 @@ import {
   LogOut, DollarSign, Calendar, Tag, FileText, Search, Printer, 
   Download, Building2, CheckCircle2, AlertTriangle, ArrowUpRight, 
   ArrowDownRight, Wallet, UserCheck, Percent, HelpCircle, Eye, Key,
-  LayoutGrid, Home, Smartphone, Apple, UploadCloud, FileSpreadsheet, Database, X
+  LayoutGrid, Home, Smartphone, Apple, FileSpreadsheet, Database, X
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
 import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig, HomeroomTeacher, SubjectTeacher } from '../types';
-import { MidtransBulkReportModal } from './MidtransBulkReportModal';
-import { SingleMidtransReconcileModal } from './SingleMidtransReconcileModal';
 import { Pagination } from './Pagination';
 import TreasurerMysqlSettings from './TreasurerMysqlSettings';
 
@@ -40,9 +38,6 @@ export default function TreasurerPanel({
   
   // Modal configurations
   const [showFormModal, setShowFormModal] = useState(false);
-  const [isBulkReportModalOpen, setIsBulkReportModalOpen] = useState(false);
-  const [isSingleReconcileModalOpen, setIsSingleReconcileModalOpen] = useState(false);
-  const [singleReconcileInitialId, setSingleReconcileInitialId] = useState('');
   const [editingTransaction, setEditingTransaction] = useState<TreasurerTransaction | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -150,8 +145,6 @@ export default function TreasurerPanel({
 
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
-  const [isReconciling, setIsReconciling] = useState(false);
-  const [reconcileStatus, setReconcileStatus] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   // Invoice state to print
   const [activePrintTransaction, setActivePrintTransaction] = useState<TreasurerTransaction | null>(null);
@@ -706,88 +699,6 @@ export default function TreasurerPanel({
     } catch (e) {
       console.error(e);
       alert('Terganggu koneksi.');
-    }
-  };
-
-  const handleBulkReconcile = async (forceSimulated = false) => {
-    setIsReconciling(true);
-    setReconcileStatus(null);
-    try {
-      const res = await fetch('/api/treasurer/reconcile-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ forceReconcileSimulated: forceSimulated })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setReconcileStatus({
-          type: 'success',
-          text: `🔍 ${data.message}`
-        });
-        await fetchTransactions(); // Refresh the list
-      } else {
-        const errData = await res.json();
-        setReconcileStatus({
-          type: 'error',
-          text: errData.error || 'Gagal menjalankan rekonsiliasi massal.'
-        });
-      }
-    } catch (e) {
-      console.error(e);
-      setReconcileStatus({
-        type: 'error',
-        text: 'Terjadi kesalahan koneksi saat mencoba merekonsiliasi data.'
-      });
-    } finally {
-      setIsReconciling(false);
-    }
-  };
-
-  const [manualOrderIdInput, setManualOrderIdInput] = useState('');
-
-  const handleVerifySingleOrderId = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!manualOrderIdInput.trim()) {
-      alert('Masukkan Order ID / Ref Midtrans yang ingin diverifikasi.');
-      return;
-    }
-    setIsReconciling(true);
-    setReconcileStatus(null);
-    try {
-      const res = await fetch('/api/verify-midtrans-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: manualOrderIdInput.trim() })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setReconcileStatus({
-          type: 'success',
-          text: `✅ ${data.message}`
-        });
-        if (data.type === "midtrans_only") {
-          // Open single reconcile modal for manual pairing
-          setSingleReconcileInitialId(manualOrderIdInput.trim());
-          setIsSingleReconcileModalOpen(true);
-        }
-        setManualOrderIdInput('');
-        await fetchTransactions();
-      } else {
-        setReconcileStatus({
-          type: 'error',
-          text: data.error || data.message || 'Verifikasi Order ID gagal. Membuka portal rekonsiliasi...'
-        });
-        setSingleReconcileInitialId(manualOrderIdInput.trim());
-        setIsSingleReconcileModalOpen(true);
-      }
-    } catch (err: any) {
-      console.error(err);
-      setReconcileStatus({
-        type: 'error',
-        text: 'Gagal terhubung ke server untuk verifikasi Midtrans.'
-      });
-    } finally {
-      setIsReconciling(false);
     }
   };
 
@@ -2432,112 +2343,8 @@ export default function TreasurerPanel({
           {/* ================= TAB 2: INLINE BUKU KAS LEDGER ================= */}
           {activeTab === 'kas_ledger' && (
             <>
-              {/* Midtrans Status & Reconciliation Banner */}
-              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl border border-indigo-800/50 shadow-md flex flex-col gap-4">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-indigo-800/40 pb-4">
-                  <div className="flex items-start gap-3.5">
-                    <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30 shrink-0 mt-0.5">
-                      <RefreshCw className={`w-5 h-5 ${isReconciling ? 'animate-spin text-amber-400' : 'text-emerald-400'}`} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-black text-xs uppercase tracking-wider text-emerald-400">
-                          Sistem Rekonsiliasi Midtrans
-                        </h4>
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                          Mode Manual Terkendali
-                        </span>
-                      </div>
-                      <p className="text-slate-300 text-[11px] mt-1 leading-relaxed font-medium max-w-2xl">
-                        Fitur verifikasi transaksi Midtrans (SPP, Tagihan Lain, Tabungan). Anda dapat memicu pemindaian rekonsiliasi manual kapan saja atau memasukkan Order ID spesifik untuk memverifikasi pembayaran.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleBulkReconcile(false)}
-                      disabled={isReconciling}
-                      className={`px-4 py-2.5 rounded-xl font-extrabold text-xs uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-2 shadow-sm ${
-                        isReconciling ? 'bg-indigo-800 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/40'
-                      }`}
-                    >
-                      <RefreshCw size={14} className={isReconciling ? 'animate-spin' : ''} />
-                      <span>{isReconciling ? 'Memindai Midtrans...' : 'Jalankan Rekonsiliasi Manual'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsBulkReportModalOpen(true)}
-                      className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all border border-slate-700 flex items-center gap-1.5"
-                      title="Upload file report CSV/Excel dari Midtrans MAP"
-                    >
-                      <UploadCloud size={14} />
-                      <span>Upload Report CSV</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSingleReconcileInitialId(manualOrderIdInput.trim());
-                        setIsSingleReconcileModalOpen(true);
-                      }}
-                      className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all border border-slate-700 flex items-center gap-1.5"
-                      title="Buka portal rekonsiliasi satuan (single) untuk cek rincian & pairing manual"
-                    >
-                      <Search size={14} />
-                      <span>Rekonsiliasi Satuan</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Search / Verify Single Order ID Box */}
-                <div className="w-full">
-                  <form onSubmit={handleVerifySingleOrderId} className="flex flex-col sm:flex-row items-center gap-2 w-full">
-                    <input
-                      type="text"
-                      value={manualOrderIdInput}
-                      onChange={(e) => setManualOrderIdInput(e.target.value)}
-                      placeholder="Cari & verifikasi Order ID spesifik (misal: SPP-12345)..."
-                      className="px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono font-semibold text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 w-full"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isReconciling || !manualOrderIdInput.trim()}
-                      className={`px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1.5 shrink-0 w-full sm:w-auto ${
-                        isReconciling || !manualOrderIdInput.trim() ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500'
-                      }`}
-                    >
-                      <Search size={13} />
-                      <span>Verifikasi Ref</span>
-                    </button>
-                  </form>
-                </div>
-              </div>
-
-                {reconcileStatus && (
-                  <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 shadow-3xs animate-fade-in ${
-                    reconcileStatus.type === 'success'
-                      ? 'bg-emerald-50 border-emerald-150 text-emerald-950 font-medium'
-                      : 'bg-rose-50 border-rose-150 text-rose-950'
-                  }`}>
-                    {reconcileStatus.type === 'success' ? (
-                      <CheckCircle2 size={15} className="text-emerald-600 shrink-0 mt-0.5" />
-                    ) : (
-                      <AlertTriangle size={15} className="text-rose-600 shrink-0 mt-0.5" />
-                    )}
-                    <div>
-                      <span className="font-extrabold block">
-                        {reconcileStatus.type === 'success' ? 'Hasil Pelacakan Sukses!' : 'Pelacakan Gagal'}
-                      </span>
-                      <p className="m-0 text-slate-750 mt-0.5 leading-relaxed font-semibold">
-                        {reconcileStatus.text}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
               {/* Ledger Management Spreadsheet / Table list */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs mt-6 flex flex-col">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col">
                 
                 {/* Buku Kas Tabs (BKU, BP Kas, BP Bank) */}
                 <div className="flex flex-wrap border-b border-slate-150 bg-slate-50/50 p-2 gap-1 rounded-t-2xl">
@@ -4932,25 +4739,6 @@ export default function TreasurerPanel({
           </div>
         )}
       </AnimatePresence>
-
-      <MidtransBulkReportModal
-        isOpen={isBulkReportModalOpen}
-        onClose={() => setIsBulkReportModalOpen(false)}
-        onSuccessReconciliation={() => {
-          fetchTransactions();
-          if (onRefresh) onRefresh();
-        }}
-      />
-
-      <SingleMidtransReconcileModal
-        isOpen={isSingleReconcileModalOpen}
-        onClose={() => setIsSingleReconcileModalOpen(false)}
-        initialOrderId={singleReconcileInitialId}
-        onSuccessReconciliation={() => {
-          fetchTransactions();
-          if (onRefresh) onRefresh();
-        }}
-      />
 
     </div>
   );

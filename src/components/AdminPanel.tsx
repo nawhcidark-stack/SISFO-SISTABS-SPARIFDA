@@ -471,7 +471,7 @@ export default function AdminPanel({
   const [reconcilingBillId, setReconcilingBillId] = useState<string | null>(null);
   const [reconcileFeedback, setReconcileFeedback] = useState<{ billId: string; type: "success" | "info" | "error"; message: string } | null>(null);
 
-  const handleAdminReconcileBill = async (bill: any, billType: "spp" | "misc") => {
+  const handleAdminReconcileBill = async (bill: any, billType: "spp" | "misc" | "savings") => {
     setReconcilingBillId(bill.id);
     setReconcileFeedback(null);
     try {
@@ -510,7 +510,7 @@ export default function AdminPanel({
           type: "info",
           message: data.message || "Status transaksi masih pending di Midtrans."
         });
-        if (data.status === "unpaid" || data.status === "pending") {
+        if (data.status === "unpaid" || data.status === "pending" || data.status === "failed") {
           onRefresh();
         }
       }
@@ -5975,70 +5975,10 @@ export default function AdminPanel({
                                                     Batal 🔄
                                                   </button>
                                                 </div>
-                                              ) : b.status === "pending" ? (
-                                                <div className="flex gap-1 justify-end items-center">
-                                                  <button
-                                                    type="button"
-                                                    disabled={reconcilingBillId === b.id}
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      handleAdminReconcileBill(b, "spp");
-                                                    }}
-                                                    className="px-2 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-extrabold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all shadow-xs"
-                                                    title="Cek status pembayaran Midtrans dan rekonsiliasikan tagihan pending ini"
-                                                  >
-                                                    <RefreshCw
-                                                      size={9}
-                                                      className={reconcilingBillId === b.id ? "animate-spin" : ""}
-                                                    />
-                                                    <span>{reconcilingBillId === b.id ? "Mengecek..." : "Cek"}</span>
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    disabled={
-                                                      processingBillId !== null || reconcilingBillId !== null
-                                                    }
-                                                    onClick={async (e) => {
-                                                      e.stopPropagation();
-                                                      setProcessingBillId(b.id);
-                                                      const resBill =
-                                                        await onPaySppManual(
-                                                          b.id,
-                                                        );
-                                                      setProcessingBillId(null);
-                                                      if (resBill) {
-                                                        onRefresh();
-                                                        setReceiptToPrint({
-                                                          type: "spp",
-                                                          detail: {
-                                                            ...b,
-                                                            status: "paid",
-                                                            paidAt:
-                                                              new Date().toISOString(),
-                                                            paymentMethod:
-                                                              "Manual Teller (Sekolah)",
-                                                            orderId:
-                                                              resBill.orderId ||
-                                                              `ORD-MANUAL-${Date.now()}`,
-                                                          },
-                                                          student:
-                                                            selectedStudent,
-                                                        });
-                                                        setPrintId(
-                                                          "print-receipt-section",
-                                                        );
-                                                      }
-                                                    }}
-                                                    className="px-1.5 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-300 disabled:bg-slate-50 text-slate-600 font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center cursor-pointer transition-colors"
-                                                    title="Bayar Manual Tunai langsung"
-                                                  >
-                                                    Manual
-                                                  </button>
-                                                </div>
                                               ) : !checkIsBillActive(
                                                   b,
                                                   selectedStudent.id,
-                                                ) ? (
+                                                ) && b.status !== "pending" ? (
                                                 <div className="flex justify-end items-center">
                                                   <span
                                                     className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-100 flex items-center gap-1"
@@ -6049,7 +5989,25 @@ export default function AdminPanel({
                                                   </span>
                                                 </div>
                                               ) : (
-                                                <div className="flex gap-1 justify-end items-center">
+                                                <div className="flex gap-1 justify-end items-center flex-wrap">
+                                                  {b.status === "pending" && (
+                                                    <button
+                                                      type="button"
+                                                      disabled={reconcilingBillId === b.id}
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleAdminReconcileBill(b, "spp");
+                                                      }}
+                                                      className="px-2 py-1 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-300 text-white font-extrabold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all shadow-xs"
+                                                      title="Cek status pembayaran Midtrans dan rekonsiliasikan tagihan pending ini"
+                                                    >
+                                                      <RefreshCw
+                                                        size={9}
+                                                        className={reconcilingBillId === b.id ? "animate-spin" : ""}
+                                                      />
+                                                      <span>{reconcilingBillId === b.id ? "Mengecek..." : "Cek"}</span>
+                                                    </button>
+                                                  )}
                                                   <button
                                                     type="button"
                                                     onClick={(e) => {
@@ -6068,7 +6026,7 @@ export default function AdminPanel({
                                                   <button
                                                     type="button"
                                                     disabled={
-                                                      processingBillId !== null
+                                                      processingBillId !== null || reconcilingBillId !== null
                                                     }
                                                     onClick={async (e) => {
                                                       e.stopPropagation();
@@ -6079,7 +6037,6 @@ export default function AdminPanel({
                                                         );
                                                       setProcessingBillId(null);
                                                       if (resBill) {
-                                                        onRefresh();
                                                         onRefresh();
                                                         setReceiptToPrint({
                                                           type: "spp",
@@ -6585,14 +6542,32 @@ export default function AdminPanel({
                                                 )}
 
                                                 {t.status === "pending" && (
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => handleCancelSavingsTransactionLocal(t.id, t.type, t.amount, t.status, t.paymentMethod)}
-                                                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-black rounded text-[9px] uppercase tracking-wider flex items-center gap-1 cursor-pointer shadow-xs"
-                                                    title="Batalkan setoran online yang masih menunggu pembayaran"
-                                                  >
-                                                    <Trash2 size={10} /> Batalkan Setoran
-                                                  </button>
+                                                  <>
+                                                    <button
+                                                      type="button"
+                                                      disabled={reconcilingBillId === t.id}
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleAdminReconcileBill(t, "savings");
+                                                      }}
+                                                      className="px-2 py-1 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-300 text-white font-extrabold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all shadow-xs"
+                                                      title="Cek status setoran tabungan di Midtrans dan rekonsiliasikan jika sudah lunas"
+                                                    >
+                                                      <RefreshCw
+                                                        size={10}
+                                                        className={reconcilingBillId === t.id ? "animate-spin" : ""}
+                                                      />
+                                                      <span>{reconcilingBillId === t.id ? "Mengecek..." : "Cek"}</span>
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleCancelSavingsTransactionLocal(t.id, t.type, t.amount, t.status, t.paymentMethod)}
+                                                      className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-black rounded text-[9px] uppercase tracking-wider flex items-center gap-1 cursor-pointer shadow-xs"
+                                                      title="Batalkan setoran online yang masih menunggu pembayaran"
+                                                    >
+                                                      <Trash2 size={10} /> Batalkan Setoran
+                                                    </button>
+                                                  </>
                                                 )}
 
                                                 {t.status === "success" && (
@@ -6748,35 +6723,26 @@ export default function AdminPanel({
                                                           Batal ↩
                                                         </button>
                                                       </>
-                                                    ) : bill.status === "pending" ? (
-                                                      <>
-                                                        <button
-                                                          type="button"
-                                                          disabled={reconcilingBillId === bill.id}
-                                                          onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleAdminReconcileBill(bill, "misc");
-                                                          }}
-                                                          className="px-2 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-extrabold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all shadow-xs"
-                                                          title="Cek status pembayaran Midtrans dan rekonsiliasikan tagihan pending ini"
-                                                        >
-                                                          <RefreshCw
-                                                            size={9}
-                                                            className={reconcilingBillId === bill.id ? "animate-spin" : ""}
-                                                          />
-                                                          <span>{reconcilingBillId === bill.id ? "Mengecek..." : "Cek"}</span>
-                                                        </button>
-                                                        <button
-                                                          type="button"
-                                                          onClick={() => handlePayMiscManualLocal(bill.id)}
-                                                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-750 text-white font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shadow-xs"
-                                                        >
-                                                          <CheckCircle size={9} />
-                                                          Bayar Tunai
-                                                        </button>
-                                                      </>
                                                     ) : (
                                                       <>
+                                                        {bill.status === "pending" && (
+                                                          <button
+                                                            type="button"
+                                                            disabled={reconcilingBillId === bill.id}
+                                                            onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              handleAdminReconcileBill(bill, "misc");
+                                                            }}
+                                                            className="px-2 py-1 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-300 text-white font-extrabold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all shadow-xs"
+                                                            title="Cek status pembayaran Midtrans dan rekonsiliasikan tagihan pending ini"
+                                                          >
+                                                            <RefreshCw
+                                                              size={9}
+                                                              className={reconcilingBillId === bill.id ? "animate-spin" : ""}
+                                                            />
+                                                            <span>{reconcilingBillId === bill.id ? "Mengecek..." : "Cek"}</span>
+                                                          </button>
+                                                        )}
                                                         <button
                                                           type="button"
                                                           onClick={() => addToCartMisc(bill, selectedStudent)}
@@ -8561,7 +8527,7 @@ export default function AdminPanel({
                                           e.stopPropagation();
                                           handleAdminReconcileBill(bill, "misc");
                                         }}
-                                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-extrabold rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                                        className="px-2.5 py-1 bg-sky-600 hover:bg-sky-700 disabled:bg-sky-300 text-white font-extrabold rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
                                         title="Cek status pembayaran Midtrans dan rekonsiliasikan tagihan pending ini"
                                       >
                                         <RefreshCw

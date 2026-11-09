@@ -5434,6 +5434,144 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         return res.status(400).json({ error: "billId wajib disertakan." });
       }
 
+      if (billType === "savings") {
+        const savingsTx = savingsTransactions.find(t => t.id === billId);
+        if (!savingsTx) {
+          return res.status(404).json({ error: "Transaksi tabungan tidak ditemukan dalam database." });
+        }
+
+        const targetStudent = students.find(s =>
+          s.id === savingsTx.studentId ||
+          (savingsTx.studentId && s.nis === savingsTx.studentId) ||
+          (studentId && (s.id === studentId || s.nis === studentId))
+        );
+
+        if (savingsTx.status === "success") {
+          return res.json({
+            success: true,
+            settled: true,
+            alreadyPaid: true,
+            status: "success",
+            message: `Setoran tabungan sebesar Rp ${Number(savingsTx.amount || 0).toLocaleString("id-ID")} sudah berhasil masuk ke saldo siswa.`,
+            bill: savingsTx
+          });
+        }
+
+        let orderId = savingsTx.orderId;
+        if (!orderId && targetStudent) {
+          const candTx = midtransTransactions.find(t =>
+            (t.studentNis && String(t.studentNis).trim() === String(targetStudent.nis).trim()) &&
+            (t.transactionStatus === "pending" || t.transactionStatus === "settlement") &&
+            (t.billType === "savings" || (t.orderId && (t.orderId.startsWith("SAV-") || t.orderId.startsWith("CART-") || t.orderId.startsWith("COLLECTIVE-CART-"))))
+          );
+          if (candTx) {
+            orderId = candTx.orderId;
+            savingsTx.orderId = orderId;
+          }
+        }
+
+        if (!orderId) {
+          return res.json({
+            success: true,
+            settled: false,
+            status: savingsTx.status || "pending",
+            message: `Transaksi tabungan ini belum memiliki referensi Order ID Midtrans.`,
+            bill: savingsTx
+          });
+        }
+
+        const midtransStatus = await getMidtransStatus(orderId);
+        let rawStatus = midtransStatus?.transaction_status ? String(midtransStatus.transaction_status).toLowerCase() : null;
+
+        if (!rawStatus) {
+          const localRec = midtransTransactions.find(t => t.orderId === orderId);
+          if (localRec) rawStatus = String(localRec.transactionStatus).toLowerCase();
+        }
+
+        if (!rawStatus) {
+          return res.json({
+            success: true,
+            settled: false,
+            status: savingsTx.status,
+            orderId,
+            message: `Order ID ${orderId} belum tercatat di Gateway Midtrans.`,
+            bill: savingsTx
+          });
+        }
+
+        const isSettled = rawStatus === "settlement" || rawStatus === "capture" || rawStatus === "success";
+        const isPending = rawStatus === "pending" || rawStatus === "challenge";
+        const isExpired = rawStatus === "expire" || rawStatus === "cancel" || rawStatus === "deny" || rawStatus === "failure";
+
+        if (isSettled) {
+          const reconResult = await processMidtransOrderStatus(orderId, midtransStatus);
+          const updatedTx = savingsTransactions.find(t => t.id === savingsTx.id) || savingsTx;
+          if (updatedTx.status !== "success" && !updatedTx.isVoidedByAdmin) {
+            updatedTx.status = "success";
+            if (targetStudent) {
+              targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + Number(updatedTx.amount || 0);
+              AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
+            }
+            if (persistEntity) {
+              await persistEntity("savingsTransactions", updatedTx).catch(err => console.error("Error persisting settled Savings tx to MySQL:", err));
+              if (targetStudent) {
+                await persistEntity("students", targetStudent).catch(err => console.error("Error persisting student savings balance to MySQL:", err));
+              }
+            }
+            saveState();
+          }
+
+          return res.json({
+            success: true,
+            settled: true,
+            actionTaken: reconResult.actionTaken || true,
+            status: "success",
+            orderId,
+            message: `BERHASIL! Setoran tabungan sebesar Rp ${Number(updatedTx.amount || 0).toLocaleString("id-ID")} terverifikasi LUNAS di Midtrans dan telah masuk ke saldo tabungan siswa.`,
+            bill: updatedTx,
+            reconResult
+          });
+        }
+
+        if (isPending) {
+          savingsTx.status = "pending";
+          saveState();
+          return res.json({
+            success: true,
+            settled: false,
+            status: "pending",
+            orderId,
+            message: `Status setoran tabungan di Midtrans: PENDING (Menunggu pembayaran diselesaikan oleh siswa/wali murid).`,
+            bill: savingsTx
+          });
+        }
+
+        if (isExpired) {
+          savingsTx.status = "failed";
+          if (persistEntity) {
+            await persistEntity("savingsTransactions", savingsTx).catch(err => console.error("Error persisting expired Savings tx to MySQL:", err));
+          }
+          saveState();
+          return res.json({
+            success: true,
+            settled: false,
+            status: "failed",
+            orderId,
+            message: `Status pembayaran di Midtrans: ${rawStatus.toUpperCase()} (Kadaluarsa/Dibatalkan). Setoran tabungan telah dibatalkan.`,
+            bill: savingsTx
+          });
+        }
+
+        return res.json({
+          success: true,
+          settled: false,
+          status: savingsTx.status,
+          orderId,
+          message: `Status transaksi tabungan di Midtrans: ${rawStatus.toUpperCase()}.`,
+          bill: savingsTx
+        });
+      }
+
       let sppBill = sppBills.find(b => b.id === billId);
       let miscBill = miscBills.find(m => m.id === billId);
 

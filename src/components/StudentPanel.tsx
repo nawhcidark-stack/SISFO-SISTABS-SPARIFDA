@@ -492,10 +492,12 @@ export default function StudentPanel({
         getStudentSubjectRows: () => studentAssessmentsForRapor,
         getStudentAttendance: () => studentRaporAttendance,
         getStudentRaporRecord: (st) =>
+          raporSemesterData.studentRecords?.[`${st.id}_${activeSem}_${activeYear}`] ||
           raporSemesterData.studentRecords?.[st.id] ||
           (st.nis ? raporSemesterData.studentRecords?.[st.nis] : undefined),
         getHomeroomTeacherName: () => homeroomTeacherName,
         raporSettings: raporSemesterData.settings,
+        extracurricularMaster: raporSemesterData.extracurricularMaster || [],
         schoolIdentity,
         semester: activeSem,
         academicYear: activeYear,
@@ -5481,8 +5483,13 @@ export default function StudentPanel({
                             student={currentStudent}
                             subjectRows={studentAssessmentsForRapor}
                             rawAttendance={studentRaporAttendance}
-                            studentRecord={raporSemesterData.studentRecords?.[currentStudent.id]}
+                            studentRecord={
+                              raporSemesterData.studentRecords?.[`${currentStudent.id}_${reportReleaseConfig.activeSemester || 'Ganjil'}_${selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'}`] ||
+                              raporSemesterData.studentRecords?.[currentStudent.id] ||
+                              (currentStudent.nis ? raporSemesterData.studentRecords?.[currentStudent.nis] : undefined)
+                            }
                             raporSettings={raporSemesterData.settings}
+                            extracurricularMaster={raporSemesterData.extracurricularMaster || []}
                             semester={reportReleaseConfig.activeSemester || 'Ganjil'}
                             academicYear={selectedAcademicYear || reportReleaseConfig.activeAcademicYear || schoolIdentity?.activeAcademicYear || '2026/2027'}
                             homeroomTeacherName={homeroomTeacherName}

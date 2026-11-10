@@ -1144,6 +1144,35 @@ CREATE TABLE IF NOT EXISTS \`app_configs\` (
   \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (\`id\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`extracurricular_master\` (
+  \`id_ekstra\` VARCHAR(64) NOT NULL,
+  \`nama_ekstra\` VARCHAR(150) NOT NULL,
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id_ekstra\`),
+  KEY \`idx_ekstra_nama\` (\`nama_ekstra\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`extracurricular_grades\` (
+  \`id\` VARCHAR(128) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`nis\` VARCHAR(32) NOT NULL,
+  \`student_name\` VARCHAR(150) NOT NULL,
+  \`class_name\` VARCHAR(32) DEFAULT NULL,
+  \`id_ekstra\` VARCHAR(64) NOT NULL,
+  \`nama_ekstra\` VARCHAR(150) NOT NULL,
+  \`predikat\` VARCHAR(16) NOT NULL,
+  \`keterangan\` TEXT NOT NULL,
+  \`no_urut\` INT NOT NULL DEFAULT 1,
+  \`semester\` VARCHAR(32) NOT NULL DEFAULT 'Ganjil',
+  \`academic_year\` VARCHAR(32) NOT NULL DEFAULT '2026/2027',
+  \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_eks_grade_student\` (\`student_id\`, \`semester\`, \`academic_year\`),
+  KEY \`idx_eks_grade_nis\` (\`nis\`, \`semester\`, \`academic_year\`),
+  KEY \`idx_eks_grade_id_ekstra\` (\`id_ekstra\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
 // Helper: Escape SQL string literals safely
@@ -4826,6 +4855,413 @@ export async function deleteGuestBookFromMysql(id: string): Promise<{ success: b
     if (connection) connection.release();
   }
 }
+
+// ==========================================================
+// DIRECT EXTRACURRICULAR (EKSTRAKURIKULER) MYSQL OPERATIONS
+// Disimpan 100% langsung di database MySQL tanpa melalui penyimpanan lokal
+// ==========================================================
+
+export interface MysqlExtracurricularMasterRow {
+  id_ekstra: string;
+  nama_ekstra: string;
+}
+
+export interface MysqlExtracurricularGradeRow {
+  id: string;
+  student_id: string;
+  nis: string;
+  student_name: string;
+  class_name?: string;
+  id_ekstra: string;
+  nama_ekstra: string;
+  predikat: string;
+  keterangan: string;
+  no_urut: number;
+  semester: string;
+  academic_year: string;
+  updated_at?: string;
+}
+
+let extracurricularTablesVerified = false;
+
+export async function ensureExtracurricularTablesExist(existingConn?: mysql.PoolConnection): Promise<void> {
+  if (extracurricularTablesVerified) return;
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = existingConn || null;
+  const shouldRelease = !existingConn;
+  try {
+    if (!connection) {
+      connection = await pool.getConnection();
+    }
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`extracurricular_master\` (
+        \`id_ekstra\` VARCHAR(64) NOT NULL,
+        \`nama_ekstra\` VARCHAR(150) NOT NULL,
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id_ekstra\`),
+        KEY \`idx_ekstra_nama\` (\`nama_ekstra\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`extracurricular_grades\` (
+        \`id\` VARCHAR(128) NOT NULL,
+        \`student_id\` VARCHAR(64) NOT NULL,
+        \`nis\` VARCHAR(32) NOT NULL,
+        \`student_name\` VARCHAR(150) NOT NULL,
+        \`class_name\` VARCHAR(32) DEFAULT NULL,
+        \`id_ekstra\` VARCHAR(64) NOT NULL,
+        \`nama_ekstra\` VARCHAR(150) NOT NULL,
+        \`predikat\` VARCHAR(16) NOT NULL,
+        \`keterangan\` TEXT NOT NULL,
+        \`no_urut\` INT NOT NULL DEFAULT 1,
+        \`semester\` VARCHAR(32) NOT NULL DEFAULT 'Ganjil',
+        \`academic_year\` VARCHAR(32) NOT NULL DEFAULT '2026/2027',
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`idx_eks_grade_student\` (\`student_id\`, \`semester\`, \`academic_year\`),
+        KEY \`idx_eks_grade_nis\` (\`nis\`, \`semester\`, \`academic_year\`),
+        KEY \`idx_eks_grade_id_ekstra\` (\`id_ekstra\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    extracurricularTablesVerified = true;
+  } catch (err: any) {
+    console.warn('[MySQL ensureExtracurricularTablesExist Warning]:', err.message || err);
+  } finally {
+    if (shouldRelease && connection) connection.release();
+  }
+}
+
+export async function getAllExtracurricularMasterFromMysql(): Promise<MysqlExtracurricularMasterRow[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureExtracurricularTablesExist(connection);
+    const [rows]: any = await connection.query(
+      'SELECT `id_ekstra`, `nama_ekstra` FROM `extracurricular_master` ORDER BY `id_ekstra` ASC'
+    );
+    return (rows || []).map((r: any) => ({
+      id_ekstra: String(r.id_ekstra || '').trim(),
+      nama_ekstra: String(r.nama_ekstra || '').trim()
+    })).filter((r: MysqlExtracurricularMasterRow) => r.id_ekstra && r.nama_ekstra);
+  } catch (err: any) {
+    console.error('[MySQL Get Extracurricular Master Error]:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function saveExtracurricularMasterItemToMysql(
+  id_ekstra: string,
+  nama_ekstra: string,
+  old_id_ekstra?: string
+): Promise<{ success: boolean; message: string; master?: MysqlExtracurricularMasterRow[] }> {
+  const cleanId = String(id_ekstra || '').trim();
+  const cleanNama = String(nama_ekstra || '').trim();
+  if (!cleanId || !cleanNama) {
+    return { success: false, message: 'id_ekstra dan nama_ekstra wajib diisi.' };
+  }
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureExtracurricularTablesExist(connection);
+
+    if (old_id_ekstra && String(old_id_ekstra).trim() && String(old_id_ekstra).trim() !== cleanId) {
+      const prevId = String(old_id_ekstra).trim();
+      await connection.query('DELETE FROM `extracurricular_master` WHERE `id_ekstra` = ?', [prevId]);
+      await connection.query(
+        'UPDATE `extracurricular_grades` SET `id_ekstra` = ?, `nama_ekstra` = ? WHERE `id_ekstra` = ?',
+        [cleanId, cleanNama, prevId]
+      );
+    }
+
+    await connection.query(
+      `INSERT INTO \`extracurricular_master\` (\`id_ekstra\`, \`nama_ekstra\`)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE \`nama_ekstra\` = VALUES(\`nama_ekstra\`), \`updated_at\` = CURRENT_TIMESTAMP`,
+      [cleanId, cleanNama]
+    );
+
+    // Perbarui nama_ekstra pada tabel nilai jika ada perubahan nama
+    await connection.query(
+      `UPDATE \`extracurricular_grades\`
+       SET \`nama_ekstra\` = ?,
+           \`keterangan\` = CASE
+             WHEN UPPER(TRIM(\`predikat\`)) = 'A' THEN CONCAT('Sangat Baik dalam mengikuti Materi Ekstrakurikuler ', ?, '.')
+             WHEN UPPER(TRIM(\`predikat\`)) = 'B' THEN CONCAT('Baik dalam mengikuti Materi Ekstrakurikuler ', ?, '.')
+             WHEN UPPER(TRIM(\`predikat\`)) = 'C' THEN CONCAT('Cukup Baik dalam mengikuti Materi Ekstrakurikuler ', ?, '.')
+             WHEN UPPER(TRIM(\`predikat\`)) = 'D' THEN CONCAT('Kurang dalam mengikuti Materi Ekstrakurikuler ', ?, '.')
+             ELSE \`keterangan\`
+           END
+       WHERE \`id_ekstra\` = ?`,
+      [cleanNama, cleanNama, cleanNama, cleanNama, cleanNama, cleanId]
+    );
+
+    const [rows]: any = await connection.query(
+      'SELECT `id_ekstra`, `nama_ekstra` FROM `extracurricular_master` ORDER BY `id_ekstra` ASC'
+    );
+    const master = (rows || []).map((r: any) => ({
+      id_ekstra: String(r.id_ekstra || '').trim(),
+      nama_ekstra: String(r.nama_ekstra || '').trim()
+    }));
+
+    return {
+      success: true,
+      message: 'Data ekstrakurikuler berhasil disimpan langsung ke database MySQL.',
+      master
+    };
+  } catch (err: any) {
+    console.error('[MySQL Save Extracurricular Master Error]:', err.message || err);
+    return {
+      success: false,
+      message: 'Gagal menyimpan data ekstrakurikuler ke database MySQL: ' + (err.message || String(err))
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function replaceExtracurricularMasterListInMysql(
+  list: MysqlExtracurricularMasterRow[]
+): Promise<{ success: boolean; master: MysqlExtracurricularMasterRow[] }> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureExtracurricularTablesExist(connection);
+
+    const validItems = (list || [])
+      .map(it => ({
+        id_ekstra: String(it?.id_ekstra || '').trim(),
+        nama_ekstra: String(it?.nama_ekstra || '').trim()
+      }))
+      .filter(it => it.id_ekstra && it.nama_ekstra);
+
+    await connection.query('DELETE FROM `extracurricular_master`');
+    if (validItems.length > 0) {
+      const values = validItems.map(it => [it.id_ekstra, it.nama_ekstra]);
+      await connection.query(
+        'INSERT INTO `extracurricular_master` (`id_ekstra`, `nama_ekstra`) VALUES ? ON DUPLICATE KEY UPDATE `nama_ekstra` = VALUES(`nama_ekstra`)',
+        [values]
+      );
+    }
+
+    return { success: true, master: validItems };
+  } catch (err: any) {
+    console.error('[MySQL Replace Extracurricular Master Error]:', err.message || err);
+    return { success: false, master: [] };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function deleteExtracurricularMasterFromMysql(
+  id_ekstra: string
+): Promise<{ success: boolean; message: string; master?: MysqlExtracurricularMasterRow[] }> {
+  const cleanId = String(id_ekstra || '').trim();
+  if (!cleanId) {
+    return { success: false, message: 'id_ekstra wajib diisi.' };
+  }
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureExtracurricularTablesExist(connection);
+    await connection.query('DELETE FROM `extracurricular_master` WHERE `id_ekstra` = ?', [cleanId]);
+    await connection.query('DELETE FROM `extracurricular_grades` WHERE `id_ekstra` = ?', [cleanId]);
+
+    const [rows]: any = await connection.query(
+      'SELECT `id_ekstra`, `nama_ekstra` FROM `extracurricular_master` ORDER BY `id_ekstra` ASC'
+    );
+    const master = (rows || []).map((r: any) => ({
+      id_ekstra: String(r.id_ekstra || '').trim(),
+      nama_ekstra: String(r.nama_ekstra || '').trim()
+    }));
+
+    return {
+      success: true,
+      message: 'Data ekstrakurikuler berhasil dihapus dari database MySQL.',
+      master
+    };
+  } catch (err: any) {
+    console.error('[MySQL Delete Extracurricular Master Error]:', err.message || err);
+    return {
+      success: false,
+      message: 'Gagal menghapus data ekstrakurikuler dari database MySQL: ' + (err.message || String(err))
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function getExtracurricularGradesFromMysql(
+  semester?: string,
+  academicYear?: string
+): Promise<MysqlExtracurricularGradeRow[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureExtracurricularTablesExist(connection);
+
+    let sql = 'SELECT * FROM `extracurricular_grades` WHERE 1=1';
+    const params: any[] = [];
+    if (semester) {
+      sql += ' AND `semester` = ?';
+      params.push(String(semester).trim());
+    }
+    if (academicYear) {
+      sql += ' AND `academic_year` = ?';
+      params.push(String(academicYear).trim());
+    }
+    sql += ' ORDER BY `student_id` ASC, `no_urut` ASC';
+
+    const [rows]: any = await connection.query(sql, params);
+    return (rows || []).map((r: any) => ({
+      id: String(r.id || ''),
+      student_id: String(r.student_id || ''),
+      nis: String(r.nis || ''),
+      student_name: String(r.student_name || ''),
+      class_name: r.class_name ? String(r.class_name) : undefined,
+      id_ekstra: String(r.id_ekstra || ''),
+      nama_ekstra: String(r.nama_ekstra || ''),
+      predikat: String(r.predikat || ''),
+      keterangan: String(r.keterangan || ''),
+      no_urut: Number(r.no_urut) || 1,
+      semester: String(r.semester || 'Ganjil'),
+      academic_year: String(r.academic_year || '2026/2027'),
+      updated_at: r.updated_at ? String(r.updated_at) : undefined
+    }));
+  } catch (err: any) {
+    console.error('[MySQL Get Extracurricular Grades Error]:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function saveExtracurricularGradesBatchToMysql(
+  studentsEntries: Array<{
+    student_id: string;
+    nis: string;
+    student_name: string;
+    class_name?: string;
+    semester: string;
+    academic_year: string;
+    items: Array<{
+      id_ekstra: string;
+      nama_ekstra: string;
+      predikat: string;
+      keterangan: string;
+      no_urut?: number;
+    }>;
+  }>
+): Promise<{ success: boolean; message: string; savedCount: number }> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureExtracurricularTablesExist(connection);
+
+    let savedCount = 0;
+    for (const entry of studentsEntries) {
+      const studentId = String(entry.student_id || '').trim();
+      const nis = String(entry.nis || '').trim();
+      const studentName = String(entry.student_name || '').trim();
+      const className = entry.class_name ? String(entry.class_name).trim() : null;
+      const semester = String(entry.semester || 'Ganjil').trim();
+      const academicYear = String(entry.academic_year || '2026/2027').trim();
+
+      if (!studentId && !nis) continue;
+
+      // Hapus entri lama siswa ini pada semester & tahun ajaran terkait
+      if (studentId && nis) {
+        await connection.query(
+          'DELETE FROM `extracurricular_grades` WHERE (`student_id` = ? OR `nis` = ?) AND `semester` = ? AND `academic_year` = ?',
+          [studentId, nis, semester, academicYear]
+        );
+      } else if (studentId) {
+        await connection.query(
+          'DELETE FROM `extracurricular_grades` WHERE `student_id` = ? AND `semester` = ? AND `academic_year` = ?',
+          [studentId, semester, academicYear]
+        );
+      } else {
+        await connection.query(
+          'DELETE FROM `extracurricular_grades` WHERE `nis` = ? AND `semester` = ? AND `academic_year` = ?',
+          [nis, semester, academicYear]
+        );
+      }
+
+      // Maksimal 3 ekstrakurikuler per siswa
+      const validItems = (entry.items || [])
+        .filter(it => (it.id_ekstra && String(it.id_ekstra).trim()) || (it.nama_ekstra && String(it.nama_ekstra).trim() && String(it.nama_ekstra).trim() !== '-'))
+        .slice(0, 3);
+
+      for (let idx = 0; idx < validItems.length; idx++) {
+        const it = validItems[idx];
+        const noUrut = idx + 1;
+        const idEkstra = String(it.id_ekstra || it.nama_ekstra || '').trim();
+        const namaEkstra = String(it.nama_ekstra || it.id_ekstra || '').trim();
+        const predikat = String(it.predikat || 'A').trim().toUpperCase();
+        const keterangan = String(it.keterangan || '').trim();
+        const rowId = `${studentId || nis}_${semester}_${academicYear}_${noUrut}`;
+
+        await connection.query(
+          `INSERT INTO \`extracurricular_grades\` (
+            \`id\`, \`student_id\`, \`nis\`, \`student_name\`, \`class_name\`,
+            \`id_ekstra\`, \`nama_ekstra\`, \`predikat\`, \`keterangan\`,
+            \`no_urut\`, \`semester\`, \`academic_year\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`student_id\` = VALUES(\`student_id\`),
+            \`nis\` = VALUES(\`nis\`),
+            \`student_name\` = VALUES(\`student_name\`),
+            \`class_name\` = VALUES(\`class_name\`),
+            \`id_ekstra\` = VALUES(\`id_ekstra\`),
+            \`nama_ekstra\` = VALUES(\`nama_ekstra\`),
+            \`predikat\` = VALUES(\`predikat\`),
+            \`keterangan\` = VALUES(\`keterangan\`),
+            \`no_urut\` = VALUES(\`no_urut\`),
+            \`updated_at\` = CURRENT_TIMESTAMP`,
+          [
+            rowId,
+            studentId || nis,
+            nis || studentId,
+            studentName,
+            className,
+            idEkstra,
+            namaEkstra,
+            predikat,
+            keterangan,
+            noUrut,
+            semester,
+            academicYear
+          ]
+        );
+        savedCount++;
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Nilai ekstrakurikuler berhasil disimpan langsung ke database MySQL.',
+      savedCount
+    };
+  } catch (err: any) {
+    console.error('[MySQL Save Extracurricular Grades Batch Error]:', err.message || err);
+    return {
+      success: false,
+      message: 'Gagal menyimpan nilai ekstrakurikuler ke database MySQL: ' + (err.message || String(err)),
+      savedCount: 0
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 
 
 

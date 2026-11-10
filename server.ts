@@ -13,7 +13,7 @@ import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransCon
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, seedMissingConfigsToMysql, getConfigFromMysql, getAllConfigsFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, seedMissingConfigsToMysql, getConfigFromMysql, getAllConfigsFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql, getAllExtracurricularMasterFromMysql, saveExtracurricularMasterItemToMysql, replaceExtracurricularMasterListInMysql, deleteExtracurricularMasterFromMysql, getExtracurricularGradesFromMysql, saveExtracurricularGradesBatchToMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter, formatMidtransPaymentMethod } from "./src/server/routes/midtransRoutes";
@@ -575,6 +575,7 @@ export interface RaporSemesterDataConfig {
     fase: string;
     showHomeroomNameInSig?: boolean;
   };
+  extracurricularMaster?: Array<{ id_ekstra: string; nama_ekstra: string }>;
   studentRecords: Record<string, RaporStudentRecord>;
 }
 
@@ -589,6 +590,7 @@ let raporSemesterData: RaporSemesterDataConfig = {
     fase: "D",
     showHomeroomNameInSig: true
   },
+  extracurricularMaster: [],
   studentRecords: {}
 };
 
@@ -6476,94 +6478,355 @@ async function startServer() {
     });
   });
 
+  // --- EKSTRAKURIKULER (MURNI DISIMPAN LANGSUNG DI TABEL MYSQL TANPA PENYIMPANAN LOKAL) ---
+  app.get("/api/curriculum/extracurricular", async (req, res) => {
+    try {
+      const semester = req.query.semester ? String(req.query.semester) : undefined;
+      const academicYear = req.query.academicYear ? String(req.query.academicYear) : undefined;
+      const [master, grades] = await Promise.all([
+        getAllExtracurricularMasterFromMysql(),
+        getExtracurricularGradesFromMysql(semester, academicYear)
+      ]);
+      res.json({
+        success: true,
+        master,
+        grades
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        error: "Gagal mengambil data ekstrakurikuler dari MySQL: " + (err?.message || String(err))
+      });
+    }
+  });
+
+  app.post("/api/curriculum/extracurricular/master", async (req, res) => {
+    try {
+      const { id_ekstra, nama_ekstra, old_id_ekstra } = req.body || {};
+      const result = await saveExtracurricularMasterItemToMysql(id_ekstra, nama_ekstra, old_id_ekstra);
+      if (!result.success) {
+        return res.status(400).json({ error: result.message });
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: "Gagal menyimpan ekstrakurikuler ke MySQL: " + (err?.message || String(err)) });
+    }
+  });
+
+  app.delete("/api/curriculum/extracurricular/master/:id", async (req, res) => {
+    try {
+      const id = decodeURIComponent(req.params.id || "");
+      const result = await deleteExtracurricularMasterFromMysql(id);
+      if (!result.success) {
+        return res.status(400).json({ error: result.message });
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: "Gagal menghapus ekstrakurikuler dari MySQL: " + (err?.message || String(err)) });
+    }
+  });
+
+  app.post("/api/curriculum/extracurricular/grades", async (req, res) => {
+    try {
+      const { entries, semester, academicYear } = req.body || {};
+      if (!Array.isArray(entries)) {
+        return res.status(400).json({ error: "Format entries tidak valid." });
+      }
+      const saveRes = await saveExtracurricularGradesBatchToMysql(entries);
+      if (!saveRes.success) {
+        return res.status(500).json({ error: saveRes.message });
+      }
+      const [master, grades] = await Promise.all([
+        getAllExtracurricularMasterFromMysql(),
+        getExtracurricularGradesFromMysql(semester, academicYear)
+      ]);
+      res.json({
+        success: true,
+        message: saveRes.message,
+        savedCount: saveRes.savedCount,
+        master,
+        grades
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: "Gagal menyimpan nilai ekstrakurikuler ke MySQL: " + (err?.message || String(err)) });
+    }
+  });
+
   // --- DATA RAPOR SEMESTER (MURNI DISIMPAN DI MYSQL TANPA LOCALSTORAGE) ---
   app.get("/api/curriculum/rapor-data", async (req, res) => {
     try {
-      const mysqlRapor = await getConfigFromMysql("raporSemesterData");
+      const [mysqlRapor, mysqlEkstraMaster, mysqlEkstraGrades] = await Promise.all([
+        getConfigFromMysql("raporSemesterData"),
+        getAllExtracurricularMasterFromMysql(),
+        getExtracurricularGradesFromMysql()
+      ]);
+
+      const responseData: RaporSemesterDataConfig = {
+        settings: { ...raporSemesterData.settings },
+        extracurricularMaster: mysqlEkstraMaster,
+        studentRecords: {}
+      };
+
       if (mysqlRapor && typeof mysqlRapor === "object") {
         if (mysqlRapor.settings && typeof mysqlRapor.settings === "object") {
-          raporSemesterData.settings = {
-            ...raporSemesterData.settings,
+          responseData.settings = {
+            ...responseData.settings,
             ...mysqlRapor.settings
           };
         }
         if (mysqlRapor.studentRecords && typeof mysqlRapor.studentRecords === "object") {
-          raporSemesterData.studentRecords = {
-            ...raporSemesterData.studentRecords,
+          responseData.studentRecords = {
             ...mysqlRapor.studentRecords
           };
         }
       }
+
+      // Kelompokkan nilai ekstrakurikuler murni dari tabel MySQL extracurricular_grades (maksimal 3 per siswa)
+      const groupedByScopedKey = new Map<string, { studentId: string; nis: string; semester: string; academicYear: string; items: any[] }>();
+      for (const g of mysqlEkstraGrades) {
+        const stObj = students.find(s => s.id === g.student_id || String(s.nis).trim() === String(g.nis).trim());
+        const resolvedStudentId = stObj ? stObj.id : g.student_id;
+        const resolvedNis = stObj ? String(stObj.nis) : g.nis;
+        const scopedKey = `${resolvedStudentId}_${g.semester}_${g.academic_year}`;
+        if (!groupedByScopedKey.has(scopedKey)) {
+          groupedByScopedKey.set(scopedKey, {
+            studentId: resolvedStudentId,
+            nis: resolvedNis,
+            semester: g.semester,
+            academicYear: g.academic_year,
+            items: []
+          });
+        }
+        const bucket = groupedByScopedKey.get(scopedKey)!;
+        if (bucket.items.length < 3) {
+          bucket.items.push({
+            no: bucket.items.length + 1,
+            id_ekstra: g.id_ekstra,
+            name: g.nama_ekstra,
+            predicate: g.predikat,
+            description: g.keterangan
+          });
+        }
+      }
+
+      // Pertama kosongkan extracurriculars dari cache lama agar 100% otoritatif dari tabel MySQL extracurricular_grades
+      Object.keys(responseData.studentRecords).forEach(k => {
+        if (responseData.studentRecords[k]) {
+          responseData.studentRecords[k] = {
+            ...responseData.studentRecords[k],
+            extracurriculars: []
+          };
+        }
+      });
+
+      for (const [scopedKey, bucket] of groupedByScopedKey.entries()) {
+        const existingScoped = responseData.studentRecords[scopedKey] || {
+          studentId: bucket.studentId,
+          nis: bucket.nis,
+          semester: bucket.semester,
+          academicYear: bucket.academicYear
+        };
+        responseData.studentRecords[scopedKey] = {
+          ...existingScoped,
+          extracurriculars: bucket.items
+        };
+
+        const existingBase = responseData.studentRecords[bucket.studentId] || {
+          studentId: bucket.studentId,
+          nis: bucket.nis,
+          semester: bucket.semester,
+          academicYear: bucket.academicYear
+        };
+        responseData.studentRecords[bucket.studentId] = {
+          ...existingBase,
+          extracurriculars: bucket.items
+        };
+      }
+
+      res.json({
+        success: true,
+        data: responseData
+      });
     } catch (err: any) {
       console.warn("[MySQL Rapor Data Fetch Warning]:", err?.message || err);
+      res.status(500).json({
+        success: false,
+        error: "Gagal mengambil data rapor dari MySQL: " + (err?.message || String(err))
+      });
     }
-    res.json({
-      success: true,
-      data: raporSemesterData
-    });
   });
 
   app.post("/api/curriculum/rapor-data", async (req, res) => {
     try {
-      // Pull latest from MySQL first so concurrent updates from different devices merge cleanly
-      try {
-        const mysqlRapor = await getConfigFromMysql("raporSemesterData");
-        if (mysqlRapor && typeof mysqlRapor === "object") {
-          if (mysqlRapor.settings) {
-            raporSemesterData.settings = { ...raporSemesterData.settings, ...mysqlRapor.settings };
-          }
-          if (mysqlRapor.studentRecords) {
-            raporSemesterData.studentRecords = { ...raporSemesterData.studentRecords, ...mysqlRapor.studentRecords };
-          }
-        }
-      } catch {}
+      const mysqlRapor = (await getConfigFromMysql("raporSemesterData")) || {
+        settings: { ...raporSemesterData.settings },
+        studentRecords: {}
+      };
 
-      const { settings, studentKey, studentRecord, studentRecords } = req.body || {};
+      const nextConfig: RaporSemesterDataConfig = {
+        settings: {
+          ...raporSemesterData.settings,
+          ...(mysqlRapor.settings || {})
+        },
+        studentRecords: {
+          ...(mysqlRapor.studentRecords || {})
+        }
+      };
+
+      const { settings, extracurricularMaster, studentKey, studentRecord, studentRecords } = req.body || {};
 
       if (settings && typeof settings === "object") {
-        raporSemesterData.settings = {
-          ...raporSemesterData.settings,
+        nextConfig.settings = {
+          ...nextConfig.settings,
           ...settings
         };
       }
 
+      if (Array.isArray(extracurricularMaster)) {
+        await replaceExtracurricularMasterListInMysql(extracurricularMaster);
+      }
+
+      const ekstraBatchEntries: Array<{
+        student_id: string;
+        nis: string;
+        student_name: string;
+        class_name?: string;
+        semester: string;
+        academic_year: string;
+        items: Array<{ id_ekstra: string; nama_ekstra: string; predikat: string; keterangan: string }>;
+      }> = [];
+
+      const collectEkstraFromRecord = (key: string, rec: any) => {
+        if (!rec || !Array.isArray(rec.extracurriculars)) return;
+        const stObj = students.find(
+          s => s.id === rec.studentId || s.id === key || (rec.nis && String(s.nis).trim() === String(rec.nis).trim())
+        );
+        const studentId = stObj ? stObj.id : String(rec.studentId || key.split("_")[0] || "").trim();
+        const nis = stObj ? String(stObj.nis) : String(rec.nis || studentId).trim();
+        const studentName = stObj ? stObj.name : String(rec.studentName || nis);
+        const className = stObj ? stObj.class : undefined;
+        const parts = key.split("_");
+        const semester = String(rec.semester || (parts.length >= 3 ? parts[1] : reportReleaseConfig.activeSemester) || "Ganjil");
+        const academicYear = String(rec.academicYear || (parts.length >= 3 ? parts.slice(2).join("_") : reportReleaseConfig.activeAcademicYear) || "2026/2027");
+
+        ekstraBatchEntries.push({
+          student_id: studentId,
+          nis,
+          student_name: studentName,
+          class_name: className,
+          semester,
+          academic_year: academicYear,
+          items: rec.extracurriculars
+            .filter((it: any) => it && ((it.id_ekstra && String(it.id_ekstra).trim()) || (it.name && String(it.name).trim() && String(it.name).trim() !== "-")))
+            .slice(0, 3)
+            .map((it: any) => ({
+              id_ekstra: String(it.id_ekstra || it.name || "").trim(),
+              nama_ekstra: String(it.name || it.id_ekstra || "").trim(),
+              predikat: String(it.predicate || "A").trim().toUpperCase(),
+              keterangan: String(it.description || "").trim()
+            }))
+        });
+      };
+
       if (studentKey && studentRecord && typeof studentRecord === "object") {
-        const existing = raporSemesterData.studentRecords[studentKey] || { studentId: studentRecord.studentId || studentKey };
-        raporSemesterData.studentRecords[studentKey] = {
+        collectEkstraFromRecord(studentKey, studentRecord);
+        const { extracurriculars: _omitEks, ...restRecord } = studentRecord;
+        const existing = nextConfig.studentRecords[studentKey] || { studentId: studentRecord.studentId || studentKey };
+        nextConfig.studentRecords[studentKey] = {
           ...existing,
-          ...studentRecord,
+          ...restRecord,
           updatedAt: new Date().toISOString()
         };
-        // Also keep a base studentId entry for easy fallback
         if (studentRecord.studentId) {
-          const baseExisting = raporSemesterData.studentRecords[studentRecord.studentId] || { studentId: studentRecord.studentId };
-          raporSemesterData.studentRecords[studentRecord.studentId] = {
+          const baseExisting = nextConfig.studentRecords[studentRecord.studentId] || { studentId: studentRecord.studentId };
+          nextConfig.studentRecords[studentRecord.studentId] = {
             ...baseExisting,
-            ...studentRecord,
+            ...restRecord,
             updatedAt: new Date().toISOString()
           };
         }
       }
 
       if (studentRecords && typeof studentRecords === "object") {
+        const seenStudents = new Set<string>();
         Object.entries(studentRecords).forEach(([k, val]: [string, any]) => {
           if (val && typeof val === "object") {
-            const existing = raporSemesterData.studentRecords[k] || { studentId: val.studentId || k };
-            raporSemesterData.studentRecords[k] = {
+            const stIdKey = `${val.studentId || k.split("_")[0]}_${val.semester || ""}_${val.academicYear || ""}`;
+            if (Array.isArray(val.extracurriculars) && !seenStudents.has(stIdKey)) {
+              seenStudents.add(stIdKey);
+              collectEkstraFromRecord(k, val);
+            }
+            const { extracurriculars: _omitEks, ...restVal } = val;
+            const existing = nextConfig.studentRecords[k] || { studentId: val.studentId || k };
+            nextConfig.studentRecords[k] = {
               ...existing,
-              ...val,
+              ...restVal,
               updatedAt: new Date().toISOString()
             };
           }
         });
       }
 
-      const mysqlSaved = await saveConfigToMysql("raporSemesterData", raporSemesterData);
+      if (ekstraBatchEntries.length > 0) {
+        await saveExtracurricularGradesBatchToMysql(ekstraBatchEntries);
+      }
+
+      const mysqlSaved = await saveConfigToMysql("raporSemesterData", nextConfig);
+      const [latestMaster, latestGrades] = await Promise.all([
+        getAllExtracurricularMasterFromMysql(),
+        getExtracurricularGradesFromMysql()
+      ]);
+
+      // Gabungkan kembali nilai ekstrakurikuler dari tabel MySQL untuk respons ke klien
+      const responseConfig: RaporSemesterDataConfig = {
+        settings: nextConfig.settings,
+        extracurricularMaster: latestMaster,
+        studentRecords: { ...nextConfig.studentRecords }
+      };
+
+      const groupedByScopedKey = new Map<string, { studentId: string; nis: string; semester: string; academicYear: string; items: any[] }>();
+      for (const g of latestGrades) {
+        const stObj = students.find(s => s.id === g.student_id || String(s.nis).trim() === String(g.nis).trim());
+        const resolvedStudentId = stObj ? stObj.id : g.student_id;
+        const resolvedNis = stObj ? String(stObj.nis) : g.nis;
+        const scopedKey = `${resolvedStudentId}_${g.semester}_${g.academic_year}`;
+        if (!groupedByScopedKey.has(scopedKey)) {
+          groupedByScopedKey.set(scopedKey, {
+            studentId: resolvedStudentId,
+            nis: resolvedNis,
+            semester: g.semester,
+            academicYear: g.academic_year,
+            items: []
+          });
+        }
+        const bucket = groupedByScopedKey.get(scopedKey)!;
+        if (bucket.items.length < 3) {
+          bucket.items.push({
+            no: bucket.items.length + 1,
+            id_ekstra: g.id_ekstra,
+            name: g.nama_ekstra,
+            predicate: g.predikat,
+            description: g.keterangan
+          });
+        }
+      }
+
+      for (const [scopedKey, bucket] of groupedByScopedKey.entries()) {
+        responseConfig.studentRecords[scopedKey] = {
+          ...(responseConfig.studentRecords[scopedKey] || { studentId: bucket.studentId, nis: bucket.nis }),
+          extracurriculars: bucket.items
+        };
+        responseConfig.studentRecords[bucket.studentId] = {
+          ...(responseConfig.studentRecords[bucket.studentId] || { studentId: bucket.studentId, nis: bucket.nis }),
+          extracurriculars: bucket.items
+        };
+      }
+
       res.json({
         success: true,
         mysqlSaved,
-        message: "Data rapor berhasil disimpan langsung ke database MySQL.",
-        data: raporSemesterData
+        message: "Data rapor & ekstrakurikuler berhasil disimpan langsung ke database MySQL.",
+        data: responseConfig
       });
     } catch (err: any) {
       console.error("[MySQL Rapor Data Save Error]:", err?.message || err);

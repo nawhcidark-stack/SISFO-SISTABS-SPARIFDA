@@ -59,6 +59,7 @@ import {
   printRaporAkhirSemesterF4
 } from '../utils/raporAkhirPrint';
 import { RaporAkhirF4Preview } from './RaporAkhirF4Preview';
+import { WakaExtracurricularView } from './WakaExtracurricularView';
 
 const normalizeSubjectCache = new Map<string, string>();
 
@@ -251,7 +252,7 @@ export default function WakaKurikulumPanel({
     () => (rawSubjectTeachers || []).filter(st => !isDummySubjectTeacher(st)),
     [rawSubjectTeachers]
   );
-  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'status_belum_input' | 'rapor' | 'rapor_tengah_semester' | 'password'>('monitoring');
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'ekstrakurikuler' | 'rekap_nilai' | 'detail_nilai' | 'status_belum_input' | 'rapor' | 'rapor_tengah_semester' | 'password'>('monitoring');
   const [masterMapelSubTab, setMasterMapelSubTab] = useState<'mapel_list' | 'bank_tp'>('mapel_list');
   const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
   const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
@@ -1382,6 +1383,7 @@ export default function WakaKurikulumPanel({
         getStudentRaporRecord: (st) => getStudentRaporRecord(st),
         getHomeroomTeacherName: (st) => homerooms.find(h => h.className && normClass(h.className) === normClass(st.class))?.name || 'Wali Kelas',
         raporSettings: raporSemesterData.settings,
+        extracurricularMaster: raporSemesterData.extracurricularMaster || [],
         semester: selectedSemester,
         academicYear: selectedAcademicYear,
         schoolIdentity,
@@ -3381,6 +3383,18 @@ export default function WakaKurikulumPanel({
         </button>
 
         <button
+          onClick={() => setActiveTab('ekstrakurikuler')}
+          className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'ekstrakurikuler'
+              ? 'border-emerald-600 text-emerald-700'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Award size={15} className={activeTab === 'ekstrakurikuler' ? 'text-emerald-600' : 'text-emerald-500'} />
+          <span>Input Nilai Ekstrakurikuler</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('rekap_nilai')}
           className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'rekap_nilai'
@@ -3448,6 +3462,17 @@ export default function WakaKurikulumPanel({
           <span>Keamanan Sandi</span>
         </button>
       </div>
+
+      {/* TAB: INPUT NILAI EKSTRAKURIKULER (MURNI MYSQL) */}
+      {activeTab === 'ekstrakurikuler' && (
+        <WakaExtracurricularView
+          students={students}
+          availableClasses={availableClasses}
+          selectedSemester={selectedSemester}
+          selectedAcademicYear={selectedAcademicYear}
+          onRefreshRaporData={fetchRaporMysqlData}
+        />
+      )}
 
       {/* TAB: JADWAL PELAJARAN */}
       {activeTab === 'schedules' && (
@@ -7325,6 +7350,7 @@ export default function WakaKurikulumPanel({
                           rawAttendance={att}
                           studentRecord={studentRaporRecord}
                           raporSettings={raporSemesterData.settings}
+                          extracurricularMaster={raporSemesterData.extracurricularMaster || []}
                           semester={selectedSemester}
                           academicYear={selectedAcademicYear}
                           homeroomTeacherName={homeroomTeacherName}
@@ -7593,6 +7619,23 @@ export default function WakaKurikulumPanel({
                   </div>
                   <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
                     Rapor PTS
+                  </span>
+                </button>
+
+                {/* 3b. Input Nilai Ekstrakurikuler */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('ekstrakurikuler');
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🏅
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Nilai Ekstra
                   </span>
                 </button>
 

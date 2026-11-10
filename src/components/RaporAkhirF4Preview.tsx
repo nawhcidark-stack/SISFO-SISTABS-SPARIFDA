@@ -5,12 +5,14 @@ import {
   RaporStudentRecord,
   RaporSemesterDataConfig,
   RaporExtracurricularItem,
-  DEFAULT_EXTRACURRICULARS,
+  ExtracurricularMasterItem,
   splitSubjectsForTwoPageRapor,
   formatClassLabelForRapor,
-  resolveSubjectCapaianTopBottom
+  resolveSubjectCapaianTopBottom,
+  getDisplayedExtracurricularRows,
+  buildExtracurricularDescription
 } from '../utils/raporAkhirPrint';
-import { Save, Edit2, Award, CheckCircle2 } from 'lucide-react';
+import { Save, Edit2, Award, CheckCircle2, Plus, Trash2 } from 'lucide-react';
 
 interface RaporAkhirF4PreviewProps {
   student: Student;
@@ -18,6 +20,7 @@ interface RaporAkhirF4PreviewProps {
   rawAttendance: { Sakit: number; Izin: number; Alpa: number };
   studentRecord?: RaporStudentRecord;
   raporSettings: RaporSemesterDataConfig['settings'];
+  extracurricularMaster?: ExtracurricularMasterItem[];
   semester: string;
   academicYear: string;
   homeroomTeacherName: string;
@@ -34,6 +37,7 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
   rawAttendance,
   studentRecord,
   raporSettings,
+  extracurricularMaster = [],
   semester,
   academicYear,
   homeroomTeacherName,
@@ -46,7 +50,7 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
   const { page1Subjects, page2IntraSubjects, page2MulokSubjects } = splitSubjectsForTwoPageRapor(subjectRows);
 
   const [isEditingEkskul, setIsEditingEkskul] = useState(false);
-  const [ekskulDraft, setEkskulDraft] = useState<RaporExtracurricularItem[]>(DEFAULT_EXTRACURRICULARS);
+  const [ekskulDraft, setEkskulDraft] = useState<RaporExtracurricularItem[]>([]);
   const [saveSuccessBanner, setSaveSuccessBanner] = useState<string | null>(null);
 
   // Ketidakhadiran otomatis dari sistem absensi
@@ -54,39 +58,45 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
   const izinVal = rawAttendance.Izin;
   const alpaVal = rawAttendance.Alpa;
 
-  const activeEkskul: RaporExtracurricularItem[] = [1, 2, 3].map((num, idx) => {
-    const list =
-      studentRecord?.extracurriculars && studentRecord.extracurriculars.length > 0
-        ? studentRecord.extracurriculars
-        : DEFAULT_EXTRACURRICULARS;
-    const item = list[idx];
-    if (!item) return { no: num, name: '-', predicate: '-', description: '-' };
-    return {
-      no: num,
-      name: item.name || '-',
-      predicate: item.predicate || '-',
-      description: item.description || '-'
-    };
-  });
+  // Tampilkan sesuai jumlah ekstra yang diikuti siswa (1, 2, atau maksimal 3)
+  const activeEkskul: RaporExtracurricularItem[] = getDisplayedExtracurricularRows(
+    studentRecord,
+    extracurricularMaster
+  );
 
   useEffect(() => {
-    setEkskulDraft(activeEkskul);
+    const displayed = getDisplayedExtracurricularRows(studentRecord, extracurricularMaster);
+    setEkskulDraft(displayed);
     setIsEditingEkskul(false);
-  }, [student.id, semester, academicYear, studentRecord]);
+  }, [student.id, semester, academicYear, studentRecord, extracurricularMaster]);
 
   const handleSaveEkskul = async () => {
     if (!onSaveStudentRecord) return;
+    const cleaned = ekskulDraft
+      .filter(e => (e.name && e.name.trim() && e.name.trim() !== '-') || (e.id_ekstra && e.id_ekstra.trim() && e.id_ekstra.trim() !== '-'))
+      .slice(0, 3)
+      .map((e, i) => {
+        const matched = extracurricularMaster.find(
+          m => m.id_ekstra.toLowerCase() === (e.id_ekstra || '').trim().toLowerCase() ||
+               m.nama_ekstra.toLowerCase() === (e.name || '').trim().toLowerCase()
+        );
+        const finalName = matched?.nama_ekstra || e.name.trim() || '-';
+        const finalPred = (e.predicate || '').trim().toUpperCase() || '-';
+        return {
+          no: i + 1,
+          id_ekstra: matched?.id_ekstra || e.id_ekstra || undefined,
+          name: finalName,
+          predicate: finalPred,
+          description: buildExtracurricularDescription(finalPred, finalName, e.description)
+        };
+      });
+
     await onSaveStudentRecord({
       studentId: student.id,
       nis: student.nis,
       semester,
       academicYear,
-      extracurriculars: ekskulDraft.map((e, i) => ({
-        no: i + 1,
-        name: e.name.trim() || '-',
-        predicate: e.predicate.trim() || '-',
-        description: e.description.trim() || '-'
-      }))
+      extracurriculars: cleaned
     });
     setIsEditingEkskul(false);
     setSaveSuccessBanner('Data Ekstrakurikuler berhasil disimpan langsung ke MySQL!');
@@ -222,42 +232,108 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
           {isEditingEkskul && (
             <div className="space-y-4 pt-2 border-t border-slate-200">
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1.5">
-                  B. Nilai Ekstrakurikuler (3 Baris)
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                    B. Nilai Ekstrakurikuler (Maksimal 3 Ekstra — Tampil di Rapor Sesuai Jumlah yang Diikuti)
+                  </label>
+                  {ekskulDraft.length < 3 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEkskulDraft(prev => [
+                          ...prev,
+                          { no: prev.length + 1, id_ekstra: '', name: '', predicate: 'A', description: '' }
+                        ])
+                      }
+                      className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus size={12} />
+                      <span>Tambah Ekstra ({ekskulDraft.length}/3)</span>
+                    </button>
+                  )}
+                </div>
                 <div className="space-y-2">
                   {ekskulDraft.map((item, idx) => (
-                    <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 bg-white p-2.5 rounded-xl border border-slate-200">
+                    <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 bg-white p-2.5 rounded-xl border border-slate-200 items-center">
                       <div className="sm:col-span-1 flex items-center justify-center font-bold text-xs text-slate-500">
                         #{idx + 1}
                       </div>
                       <div className="sm:col-span-4">
-                        <input
-                          type="text"
-                          value={item.name === '-' ? '' : item.name}
-                          onChange={(e) => {
-                            const next = [...ekskulDraft];
-                            next[idx] = { ...next[idx], name: e.target.value };
-                            setEkskulDraft(next);
-                          }}
-                          placeholder="Nama Ekstrakurikuler"
-                          className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold"
-                        />
+                        {extracurricularMaster.length > 0 ? (
+                          <select
+                            value={
+                              item.id_ekstra ||
+                              extracurricularMaster.find(m => m.nama_ekstra.toLowerCase() === (item.name || '').toLowerCase())?.id_ekstra ||
+                              ''
+                            }
+                            onChange={(e) => {
+                              const selectedId = e.target.value;
+                              const matched = extracurricularMaster.find(m => m.id_ekstra === selectedId);
+                              const nextName = matched ? matched.nama_ekstra : '';
+                              const pred = item.predicate && item.predicate !== '-' ? item.predicate : 'A';
+                              const next = [...ekskulDraft];
+                              next[idx] = {
+                                ...next[idx],
+                                id_ekstra: selectedId,
+                                name: nextName,
+                                predicate: pred,
+                                description: buildExtracurricularDescription(pred, nextName)
+                              };
+                              setEkskulDraft(next);
+                            }}
+                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold bg-white"
+                          >
+                            <option value="">-- Pilih Ekstrakurikuler --</option>
+                            {extracurricularMaster.map(m => (
+                              <option key={m.id_ekstra} value={m.id_ekstra}>
+                                [{m.id_ekstra}] {m.nama_ekstra}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={item.name === '-' ? '' : item.name}
+                            onChange={(e) => {
+                              const nextName = e.target.value;
+                              const pred = item.predicate && item.predicate !== '-' ? item.predicate : 'A';
+                              const next = [...ekskulDraft];
+                              next[idx] = {
+                                ...next[idx],
+                                name: nextName,
+                                predicate: pred,
+                                description: buildExtracurricularDescription(pred, nextName)
+                              };
+                              setEkskulDraft(next);
+                            }}
+                            placeholder="Nama Ekstrakurikuler"
+                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold"
+                          />
+                        )}
                       </div>
                       <div className="sm:col-span-2">
-                        <input
-                          type="text"
+                        <select
                           value={item.predicate === '-' ? '' : item.predicate}
                           onChange={(e) => {
+                            const nextPred = e.target.value;
                             const next = [...ekskulDraft];
-                            next[idx] = { ...next[idx], predicate: e.target.value };
+                            next[idx] = {
+                              ...next[idx],
+                              predicate: nextPred,
+                              description: buildExtracurricularDescription(nextPred, next[idx].name)
+                            };
                             setEkskulDraft(next);
                           }}
-                          placeholder="Predikat (A/B/C/-)"
-                          className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-center"
-                        />
+                          className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-center bg-white"
+                        >
+                          <option value="">- Predikat -</option>
+                          <option value="A">A (Sangat Baik)</option>
+                          <option value="B">B (Baik)</option>
+                          <option value="C">C (Cukup Baik)</option>
+                          <option value="D">D (Kurang)</option>
+                        </select>
                       </div>
-                      <div className="sm:col-span-5">
+                      <div className="sm:col-span-4">
                         <input
                           type="text"
                           value={item.description === '-' ? '' : item.description}
@@ -266,9 +342,22 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
                             next[idx] = { ...next[idx], description: e.target.value };
                             setEkskulDraft(next);
                           }}
-                          placeholder="Keterangan capaian ekstrakurikuler"
-                          className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
+                          placeholder="Keterangan otomatis berdasarkan predikat"
+                          className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs bg-slate-50"
                         />
+                      </div>
+                      <div className="sm:col-span-1 flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = ekskulDraft.filter((_, i) => i !== idx);
+                            setEkskulDraft(next.length > 0 ? next : [{ no: 1, name: '-', predicate: '-', description: '-' }]);
+                          }}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
+                          title="Hapus baris ekstra ini"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </div>
                   ))}

@@ -1,8 +1,14 @@
 import { Student, MerdekaAssessment, CurriculumSubject, SchoolIdentity, CurriculumTpDescription, SharedLearningObjective } from '../types';
 import { isSameSubject } from './subjectMatcher';
 
+export interface ExtracurricularMasterItem {
+  id_ekstra: string;
+  nama_ekstra: string;
+}
+
 export interface RaporExtracurricularItem {
   no: number;
+  id_ekstra?: string;
   name: string;
   predicate: string;
   description: string;
@@ -35,6 +41,7 @@ export interface RaporSemesterDataConfig {
     fase: string;
     showHomeroomNameInSig?: boolean;
   };
+  extracurricularMaster?: ExtracurricularMasterItem[];
   studentRecords: Record<string, RaporStudentRecord>;
 }
 
@@ -69,20 +76,76 @@ export const DEFAULT_EXTRACURRICULARS: RaporExtracurricularItem[] = [
     name: '-',
     predicate: '-',
     description: '-'
-  },
-  {
-    no: 2,
-    name: '-',
-    predicate: '-',
-    description: '-'
-  },
-  {
-    no: 3,
-    name: '-',
-    predicate: '-',
-    description: '-'
   }
 ];
+
+export function getPredicateLabel(predicate?: string): string {
+  const p = (predicate || '').trim().toUpperCase();
+  if (p === 'A' || p === 'SANGAT BAIK') return 'Sangat Baik';
+  if (p === 'B' || p === 'BAIK') return 'Baik';
+  if (p === 'C' || p === 'CUKUP BAIK' || p === 'CUKUP') return 'Cukup Baik';
+  if (p === 'D' || p === 'KURANG') return 'Kurang';
+  return '';
+}
+
+export function buildExtracurricularDescription(
+  predicate?: string,
+  namaEkstra?: string,
+  fallbackDesc?: string
+): string {
+  const eksName = (namaEkstra || '').trim();
+  const predLabel = getPredicateLabel(predicate);
+  if (eksName && eksName !== '-' && predLabel) {
+    return `${predLabel} dalam mengikuti Materi Ekstrakurikuler ${eksName}.`;
+  }
+  if (fallbackDesc && fallbackDesc.trim() && fallbackDesc.trim() !== '-') {
+    return fallbackDesc.trim();
+  }
+  return '-';
+}
+
+export function getDisplayedExtracurricularRows(
+  record?: RaporStudentRecord,
+  masterList: ExtracurricularMasterItem[] = []
+): RaporExtracurricularItem[] {
+  const rawList = Array.isArray(record?.extracurriculars) ? record!.extracurriculars! : [];
+  const validItems: RaporExtracurricularItem[] = [];
+
+  for (const item of rawList) {
+    if (!item) continue;
+    const rawId = (item.id_ekstra || '').trim();
+    const matchedMaster = rawId
+      ? masterList.find(m => m.id_ekstra.trim().toLowerCase() === rawId.toLowerCase())
+      : masterList.find(m => m.nama_ekstra.trim().toLowerCase() === (item.name || '').trim().toLowerCase());
+
+    const resolvedName = (matchedMaster?.nama_ekstra || item.name || '').trim();
+    const resolvedId = (matchedMaster?.id_ekstra || rawId || '').trim();
+    const resolvedPred = (item.predicate || '').trim().toUpperCase();
+
+    if ((!resolvedName || resolvedName === '-') && (!resolvedId || resolvedId === '-')) {
+      continue;
+    }
+
+    const displayEkstraName = resolvedName && resolvedName !== '-' ? resolvedName : resolvedId;
+    const autoDesc = buildExtracurricularDescription(resolvedPred, displayEkstraName, item.description);
+
+    validItems.push({
+      no: validItems.length + 1,
+      id_ekstra: resolvedId || undefined,
+      name: displayEkstraName,
+      predicate: resolvedPred || '-',
+      description: autoDesc
+    });
+
+    if (validItems.length >= 3) break; // Maksimal 3 Ekstrakurikuler per siswa
+  }
+
+  if (validItems.length === 0) {
+    return [{ no: 1, name: '-', predicate: '-', description: '-' }];
+  }
+
+  return validItems;
+}
 
 export function isDummyTpDescription(raw?: string): boolean {
   if (!raw) return true;
@@ -565,6 +628,7 @@ export function printRaporAkhirSemesterF4(params: {
   getStudentRaporRecord: (st: Student) => RaporStudentRecord | undefined;
   getHomeroomTeacherName: (st: Student) => string;
   raporSettings: RaporSemesterDataConfig['settings'];
+  extracurricularMaster?: ExtracurricularMasterItem[];
   semester: string;
   academicYear: string;
   schoolIdentity?: SchoolIdentity;
@@ -577,6 +641,7 @@ export function printRaporAkhirSemesterF4(params: {
     getStudentRaporRecord,
     getHomeroomTeacherName,
     raporSettings,
+    extracurricularMaster = [],
     semester,
     academicYear,
     schoolIdentity,
@@ -665,24 +730,11 @@ export function printRaporAkhirSemesterF4(params: {
     const izinVal = rawAtt.Izin;
     const alpaVal = rawAtt.Alpa;
 
-    const ekskulList: RaporExtracurricularItem[] =
-      record?.extracurriculars && record.extracurriculars.length > 0
-        ? record.extracurriculars
-        : DEFAULT_EXTRACURRICULARS;
-
-    // Ensure at least 3 rows for Ekstrakurikuler table as in the reference PDF
-    const normalizedEkskul: RaporExtracurricularItem[] = [1, 2, 3].map((num, idx) => {
-      const item = ekskulList[idx];
-      if (!item) {
-        return { no: num, name: '-', predicate: '-', description: '-' };
-      }
-      return {
-        no: num,
-        name: item.name?.trim() || '-',
-        predicate: item.predicate?.trim() || '-',
-        description: item.description?.trim() || '-'
-      };
-    });
+    // 1 Siswa maksimal mengikuti 3 Ekstra: jika ikut 1 tampilkan 1, jika ikut 2 tampilkan 2, jika ikut 3 tampilkan semua 3
+    const normalizedEkskul: RaporExtracurricularItem[] = getDisplayedExtracurricularRows(
+      record,
+      extracurricularMaster
+    );
 
     const homeroomName = getHomeroomTeacherName(st);
 

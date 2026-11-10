@@ -420,6 +420,8 @@ export default function StudentPanel({
         naAkhir,
         descPts,
         descAkhir: capaianResult.descAkhir,
+        descHighest: capaianResult.descHighest,
+        descLowest: capaianResult.descLowest,
         desc: raporSubTab === 'akhir_semester' ? capaianResult.descAkhir : descPts,
         highestTpText: capaianResult.highestTpText,
         highestTpScore: capaianResult.highestTpScore,

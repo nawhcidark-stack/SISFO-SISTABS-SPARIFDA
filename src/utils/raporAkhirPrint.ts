@@ -54,6 +54,8 @@ export interface RaporSubjectRow {
   naAkhir: number;
   descPts: string;
   descAkhir: string;
+  descHighest?: string;
+  descLowest?: string;
   highestTpText?: string;
   highestTpScore?: number;
   lowestTpText?: string;
@@ -138,7 +140,13 @@ export function cleanTpPhrase(raw?: string): string {
  */
 export function formatCapaianCapitalization(rawText: string): string {
   if (!rawText) return '-';
-  let s = rawText.replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  let s = rawText
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^peserta\s+didik\s+/i, '')
+    .replace(/(\.\s*)peserta\s+didik\s+/gi, '$1')
+    .trim();
   if (!s || s === '-') return '-';
 
   // Pastikan diakhiri titik
@@ -198,6 +206,8 @@ export function buildCapaianTujuanPembelajaran(params: {
   customDescription?: string;
 }): {
   descAkhir: string;
+  descHighest: string;
+  descLowest: string;
   highestTpText?: string;
   highestTpScore?: number;
   lowestTpText?: string;
@@ -218,7 +228,15 @@ export function buildCapaianTujuanPembelajaran(params: {
   } = params;
 
   if (customDescription && customDescription.trim().length > 0) {
-    return { descAkhir: customDescription.trim() };
+    const trimmed = customDescription.trim();
+    const parts = trimmed.split(/(?<=\.)\s+(?=(?:Peserta didik\s+)?[Pp]erlu\b)/);
+    const top = parts[0] ? formatCapaianCapitalization(parts[0]) : trimmed;
+    const bottom = parts[1] ? formatCapaianCapitalization(parts.slice(1).join(' ')) : '-';
+    return {
+      descAkhir: trimmed,
+      descHighest: top,
+      descLowest: bottom
+    };
   }
 
   // 1. Ambil Deskripsi TP yang diinputkan di penilaian:
@@ -310,69 +328,112 @@ export function buildCapaianTujuanPembelajaran(params: {
     }
   }
 
-  if (validTps.length > 0) {
-    // 1. Kompetensi Tertinggi (Kelebihan): Materi/TP yang paling dikuasai (Nilai >= KKTP)
-    const aboveKktp = validTps
-      .filter(t => t.score >= kktp)
-      .sort((a, b) => b.score - a.score);
+  if (validTps.length >= 2) {
+    // Urutkan dari nilai tertinggi ke terendah
+    const sortedDesc = [...validTps].sort((a, b) => b.score - a.score || a.num - b.num);
+    const highestTp = sortedDesc[0];
+    const lowestTp = sortedDesc[sortedDesc.length - 1];
 
-    // 2. Kompetensi Terendah (Perlu Bimbingan/Peningkatan): Materi/TP yang belum sepenuhnya dikuasai (Nilai < KKTP)
-    const belowKktp = validTps
-      .filter(t => t.score < kktp)
-      .sort((a, b) => a.score - b.score);
+    const descHighest = formatCapaianCapitalization(
+      `Menunjukkan penguasaan yang ${highestTp.score >= kktp ? 'sangat baik' : 'cukup baik'} dalam ${highestTp.name}.`
+    );
+    const descLowest = formatCapaianCapitalization(
+      `Perlu ${lowestTp.score < kktp ? 'bimbingan dan peningkatan pemahaman' : 'meningkatkan pemahaman'} dalam ${lowestTp.name}.`
+    );
 
-    const highestTp = aboveKktp[0];
-    const lowestTp = belowKktp[0];
+    return {
+      descAkhir: `${descHighest} ${descLowest}`,
+      descHighest,
+      descLowest,
+      highestTpText: highestTp.name,
+      highestTpScore: highestTp.score,
+      lowestTpText: lowestTp.name,
+      lowestTpScore: lowestTp.score
+    };
+  }
 
-    if (highestTp && lowestTp) {
+  if (validTps.length === 1) {
+    const onlyTp = validTps[0];
+    const otherTpName = [1, 2, 3, 4]
+      .filter(n => n !== onlyTp.num)
+      .map(n => tpNames[n])
+      .find(Boolean);
+
+    if (onlyTp.score >= kktp) {
+      const descHighest = formatCapaianCapitalization(
+        `Menunjukkan penguasaan yang sangat baik dalam ${onlyTp.name}.`
+      );
+      const descLowest = otherTpName
+        ? formatCapaianCapitalization(`Perlu meningkatkan pemahaman dalam ${otherTpName}.`)
+        : '-';
       return {
-        descAkhir: formatCapaianCapitalization(
-          `Peserta didik menunjukkan penguasaan yang sangat baik dalam ${highestTp.name}. Perlu meningkatkan pemahaman dalam ${lowestTp.name}.`
-        ),
-        highestTpText: highestTp.name,
-        highestTpScore: highestTp.score,
-        lowestTpText: lowestTp.name,
-        lowestTpScore: lowestTp.score
+        descAkhir: descLowest !== '-' ? `${descHighest} ${descLowest}` : descHighest,
+        descHighest,
+        descLowest,
+        highestTpText: onlyTp.name,
+        highestTpScore: onlyTp.score,
+        lowestTpText: otherTpName || undefined
       };
-    }
-
-    if (highestTp) {
+    } else {
+      const descHighest = otherTpName
+        ? formatCapaianCapitalization(`Menunjukkan penguasaan yang baik dalam ${otherTpName}.`)
+        : '-';
+      const descLowest = formatCapaianCapitalization(
+        `Perlu meningkatkan pemahaman dalam ${onlyTp.name}.`
+      );
       return {
-        descAkhir: formatCapaianCapitalization(
-          `Peserta didik menunjukkan penguasaan yang sangat baik dalam ${highestTp.name}.`
-        ),
-        highestTpText: highestTp.name,
-        highestTpScore: highestTp.score
-      };
-    }
-
-    if (lowestTp) {
-      return {
-        descAkhir: formatCapaianCapitalization(
-          `Peserta didik perlu meningkatkan pemahaman dalam ${lowestTp.name}.`
-        ),
-        lowestTpText: lowestTp.name,
-        lowestTpScore: lowestTp.score
+        descAkhir: descHighest !== '-' ? `${descHighest} ${descLowest}` : descLowest,
+        descHighest,
+        descLowest,
+        highestTpText: otherTpName || undefined,
+        lowestTpText: onlyTp.name,
+        lowestTpScore: onlyTp.score
       };
     }
   }
 
   // Jika nilai per-TP belum dirinci tetapi Nilai Akhir ada dan Deskripsi TP telah diinput di penilaian:
-  const firstRealTpText = tpNames[1] || tpNames[2] || tpNames[3] || tpNames[4];
-  if (naAkhir > 0 && firstRealTpText) {
+  const allRealTps = [tpNames[1], tpNames[2], tpNames[3], tpNames[4]].filter(Boolean);
+  if (naAkhir > 0 && allRealTps.length >= 2) {
+    const highestText = allRealTps[0];
+    const lowestText = allRealTps[allRealTps.length - 1];
+    const descHighest = formatCapaianCapitalization(
+      `Menunjukkan penguasaan yang ${naAkhir >= kktp ? 'sangat baik' : 'cukup baik'} dalam ${highestText}.`
+    );
+    const descLowest = formatCapaianCapitalization(
+      `Perlu meningkatkan pemahaman dalam ${lowestText}.`
+    );
+    return {
+      descAkhir: `${descHighest} ${descLowest}`,
+      descHighest,
+      descLowest,
+      highestTpText: highestText,
+      highestTpScore: naAkhir,
+      lowestTpText: lowestText
+    };
+  }
+
+  if (naAkhir > 0 && allRealTps.length === 1) {
+    const firstRealTpText = allRealTps[0];
     if (naAkhir >= kktp) {
+      const descHighest = formatCapaianCapitalization(
+        `Menunjukkan penguasaan yang sangat baik dalam ${firstRealTpText}.`
+      );
       return {
-        descAkhir: formatCapaianCapitalization(
-          `Peserta didik menunjukkan penguasaan yang sangat baik dalam ${firstRealTpText}.`
-        ),
+        descAkhir: descHighest,
+        descHighest,
+        descLowest: '-',
         highestTpText: firstRealTpText,
         highestTpScore: naAkhir
       };
     } else {
+      const descLowest = formatCapaianCapitalization(
+        `Perlu meningkatkan pemahaman dalam ${firstRealTpText}.`
+      );
       return {
-        descAkhir: formatCapaianCapitalization(
-          `Peserta didik perlu meningkatkan pemahaman dalam ${firstRealTpText}.`
-        ),
+        descAkhir: descLowest,
+        descHighest: '-',
+        descLowest,
         lowestTpText: firstRealTpText,
         lowestTpScore: naAkhir
       };
@@ -385,12 +446,54 @@ export function buildCapaianTujuanPembelajaran(params: {
     assessment?.deskripsiCapaian &&
     !isDummyTpDescription(assessment.deskripsiCapaian)
   ) {
+    const formatted = formatCapaianCapitalization(assessment.deskripsiCapaian);
+    const parts = formatted.split(/(?<=\.)\s+(?=(?:Peserta didik\s+)?[Pp]erlu\b)/);
+    const descHighest = parts[0] ? formatCapaianCapitalization(parts[0]) : (naAkhir >= kktp ? formatted : '-');
+    const descLowest = parts[1] ? formatCapaianCapitalization(parts.slice(1).join(' ')) : (naAkhir < kktp && !parts[0] ? formatted : '-');
     return {
-      descAkhir: formatCapaianCapitalization(assessment.deskripsiCapaian)
+      descAkhir: formatted,
+      descHighest,
+      descLowest
     };
   }
 
-  return { descAkhir: '-' };
+  return { descAkhir: '-', descHighest: '-', descLowest: '-' };
+}
+
+export function resolveSubjectCapaianTopBottom(s: RaporSubjectRow): {
+  top: string;
+  bottom: string;
+} {
+  if (s.descHighest || s.descLowest) {
+    return {
+      top: s.descHighest && s.descHighest.trim() && s.descHighest.trim() !== '-' ? formatCapaianCapitalization(s.descHighest.trim()) : '-',
+      bottom: s.descLowest && s.descLowest.trim() && s.descLowest.trim() !== '-' ? formatCapaianCapitalization(s.descLowest.trim()) : '-'
+    };
+  }
+  if (s.highestTpText || s.lowestTpText) {
+    const top = s.highestTpText
+      ? formatCapaianCapitalization(`Menunjukkan penguasaan yang sangat baik dalam ${s.highestTpText}.`)
+      : '-';
+    const bottom = s.lowestTpText
+      ? formatCapaianCapitalization(`Perlu meningkatkan pemahaman dalam ${s.lowestTpText}.`)
+      : '-';
+    return { top, bottom };
+  }
+  const raw = (s.descAkhir || '').trim();
+  if (!raw || raw === '-') {
+    return { top: '-', bottom: '-' };
+  }
+  const parts = raw.split(/(?<=\.)\s+(?=(?:Peserta didik\s+)?[Pp]erlu\b)/);
+  if (parts.length >= 2) {
+    return {
+      top: formatCapaianCapitalization(parts[0]),
+      bottom: formatCapaianCapitalization(parts.slice(1).join(' '))
+    };
+  }
+  if (/^(?:Peserta didik\s+)?[Pp]erlu\b/i.test(raw)) {
+    return { top: '-', bottom: formatCapaianCapitalization(raw) };
+  }
+  return { top: formatCapaianCapitalization(raw), bottom: '-' };
 }
 
 export function splitSubjectsForTwoPageRapor(rows: RaporSubjectRow[]): {
@@ -505,7 +608,7 @@ export function printRaporAkhirSemesterF4(params: {
       <div class="identity-box">
         <table class="identity-table">
           <tr>
-            <td class="id-label-left">Nama Peserta Didik</td>
+            <td class="id-label-left">Nama Murid</td>
             <td class="id-colon">:</td>
             <td class="id-val-left">${(st.name || '').toUpperCase()}</td>
             <td class="id-label-right">Kelas</td>
@@ -585,36 +688,48 @@ export function printRaporAkhirSemesterF4(params: {
 
     const page1RowsHtml = page1Subjects.map((s) => {
       const val = s.naAkhir > 0 ? s.naAkhir : (s.naPts > 0 ? s.naPts : '-');
+      const { top, bottom } = resolveSubjectCapaianTopBottom(s);
       return `
-        <tr class="subject-row-p1">
-          <td class="col-no">${s.orderNo}</td>
-          <td class="col-mapel">${s.displayName}</td>
-          <td class="col-nilai">${val}</td>
-          <td class="col-capaian">${s.descAkhir || '-'}</td>
+        <tr class="subject-row-p1 subject-row-top">
+          <td class="col-no" rowspan="2">${s.orderNo}</td>
+          <td class="col-mapel" rowspan="2">${s.displayName}</td>
+          <td class="col-nilai" rowspan="2">${val}</td>
+          <td class="col-capaian col-capaian-top">${top}</td>
+        </tr>
+        <tr class="subject-row-p1 subject-row-bottom">
+          <td class="col-capaian col-capaian-bottom">${bottom}</td>
         </tr>
       `;
     }).join('');
 
     const page2IntraHtml = page2IntraSubjects.map((s) => {
       const val = s.naAkhir > 0 ? s.naAkhir : (s.naPts > 0 ? s.naPts : '-');
+      const { top, bottom } = resolveSubjectCapaianTopBottom(s);
       return `
-        <tr class="subject-row-p2">
-          <td class="col-no">${s.orderNo}</td>
-          <td class="col-mapel">${s.displayName}</td>
-          <td class="col-nilai">${val}</td>
-          <td class="col-capaian">${s.descAkhir || '-'}</td>
+        <tr class="subject-row-p2 subject-row-top">
+          <td class="col-no" rowspan="2">${s.orderNo}</td>
+          <td class="col-mapel" rowspan="2">${s.displayName}</td>
+          <td class="col-nilai" rowspan="2">${val}</td>
+          <td class="col-capaian col-capaian-top">${top}</td>
+        </tr>
+        <tr class="subject-row-p2 subject-row-bottom">
+          <td class="col-capaian col-capaian-bottom">${bottom}</td>
         </tr>
       `;
     }).join('');
 
     const page2MulokHtml = page2MulokSubjects.map((s) => {
       const val = s.naAkhir > 0 ? s.naAkhir : (s.naPts > 0 ? s.naPts : '-');
+      const { top, bottom } = resolveSubjectCapaianTopBottom(s);
       return `
-        <tr class="subject-row-p2">
-          <td class="col-no">${s.orderNo}</td>
-          <td class="col-mapel">${s.displayName}</td>
-          <td class="col-nilai">${val}</td>
-          <td class="col-capaian">${s.descAkhir || '-'}</td>
+        <tr class="subject-row-p2 subject-row-top">
+          <td class="col-no" rowspan="2">${s.orderNo}</td>
+          <td class="col-mapel" rowspan="2">${s.displayName}</td>
+          <td class="col-nilai" rowspan="2">${val}</td>
+          <td class="col-capaian col-capaian-top">${top}</td>
+        </tr>
+        <tr class="subject-row-p2 subject-row-bottom">
+          <td class="col-capaian col-capaian-bottom">${bottom}</td>
         </tr>
       `;
     }).join('');
@@ -931,19 +1046,19 @@ export function printRaporAkhirSemesterF4(params: {
         }
         .col-capaian {
           width: 62%;
-          padding: 2.5px 6px;
+          padding: 2px 6px;
           vertical-align: middle;
-          line-height: 1.14;
+          line-height: 1.12;
           font-size: 11pt;
           text-align: justify;
         }
         .subject-row-p1 td {
-          padding-top: 2.5px;
-          padding-bottom: 2.5px;
+          padding-top: 2px;
+          padding-bottom: 2px;
         }
         .subject-row-p2 td {
-          padding-top: 3px;
-          padding-bottom: 3px;
+          padding-top: 2px;
+          padding-bottom: 2px;
         }
         .mulok-divider-cell {
           font-weight: bold;

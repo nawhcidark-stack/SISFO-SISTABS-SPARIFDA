@@ -1343,6 +1343,8 @@ export default function WakaKurikulumPanel({
         naAkhir,
         descPts,
         descAkhir: capaianResult.descAkhir,
+        descHighest: capaianResult.descHighest,
+        descLowest: capaianResult.descLowest,
         desc: capaianResult.descAkhir !== '-' ? capaianResult.descAkhir : descPts,
         highestTpText: capaianResult.highestTpText,
         highestTpScore: capaianResult.highestTpScore,

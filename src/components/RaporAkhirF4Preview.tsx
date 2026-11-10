@@ -7,7 +7,8 @@ import {
   RaporExtracurricularItem,
   DEFAULT_EXTRACURRICULARS,
   splitSubjectsForTwoPageRapor,
-  formatClassLabelForRapor
+  formatClassLabelForRapor,
+  resolveSubjectCapaianTopBottom
 } from '../utils/raporAkhirPrint';
 import { Save, Edit2, Award, CheckCircle2 } from 'lucide-react';
 
@@ -113,7 +114,7 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
     <div className="border-t border-b border-black py-1.5 mb-2.5 text-[11pt] leading-snug text-black shrink-0">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-y-0.5">
         <div className="md:col-span-8 grid grid-cols-12">
-          <div className="col-span-4">Nama Peserta Didik</div>
+          <div className="col-span-4">Nama Murid</div>
           <div className="col-span-8">: <span className="uppercase">{student.name}</span></div>
           <div className="col-span-4">NIS / NISN</div>
           <div className="col-span-8">: {student.nis || '-'} / {student.nisn || '-'}</div>
@@ -136,21 +137,32 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
     </div>
   );
 
-  const renderSubjectRow = (s: RaporSubjectRow, isPage1: boolean = false) => {
+  const renderSubjectRow = (s: RaporSubjectRow, _isPage1: boolean = false) => {
     const val = s.naAkhir > 0 ? s.naAkhir : (s.naPts > 0 ? s.naPts : '-');
+    const { top, bottom } = resolveSubjectCapaianTopBottom(s);
 
     return (
-      <tr
-        key={`${s.orderNo}-${s.id}`}
-        className={`hover:bg-slate-50/70 ${isPage1 ? 'min-h-[64px]' : 'min-h-[56px]'}`}
-      >
-        <td className="border border-black px-2 py-1.5 text-center align-middle w-12 text-[11pt]">{s.orderNo}</td>
-        <td className="border border-black px-3 py-1.5 align-middle w-56 text-[11pt] leading-tight">{s.displayName}</td>
-        <td className="border border-black px-2 py-1.5 text-center align-middle w-20 font-medium text-[11pt]">{val}</td>
-        <td className="border border-black px-3 py-1.5 align-middle text-[11pt] leading-tight text-justify">
-          {s.descAkhir || '-'}
-        </td>
-      </tr>
+      <React.Fragment key={`${s.orderNo}-${s.id}`}>
+        <tr className="hover:bg-slate-50/70">
+          <td rowSpan={2} className="border border-black px-2 py-1.5 text-center align-middle w-12 text-[11pt]">
+            {s.orderNo}
+          </td>
+          <td rowSpan={2} className="border border-black px-3 py-1.5 align-middle w-56 text-[11pt] leading-tight">
+            {s.displayName}
+          </td>
+          <td rowSpan={2} className="border border-black px-2 py-1.5 text-center align-middle w-20 font-medium text-[11pt]">
+            {val}
+          </td>
+          <td className="border border-black px-3 py-1.5 align-middle text-[11pt] leading-tight text-justify">
+            {top}
+          </td>
+        </tr>
+        <tr className="hover:bg-slate-50/70">
+          <td className="border border-black px-3 py-1.5 align-middle text-[11pt] leading-tight text-justify">
+            {bottom}
+          </td>
+        </tr>
+      </React.Fragment>
     );
   };
 

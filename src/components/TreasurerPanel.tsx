@@ -23,6 +23,420 @@ interface TreasurerPanelProps {
   onRefresh?: () => void;
 }
 
+interface BudgetCategory {
+  name: string;
+  type: 'incoming' | 'outgoing' | 'both';
+}
+
+interface TransactionFormPayload {
+  type: 'incoming' | 'outgoing';
+  category: string;
+  amount: number;
+  description: string;
+  date: string;
+  recipientName: string;
+  fundingSource: string;
+  paymentMethod: 'kas' | 'bank';
+  kodeRekening: string;
+  noBukti: string;
+}
+
+interface TreasurerTransactionFormModalProps {
+  isOpen: boolean;
+  editingTransaction: TreasurerTransaction | null;
+  categories: BudgetCategory[];
+  homerooms: HomeroomTeacher[];
+  subjectTeachers: SubjectTeacher[];
+  isSubmitting: boolean;
+  onClose: () => void;
+  onSubmitTransaction: (payload: TransactionFormPayload) => Promise<void>;
+}
+
+const TreasurerTransactionFormModal = React.memo(function TreasurerTransactionFormModal({
+  isOpen,
+  editingTransaction,
+  categories,
+  homerooms,
+  subjectTeachers,
+  isSubmitting,
+  onClose,
+  onSubmitTransaction
+}: TreasurerTransactionFormModalProps) {
+  const [formType, setFormType] = useState<'incoming' | 'outgoing'>('incoming');
+  const [formCategory, setFormCategory] = useState<string>(() => categories[0]?.name || 'Operasional');
+  const [formAmount, setFormAmount] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formRecipientName, setFormRecipientName] = useState('');
+  const [isCustomRecipient, setIsCustomRecipient] = useState(false);
+  const [formFundingSource, setFormFundingSource] = useState('');
+  const [formDate, setFormDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [formPaymentMethod, setFormPaymentMethod] = useState<'kas' | 'bank'>('kas');
+  const [formKodeRekening, setFormKodeRekening] = useState('');
+  const [formNoBukti, setFormNoBukti] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (editingTransaction) {
+      setFormType(editingTransaction.type);
+      setFormCategory(editingTransaction.category || categories[0]?.name || 'Operasional');
+      setFormAmount(editingTransaction.amount.toString());
+      setFormDescription(editingTransaction.description || '');
+      setFormRecipientName(editingTransaction.recipientName || '');
+      const isTeacher =
+        (homerooms || []).some(h => h.name === editingTransaction.recipientName) ||
+        (subjectTeachers || []).some(st => st.name === editingTransaction.recipientName);
+      setIsCustomRecipient(!isTeacher && !!editingTransaction.recipientName);
+      setFormFundingSource(editingTransaction.fundingSource || '');
+      setFormDate(editingTransaction.date || new Date().toISOString().substring(0, 10));
+      setFormPaymentMethod(editingTransaction.paymentMethod === 'bank' ? 'bank' : 'kas');
+      setFormKodeRekening(editingTransaction.kodeRekening || '');
+      setFormNoBukti(editingTransaction.noBukti || '');
+    } else {
+      setFormType('incoming');
+      setFormCategory(categories[0]?.name || 'Operasional');
+      setFormAmount('');
+      setFormDescription('');
+      setFormRecipientName('');
+      setIsCustomRecipient(false);
+      setFormFundingSource('');
+      setFormDate(new Date().toISOString().substring(0, 10));
+      setFormPaymentMethod('kas');
+      setFormKodeRekening('');
+      setFormNoBukti('');
+    }
+  }, [isOpen, editingTransaction, categories, homerooms, subjectTeachers]);
+
+  const handleLocalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanAmountStr = formAmount.toString().replace(/[^0-9]/g, '');
+    const numericAmount = Number(cleanAmountStr) || 0;
+
+    if (numericAmount <= 0 || !formDescription.trim()) {
+      alert('Harap isi jumlah nominal dan deskripsi dengan benar.');
+      return;
+    }
+
+    if (formType === 'outgoing' && !formRecipientName.trim()) {
+      alert('Harap isi nama penerima dana untuk transaksi pengeluaran.');
+      return;
+    }
+
+    await onSubmitTransaction({
+      type: formType,
+      category: formCategory,
+      amount: numericAmount,
+      description: formDescription,
+      date: formDate,
+      recipientName: formType === 'outgoing' ? formRecipientName : '',
+      fundingSource: formType === 'incoming' ? formFundingSource : '',
+      paymentMethod: formPaymentMethod,
+      kodeRekening: formKodeRekening,
+      noBukti: formNoBukti
+    });
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs print:hidden">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="bg-white border text-left border-slate-250 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
+          >
+            <div className="p-5 bg-slate-950 border-b border-slate-800 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-950 border border-emerald-800 text-emerald-400">
+                  <Building2 size={16} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm tracking-tight">
+                    {editingTransaction ? 'Ubah Transaksi Kas' : 'Pencatatan Buku Kas Baru'}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-semibold uppercase">Operator Bendahara Sekolah</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer transition-all"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleLocalSubmit} className="p-6 flex flex-col gap-4 font-semibold text-xs">
+              {/* 1. Cashflow Flow direction Selector */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">ARUS KEUANGAN (TIPE)</label>
+                <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setFormType('incoming')}
+                    className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all ${formType === 'incoming' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    Pemasukan (+)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormType('outgoing')}
+                    className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all ${formType === 'outgoing' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    Pengeluaran (-)
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Category Dropdown */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                  KATEGORI POS BUDGET ({formType === 'incoming' ? 'MASUK' : 'KELUAR'})
+                </label>
+                <select
+                  value={formCategory}
+                  onChange={(e) => setFormCategory(e.target.value)}
+                  className="w-full p-2.5 border border-slate-200 rounded-lg bg-white font-bold text-slate-800 text-xs focus:outline-none focus:border-slate-800 cursor-pointer"
+                >
+                  {categories.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      📊 {c.name} ({c.type === 'both' ? 'Umum' : c.type === 'incoming' ? 'Pemasukan saja' : 'Pengeluaran saja'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 3. Date Selection */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">TANGGAL TRANSAKSI</label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    required
+                    value={formDate}
+                    onChange={(e) => setFormDate(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-mono font-bold"
+                  />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <Calendar size={14} />
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Numeric Nominal / Amount */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">NOMINAL (RUPIAH)</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    required
+                    min={100}
+                    placeholder="Masukkan nominal uang (cth: 50000)"
+                    value={formAmount}
+                    onChange={(e) => setFormAmount(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg font-mono font-bold text-slate-800"
+                  />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-400 bg-slate-50 border-r pr-1.5 py-0.5">
+                    Rp
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. String Description */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">DESKRIPSI LENGKAP KETERANGAN</label>
+                <textarea
+                  required
+                  placeholder="Tulis rincian penggunaan / sumber dana secara detail..."
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  rows={3}
+                  className="w-full p-3 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold"
+                />
+              </div>
+
+              {/* 5.2. Media/Metode Transaksi (Kas vs Bank) */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">METODE / MEDIA PENYIMPANAN (BUKU PEMBANTU)</label>
+                <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setFormPaymentMethod('kas')}
+                    className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 ${formPaymentMethod === 'kas' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    <span>💵 Tunai / Kas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormPaymentMethod('bank')}
+                    className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 ${formPaymentMethod === 'bank' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    <span>🏦 Bank / Rekening</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Kode Rekening & No Bukti */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">KODE REKENING</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 5.1.01.01"
+                    value={formKodeRekening}
+                    onChange={(e) => setFormKodeRekening(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-mono font-bold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">NO BUKTI TRANSAKSI</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 001/BPK/2026"
+                    value={formNoBukti}
+                    onChange={(e) => setFormNoBukti(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-mono font-bold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* 5.1. Sumber Dana (Penerimaan/Pemasukan Only) */}
+              {formType === 'incoming' && (
+                <div className="overflow-hidden mb-1">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">SUMBER DANA PENERIMAAN</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Contoh: Dana BOS, Komite/SPP, Yayasan, Donatur, Koperasi..."
+                      value={formFundingSource}
+                      onChange={(e) => setFormFundingSource(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold"
+                    />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                      <DollarSign size={14} />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {['Dana BOS', 'Iuran SPP / Komite', 'Yayasan', 'Donasi / Hibah', 'Hasil Kantin / Usaha'].map((srcOption) => (
+                      <button
+                        key={srcOption}
+                        type="button"
+                        onClick={() => setFormFundingSource(srcOption)}
+                        className={`px-2 py-1 text-[10px] font-bold rounded-lg border cursor-pointer transition-all ${
+                          formFundingSource === srcOption
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {srcOption}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 5.5. Nama Penerima Dana (Pengeluaran Only) */}
+              {formType === 'outgoing' && (
+                <div className="overflow-hidden flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">NAMA PENERIMA DANA (PENANGGUNG JAWAB)</label>
+                    <label className="flex items-center gap-1.5 text-[10px] text-indigo-600 font-extrabold bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 cursor-pointer hover:bg-indigo-100/60 select-none transition-all">
+                      <input
+                        type="checkbox"
+                        checked={isCustomRecipient}
+                        onChange={(e) => {
+                          setIsCustomRecipient(e.target.checked);
+                          if (!e.target.checked) {
+                            setFormRecipientName('');
+                          }
+                        }}
+                        className="rounded text-indigo-600 focus:ring-indigo-550 w-3 h-3"
+                      />
+                      <span>Nama Custom</span>
+                    </label>
+                  </div>
+
+                  <div className="relative">
+                    {isCustomRecipient ? (
+                      <>
+                        <input
+                          type="text"
+                          required={formType === 'outgoing'}
+                          placeholder="Ketik nama penerima custom..."
+                          value={formRecipientName}
+                          onChange={(e) => setFormRecipientName(e.target.value)}
+                          className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                        />
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <UserCheck size={14} />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <select
+                          required={formType === 'outgoing'}
+                          value={formRecipientName}
+                          onChange={(e) => setFormRecipientName(e.target.value)}
+                          className="w-full pl-9 pr-8 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold bg-white cursor-pointer focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 appearance-none"
+                        >
+                          <option value="">-- Pilih Guru / Wali Kelas / Staf --</option>
+                          {homerooms.length > 0 && (
+                            <optgroup label="Wali Kelas">
+                              {homerooms.map((hr) => (
+                                <option key={hr.id} value={hr.name}>
+                                  {hr.name} (Wali Kelas {hr.className})
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {subjectTeachers.length > 0 && (
+                            <optgroup label="Guru Mata Pelajaran">
+                              {subjectTeachers.map((st) => (
+                                <option key={st.id} value={st.name}>
+                                  {st.name} (Guru {st.subject})
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                          <UserCheck size={14} />
+                        </div>
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[8px]">
+                          ▼
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Trigger Buttons */}
+              <div className="flex gap-2.5 mt-2.5">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-center rounded-xl cursor-pointer"
+                >
+                  Batalkan
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-center rounded-xl cursor-pointer shadow-indigo-100 shadow-md"
+                >
+                  {isSubmitting ? 'Menyimpan...' : 'Simpan Transaksi'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+});
+
 export default function TreasurerPanel({ 
   schoolIdentity, 
   homerooms = [], 
@@ -40,33 +454,6 @@ export default function TreasurerPanel({
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<TreasurerTransaction | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // Form state
-  const [formType, setFormType] = useState<'incoming' | 'outgoing'>('incoming');
-  const [formCategory, setFormCategory] = useState(() => {
-    const saved = localStorage.getItem('treasurer_categories');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const first = parsed[0];
-          return typeof first === 'string' ? first : first.name;
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return 'Operasional';
-  });
-  const [formAmount, setFormAmount] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formRecipientName, setFormRecipientName] = useState('');
-  const [isCustomRecipient, setIsCustomRecipient] = useState(false);
-  const [formFundingSource, setFormFundingSource] = useState('');
-  const [formDate, setFormDate] = useState(() => new Date().toISOString().substring(0, 10));
-  const [formPaymentMethod, setFormPaymentMethod] = useState<'kas' | 'bank'>('kas');
-  const [formKodeRekening, setFormKodeRekening] = useState('');
-  const [formNoBukti, setFormNoBukti] = useState('');
   const [selectedBook, setSelectedBook] = useState<'bku' | 'bp_kas' | 'bp_bank'>('bku');
 
   // Filter configurations
@@ -215,11 +602,6 @@ export default function TreasurerPanel({
   };
 
   // Custom expandable Budget Categories (POS BUDGET) saved in localStorage
-  interface BudgetCategory {
-    name: string;
-    type: 'incoming' | 'outgoing' | 'both';
-  }
-
   const [categories, setCategories] = useState<BudgetCategory[]>(() => {
     const saved = localStorage.getItem('treasurer_categories');
     if (saved) {
@@ -344,12 +726,6 @@ export default function TreasurerPanel({
       setIsCloudSyncing(false);
     }
   };
-
-  useEffect(() => {
-    if (categories.length > 0 && !categories.some(c => c.name === formCategory)) {
-      setFormCategory(categories[0].name);
-    }
-  }, [categories, formCategory]);
 
   const [showManageBudgetPos, setShowManageBudgetPos] = useState(false);
   const [newBudgetCatInput, setNewBudgetCatInput] = useState('');
@@ -803,71 +1179,17 @@ export default function TreasurerPanel({
 
   const handleOpenAddModal = () => {
     setEditingTransaction(null);
-    setFormType('incoming');
-    setFormCategory(categories[0]?.name || 'Operasional');
-    setFormAmount('');
-    setFormDescription('');
-    setFormRecipientName('');
-    setIsCustomRecipient(false);
-    setFormFundingSource('');
-    setFormDate(new Date().toISOString().substring(0, 10));
-    setFormPaymentMethod('kas');
-    setFormKodeRekening('');
-    setFormNoBukti('');
     setShowFormModal(true);
   };
 
   const handleOpenEditModal = (tx: TreasurerTransaction) => {
     if (tx.source !== 'custom') return; // Cannot edit dynamic system entries
     setEditingTransaction(tx);
-    setFormType(tx.type);
-    setFormCategory(tx.category);
-    setFormAmount(tx.amount.toString());
-    setFormDescription(tx.description);
-    setFormRecipientName(tx.recipientName || '');
-    
-    const isTeacher = (homerooms || []).some(h => h.name === tx.recipientName) || (subjectTeachers || []).some(st => st.name === tx.recipientName);
-    setIsCustomRecipient(!isTeacher && !!tx.recipientName);
-
-    setFormFundingSource(tx.fundingSource || '');
-    setFormDate(tx.date);
-    setFormPaymentMethod(tx.paymentMethod === 'bank' ? 'bank' : 'kas');
-    setFormKodeRekening(tx.kodeRekening || '');
-    setFormNoBukti(tx.noBukti || '');
     setShowFormModal(true);
   };
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Parse amount robustly by removing any formatting like dots, commas, Rp (e.g. "50.000" -> 50000)
-    const cleanAmountStr = formAmount.toString().replace(/[^0-9]/g, '');
-    const numericAmount = Number(cleanAmountStr) || 0;
-
-    if (numericAmount <= 0 || !formDescription.trim()) {
-      alert('Harap isi jumlah nominal dan deskripsi dengan benar.');
-      return;
-    }
-
-    if (formType === 'outgoing' && !formRecipientName.trim()) {
-      alert('Harap isi nama penerima dana untuk transaksi pengeluaran.');
-      return;
-    }
-
+  const handleFormSubmit = async (bodyArgs: TransactionFormPayload) => {
     setIsSubmitting(true);
-    const bodyArgs = {
-      type: formType,
-      category: formCategory,
-      amount: numericAmount,
-      description: formDescription,
-      date: formDate,
-      recipientName: formType === 'outgoing' ? formRecipientName : '',
-      fundingSource: formType === 'incoming' ? formFundingSource : '',
-      paymentMethod: formPaymentMethod,
-      kodeRekening: formKodeRekening,
-      noBukti: formNoBukti
-    };
-
     try {
       let res;
       if (editingTransaction) {
@@ -1376,10 +1698,9 @@ export default function TreasurerPanel({
     URL.revokeObjectURL(url);
   };
 
-  return (
-    <div id="treasurer-panel-root" className="min-h-screen bg-slate-50 text-slate-800 pb-16 font-sans">
-          {/* Printable Area 1: Ledger/Buku Kas - Only active when not printing an individual receipt */}
-      {!activePrintTransaction && (
+  const memoizedPrintReportSection = useMemo(() => {
+    if (activePrintTransaction) return null;
+    return (
         <div id="print-report-section" className="hidden print:block bg-white p-8 text-black text-xs leading-relaxed">
           {/* Official Kop Surat (School Letterhead) */}
           <div className="mb-6">
@@ -1572,7 +1893,13 @@ export default function TreasurerPanel({
             </div>
           </div>
         </div>
-      )}
+    );
+  }, [activePrintTransaction, schoolIdentity, selectedBook, filterStartDate, filterEndDate, transactionsWithRunningBalance, filteredMetrics]);
+
+  return (
+    <div id="treasurer-panel-root" className="min-h-screen bg-slate-50 text-slate-800 pb-16 font-sans">
+      {/* Printable Area 1: Ledger/Buku Kas - Memoized so it never re-renders while typing */}
+      {memoizedPrintReportSection}
 
       {/* Printable Area 2: Receipt/Kuitansi - Managed inside the modal directly to prevent styling mismatch */}
 
@@ -3398,317 +3725,17 @@ export default function TreasurerPanel({
         )}
       </AnimatePresence>
 
-      {/* Model 1: Add/Edit Manual Books Transaction Popup Form */}
-      <AnimatePresence>
-        {showFormModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs print:hidden">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white border text-left border-slate-250 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
-            >
-              <div className="p-5 bg-slate-950 border-b border-slate-800 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-emerald-950 border border-emerald-800 text-emerald-400">
-                    <Building2 size={16} />
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-sm tracking-tight">
-                      {editingTransaction ? 'Ubah Transaksi Kas' : 'Pencatatan Buku Kas Baru'}
-                    </h3>
-                    <p className="text-[10px] text-slate-400 font-semibold uppercase">Operator Bendahara Sekolah</p>
-                  </div>
-                </div>
-                
-                <button
-                  type="button"
-                  onClick={() => setShowFormModal(false)}
-                  className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer transition-all"
-                >
-                  &times;
-                </button>
-              </div>
-
-              <form onSubmit={handleFormSubmit} className="p-6 flex flex-col gap-4 font-semibold text-xs">
-                
-                {/* 1. Cashflow Flow direction Selector */}
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">ARUS KEUANGAN (TIPE)</label>
-                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
-                    <button
-                      type="button"
-                      onClick={() => setFormType('incoming')}
-                      className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all ${formType === 'incoming' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      Pemasukan (+)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormType('outgoing')}
-                      className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all ${formType === 'outgoing' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      Pengeluaran (-)
-                    </button>
-                  </div>
-                </div>
-
-                {/* 2. Category Dropdown */}
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
-                    KATEGORI POS BUDGET ({formType === 'incoming' ? 'MASUK' : 'KELUAR'})
-                  </label>
-                  <select
-                    value={formCategory}
-                    onChange={(e) => setFormCategory(e.target.value)}
-                    className="w-full p-2.5 border border-slate-200 rounded-lg bg-white font-bold text-slate-800 text-xs focus:outline-none focus:border-slate-800 cursor-pointer"
-                  >
-                    {categories.map((c) => (
-                      <option key={c.name} value={c.name}>
-                        📊 {c.name} ({c.type === 'both' ? 'Umum' : c.type === 'incoming' ? 'Pemasukan saja' : 'Pengeluaran saja'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 3. Date Selection */}
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">TANGGAL TRANSAKSI</label>
-                  <div className="relative">
-                    <input
-                      type="date"
-                      required
-                      value={formDate}
-                      onChange={(e) => setFormDate(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-mono font-bold"
-                    />
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                      <Calendar size={14} />
-                    </div>
-                  </div>
-                </div>
-
-                {/* 4. Numeric Nominal / Amount */}
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">NOMINAL (RUPIAH)</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      required
-                      min={100}
-                      placeholder="Masukkan nominal uang (cth: 50000)"
-                      value={formAmount}
-                      onChange={(e) => setFormAmount(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg font-mono font-bold text-slate-800"
-                    />
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-400 bg-slate-50 border-r pr-1.5 py-0.5">
-                      Rp
-                    </div>
-                  </div>
-                </div>
-
-                {/* 5. String Description */}
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">DESKRIPSI LENGKAP KETERANGAN</label>
-                  <textarea
-                    required
-                    placeholder="Tulis rincian penggunaan / sumber dana secara detail..."
-                    value={formDescription}
-                    onChange={(e) => setFormDescription(e.target.value)}
-                    rows={3}
-                    className="w-full p-3 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold"
-                  />
-                </div>
-
-                {/* 5.2. Media/Metode Transaksi (Kas vs Bank) */}
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">METODE / MEDIA PENYIMPANAN (BUKU PEMBANTU)</label>
-                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
-                    <button
-                      type="button"
-                      onClick={() => setFormPaymentMethod('kas')}
-                      className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 ${formPaymentMethod === 'kas' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      <span>💵 Tunai / Kas</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormPaymentMethod('bank')}
-                      className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 ${formPaymentMethod === 'bank' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      <span>🏦 Bank / Rekening</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Kode Rekening & No Bukti */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">KODE REKENING</label>
-                    <input
-                      type="text"
-                      placeholder="Contoh: 5.1.01.01"
-                      value={formKodeRekening}
-                      onChange={(e) => setFormKodeRekening(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-mono font-bold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">NO BUKTI TRANSAKSI</label>
-                    <input
-                      type="text"
-                      placeholder="Contoh: 001/BPK/2026"
-                      value={formNoBukti}
-                      onChange={(e) => setFormNoBukti(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-mono font-bold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white"
-                    />
-                  </div>
-                </div>
-
-                {/* 5.1. Sumber Dana (Penerimaan/Pemasukan Only) */}
-                {formType === 'incoming' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden mb-1"
-                  >
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">SUMBER DANA PENERIMAAN</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Contoh: Dana BOS, Komite/SPP, Yayasan, Donatur, Koperasi..."
-                        value={formFundingSource}
-                        onChange={(e) => setFormFundingSource(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold"
-                      />
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                        <DollarSign size={14} />
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {['Dana BOS', 'Iuran SPP / Komite', 'Yayasan', 'Donasi / Hibah', 'Hasil Kantin / Usaha'].map((srcOption) => (
-                        <button
-                          key={srcOption}
-                          type="button"
-                          onClick={() => setFormFundingSource(srcOption)}
-                          className={`px-2 py-1 text-[10px] font-bold rounded-lg border cursor-pointer transition-all ${
-                            formFundingSource === srcOption 
-                              ? 'bg-emerald-600 text-white border-emerald-600' 
-                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          {srcOption}
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* 5.5. Nama Penerima Dana (Pengeluaran Only) */}
-                {formType === 'outgoing' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden flex flex-col gap-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">NAMA PENERIMA DANA (PENANGGUNG JAWAB)</label>
-                      <label className="flex items-center gap-1.5 text-[10px] text-indigo-600 font-extrabold bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 cursor-pointer hover:bg-indigo-100/60 select-none transition-all">
-                        <input
-                          type="checkbox"
-                          checked={isCustomRecipient}
-                          onChange={(e) => {
-                            setIsCustomRecipient(e.target.checked);
-                            if (!e.target.checked) {
-                              setFormRecipientName('');
-                            }
-                          }}
-                          className="rounded text-indigo-600 focus:ring-indigo-550 w-3 h-3"
-                        />
-                        <span>Nama Custom</span>
-                      </label>
-                    </div>
-
-                    <div className="relative">
-                      {isCustomRecipient ? (
-                        <>
-                          <input
-                            type="text"
-                            required={formType === 'outgoing'}
-                            placeholder="Ketik nama penerima custom..."
-                            value={formRecipientName}
-                            onChange={(e) => setFormRecipientName(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
-                          />
-                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                            <UserCheck size={14} />
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <select
-                            required={formType === 'outgoing'}
-                            value={formRecipientName}
-                            onChange={(e) => setFormRecipientName(e.target.value)}
-                            className="w-full pl-9 pr-8 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold bg-white cursor-pointer focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 appearance-none"
-                          >
-                            <option value="">-- Pilih Guru / Wali Kelas / Staf --</option>
-                            {homerooms.length > 0 && (
-                              <optgroup label="Wali Kelas">
-                                {homerooms.map((hr) => (
-                                  <option key={hr.id} value={hr.name}>
-                                    {hr.name} (Wali Kelas {hr.className})
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )}
-                            {subjectTeachers.length > 0 && (
-                              <optgroup label="Guru Mata Pelajaran">
-                                {subjectTeachers.map((st) => (
-                                  <option key={st.id} value={st.name}>
-                                    {st.name} (Guru {st.subject})
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )}
-                          </select>
-                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-                            <UserCheck size={14} />
-                          </div>
-                          <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[8px]">
-                            ▼
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Trigger Buttons */}
-                <div className="flex gap-2.5 mt-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowFormModal(false)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-center rounded-xl cursor-pointer"
-                  >
-                    Batalkan
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-center rounded-xl cursor-pointer shadow-indigo-100 shadow-md"
-                  >
-                    {isSubmitting ? 'Menyimpan...' : 'Simpan Transaksi'}
-                  </button>
-                </div>
-
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* Model 1: Add/Edit Manual Books Transaction Popup Form (Isolated state to prevent parent re-render lag) */}
+      <TreasurerTransactionFormModal
+        isOpen={showFormModal}
+        editingTransaction={editingTransaction}
+        categories={categories}
+        homerooms={homerooms}
+        subjectTeachers={subjectTeachers}
+        isSubmitting={isSubmitting}
+        onClose={() => setShowFormModal(false)}
+        onSubmitTransaction={handleFormSubmit}
+      />
 
        {/* Modal 2: Visual Printable Kuitansi (Invoice receipt) Modal for the Teller systems */}
       <AnimatePresence>

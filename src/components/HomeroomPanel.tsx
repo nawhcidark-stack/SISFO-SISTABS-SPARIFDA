@@ -784,7 +784,7 @@ export default function HomeroomPanel({
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [passbookStudent, setPassbookStudent] = useState<Student | null>(null);
   const [recapModalStudent, setRecapModalStudent] = useState<Student | null>(null);
-  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'pkg' | 'buku_induk' | 'kokurikuler' | 'jadwal'>('record');
+  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'poin_pelanggaran' | 'pkg' | 'buku_induk' | 'kokurikuler' | 'jadwal'>('record');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
@@ -1273,6 +1273,8 @@ export default function HomeroomPanel({
 
   // Jurnal Pelanggaran states
   const [infractionList, setInfractionList] = useState<StudentInfractionLog[]>([]);
+  const [grade7PointsEffectiveDate, setGrade7PointsEffectiveDate] = useState<string>('');
+  const [poinPelanggaranSubTab, setPoinPelanggaranSubTab] = useState<'tabel_poin' | 'tabel_komulatif'>('tabel_poin');
   const [loadingInfractions, setLoadingInfractions] = useState(false);
   const [selectedInfStudentId, setSelectedInfStudentId] = useState('');
   const [infDate, setInfDate] = useState(todayStr);
@@ -2039,13 +2041,47 @@ export default function HomeroomPanel({
     }
   };
 
+  const isGrade7ClassHomeroom = (cls?: string): boolean => {
+    const clean = String(cls || '').trim();
+    return /^(?:kelas\s*)?(?:7|vii)(?:$|[^0-9i])/i.test(clean);
+  };
+
   const fetchInfractions = async () => {
     setLoadingInfractions(true);
     try {
-      const res = await fetch('/api/student-infraction-logs');
+      const [res, resSettings] = await Promise.all([
+        fetch('/api/student-infraction-logs'),
+        fetch('/api/bk/infraction-settings').catch(() => null)
+      ]);
+      let effDate = grade7PointsEffectiveDate;
+      if (resSettings && resSettings.ok) {
+        const cfg = await resSettings.json().catch(() => ({}));
+        effDate = String(cfg?.grade7PointsEffectiveDate || '').trim().substring(0, 10);
+        setGrade7PointsEffectiveDate(effDate);
+      }
       if (res.ok) {
         const data = await res.json();
-        const filtered = data.filter((log: any) => log.className.toLowerCase() === currentTeacher.className.toLowerCase());
+        const normalizeCls = (c: string) => String(c || '').trim().toLowerCase().replace(/[\s-_]+/g, '');
+        const targetCls = normalizeCls(currentTeacher.className);
+        const filtered = (Array.isArray(data) ? data : []).filter((log: any) => {
+          const matchesClass =
+            normalizeCls(log.className) === targetCls ||
+            classStudents.some(
+              s =>
+                s.id === log.studentId ||
+                (s.nis && s.nis === log.studentId) ||
+                s.name.trim().toLowerCase() === String(log.studentName || '').trim().toLowerCase()
+            );
+          if (!matchesClass) return false;
+
+          // Khusus Kelas 7: jika tanggal sebelum tanggal pemberlakuan poin, jangan dihitung
+          const d = String(log.date || '').trim().substring(0, 10);
+          const logCls = String(log.className || currentTeacher.className || '').trim();
+          if (effDate && d && isGrade7ClassHomeroom(logCls) && d < effDate) {
+            return false;
+          }
+          return true;
+        });
         setInfractionList(filtered);
       }
     } catch (err) {
@@ -2415,6 +2451,7 @@ export default function HomeroomPanel({
 
   useEffect(() => {
     fetchTeachingJournals();
+    fetchInfractions();
   }, [currentTeacher.className]);
 
   useEffect(() => {
@@ -2427,6 +2464,8 @@ export default function HomeroomPanel({
       fetchCounseling();
       fetchAnnouncements();
       fetchMeetings();
+    } else if (activeSubTab === 'poin_pelanggaran') {
+      fetchInfractions();
     } else if (activeSubTab === 'kokurikuler') {
       fetchMerdekaAssessments();
     } else if (activeSubTab === 'profile') {
@@ -3377,6 +3416,65 @@ export default function HomeroomPanel({
     });
   }, [infractionList, infSearch, infFilterStatus]);
 
+  // Tabel Komulatif Poin Pelanggaran Siswa Kelas Wali Kelas (sampai Predikat / Bahaya, tanpa Tindakan Advokasi BK)
+  const cumulativeClassInfractions = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        id: string;
+        name: string;
+        nis: string;
+        className: string;
+        points: number;
+        count: number;
+        list: StudentInfractionLog[];
+      }
+    > = {};
+
+    infractionList.forEach(log => {
+      const matchedSt = classStudents.find(
+        s =>
+          s.id === log.studentId ||
+          (s.nis && s.nis === log.studentId) ||
+          s.name.trim().toLowerCase() === String(log.studentName || '').trim().toLowerCase()
+      );
+      const key = matchedSt ? matchedSt.id : String(log.studentId || log.studentName || '');
+      if (!key) return;
+      if (!map[key]) {
+        map[key] = {
+          id: key,
+          name: matchedSt ? matchedSt.name : log.studentName,
+          nis: matchedSt?.nis || log.studentId || '-',
+          className: matchedSt?.class || log.className || currentTeacher.className,
+          points: 0,
+          count: 0,
+          list: []
+        };
+      }
+      map[key].points = Number((map[key].points + (Number(log.points) || 0)).toFixed(2));
+      if ((Number(log.points) || 0) > 0) {
+        map[key].count++;
+      }
+      map[key].list.push(log);
+    });
+
+    Object.values(map).forEach(st => {
+      if (st.points < 0) st.points = 0;
+    });
+
+    return Object.values(map)
+      .filter(st => {
+        if (!infSearch.trim()) return true;
+        const term = infSearch.toLowerCase();
+        return (
+          st.name.toLowerCase().includes(term) ||
+          st.nis.toLowerCase().includes(term) ||
+          st.list.some(l => l.infractionType.toLowerCase().includes(term))
+        );
+      })
+      .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+  }, [infractionList, classStudents, currentTeacher.className, infSearch]);
+
   // Filtered Counseling Logs
   const filteredCounselingLogs = useMemo(() => {
     return counselingList.filter(log => {
@@ -4089,6 +4187,7 @@ Wassalamualaikum Wr. Wb.
           { id: 'rekap_absensi', label: 'Rekap', icon: '📉' },
           { id: 'finance', label: 'Keuangan', icon: '💳' },
           { id: 'perkembangan', label: 'Perkembangan', icon: '📈' },
+          { id: 'poin_pelanggaran', label: 'Poin Pelanggaran', icon: '⚠️' },
           { id: 'kokurikuler', label: 'Nilai Kokurikuler', icon: '⭐' },
           { id: 'buku_induk', label: 'Buku Induk', icon: '📗' },
           { id: 'pkg', label: 'PKG', icon: '🎖️' },
@@ -4203,6 +4302,22 @@ Wassalamualaikum Wr. Wb.
               >
                 <span className="text-sm">📈</span>
                 <span className="inline">Jurnal Perkembangan</span>
+              </button>
+              <button
+                id="tab-btn-poin-pelanggaran"
+                onClick={() => {
+                  setActiveSubTab('poin_pelanggaran');
+                  fetchInfractions();
+                }}
+                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                  activeSubTab === 'poin_pelanggaran'
+                    ? 'bg-rose-600 text-white shadow-md'
+                    : 'text-rose-700 bg-rose-50/70 hover:bg-rose-100'
+                }`}
+                title="Poin Pelanggaran Kelas"
+              >
+                <span className="text-sm">⚠️</span>
+                <span className="inline">Poin Pelanggaran</span>
               </button>
               <button
                 id="tab-btn-profile"
@@ -7427,6 +7542,271 @@ Wassalamualaikum Wr. Wb.
             </div>
           )}
 
+          {activeSubTab === 'poin_pelanggaran' && (
+            <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                <div className="pb-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-slate-900 font-extrabold text-base flex items-center gap-2">
+                        <span>⚠️</span> Poin Pelanggaran Siswa — Kelas {currentTeacher.className}
+                      </h3>
+                      <span className="px-2.5 py-0.5 text-[10px] rounded-full bg-rose-100 text-rose-800 border border-rose-200 font-extrabold">
+                        {cumulativeClassInfractions.length} Siswa Tercatat
+                      </span>
+                      {isGrade7ClassHomeroom(currentTeacher.className) && grade7PointsEffectiveDate && (
+                        <span className="px-2.5 py-0.5 text-[10px] rounded-full bg-amber-100 text-amber-900 border border-amber-250 font-extrabold">
+                          📅 Berlaku Mulai: {grade7PointsEffectiveDate}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-slate-500 text-xs mt-1">
+                      Pilih tab di bawah untuk melihat rincian poin pelanggaran dalam bentuk kartu atau rekapitulasi komulatif poin pelanggaran kelas {currentTeacher.className}.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => fetchInfractions()}
+                    className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-extrabold cursor-pointer shrink-0 transition-colors"
+                  >
+                    🔄 Muat Ulang Poin
+                  </button>
+                </div>
+
+                {/* 2 TAB NAVIGASI: 1. TABEL POIN PELANGGARAN & 2. TABEL KOMULATIF POIN PELANGGARAN */}
+                <div className="mt-4 flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/80 border border-slate-200 rounded-xl w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setPoinPelanggaranSubTab('tabel_poin')}
+                    className={`px-4 py-2 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer ${
+                      poinPelanggaranSubTab === 'tabel_poin'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>📊</span>
+                    <span>Tabel Poin Pelanggaran</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPoinPelanggaranSubTab('tabel_komulatif')}
+                    className={`px-4 py-2 rounded-lg text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer ${
+                      poinPelanggaranSubTab === 'tabel_komulatif'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🏆</span>
+                    <span>Tabel Komulatif Poin Pelanggaran</span>
+                  </button>
+                </div>
+
+                <div className="mt-5">
+                  {loadingInfractions ? (
+                    <div className="py-16 text-center flex flex-col items-center justify-center gap-2 text-slate-400">
+                      <Loader2 className="animate-spin" size={24} />
+                      <span className="text-xs font-bold">Memuat data poin pelanggaran...</span>
+                    </div>
+                  ) : cumulativeClassInfractions.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 font-medium italic bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                      Belum ada catatan poin pelanggaran siswa di kelas {currentTeacher.className}.
+                    </div>
+                  ) : poinPelanggaranSubTab === 'tabel_poin' ? (
+                    /* ================= TAB 1: TABEL POIN PELANGGARAN (BENTUK KARTU TANPA DIGESER) ================= */
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {cumulativeClassInfractions.map((st, idx) => {
+                        const isSevere = st.points >= 15;
+                        const isMedium = st.points >= 5 && st.points < 15;
+                        return (
+                          <div
+                            key={st.id || idx}
+                            className={`rounded-2xl border p-4 flex flex-col gap-3 shadow-2xs transition-all ${
+                              isSevere
+                                ? 'bg-rose-50/25 border-rose-200'
+                                : isMedium
+                                ? 'bg-amber-50/15 border-amber-200'
+                                : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            {/* Header Kartu: Nomor, Nama, NIS, Kelas & Total Poin */}
+                            <div className="flex justify-between items-start gap-2 pb-2.5 border-b border-slate-150">
+                              <div className="flex items-start gap-2.5 min-w-0">
+                                <span className="w-6 h-6 rounded-lg bg-slate-900 text-white font-mono font-black text-[11px] flex items-center justify-center shrink-0 mt-0.5">
+                                  {idx + 1}
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="font-extrabold text-slate-900 text-xs sm:text-sm break-words leading-snug">
+                                    {st.name}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                    {st.nis && st.nis !== '-' && (
+                                      <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                                        NIS: {st.nis}
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
+                                      Kelas {st.className}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="shrink-0 text-right">
+                                <div
+                                  className={`inline-block px-3 py-1 rounded-xl font-mono font-black text-xs border ${
+                                    isSevere
+                                      ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                      : isMedium
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                      : 'bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}
+                                >
+                                  {st.points} Poin
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-bold mt-1">
+                                  {st.count} Pelanggaran
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Rincian Pelanggaran, Sanksi & Keterangan */}
+                            <div className="flex flex-col gap-1.5">
+                              <span className="text-[9.5px] font-black uppercase text-slate-500 tracking-wider">
+                                Rincian Pelanggaran, Sanksi &amp; Keterangan ({st.list.length}):
+                              </span>
+                              <div className="flex flex-col gap-1.5">
+                                {st.list.map((item, iIdx) => {
+                                  const isAutoAlpa =
+                                    item.source === 'auto_alpa_walas' ||
+                                    (item.id && item.id.startsWith('sil-alpa-')) ||
+                                    (item.infractionType && item.infractionType.toLowerCase().includes('alpa (a)'));
+                                  const isReduction = (item.points || 0) < 0;
+                                  return (
+                                    <div
+                                      key={item.id || iIdx}
+                                      className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/90 flex flex-col gap-1"
+                                    >
+                                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-[10px] font-black text-slate-500 font-mono">
+                                            #{iIdx + 1} • {item.date}
+                                          </span>
+                                          {(item.bab || item.subBab) && (
+                                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-150 text-[9px] font-bold">
+                                              {[item.bab, item.subBab].filter(Boolean).join(' › ')}
+                                            </span>
+                                          )}
+                                          {isAutoAlpa && (
+                                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-250 text-[8.5px] font-black uppercase">
+                                              ⚡ Otomatis Alpa (+5 Poin)
+                                            </span>
+                                          )}
+                                          {isReduction && (
+                                            <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-250 text-[8.5px] font-black uppercase">
+                                              ❇️ Pengurangan Poin BK
+                                            </span>
+                                          )}
+                                        </div>
+                                        <span
+                                          className={`px-2 py-0.5 rounded-lg font-mono font-black text-[10.5px] border shrink-0 ${
+                                            isReduction
+                                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                              : 'bg-rose-50 text-rose-700 border-rose-200'
+                                          }`}
+                                        >
+                                          {(item.points || 0) > 0 ? `+${item.points}` : item.points} Poin
+                                        </span>
+                                      </div>
+                                      <div className={`font-extrabold text-xs break-words ${isReduction ? 'text-emerald-800' : 'text-slate-900'}`}>
+                                        {item.infractionType}
+                                      </div>
+                                      {item.sanction && (
+                                        <div className="text-[10.5px] text-rose-700 font-semibold break-words">
+                                          Sanksi: {item.sanction}
+                                        </div>
+                                      )}
+                                      {item.notes && (
+                                        <div className="text-[10.5px] text-slate-600 italic break-words">
+                                          Ket: "{item.notes}"
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    /* ================= TAB 2: TABEL KOMULATIF POIN PELANGGARAN (SAMPAI PREDIKAT / BAHAYA) ================= */
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 uppercase text-[10px] tracking-wider">
+                            <th className="py-3 px-4 font-black w-12">No</th>
+                            <th className="py-3 px-4 font-black">Nama Siswa</th>
+                            <th className="py-3 px-4 font-black text-center">Kelas</th>
+                            <th className="py-3 px-4 font-black text-center">Frekuensi Melanggar</th>
+                            <th className="py-3 px-4 font-black text-center">Akumulasi Poin Sanksi</th>
+                            <th className="py-3 px-4 font-black text-center">Predikat / Bahaya</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                          {cumulativeClassInfractions.map((st, idx) => {
+                            const isSevere = st.points >= 15;
+                            const isMedium = st.points >= 5 && st.points < 15;
+                            return (
+                              <tr key={st.id || idx} className={`hover:bg-slate-50 bg-white ${isSevere ? 'bg-rose-50/20' : ''}`}>
+                                <td className="py-3 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
+                                <td className="py-3 px-4">
+                                  <div className="font-extrabold text-slate-900">{st.name}</div>
+                                  {st.nis && st.nis !== '-' && (
+                                    <div className="text-[10px] font-mono text-slate-400">NIS: {st.nis}</div>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 text-center">Kelas {st.className}</td>
+                                <td className="py-3 px-4 text-center">{st.count} Kali Kejadian</td>
+                                <td className="py-3 px-4 text-center">
+                                  <span
+                                    className={`px-3 py-1 rounded-full font-mono text-xs border font-black ${
+                                      isSevere
+                                        ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                        : isMedium
+                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                        : 'bg-slate-100 text-slate-700 border-slate-200'
+                                    }`}
+                                  >
+                                    {st.points} Poin denda
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  {isSevere ? (
+                                    <span className="px-2.5 py-0.5 font-black text-[9.5px] bg-rose-50 text-rose-700 border border-rose-200 rounded-md uppercase">
+                                      ⚠️ Urgen Advokasi
+                                    </span>
+                                  ) : isMedium ? (
+                                    <span className="px-2.5 py-0.5 font-black text-[9.5px] bg-amber-50 text-amber-700 border border-amber-200 rounded-md uppercase">
+                                      Peringatan Ringan
+                                    </span>
+                                  ) : (
+                                    <span className="px-2.5 py-0.5 font-black text-[9.5px] bg-slate-50 text-slate-600 border border-slate-200 rounded-md uppercase">
+                                      Wajar / Normal
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {activeSubTab === 'pkg' && (
             <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
@@ -8432,10 +8812,10 @@ Wassalamualaikum Wr. Wb.
           onClick={() => setShowMoreMenu(prev => !prev)}
           className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
         >
-          <div className={`p-1.5 rounded-xl transition-colors ${(['perkembangan', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-            <LayoutGrid size={20} className={(['perkembangan', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          <div className={`p-1.5 rounded-xl transition-colors ${(['perkembangan', 'poin_pelanggaran', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={(['perkembangan', 'poin_pelanggaran', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
           </div>
-          <span className={`text-[9.5px] leading-none ${(['perkembangan', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
+          <span className={`text-[9.5px] leading-none ${(['perkembangan', 'poin_pelanggaran', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
         </button>
       </div>
 
@@ -8544,6 +8924,24 @@ Wassalamualaikum Wr. Wb.
                   </div>
                   <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
                     Perkembangan
+                  </span>
+                </button>
+
+                {/* 4b. Tabel Poin Pelanggaran */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('poin_pelanggaran');
+                    fetchInfractions();
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-red-600 shadow-md shadow-rose-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    ⚠️
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Poin Pelanggaran
                   </span>
                 </button>
 

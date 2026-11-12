@@ -787,10 +787,16 @@ CREATE TABLE IF NOT EXISTS \`student_infraction_logs\` (
   \`date\` VARCHAR(32) NOT NULL,
   \`time\` VARCHAR(16) NOT NULL,
   \`location\` VARCHAR(150) NOT NULL,
-  \`infraction_type\` VARCHAR(150) NOT NULL,
+  \`infraction_type\` TEXT NOT NULL,
   \`action_taken\` TEXT NOT NULL,
-  \`resolution_status\` ENUM('Belum Selesai', 'Dalam Proses', 'Selesai') NOT NULL DEFAULT 'Belum Selesai',
+  \`resolution_status\` VARCHAR(64) NOT NULL DEFAULT 'Belum Selesai',
   \`points\` INT DEFAULT 0,
+  \`bab\` VARCHAR(255) DEFAULT NULL,
+  \`sub_bab\` VARCHAR(255) DEFAULT NULL,
+  \`sanction\` TEXT DEFAULT NULL,
+  \`notes\` TEXT DEFAULT NULL,
+  \`rule_id\` VARCHAR(64) DEFAULT NULL,
+  \`source\` VARCHAR(64) DEFAULT NULL,
   \`created_at\` VARCHAR(64) NOT NULL,
   PRIMARY KEY (\`id\`),
   KEY \`idx_infr_student\` (\`student_id\`)
@@ -798,9 +804,13 @@ CREATE TABLE IF NOT EXISTS \`student_infraction_logs\` (
 
 CREATE TABLE IF NOT EXISTS \`infraction_rules\` (
   \`id\` VARCHAR(64) NOT NULL,
-  \`name\` VARCHAR(150) NOT NULL,
+  \`bab\` VARCHAR(255) DEFAULT NULL,
+  \`sub_bab\` VARCHAR(255) DEFAULT NULL,
+  \`code\` VARCHAR(64) DEFAULT NULL,
+  \`name\` TEXT NOT NULL,
+  \`sanction\` TEXT DEFAULT NULL,
   \`points\` INT NOT NULL DEFAULT 0,
-  \`category\` VARCHAR(64) NOT NULL,
+  \`category\` VARCHAR(64) NOT NULL DEFAULT 'Ringan',
   PRIMARY KEY (\`id\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -2326,7 +2336,7 @@ export async function pullDataFromMysql(): Promise<{
 
     // 14. Student Infraction Logs
     if (hasTable('student_infraction_logs')) {
-      const [rows]: any = await connection.query('SELECT * FROM `student_infraction_logs`');
+      const [rows]: any = await connection.query('SELECT * FROM `student_infraction_logs` ORDER BY `date` DESC, `created_at` DESC');
       resultData.studentInfractionLogs = rows.map((r: any) => ({
         id: r.id,
         studentId: r.student_id,
@@ -2339,6 +2349,12 @@ export async function pullDataFromMysql(): Promise<{
         actionTaken: r.action_taken,
         resolutionStatus: r.resolution_status,
         points: Number(r.points) || 0,
+        bab: r.bab || '',
+        subBab: r.sub_bab || '',
+        sanction: r.sanction || '',
+        notes: r.notes || '',
+        ruleId: r.rule_id || '',
+        source: r.source || '',
         createdAt: r.created_at
       }));
       counts.studentInfractionLogs = resultData.studentInfractionLogs.length;
@@ -2346,12 +2362,19 @@ export async function pullDataFromMysql(): Promise<{
 
     // 15. Infraction Rules
     if (hasTable('infraction_rules')) {
+      try {
+        await connection.query("DELETE FROM `infraction_rules` WHERE `id` IN ('ir-1', 'ir-2', 'ir-3', 'ir-4', 'ir-5')");
+      } catch (_) {}
       const [rows]: any = await connection.query('SELECT * FROM `infraction_rules`');
       resultData.infractionRules = rows.map((r: any) => ({
         id: r.id,
-        name: r.name,
+        bab: r.bab || '',
+        subBab: r.sub_bab || '',
+        code: r.code || '',
+        name: r.name || '',
+        sanction: r.sanction || '',
         points: Number(r.points) || 0,
-        category: r.category
+        category: r.category || 'Ringan'
       }));
       counts.infractionRules = resultData.infractionRules.length;
     }
@@ -2849,9 +2872,9 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
       }
     } catch (_) {}
 
-    // Auto-migration: Ensure student_infraction_logs column resolution_status is VARCHAR(64)
+    // Auto-migration: Ensure student_infraction_logs and infraction_rules columns are up to date
     try {
-      await connection.query("ALTER TABLE `student_infraction_logs` MODIFY COLUMN `resolution_status` VARCHAR(64) NOT NULL DEFAULT 'Belum Selesai'");
+      await ensureBkInfractionTablesReady(connection);
     } catch (_) {}
 
     // Pastikan tabel curriculum_subjects dan curriculum_tp_levels selalu terbuat
@@ -3747,6 +3770,7 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
 
     // 16. Student Infraction Logs (Poin Pelanggaran Siswa - Langsung ke MySQL)
     else if (typeKey === 'student_infraction_log' || typeKey === 'student_infraction_logs' || typeKey === 'studentinfractionlogs') {
+      await ensureBkInfractionTablesReady(connection);
       const inf = data;
       const infId = inf.id || `sil-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
       const sId = inf.studentId || (inf as any).student_id || '';
@@ -3759,13 +3783,20 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const act = inf.actionTaken || (inf as any).action_taken || 'Pembinaan BK';
       const resStatus = inf.resolutionStatus || (inf as any).resolution_status || 'Dalam Proses';
       const pts = Number(inf.points !== undefined ? inf.points : 0);
+      const bab = inf.bab || null;
+      const subBab = inf.subBab || (inf as any).sub_bab || null;
+      const sanction = inf.sanction || null;
+      const notes = inf.notes || null;
+      const ruleId = inf.ruleId || (inf as any).rule_id || null;
+      const source = inf.source || null;
       const cAt = inf.createdAt || (inf as any).created_at || new Date().toISOString();
 
       await connection.query(`
         INSERT INTO \`student_infraction_logs\` (
           \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`time\`, \`location\`,
-          \`infraction_type\`, \`action_taken\`, \`resolution_status\`, \`points\`, \`created_at\`
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          \`infraction_type\`, \`action_taken\`, \`resolution_status\`, \`points\`,
+          \`bab\`, \`sub_bab\`, \`sanction\`, \`notes\`, \`rule_id\`, \`source\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           \`student_id\`=VALUES(\`student_id\`),
           \`student_name\`=VALUES(\`student_name\`),
@@ -3776,26 +3807,47 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
           \`infraction_type\`=VALUES(\`infraction_type\`),
           \`action_taken\`=VALUES(\`action_taken\`),
           \`resolution_status\`=VALUES(\`resolution_status\`),
-          \`points\`=VALUES(\`points\`)
+          \`points\`=VALUES(\`points\`),
+          \`bab\`=VALUES(\`bab\`),
+          \`sub_bab\`=VALUES(\`sub_bab\`),
+          \`sanction\`=VALUES(\`sanction\`),
+          \`notes\`=VALUES(\`notes\`),
+          \`rule_id\`=VALUES(\`rule_id\`),
+          \`source\`=VALUES(\`source\`)
       `, [
         infId, sId, sName, cName, dDate, dTime, loc,
-        infType, act, resStatus, pts, cAt
+        infType, act, resStatus, pts,
+        bab, subBab, sanction, notes, ruleId, source, cAt
       ]);
       return { success: true, message: `Data pelanggaran siswa "${sName}" (${pts} poin) berhasil disimpan langsung ke MySQL.` };
     }
 
     // 17. Infraction Rules (Master Rubrik Sanksi & Poin Pelanggaran)
     else if (typeKey === 'infraction_rule' || typeKey === 'infraction_rules' || typeKey === 'infractionrules') {
+      await ensureBkInfractionTablesReady(connection);
       const r = data;
       const rId = r.id || `ir-${Date.now()}`;
       await connection.query(`
-        INSERT INTO \`infraction_rules\` (\`id\`, \`name\`, \`points\`, \`category\`)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO \`infraction_rules\` (\`id\`, \`bab\`, \`sub_bab\`, \`code\`, \`name\`, \`sanction\`, \`points\`, \`category\`)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
+          \`bab\`=VALUES(\`bab\`),
+          \`sub_bab\`=VALUES(\`sub_bab\`),
+          \`code\`=VALUES(\`code\`),
           \`name\`=VALUES(\`name\`),
+          \`sanction\`=VALUES(\`sanction\`),
           \`points\`=VALUES(\`points\`),
           \`category\`=VALUES(\`category\`)
-      `, [rId, r.name || '', Number(r.points) || 0, r.category || 'Ringan']);
+      `, [
+        rId,
+        r.bab || '',
+        r.subBab || (r as any).sub_bab || '',
+        r.code || '',
+        r.name || '',
+        r.sanction || '',
+        Number(r.points) || 0,
+        r.category || 'Ringan'
+      ]);
       return { success: true, message: `Acuan aturan sanksi "${r.name}" berhasil disimpan langsung ke MySQL.` };
     }
 
@@ -5262,6 +5314,324 @@ export async function saveExtracurricularGradesBatchToMysql(
   }
 }
 
+// ============================================================================
+// BK RUBRIK SANKSI & POIN PELANGGARAN SISWA (DIRECT MYSQL ENGINE)
+// ============================================================================
+let bkTablesVerified = false;
 
+export async function ensureBkInfractionTablesReady(existingConn?: mysql.PoolConnection): Promise<void> {
+  if (bkTablesVerified) return;
+  const p = createPool();
+  if (!p && !existingConn) return;
 
+  let conn: mysql.PoolConnection | null = existingConn || null;
+  try {
+    if (!conn && p) {
+      conn = await p.getConnection();
+    }
+    if (!conn) return;
 
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS \`infraction_rules\` (
+        \`id\` VARCHAR(64) NOT NULL,
+        \`bab\` VARCHAR(255) DEFAULT NULL,
+        \`sub_bab\` VARCHAR(255) DEFAULT NULL,
+        \`code\` VARCHAR(64) DEFAULT NULL,
+        \`name\` TEXT NOT NULL,
+        \`sanction\` TEXT DEFAULT NULL,
+        \`points\` INT NOT NULL DEFAULT 0,
+        \`category\` VARCHAR(64) NOT NULL DEFAULT 'Ringan',
+        PRIMARY KEY (\`id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    const [ruleCols]: any = await conn.query("SHOW COLUMNS FROM `infraction_rules`");
+    const ruleColNames = new Set((ruleCols || []).map((c: any) => String(c.Field || '').toLowerCase()));
+    if (!ruleColNames.has('bab')) {
+      await conn.query("ALTER TABLE `infraction_rules` ADD COLUMN `bab` VARCHAR(255) DEFAULT NULL AFTER `id`");
+    }
+    if (!ruleColNames.has('sub_bab')) {
+      await conn.query("ALTER TABLE `infraction_rules` ADD COLUMN `sub_bab` VARCHAR(255) DEFAULT NULL AFTER `bab`");
+    }
+    if (!ruleColNames.has('code')) {
+      await conn.query("ALTER TABLE `infraction_rules` ADD COLUMN `code` VARCHAR(64) DEFAULT NULL AFTER `sub_bab`");
+    }
+    if (!ruleColNames.has('sanction')) {
+      await conn.query("ALTER TABLE `infraction_rules` ADD COLUMN `sanction` TEXT DEFAULT NULL AFTER `name`");
+    }
+    try {
+      await conn.query("ALTER TABLE `infraction_rules` MODIFY COLUMN `name` TEXT NOT NULL");
+    } catch (_) {}
+
+    // Hapus data dummy lama (ir-1 s/d ir-5) jika masih ada di tabel MySQL
+    try {
+      await conn.query("DELETE FROM `infraction_rules` WHERE `id` IN ('ir-1', 'ir-2', 'ir-3', 'ir-4', 'ir-5')");
+    } catch (_) {}
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS \`student_infraction_logs\` (
+        \`id\` VARCHAR(64) NOT NULL,
+        \`student_id\` VARCHAR(64) NOT NULL,
+        \`student_name\` VARCHAR(150) NOT NULL,
+        \`class_name\` VARCHAR(32) NOT NULL,
+        \`date\` VARCHAR(32) NOT NULL,
+        \`time\` VARCHAR(16) NOT NULL,
+        \`location\` VARCHAR(150) NOT NULL,
+        \`infraction_type\` TEXT NOT NULL,
+        \`action_taken\` TEXT NOT NULL,
+        \`resolution_status\` VARCHAR(64) NOT NULL DEFAULT 'Belum Selesai',
+        \`points\` DOUBLE DEFAULT 0,
+        \`bab\` VARCHAR(255) DEFAULT NULL,
+        \`sub_bab\` VARCHAR(255) DEFAULT NULL,
+        \`sanction\` TEXT DEFAULT NULL,
+        \`notes\` TEXT DEFAULT NULL,
+        \`rule_id\` VARCHAR(64) DEFAULT NULL,
+        \`source\` VARCHAR(64) DEFAULT NULL,
+        \`created_at\` VARCHAR(64) NOT NULL,
+        PRIMARY KEY (\`id\`),
+        KEY \`idx_infr_student\` (\`student_id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    const [logCols]: any = await conn.query("SHOW COLUMNS FROM `student_infraction_logs`");
+    const logColNames = new Set((logCols || []).map((c: any) => String(c.Field || '').toLowerCase()));
+    if (!logColNames.has('bab')) {
+      await conn.query("ALTER TABLE `student_infraction_logs` ADD COLUMN `bab` VARCHAR(255) DEFAULT NULL");
+    }
+    if (!logColNames.has('sub_bab')) {
+      await conn.query("ALTER TABLE `student_infraction_logs` ADD COLUMN `sub_bab` VARCHAR(255) DEFAULT NULL");
+    }
+    if (!logColNames.has('sanction')) {
+      await conn.query("ALTER TABLE `student_infraction_logs` ADD COLUMN `sanction` TEXT DEFAULT NULL");
+    }
+    if (!logColNames.has('notes')) {
+      await conn.query("ALTER TABLE `student_infraction_logs` ADD COLUMN `notes` TEXT DEFAULT NULL");
+    }
+    if (!logColNames.has('rule_id')) {
+      await conn.query("ALTER TABLE `student_infraction_logs` ADD COLUMN `rule_id` VARCHAR(64) DEFAULT NULL");
+    }
+    if (!logColNames.has('source')) {
+      await conn.query("ALTER TABLE `student_infraction_logs` ADD COLUMN `source` VARCHAR(64) DEFAULT NULL");
+    }
+    try {
+      await conn.query("ALTER TABLE `student_infraction_logs` MODIFY COLUMN `resolution_status` VARCHAR(64) NOT NULL DEFAULT 'Belum Selesai'");
+      await conn.query("ALTER TABLE `student_infraction_logs` MODIFY COLUMN `infraction_type` TEXT NOT NULL");
+      await conn.query("ALTER TABLE `student_infraction_logs` MODIFY COLUMN `points` DOUBLE DEFAULT 0");
+    } catch (_) {}
+
+    bkTablesVerified = true;
+  } catch (err: any) {
+    console.warn('[MySQL Ensure BK Tables Warning]:', err.message || err);
+  } finally {
+    if (conn && !existingConn) conn.release();
+  }
+}
+
+export async function getAllInfractionRulesFromMysql(): Promise<any[]> {
+  const p = createPool();
+  if (!p) return [];
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureBkInfractionTablesReady(connection);
+    const [rows]: any = await connection.query('SELECT * FROM `infraction_rules` ORDER BY `bab` ASC, `sub_bab` ASC, `code` ASC, `name` ASC');
+    return (rows || []).map((r: any) => ({
+      id: String(r.id || '').trim(),
+      bab: String(r.bab || '').trim(),
+      subBab: String(r.sub_bab || '').trim(),
+      code: String(r.code || '').trim(),
+      name: String(r.name || '').trim(),
+      sanction: String(r.sanction || '').trim(),
+      points: Number(r.points) || 0,
+      category: String(r.category || 'Ringan').trim()
+    }));
+  } catch (err: any) {
+    console.error('[MySQL Get Infraction Rules Error]:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function saveInfractionRulesBatchToMysql(
+  rules: any[],
+  mode: 'append' | 'replace' = 'append'
+): Promise<{ success: boolean; count: number; message: string; error?: string }> {
+  const p = createPool();
+  if (!p) {
+    return { success: false, count: 0, message: 'Pool MySQL belum terkonfigurasi.' };
+  }
+  let connection: mysql.PoolConnection | null = null;
+  let savedCount = 0;
+  try {
+    connection = await p.getConnection();
+    await ensureBkInfractionTablesReady(connection);
+
+    if (mode === 'replace') {
+      await connection.query('DELETE FROM `infraction_rules`');
+    }
+
+    for (let i = 0; i < (rules || []).length; i++) {
+      const r = rules[i];
+      const name = String(r.name || '').trim();
+      if (!name) continue;
+      const rId = String(r.id || `ir-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`).trim();
+      const bab = String(r.bab || '').trim();
+      const subBab = String(r.subBab || r.sub_bab || '').trim();
+      const code = String(r.code || '').trim();
+      const sanction = String(r.sanction || '').trim();
+      const pts = Number(r.points) || 0;
+      const category = String(r.category || (pts >= 25 ? 'Berat' : pts >= 10 ? 'Sedang' : 'Ringan')).trim();
+
+      await connection.query(`
+        INSERT INTO \`infraction_rules\` (\`id\`, \`bab\`, \`sub_bab\`, \`code\`, \`name\`, \`sanction\`, \`points\`, \`category\`)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`bab\`=VALUES(\`bab\`),
+          \`sub_bab\`=VALUES(\`sub_bab\`),
+          \`code\`=VALUES(\`code\`),
+          \`name\`=VALUES(\`name\`),
+          \`sanction\`=VALUES(\`sanction\`),
+          \`points\`=VALUES(\`points\`),
+          \`category\`=VALUES(\`category\`)
+      `, [rId, bab, subBab, code, name, sanction, pts, category]);
+      savedCount++;
+    }
+
+    return {
+      success: true,
+      count: savedCount,
+      message: `${savedCount} acuan rubrik sanksi berhasil disimpan langsung ke MySQL.`
+    };
+  } catch (err: any) {
+    console.error('[MySQL Save Infraction Rules Batch Error]:', err.message || err);
+    return {
+      success: false,
+      count: savedCount,
+      message: 'Gagal menyimpan batch rubrik sanksi ke MySQL.',
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function getAllStudentInfractionLogsFromMysql(): Promise<any[]> {
+  const p = createPool();
+  if (!p) return [];
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureBkInfractionTablesReady(connection);
+    const [rows]: any = await connection.query('SELECT * FROM `student_infraction_logs` ORDER BY `date` DESC, `created_at` DESC');
+    return (rows || []).map((r: any) => ({
+      id: r.id,
+      studentId: r.student_id,
+      studentName: r.student_name,
+      className: r.class_name,
+      date: r.date,
+      time: r.time,
+      location: r.location,
+      infractionType: r.infraction_type,
+      actionTaken: r.action_taken,
+      resolutionStatus: r.resolution_status,
+      points: Number(r.points) || 0,
+      bab: r.bab || '',
+      subBab: r.sub_bab || '',
+      sanction: r.sanction || '',
+      notes: r.notes || '',
+      ruleId: r.rule_id || '',
+      source: r.source || '',
+      createdAt: r.created_at
+    }));
+  } catch (err: any) {
+    console.error('[MySQL Get Student Infraction Logs Error]:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function saveStudentInfractionLogsBatchToMysql(
+  logs: any[]
+): Promise<{ success: boolean; count: number; message: string; error?: string }> {
+  const p = createPool();
+  if (!p) {
+    return { success: false, count: 0, message: 'Pool MySQL belum terkonfigurasi.' };
+  }
+  let connection: mysql.PoolConnection | null = null;
+  let savedCount = 0;
+  try {
+    connection = await p.getConnection();
+    await ensureBkInfractionTablesReady(connection);
+
+    for (let i = 0; i < (logs || []).length; i++) {
+      const inf = logs[i];
+      const infId = inf.id || `sil-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`;
+      const sId = inf.studentId || inf.student_id || '';
+      const sName = inf.studentName || inf.student_name || '';
+      if (!sId && !sName) continue;
+      const cName = inf.className || inf.class_name || '';
+      const dDate = inf.date || new Date().toISOString().split('T')[0];
+      const dTime = inf.time || '08:00';
+      const loc = inf.location || 'Lingkungan Sekolah';
+      const infType = inf.infractionType || inf.infraction_type || 'Pelanggaran Disiplin';
+      const act = inf.actionTaken || inf.action_taken || 'Pembinaan BK';
+      const resStatus = inf.resolutionStatus || inf.resolution_status || 'Dalam Proses';
+      const pts = Number(inf.points !== undefined ? inf.points : 0);
+      const bab = inf.bab || null;
+      const subBab = inf.subBab || inf.sub_bab || null;
+      const sanction = inf.sanction || null;
+      const notes = inf.notes || null;
+      const ruleId = inf.ruleId || inf.rule_id || null;
+      const source = inf.source || null;
+      const cAt = inf.createdAt || inf.created_at || new Date().toISOString();
+
+      await connection.query(`
+        INSERT INTO \`student_infraction_logs\` (
+          \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`time\`, \`location\`,
+          \`infraction_type\`, \`action_taken\`, \`resolution_status\`, \`points\`,
+          \`bab\`, \`sub_bab\`, \`sanction\`, \`notes\`, \`rule_id\`, \`source\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`student_id\`=VALUES(\`student_id\`),
+          \`student_name\`=VALUES(\`student_name\`),
+          \`class_name\`=VALUES(\`class_name\`),
+          \`date\`=VALUES(\`date\`),
+          \`time\`=VALUES(\`time\`),
+          \`location\`=VALUES(\`location\`),
+          \`infraction_type\`=VALUES(\`infraction_type\`),
+          \`action_taken\`=VALUES(\`action_taken\`),
+          \`resolution_status\`=VALUES(\`resolution_status\`),
+          \`points\`=VALUES(\`points\`),
+          \`bab\`=VALUES(\`bab\`),
+          \`sub_bab\`=VALUES(\`sub_bab\`),
+          \`sanction\`=VALUES(\`sanction\`),
+          \`notes\`=VALUES(\`notes\`),
+          \`rule_id\`=VALUES(\`rule_id\`),
+          \`source\`=VALUES(\`source\`)
+      `, [
+        infId, sId, sName, cName, dDate, dTime, loc,
+        infType, act, resStatus, pts,
+        bab, subBab, sanction, notes, ruleId, source, cAt
+      ]);
+      savedCount++;
+    }
+
+    return {
+      success: true,
+      count: savedCount,
+      message: `${savedCount} poin pelanggaran siswa berhasil disimpan langsung ke MySQL.`
+    };
+  } catch (err: any) {
+    console.error('[MySQL Save Student Infraction Logs Batch Error]:', err.message || err);
+    return {
+      success: false,
+      count: savedCount,
+      message: 'Gagal menyimpan batch poin pelanggaran siswa ke MySQL.',
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}

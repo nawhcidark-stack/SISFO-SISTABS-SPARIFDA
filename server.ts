@@ -13,7 +13,7 @@ import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransCon
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, seedMissingConfigsToMysql, getConfigFromMysql, getAllConfigsFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql, getAllExtracurricularMasterFromMysql, saveExtracurricularMasterItemToMysql, replaceExtracurricularMasterListInMysql, deleteExtracurricularMasterFromMysql, getExtracurricularGradesFromMysql, saveExtracurricularGradesBatchToMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, seedMissingConfigsToMysql, getConfigFromMysql, getAllConfigsFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql, getAllExtracurricularMasterFromMysql, saveExtracurricularMasterItemToMysql, replaceExtracurricularMasterListInMysql, deleteExtracurricularMasterFromMysql, getExtracurricularGradesFromMysql, saveExtracurricularGradesBatchToMysql, getAllInfractionRulesFromMysql, saveInfractionRulesBatchToMysql, getAllStudentInfractionLogsFromMysql, saveStudentInfractionLogsBatchToMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter, formatMidtransPaymentMethod } from "./src/server/routes/midtransRoutes";
@@ -165,13 +165,7 @@ const studentInfractionLogs: StudentInfractionLog[] = [];
 
 const studentCounselingLogs: StudentCounselingLog[] = [];
 
-const infractionRules: any[] = [
-  { id: "ir-1", name: "Terlambat masuk sekolah tanpa keterangan sah", points: 5, category: "Ringan" },
-  { id: "ir-2", name: "Membawa & menggunakan handphone saat KBM tanpa izin guru", points: 10, category: "Sedang" },
-  { id: "ir-3", name: "Merokok di area sekolah / berseragam sekolah", points: 25, category: "Sedang" },
-  { id: "ir-4", name: "Terlibat dalam perkelahian / tawuran antar pelajar", points: 75, category: "Berat" },
-  { id: "ir-5", name: "Melakukan bullying / perundungan verbal maupun fisik", points: 50, category: "Berat" }
-];
+const infractionRules: any[] = [];
 
 const classAnnouncements: ClassAnnouncement[] = [];
 
@@ -462,9 +456,10 @@ let sarprasConfig = {
   password: "sarpras123"
 };
 
-// Guru BK Credentials Config
-let bkConfig = {
-  password: "bk123"
+// Guru BK Credentials & Infraction Config
+let bkConfig: { password: string; grade7PointsEffectiveDate?: string } = {
+  password: "bk123",
+  grade7PointsEffectiveDate: ""
 };
 
 // Waka Kurikulum Credentials Config
@@ -2029,7 +2024,7 @@ function applyDataFromMysql(pulledData: any) {
       studentDevelopmentLogs.push(...pulledData.studentDevelopmentLogs);
     }
 
-    if (Array.isArray(pulledData.studentInfractionLogs) && pulledData.studentInfractionLogs.length > 0) {
+    if (Array.isArray(pulledData.studentInfractionLogs)) {
       studentInfractionLogs.length = 0;
       studentInfractionLogs.push(...pulledData.studentInfractionLogs);
     }
@@ -2069,7 +2064,7 @@ function applyDataFromMysql(pulledData: any) {
       teacherEvaluations.push(...pulledData.teacherEvaluations);
     }
 
-    if (Array.isArray(pulledData.infractionRules) && pulledData.infractionRules.length > 0) {
+    if (Array.isArray(pulledData.infractionRules)) {
       infractionRules.length = 0;
       infractionRules.push(...pulledData.infractionRules);
     }
@@ -2369,77 +2364,79 @@ async function startServer() {
   console.log("=================================================");
   
   // 1. PRIMARY DATABASE ENGINE: Connect & Hydrate authoritative state directly from MySQL database (Hostinger)
+  // Run asynchronously so Express & Vite bind port 3000 immediately without timing out dev server health checks
   loadMysqlConfig();
   const mysqlCfg = getSanitizedConfig();
   const hasConfig = !!(mysqlCfg.host && mysqlCfg.database && mysqlCfg.user);
-  let mysqlHydrated = false;
 
-  if (hasConfig) {
-    try {
-      console.log(`[STARTUP] Menghubungkan ke MySQL database "${mysqlCfg.database}" di ${mysqlCfg.host}:${mysqlCfg.port}...`);
-      const testRes = await testMysqlConnection();
-      
-      if (testRes.success) {
-        mysqlDatabaseStatus = "ONLINE";
-        mysqlDatabaseError = null;
-        dbSyncStatus = "DATABASE MYSQL ONLINE (PRIMARY ENGINE)";
-        dbSyncError = null;
-        lastMysqlSyncTime = new Date().toISOString();
-        console.log(`[STARTUP] ✅ Test connection BERHASIL. MySQL Server: ${testRes.serverVersion}, Database: ${testRes.databaseName}`);
+  const mysqlInitPromise = (async () => {
+    if (hasConfig) {
+      try {
+        console.log(`[STARTUP] Menghubungkan ke MySQL database "${mysqlCfg.database}" di ${mysqlCfg.host}:${mysqlCfg.port}...`);
+        const testRes = await testMysqlConnection();
         
-        // Pastikan struktur seluruh tabel MySQL siap
-        await ensureAllMysqlTablesExist();
+        if (testRes.success) {
+          mysqlDatabaseStatus = "ONLINE";
+          mysqlDatabaseError = null;
+          dbSyncStatus = "DATABASE MYSQL ONLINE (PRIMARY ENGINE)";
+          dbSyncError = null;
+          lastMysqlSyncTime = new Date().toISOString();
+          console.log(`[STARTUP] ✅ Test connection BERHASIL. MySQL Server: ${testRes.serverVersion}, Database: ${testRes.databaseName}`);
+          
+          // Pastikan struktur seluruh tabel MySQL siap
+          await ensureAllMysqlTablesExist();
 
-        // Ambil data langsung dari MySQL (Primary Database)
-        console.log("[STARTUP] Mengambil seluruh data resmi langsung dari MySQL (Primary Engine)...");
-        const mysqlPull = await pullDataFromMysql();
-        if (mysqlPull.success && mysqlPull.data) {
-          applyDataFromMysql(mysqlPull.data);
-          mysqlHydrated = true;
-          isMysqlHydrated = true;
-          // Inisialisasi key konfigurasi yang belum ada di tabel app_configs tanpa menimpa pengaturan admin yang sudah tersimpan
-          await seedMissingConfigsToMysql([
-            { id: "midtransConfig", data: midtransConfig },
-            { id: "schoolIdentity", data: schoolIdentity },
-            { id: "sppRates", data: sppRates },
-            { id: "salaryConfig", data: salaryConfig },
-            { id: "whatsappConfig", data: whatsappConfig },
-            { id: "treasurerConfig", data: treasurerConfig },
-            { id: "principalConfig", data: principalConfig },
-            { id: "sarprasConfig", data: sarprasConfig },
-            { id: "bkConfig", data: bkConfig },
-            { id: "curriculumConfig", data: curriculumConfig },
-            { id: "adminConfig", data: adminConfig },
-            { id: "spmbConfig", data: spmbConfig },
-            { id: "reportReleaseConfig", data: reportReleaseConfig },
-            { id: "backupConfig", data: backupConfig }
-          ]);
-          console.log(`[STARTUP] ✅ Data berhasil dimuat langsung dari MySQL: ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.spmbCandidates || 0} calon SPMB, ${mysqlPull.counts?.treasurerTransactions || 0} transaksi kas, ${mysqlPull.counts?.sppBills || 0} tagihan SPP.`);
-          applyAuthoritativeSavingsBalances(students);
+          // Ambil data langsung dari MySQL (Primary Database)
+          console.log("[STARTUP] Mengambil seluruh data resmi langsung dari MySQL (Primary Engine)...");
+          const mysqlPull = await pullDataFromMysql();
+          if (mysqlPull.success && mysqlPull.data) {
+            applyDataFromMysql(mysqlPull.data);
+            isMysqlHydrated = true;
+            // Inisialisasi key konfigurasi yang belum ada di tabel app_configs tanpa menimpa pengaturan admin yang sudah tersimpan
+            await seedMissingConfigsToMysql([
+              { id: "midtransConfig", data: midtransConfig },
+              { id: "schoolIdentity", data: schoolIdentity },
+              { id: "sppRates", data: sppRates },
+              { id: "salaryConfig", data: salaryConfig },
+              { id: "whatsappConfig", data: whatsappConfig },
+              { id: "treasurerConfig", data: treasurerConfig },
+              { id: "principalConfig", data: principalConfig },
+              { id: "sarprasConfig", data: sarprasConfig },
+              { id: "bkConfig", data: bkConfig },
+              { id: "curriculumConfig", data: curriculumConfig },
+              { id: "adminConfig", data: adminConfig },
+              { id: "spmbConfig", data: spmbConfig },
+              { id: "reportReleaseConfig", data: reportReleaseConfig },
+              { id: "backupConfig", data: backupConfig }
+            ]);
+            console.log(`[STARTUP] ✅ Data berhasil dimuat langsung dari MySQL: ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.spmbCandidates || 0} calon SPMB, ${mysqlPull.counts?.treasurerTransactions || 0} transaksi kas, ${mysqlPull.counts?.sppBills || 0} tagihan SPP.`);
+            applyAuthoritativeSavingsBalances(students);
+            await reconcileExistingAlpaAttendanceToInfractions();
+          } else {
+            console.warn("[STARTUP] ⚠️ Gagal menarik data dari MySQL:", mysqlPull.message);
+          }
         } else {
-          console.warn("[STARTUP] ⚠️ Gagal menarik data dari MySQL:", mysqlPull.message);
+          mysqlDatabaseStatus = "OFFLINE";
+          mysqlDatabaseError = testRes.message + (testRes.hint ? ` (${testRes.hint})` : "");
+          dbSyncStatus = "DATABASE MYSQL OFFLINE";
+          dbSyncError = mysqlDatabaseError;
+          console.error("=================================================");
+          console.error(" [PERINGATAN] DATABASE MYSQL OFFLINE:", mysqlDatabaseError);
+          console.error("=================================================");
         }
-      } else {
+      } catch (err: any) {
+        console.error("[STARTUP ERROR] Kesalahan inisialisasi MySQL:", err.message || err);
         mysqlDatabaseStatus = "OFFLINE";
-        mysqlDatabaseError = testRes.message + (testRes.hint ? ` (${testRes.hint})` : "");
+        mysqlDatabaseError = err.message || String(err);
         dbSyncStatus = "DATABASE MYSQL OFFLINE";
         dbSyncError = mysqlDatabaseError;
-        console.error("=================================================");
-        console.error(" [PERINGATAN] DATABASE MYSQL OFFLINE:", mysqlDatabaseError);
-        console.error("=================================================");
       }
-    } catch (err: any) {
-      console.error("[STARTUP ERROR] Kesalahan inisialisasi MySQL:", err.message || err);
-      mysqlDatabaseStatus = "OFFLINE";
-      mysqlDatabaseError = err.message || String(err);
-      dbSyncStatus = "DATABASE MYSQL OFFLINE";
-      dbSyncError = mysqlDatabaseError;
     }
-  }
 
-  isInitialSyncCompleted = true;
-  console.log(` [STARTUP] ✅ Inisialisasi database selesai. Status MySQL: ${mysqlDatabaseStatus}`);
-  console.log("=================================================");
+    isInitialSyncCompleted = true;
+    console.log(` [STARTUP] ✅ Inisialisasi database selesai. Status MySQL: ${mysqlDatabaseStatus}`);
+    console.log("=================================================");
+  })();
 
   const app = express();
   app.use(compression({
@@ -2466,11 +2463,20 @@ async function startServer() {
   });
 
   // Prevent browser caching on all API routes (especially for student mobile devices)
-  app.use("/api", (req, res, next) => {
+  // Also wait briefly for initial MySQL hydration if an API request arrives during startup
+  app.use("/api", async (req, res, next) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
     res.setHeader("Surrogate-Control", "no-store");
+    if (!isInitialSyncCompleted && !req.path.startsWith("/notifications/stream")) {
+      try {
+        await Promise.race([
+          mysqlInitPromise,
+          new Promise((resolve) => setTimeout(resolve, 15000))
+        ]);
+      } catch (_) {}
+    }
     next();
   });
 
@@ -4471,6 +4477,231 @@ async function startServer() {
     res.json(logs);
   });
 
+  // Helper: Otomatisasi penambahan 5 poin pelanggaran saat siswa tercatat Alpa (A) pada absensi Wali Kelas
+  const buildAutoAlpaInfractionId = (studentId: string, normDate: string) => {
+    const cleanId = String(studentId || "").trim().replace(/[^a-zA-Z0-9_-]/g, "_");
+    return `sil-alpa-${cleanId}-${normDate}`;
+  };
+
+  const isGrade7Class = (className?: string): boolean => {
+    const clean = String(className || "").trim();
+    return /^(?:kelas\s*)?(?:7|vii)(?:$|[^0-9i])/i.test(clean);
+  };
+
+  const isGrade7InfractionBeforeEffectiveDate = (
+    className?: string,
+    dateStr?: string,
+    studentId?: string,
+    studentName?: string
+  ): boolean => {
+    const effDate = String(bkConfig.grade7PointsEffectiveDate || "").trim().substring(0, 10);
+    if (!effDate) return false;
+    const normDate = String(dateStr || "").trim().substring(0, 10);
+    if (!normDate) return false;
+
+    let resolvedCls = String(className || "").trim();
+    if (!resolvedCls || resolvedCls === "-") {
+      const st = students.find(
+        s =>
+          (studentId && (s.id === studentId || s.nis === studentId)) ||
+          (studentName && s.name && s.name.trim().toLowerCase() === studentName.trim().toLowerCase())
+      );
+      if (st && st.class) resolvedCls = st.class;
+    }
+
+    if (!isGrade7Class(resolvedCls)) return false;
+    return normDate < effDate;
+  };
+
+  async function syncAlpaAttendanceToInfraction(
+    rawStudentId: string,
+    rawStudentName: string,
+    rawClassName: string,
+    rawDate: string,
+    rawStatus: string,
+    rawNotes?: string,
+    broadcast: boolean = true
+  ): Promise<StudentInfractionLog | null> {
+    const normDate = (rawDate || "").substring(0, 10);
+    if (!rawStudentId || !normDate) return null;
+
+    const st = students.find(
+      s =>
+        s.id === rawStudentId ||
+        s.nis === rawStudentId ||
+        (s.name && rawStudentName && s.name.trim().toLowerCase() === rawStudentName.trim().toLowerCase())
+    );
+    const resolvedStudentId = st ? st.id : rawStudentId;
+    const resolvedName = st && st.name ? st.name : rawStudentName || "";
+    const resolvedClass = st && st.class ? st.class : rawClassName || "";
+    const autoAlpaId = buildAutoAlpaInfractionId(resolvedStudentId, normDate);
+    const legacyAlpaId = buildAutoAlpaInfractionId(rawStudentId, normDate);
+
+    const isAlpa = String(rawStatus || "").trim().toLowerCase() === "alpa" || String(rawStatus || "").trim().toUpperCase() === "A";
+    const isBeforeGrade7EffectiveDate = isGrade7InfractionBeforeEffectiveDate(
+      resolvedClass,
+      normDate,
+      resolvedStudentId,
+      resolvedName
+    );
+
+    const existingIdx = studentInfractionLogs.findIndex(
+      l =>
+        l.id === autoAlpaId ||
+        l.id === legacyAlpaId ||
+        ((l.studentId === resolvedStudentId || l.studentId === rawStudentId || (st && l.studentId === st.nis)) &&
+          (l.date || "").substring(0, 10) === normDate &&
+          (l.source === "auto_alpa_walas" ||
+            (l.infractionType && l.infractionType.toLowerCase().includes("alpa (a) pada absensi wali kelas"))))
+    );
+
+    if (isAlpa && !isBeforeGrade7EffectiveDate) {
+      if (existingIdx !== -1) {
+        // Update notes/name/class if needed
+        const existing = studentInfractionLogs[existingIdx];
+        if (resolvedName) existing.studentName = resolvedName;
+        if (resolvedClass) existing.className = resolvedClass;
+        if (rawNotes) existing.notes = `Catatan Absensi Wali Kelas: ${rawNotes}`;
+        return existing;
+      }
+
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const newAlpaInfraction: StudentInfractionLog = {
+        id: autoAlpaId,
+        studentId: resolvedStudentId,
+        studentName: resolvedName || `Siswa (${resolvedStudentId})`,
+        className: resolvedClass || "-",
+        date: normDate,
+        time: timeStr,
+        location: resolvedClass ? `Kelas ${resolvedClass}` : "Lingkungan Sekolah",
+        bab: "Kedisiplinan Kehadiran",
+        subBab: "Presensi Harian Wali Kelas",
+        infractionType: "Tidak Hadir Tanpa Keterangan / Alpa (A) pada Absensi Wali Kelas",
+        sanction: "Teguran & Pembinaan Wali Kelas / Guru BK",
+        actionTaken: "Otomatis tercatat dari Absensi Wali Kelas (Status: Alpa / Tanpa Keterangan) — Penambahan 5 Poin",
+        notes: rawNotes
+          ? `Catatan Absensi Wali Kelas: ${rawNotes}`
+          : `Otomatis tercatat Alpa (A) pada absensi Wali Kelas tanggal ${normDate}`,
+        resolutionStatus: "Dalam Proses",
+        points: 5,
+        source: "auto_alpa_walas",
+        createdAt: now.toISOString()
+      };
+
+      studentInfractionLogs.unshift(newAlpaInfraction);
+      try {
+        await directSaveEntityToMysql("student_infraction_logs", newAlpaInfraction);
+      } catch (err: any) {
+        console.error("[MySQL Auto Alpa Infraction Save Error]:", err?.message || err);
+      }
+
+      if (broadcast) {
+        broadcastNotification({
+          id: `notif-sil-alpa-${newAlpaInfraction.id}`,
+          studentId: resolvedStudentId,
+          title: `Otomatis +5 Poin Alpa: ${newAlpaInfraction.studentName} (${newAlpaInfraction.className})`,
+          message: `Siswa tercatat Alpa (A) pada absensi Wali Kelas tanggal ${normDate}. Otomatis masuk Daftar Kejadian Kasus Masuk & Tabel Point Pelanggaran Siswa (+5 Poin).`,
+          type: "warning",
+          category: "bk",
+          createdAt: now.toISOString()
+        });
+      }
+
+      return newAlpaInfraction;
+    } else {
+      // Jika status diubah dari Alpa ke Hadir/Sakit/Izin/Terlambat, hapus poin otomatis Alpa pada tanggal tersebut
+      if (existingIdx !== -1 && (studentInfractionLogs[existingIdx].source === "auto_alpa_walas" || studentInfractionLogs[existingIdx].id.startsWith("sil-alpa-"))) {
+        const removed = studentInfractionLogs.splice(existingIdx, 1)[0];
+        if (removed) {
+          directDeleteEntityFromMysql("student_infraction_logs", removed.id).catch(() => {});
+        }
+      }
+      return null;
+    }
+  }
+
+  async function reconcileExistingAlpaAttendanceToInfractions(): Promise<void> {
+    try {
+      for (let i = studentInfractionLogs.length - 1; i >= 0; i--) {
+        const l = studentInfractionLogs[i];
+        const isAutoAlpa =
+          l.source === "auto_alpa_walas" ||
+          (l.id && l.id.startsWith("sil-alpa-")) ||
+          (l.infractionType && l.infractionType.toLowerCase().includes("alpa (a) pada absensi wali kelas"));
+        if (isAutoAlpa && isGrade7InfractionBeforeEffectiveDate(l.className, l.date, l.studentId, l.studentName)) {
+          const removed = studentInfractionLogs.splice(i, 1)[0];
+          if (removed) {
+            directDeleteEntityFromMysql("student_infraction_logs", removed.id).catch(() => {});
+          }
+        }
+      }
+
+      const createdBatch: StudentInfractionLog[] = [];
+      for (const att of attendanceLogs) {
+        if (att.status !== "Alpa") continue;
+        const normDate = (att.date || "").substring(0, 10);
+        if (!att.studentId || !normDate) continue;
+        const st = students.find(
+          s =>
+            s.id === att.studentId ||
+            s.nis === att.studentId ||
+            (s.name && att.studentName && s.name.trim().toLowerCase() === att.studentName.trim().toLowerCase())
+        );
+        const resolvedStudentId = st ? st.id : att.studentId;
+        const resolvedName = st && st.name ? st.name : att.studentName || "";
+        const resolvedClass = st && st.class ? st.class : att.className || "";
+        if (isGrade7InfractionBeforeEffectiveDate(resolvedClass, normDate, resolvedStudentId, resolvedName)) {
+          continue;
+        }
+        const autoAlpaId = buildAutoAlpaInfractionId(resolvedStudentId, normDate);
+        const legacyAlpaId = buildAutoAlpaInfractionId(att.studentId, normDate);
+
+        const exists = studentInfractionLogs.some(
+          l =>
+            l.id === autoAlpaId ||
+            l.id === legacyAlpaId ||
+            ((l.studentId === resolvedStudentId || l.studentId === att.studentId || (st && l.studentId === st.nis)) &&
+              (l.date || "").substring(0, 10) === normDate &&
+              (l.source === "auto_alpa_walas" ||
+                (l.infractionType && l.infractionType.toLowerCase().includes("alpa"))))
+        );
+
+        if (!exists) {
+          const newLog: StudentInfractionLog = {
+            id: autoAlpaId,
+            studentId: resolvedStudentId,
+            studentName: resolvedName || `Siswa (${resolvedStudentId})`,
+            className: resolvedClass || "-",
+            date: normDate,
+            time: "07:30",
+            location: resolvedClass ? `Kelas ${resolvedClass}` : "Lingkungan Sekolah",
+            bab: "Kedisiplinan Kehadiran",
+            subBab: "Presensi Harian Wali Kelas",
+            infractionType: "Tidak Hadir Tanpa Keterangan / Alpa (A) pada Absensi Wali Kelas",
+            sanction: "Teguran & Pembinaan Wali Kelas / Guru BK",
+            actionTaken: "Otomatis tercatat dari Absensi Wali Kelas (Status: Alpa / Tanpa Keterangan) — Penambahan 5 Poin",
+            notes: att.notes
+              ? `Catatan Absensi Wali Kelas: ${att.notes}`
+              : `Otomatis tercatat Alpa (A) pada absensi Wali Kelas tanggal ${normDate}`,
+            resolutionStatus: "Dalam Proses",
+            points: 5,
+            source: "auto_alpa_walas",
+            createdAt: new Date().toISOString()
+          };
+          studentInfractionLogs.unshift(newLog);
+          createdBatch.push(newLog);
+        }
+      }
+      if (createdBatch.length > 0) {
+        await saveStudentInfractionLogsBatchToMysql(createdBatch);
+        console.log(`[AUTO-ALPA BK] ${createdBatch.length} catatan Alpa Wali Kelas otomatis disinkronkan (+5 Poin) ke MySQL.`);
+      }
+    } catch (err: any) {
+      console.warn("[AUTO-ALPA BK Reconcile Warning]:", err?.message || err);
+    }
+  }
+
   // Delete attendance by log ID
   app.delete("/api/attendance/:id", async (req, res) => {
     const id = req.params.id;
@@ -4492,6 +4723,17 @@ async function startServer() {
           );
         }
       });
+      if (logToDelete.status === "Alpa") {
+        await syncAlpaAttendanceToInfraction(
+          logToDelete.studentId,
+          logToDelete.studentName || "",
+          logToDelete.className || "",
+          (logToDelete.date || "").substring(0, 10),
+          "Hadir",
+          "",
+          false
+        );
+      }
     }
 
     saveState();
@@ -4542,6 +4784,17 @@ async function startServer() {
 
     for (const log of logsToRemove) {
       removeEntity("attendanceLogs", log.id).catch(() => {});
+      if (log.status === "Alpa") {
+        await syncAlpaAttendanceToInfraction(
+          log.studentId,
+          log.studentName || "",
+          log.className || "",
+          (log.date || "").substring(0, 10),
+          "Hadir",
+          "",
+          false
+        );
+      }
     }
 
     res.json({ 
@@ -4552,7 +4805,7 @@ async function startServer() {
   });
 
   // Save single attendance entry
-  app.post("/api/attendance", (req, res) => {
+  app.post("/api/attendance", async (req, res) => {
     const { studentId, studentName, className, date, status, notes } = req.body;
     if (!studentId || !date || !status) {
       return res.status(400).json({ error: "Data absensi tidak lengkap." });
@@ -4589,14 +4842,17 @@ async function startServer() {
       attendanceLogs.push(savedLog);
     }
 
+    // Otomatis tambahkan 5 poin pelanggaran ke BK & MySQL jika status Alpa (A)
+    await syncAlpaAttendanceToInfraction(studentId, resolvedName, resolvedClass, normDate, status, notes, true);
+
     saveState();
     persistEntity("attendance", savedLog).catch(err => console.error("[MySQL Attendance Error]:", err));
 
-    res.json({ success: true, attendanceLogs, savedLog });
+    res.json({ success: true, attendanceLogs, savedLog, studentInfractionLogs });
   });
 
   // Batch save attendance entries
-  app.post("/api/attendance/batch", (req, res) => {
+  app.post("/api/attendance/batch", async (req, res) => {
     const { logs } = req.body; // array of { studentId, studentName, className, date, status, notes }
     if (!Array.isArray(logs)) {
       return res.status(400).json({ error: "Logs harus berupa array." });
@@ -4604,9 +4860,9 @@ async function startServer() {
 
     const affectedLogs: AttendanceLog[] = [];
 
-    logs.forEach(item => {
+    for (const item of logs) {
       const { studentId, studentName, className, date, status, notes } = item;
-      if (!studentId || !date || !status) return;
+      if (!studentId || !date || !status) continue;
 
       const normDate = (date || '').substring(0, 10);
       const st = students.find(s => s.id === studentId || s.nis === studentId);
@@ -4638,14 +4894,17 @@ async function startServer() {
         attendanceLogs.push(newLog);
         affectedLogs.push(newLog);
       }
-    });
+
+      // Otomatis tambahkan 5 poin pelanggaran ke BK & MySQL jika status Alpa (A) pada absensi Wali Kelas
+      await syncAlpaAttendanceToInfraction(studentId, resolvedName, resolvedClass, normDate, status, notes, true);
+    }
 
     saveState();
     if (affectedLogs.length > 0) {
       persistEntities("attendance", affectedLogs).catch(err => console.error("[MySQL Batch Attendance Error]:", err));
     }
 
-    res.json({ success: true, attendanceLogs, count: affectedLogs.length });
+    res.json({ success: true, attendanceLogs, count: affectedLogs.length, studentInfractionLogs });
   });
 
   // --- HOMEROOM TEACHERS (WALI KELAS) ENDPOINTS ---
@@ -5282,7 +5541,7 @@ async function startServer() {
     res.json(teachingJournals);
   });
 
-  app.post("/api/teaching-journals", (req, res) => {
+  app.post("/api/teaching-journals", async (req, res) => {
     const { 
       teacherId, 
       teacherName, 
@@ -5403,6 +5662,23 @@ async function startServer() {
 
     saveState();
 
+    // Jika ini jurnal Wali Kelas (homeroom), sinkronkan juga status Alpa (A) ke poin pelanggaran BK (+5 poin)
+    if (newJournal.teacherType === 'homeroom') {
+      for (const studentAtt of attendanceList) {
+        if (studentAtt && studentAtt.studentId) {
+          await syncAlpaAttendanceToInfraction(
+            studentAtt.studentId,
+            studentAtt.studentName || "",
+            resolvedClass,
+            resolvedDate,
+            studentAtt.status || "Hadir",
+            studentAtt.notes || "",
+            true
+          );
+        }
+      }
+    }
+
     // Persist journal and synced student attendance logs directly to MySQL!
     persistEntity("journal", newJournal).catch(err => console.error("[MySQL Journal Save Error]:", err));
     if (syncedAttendanceLogs.length > 0) {
@@ -5422,7 +5698,7 @@ async function startServer() {
     res.json({ success: true, teachingJournals, newJournal });
   });
 
-  app.put("/api/teaching-journals/:id", (req, res) => {
+  app.put("/api/teaching-journals/:id", async (req, res) => {
     const { id } = req.params;
     const {
       subject,
@@ -5526,6 +5802,23 @@ async function startServer() {
           syncedAttendanceLogs.push(createdLog);
         }
       });
+
+      if (journal.teacherType === 'homeroom') {
+        const targetDate = (date || journal.date || '').substring(0, 10);
+        for (const studentAtt of attendance) {
+          if (studentAtt && studentAtt.studentId) {
+            await syncAlpaAttendanceToInfraction(
+              studentAtt.studentId,
+              studentAtt.studentName || "",
+              journal.className,
+              targetDate,
+              studentAtt.status || "Hadir",
+              studentAtt.notes || "",
+              true
+            );
+          }
+        }
+      }
     }
 
     saveState();
@@ -5605,15 +5898,85 @@ async function startServer() {
     res.json({ success: true, studentDevelopmentLogs });
   });
 
+  // --- PENGATURAN TANGGAL PEMBERLAKUAN POIN KHUSUS KELAS 7 (BK) ---
+  app.get("/api/bk/infraction-settings", async (req, res) => {
+    try {
+      const mysqlCfg = await getConfigFromMysql("bkConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") {
+        Object.assign(bkConfig, mysqlCfg);
+      }
+    } catch (_) {}
+    res.json({
+      grade7PointsEffectiveDate: bkConfig.grade7PointsEffectiveDate || ""
+    });
+  });
+
+  app.post("/api/bk/infraction-settings", async (req, res) => {
+    const { grade7PointsEffectiveDate } = req.body || {};
+    const cleanDate = String(grade7PointsEffectiveDate || "").trim().substring(0, 10);
+    bkConfig.grade7PointsEffectiveDate = cleanDate;
+    await saveConfigToMysql("bkConfig", bkConfig);
+    saveState();
+
+    // Rekonsiliasi ulang poin Alpa Kelas 7 sesuai tanggal pemberlakuan baru
+    await reconcileExistingAlpaAttendanceToInfractions();
+
+    const activeLogs = studentInfractionLogs.filter(
+      l => !isGrade7InfractionBeforeEffectiveDate(l.className, l.date, l.studentId, l.studentName)
+    );
+
+    res.json({
+      success: true,
+      grade7PointsEffectiveDate: bkConfig.grade7PointsEffectiveDate || "",
+      studentInfractionLogs: activeLogs,
+      message: cleanDate
+        ? `Tanggal pemberlakuan poin khusus Kelas 7 berhasil ditetapkan mulai ${cleanDate}. Seluruh pelanggaran & poin Alpa Kelas 7 sebelum tanggal tersebut tidak dihitung.`
+        : "Tanggal pemberlakuan poin khusus Kelas 7 direset (seluruh tanggal dihitung)."
+    });
+  });
+
   // --- STUDENT INFRACTION LOGS (PENCATATAN PELANGGARAN) ENDPOINTS ---
-  app.get("/api/student-infraction-logs", (req, res) => {
-    res.json(studentInfractionLogs);
+  app.get("/api/student-infraction-logs", async (req, res) => {
+    try {
+      const mysqlRows = await getAllStudentInfractionLogsFromMysql();
+      if (Array.isArray(mysqlRows) && isMysqlHydrated) {
+        studentInfractionLogs.length = 0;
+        studentInfractionLogs.push(...mysqlRows);
+      }
+    } catch (_) {}
+    const effectiveLogs = studentInfractionLogs.filter(
+      l => !isGrade7InfractionBeforeEffectiveDate(l.className, l.date, l.studentId, l.studentName)
+    );
+    res.json(effectiveLogs);
   });
 
   app.post("/api/student-infraction-logs", async (req, res) => {
-    const { studentId, studentName, className, date, time, location, infractionType, actionTaken, resolutionStatus, points } = req.body;
+    const {
+      studentId,
+      studentName,
+      className,
+      date,
+      time,
+      location,
+      infractionType,
+      actionTaken,
+      resolutionStatus,
+      points,
+      bab,
+      subBab,
+      sanction,
+      notes,
+      ruleId,
+      source
+    } = req.body;
     if (!studentId || !studentName || !className || !date || !time || !location || !infractionType || !actionTaken || !resolutionStatus) {
       return res.status(400).json({ error: "Data Pelanggaran tidak lengkap." });
+    }
+
+    if (isGrade7InfractionBeforeEffectiveDate(className, date, studentId, studentName)) {
+      return res.status(400).json({
+        error: `Khusus Kelas 7, tanggal kejadian (${date}) berada sebelum Tanggal Pemberlakuan Poin Kelas 7 (${bkConfig.grade7PointsEffectiveDate}), sehingga poin pelanggaran tidak dihitung.`
+      });
     }
 
     const newLog: StudentInfractionLog = {
@@ -5628,8 +5991,14 @@ async function startServer() {
       actionTaken,
       resolutionStatus,
       points: Number(points) || 0,
+      bab: bab ? String(bab).trim() : "",
+      subBab: subBab ? String(subBab).trim() : "",
+      sanction: sanction ? String(sanction).trim() : "",
+      notes: notes ? String(notes).trim() : "",
+      ruleId: ruleId ? String(ruleId).trim() : "",
+      source: source ? String(source).trim() : "manual_bk",
       createdAt: new Date().toISOString()
-    } as any;
+    };
 
     studentInfractionLogs.unshift(newLog);
 
@@ -5662,13 +6031,140 @@ async function startServer() {
     res.json({ success: true, studentInfractionLogs, newLog, mysqlSaved, mysqlMessage });
   });
 
+  // Batch Import Poin Pelanggaran Siswa (CSV / Excel) -> Langsung ke MySQL
+  app.post("/api/student-infraction-logs/batch", async (req, res) => {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Data import poin pelanggaran kosong atau tidak valid." });
+    }
+
+    const now = new Date();
+    const defaultDate = now.toISOString().split("T")[0];
+    const defaultTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const newLogs: StudentInfractionLog[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const raw = items[i] || {};
+      const rawNis = String(raw.nis || raw.studentId || "").trim();
+      const rawName = String(raw.studentName || raw.name || "").trim();
+
+      const matchedStudent = students.find(s => {
+        if (rawNis && (s.nis === rawNis || s.id === rawNis || s.nisn === rawNis)) return true;
+        if (rawName && s.name.trim().toLowerCase() === rawName.toLowerCase()) return true;
+        return false;
+      });
+
+      const resolvedStudentId = matchedStudent ? matchedStudent.id : (rawNis || `std-imp-${Date.now()}-${i}`);
+      const resolvedStudentName = matchedStudent ? matchedStudent.name : rawName;
+      const resolvedClassName = matchedStudent ? matchedStudent.class : String(raw.className || raw.class || "-").trim();
+
+      if (!resolvedStudentName && !matchedStudent) continue;
+
+      const rawRuleRef = String(raw.ruleRef || raw.infractionType || raw.code || "").trim();
+      let matchedRule = infractionRules.find(r => {
+        if (raw.ruleId && r.id === raw.ruleId) return true;
+        if (rawRuleRef) {
+          const lowerRef = rawRuleRef.toLowerCase();
+          const rCode = String(r.code || "").trim().toLowerCase();
+          const rName = String(r.name || "").trim();
+          const rNameLower = rName.toLowerCase();
+          const leadingCodeMatch = rName.match(/^(\d+(?:\.\d+)*)/);
+          const leadingCode = leadingCodeMatch ? leadingCodeMatch[1].toLowerCase() : "";
+
+          if (rCode && rCode === lowerRef) return true;
+          if (leadingCode && leadingCode === lowerRef) return true;
+          if (rNameLower === lowerRef) return true;
+          if (rCode && lowerRef.startsWith(rCode + " ")) return true;
+          if (rNameLower && lowerRef.includes(rNameLower)) return true;
+        }
+        return false;
+      });
+
+      // Fallback: jika diisi nomor urut 1, 2, 3 sesuai urutan baris referensi rubrik
+      if (!matchedRule && /^\d+$/.test(rawRuleRef)) {
+        const seqIdx = parseInt(rawRuleRef, 10) - 1;
+        if (seqIdx >= 0 && seqIdx < infractionRules.length) {
+          matchedRule = infractionRules[seqIdx];
+        }
+      }
+
+      const finalInfractionType = String(
+        matchedRule
+          ? matchedRule.name
+          : (raw.infractionType || rawRuleRef || "Pelanggaran Tata Tertib")
+      ).trim();
+      const finalBab = String(raw.bab || (matchedRule ? matchedRule.bab || "" : "")).trim();
+      const finalSubBab = String(raw.subBab || (matchedRule ? matchedRule.subBab || "" : "")).trim();
+      const finalSanction = String(raw.sanction || (matchedRule ? matchedRule.sanction || "" : "")).trim();
+      const finalPoints =
+        raw.points !== undefined && raw.points !== "" && !isNaN(Number(raw.points))
+          ? Number(raw.points)
+          : matchedRule
+          ? Number(matchedRule.points) || 0
+          : 5;
+      const finalNotes = String(raw.notes || raw.keterangan || "").trim();
+      const finalActionTaken = String(
+        raw.actionTaken ||
+          (finalSanction
+            ? `${finalSanction}${finalNotes ? ` (${finalNotes})` : ""}`
+            : finalNotes || "Pembinaan disiplin oleh Guru BK")
+      ).trim();
+
+      const resolvedDate = String(raw.date || defaultDate).substring(0, 10);
+
+      // Khusus Kelas 7: Lewati dan jangan hitung pelanggaran jika tanggal berada sebelum Tanggal Pemberlakuan Poin Kelas 7
+      if (isGrade7InfractionBeforeEffectiveDate(resolvedClassName, resolvedDate, resolvedStudentId, resolvedStudentName)) {
+        continue;
+      }
+
+      const logItem: StudentInfractionLog = {
+        id: `sil-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+        studentId: resolvedStudentId,
+        studentName: resolvedStudentName,
+        className: resolvedClassName,
+        date: resolvedDate,
+        time: String(raw.time || defaultTime).substring(0, 5),
+        location: String(raw.location || `Kelas ${resolvedClassName}` || "Lingkungan Sekolah").trim(),
+        infractionType: finalInfractionType,
+        actionTaken: finalActionTaken,
+        resolutionStatus: (raw.resolutionStatus as any) || "Dalam Proses",
+        points: finalPoints,
+        bab: finalBab,
+        subBab: finalSubBab,
+        sanction: finalSanction,
+        notes: finalNotes,
+        ruleId: matchedRule ? matchedRule.id : String(raw.ruleId || ""),
+        source: "import_bk",
+        createdAt: new Date().toISOString()
+      };
+
+      newLogs.push(logItem);
+    }
+
+    if (newLogs.length === 0) {
+      return res.status(400).json({ error: "Tidak ada baris data siswa valid yang dapat diimpor." });
+    }
+
+    const mysqlRes = await saveStudentInfractionLogsBatchToMysql(newLogs);
+    studentInfractionLogs.unshift(...newLogs);
+    saveState();
+
+    res.json({
+      success: true,
+      count: newLogs.length,
+      mysqlSaved: mysqlRes.success,
+      mysqlMessage: mysqlRes.message,
+      studentInfractionLogs,
+      newLogs
+    });
+  });
+
   app.delete("/api/student-infraction-logs/:id", async (req, res) => {
     const { id } = req.params;
     const index = studentInfractionLogs.findIndex(l => l.id === id);
-    if (index === -1) {
-      return res.status(404).json({ error: "Pencatatan pelanggaran tidak ditemukan." });
+    if (index !== -1) {
+      studentInfractionLogs.splice(index, 1);
     }
-    studentInfractionLogs.splice(index, 1);
 
     // Langsung hapus dari database MySQL
     try {
@@ -5681,23 +6177,36 @@ async function startServer() {
     res.json({ success: true, studentInfractionLogs });
   });
 
-  // --- INFRACTION MASTER RULES (POIN PELANGGARAN CRUD) ---
-  app.get("/api/infraction-rules", (req, res) => {
+  // --- INFRACTION MASTER RULES (POIN PELANGGARAN & RUBRIK SANKSI CRUD + IMPORT) ---
+  app.get("/api/infraction-rules", async (req, res) => {
+    try {
+      const mysqlRules = await getAllInfractionRulesFromMysql();
+      if (Array.isArray(mysqlRules) && isMysqlHydrated) {
+        infractionRules.length = 0;
+        infractionRules.push(...mysqlRules);
+      }
+    } catch (_) {}
     res.json(infractionRules);
   });
 
   app.post("/api/infraction-rules", async (req, res) => {
-    const { name, points, category } = req.body;
-    if (!name || points === undefined || !category) {
-      return res.status(400).json({ error: "Nama, poin dan tingkatan pelanggaran wajib diisi." });
+    const { bab, subBab, code, name, sanction, points, category } = req.body;
+    if (!name || points === undefined) {
+      return res.status(400).json({ error: "Nama pelanggaran dan besar poin wajib diisi." });
     }
+    const pts = Number(points) || 0;
+    const resolvedCategory = category || (pts >= 25 ? "Berat" : pts >= 10 ? "Sedang" : "Ringan");
     const newRule = {
       id: `ir-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      name,
-      points: Number(points) || 0,
-      category
+      bab: bab ? String(bab).trim() : "",
+      subBab: subBab ? String(subBab).trim() : "",
+      code: code ? String(code).trim() : "",
+      name: String(name).trim(),
+      sanction: sanction ? String(sanction).trim() : "",
+      points: pts,
+      category: resolvedCategory
     };
-    infractionRules.unshift(newRule);
+    infractionRules.push(newRule);
     try {
       await directSaveEntityToMysql('infraction_rules', newRule);
     } catch (err: any) {
@@ -5707,14 +6216,67 @@ async function startServer() {
     res.json({ success: true, infractionRules, newRule });
   });
 
+  // Batch Import Rubrik Sanksi (Excel / CSV) -> Langsung ke MySQL
+  app.post("/api/infraction-rules/batch", async (req, res) => {
+    const { rules, mode } = req.body;
+    if (!Array.isArray(rules) || rules.length === 0) {
+      return res.status(400).json({ error: "Data rubrik sanksi kosong atau tidak valid." });
+    }
+
+    const importMode: 'append' | 'replace' = mode === 'replace' ? 'replace' : 'append';
+    const normalizedRules = rules
+      .map((r: any, idx: number) => {
+        const name = String(r.name || r.jenisPelanggaran || r.pelanggaran || "").trim();
+        if (!name) return null;
+        const pts = Number(r.points ?? r.besarPoin ?? r.poin ?? 0) || 0;
+        const cat = String(r.category || r.kategori || (pts >= 25 ? "Berat" : pts >= 10 ? "Sedang" : "Ringan")).trim();
+        return {
+          id: String(r.id || `ir-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`).trim(),
+          bab: String(r.bab || "").trim(),
+          subBab: String(r.subBab || r.sub_bab || "").trim(),
+          code: String(r.code || r.kode || "").trim(),
+          name,
+          sanction: String(r.sanction || r.sanksi || "").trim(),
+          points: pts,
+          category: cat
+        };
+      })
+      .filter(Boolean);
+
+    if (normalizedRules.length === 0) {
+      return res.status(400).json({ error: "Tidak ada baris rubrik sanksi valid untuk disimpan." });
+    }
+
+    const mysqlRes = await saveInfractionRulesBatchToMysql(normalizedRules, importMode);
+    if (!mysqlRes.success) {
+      return res.status(500).json({ error: mysqlRes.error || mysqlRes.message || "Gagal menyimpan rubrik ke MySQL." });
+    }
+
+    const freshRules = await getAllInfractionRulesFromMysql();
+    infractionRules.length = 0;
+    infractionRules.push(...(freshRules.length > 0 ? freshRules : normalizedRules));
+    saveState();
+
+    res.json({
+      success: true,
+      count: mysqlRes.count,
+      message: mysqlRes.message,
+      infractionRules
+    });
+  });
+
   app.put("/api/infraction-rules/:id", async (req, res) => {
     const { id } = req.params;
-    const { name, points, category } = req.body;
+    const { bab, subBab, code, name, sanction, points, category } = req.body;
     const rule = infractionRules.find(r => r.id === id);
     if (!rule) {
       return res.status(404).json({ error: "Aturan pelanggaran tidak ditemukan." });
     }
-    if (name !== undefined) rule.name = name;
+    if (bab !== undefined) rule.bab = String(bab).trim();
+    if (subBab !== undefined) rule.subBab = String(subBab).trim();
+    if (code !== undefined) rule.code = String(code).trim();
+    if (name !== undefined) rule.name = String(name).trim();
+    if (sanction !== undefined) rule.sanction = String(sanction).trim();
     if (points !== undefined) rule.points = Number(points) || 0;
     if (category !== undefined) rule.category = category;
 
@@ -5731,10 +6293,9 @@ async function startServer() {
   app.delete("/api/infraction-rules/:id", async (req, res) => {
     const { id } = req.params;
     const idx = infractionRules.findIndex(r => r.id === id);
-    if (idx === -1) {
-      return res.status(404).json({ error: "Aturan pelanggaran tidak ditemukan." });
+    if (idx !== -1) {
+      infractionRules.splice(idx, 1);
     }
-    infractionRules.splice(idx, 1);
 
     try {
       await directDeleteEntityFromMysql('infraction_rules', id);

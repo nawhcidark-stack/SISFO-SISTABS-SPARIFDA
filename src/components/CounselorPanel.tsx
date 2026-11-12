@@ -39,8 +39,10 @@ import {
   ArrowUpDown,
   RotateCcw,
   Plus,
-  X
+  X,
+  Upload
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { motion, AnimatePresence } from "motion/react";
 import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student, ClassSchedule, SubjectTeacher, HomeroomTeacher } from "../types";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -105,15 +107,25 @@ export default function CounselorPanel({
 
   // Secondary sub-tab states for custom list or aggregates
   const [attendanceSubTab, setAttendanceSubTab] = useState<'diary' | 'aggregate'>('aggregate');
-  const [infractionSubTab, setInfractionSubTab] = useState<'list' | 'points' | 'add' | 'reduction' | 'rubric'>('points');
+  const [infractionSubTab, setInfractionSubTab] = useState<'student_points_table' | 'list' | 'points' | 'add' | 'reduction' | 'rubric'>('student_points_table');
+  const [studentPointsViewMode, setStudentPointsViewMode] = useState<'by_student' | 'all_rows'>('by_student');
 
   // Infraction rules rubric configuration inside Counselor Panel
   const [infractionRules, setInfractionRules] = useState<any[]>([]);
   const [loadingRules, setLoadingRules] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [ruleBabInput, setRuleBabInput] = useState('');
+  const [ruleSubBabInput, setRuleSubBabInput] = useState('');
+  const [ruleCodeInput, setRuleCodeInput] = useState('');
   const [ruleNameInput, setRuleNameInput] = useState('');
-  const [rulePointsInput, setRulePointsInput] = useState<number>(5);
+  const [ruleSanctionInput, setRuleSanctionInput] = useState('');
+  const [rulePointsInput, setRulePointsInput] = useState<number>(2);
   const [ruleCategoryInput, setRuleCategoryInput] = useState('Ringan');
+  const [rubricImportMode, setRubricImportMode] = useState<'append' | 'replace'>('append');
+  const [importingRubric, setImportingRubric] = useState(false);
+  const rubricFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [importingPoints, setImportingPoints] = useState(false);
+  const pointsFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Suggestion & Solutions form state
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
@@ -141,12 +153,12 @@ export default function CounselorPanel({
   const [printStudentSearch, setPrintStudentSearch] = useState("");
   const [selectedStudentForPrint, setSelectedStudentForPrint] = useState("");
 
-  // Point Reduction State
+  // Point Reduction State (Percentage-Based)
   const [allStudents, setAllStudents] = useState<Student[]>(() => (students && students.length > 0) ? students : []);
   const [reductionStudentId, setReductionStudentId] = useState("");
   const [reductionStudentSearch, setReductionStudentSearch] = useState("");
   const [draftStudentSearch, setDraftStudentSearch] = useState("");
-  const [reductionPoints, setReductionPoints] = useState(5);
+  const [reductionPercentage, setReductionPercentage] = useState<number>(25);
   const [reductionReason, setReductionReason] = useState("");
   const [reductionDate, setReductionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [reductionTime, setReductionTime] = useState(() => {
@@ -155,10 +167,18 @@ export default function CounselorPanel({
   });
   const [submittingReduction, setSubmittingReduction] = useState(false);
 
+  // Khusus Kelas 7: Tanggal Pemberlakuan Poin (Poin Alpa & pelanggaran lain sebelum tanggal ini tidak dihitung)
+  const [grade7PointsEffectiveDate, setGrade7PointsEffectiveDate] = useState<string>("");
+  const [savingGrade7Date, setSavingGrade7Date] = useState(false);
+
   // Direct Infraction Point Giving State (Guru BK -> Langsung ke MySQL)
   const [newInfractionStudentId, setNewInfractionStudentId] = useState("");
   const [newInfractionStudentSearch, setNewInfractionStudentSearch] = useState("");
   const [newInfractionRuleId, setNewInfractionRuleId] = useState("");
+  const [newInfractionBab, setNewInfractionBab] = useState("");
+  const [newInfractionSubBab, setNewInfractionSubBab] = useState("");
+  const [newInfractionSanction, setNewInfractionSanction] = useState("");
+  const [newInfractionNotes, setNewInfractionNotes] = useState("");
   const [newInfractionType, setNewInfractionType] = useState("");
   const [newInfractionPoints, setNewInfractionPoints] = useState<number>(5);
   const [newInfractionLocation, setNewInfractionLocation] = useState("Lingkungan Sekolah");
@@ -214,12 +234,13 @@ export default function CounselorPanel({
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [resCouns, resAtt, resInf, resRules, resJournals] = await Promise.all([
+      const [resCouns, resAtt, resInf, resRules, resJournals, resBkSettings] = await Promise.all([
         fetch("/api/student-counseling-logs"),
         fetch("/api/attendance"),
         fetch("/api/student-infraction-logs"),
         fetch("/api/infraction-rules"),
-        fetch("/api/teaching-journals")
+        fetch("/api/teaching-journals"),
+        fetch("/api/bk/infraction-settings")
       ]);
 
       if (resCouns.ok) {
@@ -242,6 +263,10 @@ export default function CounselorPanel({
         const data = await resJournals.json();
         setTeachingJournals(Array.isArray(data) ? data : []);
       }
+      if (resBkSettings.ok) {
+        const cfg = await resBkSettings.json();
+        setGrade7PointsEffectiveDate(String(cfg?.grade7PointsEffectiveDate || "").substring(0, 10));
+      }
 
       // If students prop is empty or missing, fetch students in background
       if (!students || students.length === 0) {
@@ -258,16 +283,117 @@ export default function CounselorPanel({
     }
   };
 
+  const isGrade7ClassName = (cls?: string): boolean => {
+    const clean = String(cls || "").trim();
+    return /^(?:kelas\s*)?(?:7|vii)(?:$|[^0-9i])/i.test(clean);
+  };
+
+  // Filter seluruh pelanggaran (termasuk Alpa & pelanggaran lainnya): jika Kelas 7 dan tanggal < grade7PointsEffectiveDate, tidak dihitung
+  const effectiveInfractions = useMemo(() => {
+    const effDate = String(grade7PointsEffectiveDate || "").trim().substring(0, 10);
+    if (!effDate) return infractions;
+    return infractions.filter(inf => {
+      const d = String(inf.date || "").trim().substring(0, 10);
+      if (!d) return true;
+      let cls = String(inf.className || "").trim();
+      if (!cls || cls === "-") {
+        const matched = allStudents.find(
+          s =>
+            s.id === inf.studentId ||
+            (s.nis && s.nis === inf.studentId) ||
+            s.name.trim().toLowerCase() === String(inf.studentName || "").trim().toLowerCase()
+        );
+        if (matched?.class) cls = matched.class;
+      }
+      if (isGrade7ClassName(cls) && d < effDate) {
+        return false;
+      }
+      return true;
+    });
+  }, [infractions, grade7PointsEffectiveDate, allStudents]);
+
+  const handleSaveGrade7EffectiveDate = async (nextDate: string) => {
+    setSavingGrade7Date(true);
+    try {
+      const clean = String(nextDate || "").trim().substring(0, 10);
+      const res = await fetch("/api/bk/infraction-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grade7PointsEffectiveDate: clean })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setGrade7PointsEffectiveDate(String(data.grade7PointsEffectiveDate || ""));
+        if (Array.isArray(data.studentInfractionLogs)) {
+          setInfractions(data.studentInfractionLogs);
+        } else {
+          fetchAllData();
+        }
+        setSuccessMsg(data.message || "Pengaturan tanggal pemberlakuan poin Kelas 7 berhasil disimpan.");
+        setTimeout(() => setSuccessMsg(null), 4000);
+      } else {
+        alert(data.error || "Gagal menyimpan tanggal pemberlakuan poin Kelas 7.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Gagal menghubungi server untuk menyimpan pengaturan Kelas 7.");
+    } finally {
+      setSavingGrade7Date(false);
+    }
+  };
+
+  // Calculate accumulated points per student for percentage-based reduction
+  const studentPointsMapForReduction = useMemo(() => {
+    const map = new Map<string, number>();
+    effectiveInfractions.forEach(inf => {
+      const matched = allStudents.find(
+        s =>
+          s.id === inf.studentId ||
+          (s.nis && s.nis === inf.studentId) ||
+          s.name.trim().toLowerCase() === String(inf.studentName || '').trim().toLowerCase()
+      );
+      const key = matched ? matched.id : String(inf.studentId || '');
+      if (!key) return;
+      const prev = map.get(key) || 0;
+      map.set(key, Number((prev + (Number(inf.points) || 0)).toFixed(2)));
+    });
+    map.forEach((val, key) => {
+      if (val < 0) map.set(key, 0);
+    });
+    return map;
+  }, [effectiveInfractions, allStudents]);
+
+  const selectedReductionStudentCurrentPoints = useMemo(() => {
+    if (!reductionStudentId) return 0;
+    return Math.max(0, studentPointsMapForReduction.get(reductionStudentId) || 0);
+  }, [reductionStudentId, studentPointsMapForReduction]);
+
+  const calculatedReductionPoints = useMemo(() => {
+    if (selectedReductionStudentCurrentPoints <= 0) return 0;
+    const pct = Math.min(100, Math.max(0, Number(reductionPercentage) || 0));
+    return Number(((selectedReductionStudentCurrentPoints * pct) / 100).toFixed(2));
+  }, [selectedReductionStudentCurrentPoints, reductionPercentage]);
+
+  const remainingPointsAfterReduction = useMemo(() => {
+    return Math.max(0, Number((selectedReductionStudentCurrentPoints - calculatedReductionPoints).toFixed(2)));
+  }, [selectedReductionStudentCurrentPoints, calculatedReductionPoints]);
+
   const handleSubmitReduction = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reductionStudentId || !reductionPoints || !reductionReason.trim()) {
-      alert("Mohon lengkapi seluruh field point reduction.");
+    const pct = Number(reductionPercentage) || 0;
+    if (!reductionStudentId || pct <= 0 || pct > 100 || !reductionReason.trim()) {
+      alert("Mohon pilih siswa, isi persentase pengurangan (1% - 100%), dan lengkapi alasan pengurangan poin.");
       return;
     }
 
     const student = allStudents.find(s => s.id === reductionStudentId);
     if (!student) {
       alert("Siswa tidak ditemukan.");
+      return;
+    }
+
+    if (selectedReductionStudentCurrentPoints <= 0 || calculatedReductionPoints <= 0) {
+      alert(`Siswa ${student.name} saat ini memiliki 0 poin pelanggaran, sehingga tidak ada poin yang dapat dikurangi.`);
       return;
     }
 
@@ -283,15 +409,19 @@ export default function CounselorPanel({
           date: reductionDate,
           time: reductionTime,
           location: "Ruang Bimbingan Konseling (BK)",
-          infractionType: `Pengurangan Poin (BK): ${reductionReason.trim()}`,
-          actionTaken: `Hasil pembinaan & bimbingan siswa selesai (Poin dikurangi ${reductionPoints})`,
+          infractionType: `Pengurangan Poin (${pct}%): ${reductionReason.trim()}`,
+          actionTaken: `Hasil pembinaan & bimbingan BK selesai (Poin dikurangi ${pct}% / -${calculatedReductionPoints} Poin dari ${selectedReductionStudentCurrentPoints} Poin, sisa ${remainingPointsAfterReduction} Poin)`,
+          notes: `Pengurangan ${pct}% (-${calculatedReductionPoints} Poin dari total ${selectedReductionStudentCurrentPoints} Poin). Alasan: ${reductionReason.trim()}`,
           resolutionStatus: 'Selesai',
-          points: -Math.abs(reductionPoints) // Save as a negative value!
+          points: -Math.abs(calculatedReductionPoints),
+          source: 'reduction_bk'
         })
       });
 
       if (res.ok) {
-        setSuccessMsg(`Berhasil mencatatkan pengurangan ${reductionPoints} poin tata tertib untuk ${student.name}.`);
+        setSuccessMsg(
+          `Berhasil mengurangi ${pct}% (-${calculatedReductionPoints} Poin) untuk ${student.name}. Sisa poin: ${remainingPointsAfterReduction} Poin.`
+        );
         setReductionReason("");
         setReductionStudentId("");
         fetchAllData();
@@ -338,9 +468,15 @@ export default function CounselorPanel({
           time: newInfractionTime,
           location: newInfractionLocation.trim() || "Lingkungan Sekolah",
           infractionType: newInfractionType.trim(),
-          actionTaken: newInfractionActionTaken.trim() || "Pembinaan disiplin dan konseling oleh Guru BK",
+          actionTaken: newInfractionActionTaken.trim() || newInfractionSanction.trim() || "Pembinaan disiplin dan konseling oleh Guru BK",
           resolutionStatus: newInfractionResolutionStatus,
-          points: Math.abs(Number(newInfractionPoints)) || 5
+          points: Math.abs(Number(newInfractionPoints)) || 5,
+          bab: newInfractionBab.trim(),
+          subBab: newInfractionSubBab.trim(),
+          sanction: newInfractionSanction.trim(),
+          notes: newInfractionNotes.trim(),
+          ruleId: newInfractionRuleId,
+          source: 'manual_bk'
         })
       });
 
@@ -349,6 +485,10 @@ export default function CounselorPanel({
         const mysqlStatus = data.mysqlSaved ? " (Tersimpan langsung ke database MySQL)" : "";
         setSuccessMsg(`Berhasil memberikan ${newInfractionPoints} poin pelanggaran untuk ${student.name}${mysqlStatus}.`);
         setNewInfractionType("");
+        setNewInfractionBab("");
+        setNewInfractionSubBab("");
+        setNewInfractionSanction("");
+        setNewInfractionNotes("");
         setNewInfractionPoints(5);
         setNewInfractionStudentId("");
         setNewInfractionRuleId("");
@@ -356,7 +496,7 @@ export default function CounselorPanel({
         setNewInfractionActionTaken("Pembinaan disiplin dan konseling oleh Guru BK");
         fetchAllData();
         onRefresh();
-        setInfractionSubTab('points');
+        setInfractionSubTab('student_points_table');
 
         // Auto dismiss success toast message after 4s
         setTimeout(() => setSuccessMsg(null), 4000);
@@ -425,19 +565,30 @@ export default function CounselorPanel({
     try {
       const url = editingRuleId ? `/api/infraction-rules/${editingRuleId}` : '/api/infraction-rules';
       const method = editingRuleId ? 'PUT' : 'POST';
+      const formattedName = ruleCodeInput.trim() && !ruleNameInput.trim().startsWith(ruleCodeInput.trim())
+        ? `${ruleCodeInput.trim()} ${ruleNameInput.trim()}`
+        : ruleNameInput.trim();
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: ruleNameInput.trim(),
+          bab: ruleBabInput.trim(),
+          subBab: ruleSubBabInput.trim().replace(/:$/, ''),
+          code: ruleCodeInput.trim(),
+          name: formattedName,
+          sanction: ruleSanctionInput.trim(),
           points: Number(rulePointsInput),
           category: ruleCategoryInput
         })
       });
       if (res.ok) {
-        setSuccessMsg(editingRuleId ? 'Sukses memperbarui acuan sanksi!' : 'Sukses menambah acuan sanksi baru!');
+        setSuccessMsg(editingRuleId ? 'Sukses memperbarui acuan sanksi di MySQL!' : 'Sukses menambah acuan sanksi baru ke MySQL!');
+        setRuleBabInput('');
+        setRuleSubBabInput('');
+        setRuleCodeInput('');
         setRuleNameInput('');
-        setRulePointsInput(5);
+        setRuleSanctionInput('');
+        setRulePointsInput(2);
         setRuleCategoryInput('Ringan');
         setEditingRuleId(null);
         
@@ -460,12 +611,12 @@ export default function CounselorPanel({
   };
 
   const handleDeleteRule = async (id: string) => {
-    if (!window.confirm('Yakin ingin menghapus acuan rules pelanggaran ini secara permanen?')) return;
+    if (!window.confirm('Yakin ingin menghapus acuan rules pelanggaran ini secara permanen dari MySQL?')) return;
     setLoadingRules(true);
     try {
       const res = await fetch(`/api/infraction-rules/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        setSuccessMsg('Acuan sanksi berhasil dihapus.');
+        setSuccessMsg('Acuan sanksi berhasil dihapus dari MySQL.');
         setEditingRuleId(null);
         setRuleNameInput('');
         
@@ -483,6 +634,644 @@ export default function CounselorPanel({
       alert('Kehilangan sinyal server.');
     } finally {
       setLoadingRules(false);
+    }
+  };
+
+  // ============================================================================
+  // 1. TEMPLATE & IMPORT RUBRIK SANKSI (BAB, SUB BAB, BUTIR, SANKSI, BESAR POIN)
+  // ============================================================================
+  const handleDownloadRubricTemplateCsv = () => {
+    const lines = [
+      "BAB,SUB BAB,Kode,Jenis Pelanggaran,Sanksi,Besar Poin,Kategori",
+      '"BAB 1 Kerapian","SUB BAB 1 Seragam Murid","1.1","1.1 Corat-coret topi","Teguran Langsung","2","Ringan"',
+      '"BAB 1 Kerapian","SUB BAB 1 Seragam Murid","1.2","1.2 Memakai topi tidak beridentitas sekolah","Teguran Langsung","2","Ringan"',
+      "",
+      "# ===========================================================================",
+      "# CATATAN: Anda juga dapat menulis dengan format blok berurutan seperti contoh:",
+      "# BAB 1 Kerapian",
+      "# SUB BAB 1 Seragam Murid:",
+      "# 1.1 Corat-coret topi",
+      "# 1.2 Memakai topi tidak beridentitas sekolah",
+      "# Sanksi=Teguran Langsung",
+      "# Besar Poin=2",
+      "# ==========================================================================="
+    ];
+    const csvContent = "\uFEFF" + lines.join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "TEMPLATE_RUBRIK_SANKSI_BK.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadRubricTemplateExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const tableRows = [
+      ["BAB", "SUB BAB", "Kode", "Jenis Pelanggaran", "Sanksi", "Besar Poin", "Kategori"],
+      ["BAB 1 Kerapian", "SUB BAB 1 Seragam Murid", "1.1", "1.1 Corat-coret topi", "Teguran Langsung", 2, "Ringan"],
+      ["BAB 1 Kerapian", "SUB BAB 1 Seragam Murid", "1.2", "1.2 Memakai topi tidak beridentitas sekolah", "Teguran Langsung", 2, "Ringan"]
+    ];
+    const wsTable = XLSX.utils.aoa_to_sheet(tableRows);
+    wsTable["!cols"] = [
+      { wch: 22 },
+      { wch: 28 },
+      { wch: 10 },
+      { wch: 42 },
+      { wch: 25 },
+      { wch: 12 },
+      { wch: 14 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsTable, "Template Tabel Rubrik");
+
+    const blockRows = [
+      ["BAB 1 Kerapian"],
+      ["SUB BAB 1 Seragam Murid:"],
+      ["1.1  Corat-coret topi"],
+      ["1.2 Memakai topi tidak beridentitas sekolah"],
+      ["Sanksi=Teguran Langsung"],
+      ["Besar Poin=2"]
+    ];
+    const wsBlock = XLSX.utils.aoa_to_sheet(blockRows);
+    wsBlock["!cols"] = [{ wch: 55 }];
+    XLSX.utils.book_append_sheet(wb, wsBlock, "Format Blok BAB & SUB BAB");
+
+    XLSX.writeFile(wb, "TEMPLATE_RUBRIK_SANKSI_BK.xlsx");
+  };
+
+  const parseRubricFromSheetRows = (rows: any[][]): any[] => {
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+
+    // 1. Cek apakah menggunakan format Tabel Kolom (Header: BAB, SUB BAB, Jenis Pelanggaran, Sanksi, Besar Poin)
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const rowCells = (rows[i] || []).map((c: any) => String(c ?? "").trim().toLowerCase());
+      const hasBabCol = rowCells.some(c => c === "bab" || c.startsWith("bab "));
+      const hasSubBabCol = rowCells.some(c => c.includes("sub bab") || c.includes("sub_bab") || c.includes("subbab"));
+      const hasNameCol = rowCells.some(c => c.includes("pelanggaran") || c.includes("aturan") || c.includes("deskripsi") || c.includes("butir"));
+      if ((hasBabCol && hasSubBabCol) || hasNameCol) {
+        if (rowCells.filter(Boolean).length >= 3) {
+          headerIdx = i;
+          break;
+        }
+      }
+    }
+
+    const parsedRules: any[] = [];
+
+    if (headerIdx !== -1) {
+      const headers = (rows[headerIdx] || []).map((c: any) => String(c ?? "").trim().toLowerCase());
+      const colBab = headers.findIndex(h => h === "bab");
+      const colSubBab = headers.findIndex(h => h.includes("sub bab") || h.includes("sub_bab") || h.includes("subbab"));
+      const colCode = headers.findIndex(h => h === "kode" || h === "code" || h === "no" || h === "nomor");
+      const colName = headers.findIndex(h => h.includes("pelanggaran") || h.includes("aturan") || h.includes("deskripsi") || h.includes("butir") || h === "nama");
+      const colSanction = headers.findIndex(h => h.includes("sanksi") || h.includes("tindakan"));
+      const colPoints = headers.findIndex(h => h.includes("poin") || h.includes("point") || h.includes("bobot"));
+      const colCat = headers.findIndex(h => h.includes("kategori") || h.includes("tingkat"));
+
+      let activeBab = "";
+      let activeSubBab = "";
+      let activeSanction = "";
+      let activePoints = 0;
+
+      for (let r = headerIdx + 1; r < rows.length; r++) {
+        const row = rows[r] || [];
+        const firstCell = String(row[0] ?? "").trim();
+        if (firstCell.startsWith("#")) continue;
+
+        const rawBab = colBab !== -1 ? String(row[colBab] ?? "").trim() : "";
+        const rawSubBab = colSubBab !== -1 ? String(row[colSubBab] ?? "").trim().replace(/:$/, "") : "";
+        const rawCode = colCode !== -1 ? String(row[colCode] ?? "").trim() : "";
+        const rawName = colName !== -1 ? String(row[colName] ?? "").trim() : "";
+        const rawSanction = colSanction !== -1 ? String(row[colSanction] ?? "").trim() : "";
+        const rawPtsStr = colPoints !== -1 ? String(row[colPoints] ?? "").trim() : "";
+        const rawCat = colCat !== -1 ? String(row[colCat] ?? "").trim() : "";
+
+        if (rawBab) activeBab = rawBab;
+        if (rawSubBab) activeSubBab = rawSubBab;
+        if (rawSanction) activeSanction = rawSanction;
+        if (rawPtsStr !== "" && !isNaN(Number(rawPtsStr))) activePoints = Number(rawPtsStr);
+
+        if (!rawName) continue;
+
+        let extractedCode = rawCode;
+        let finalName = rawName;
+        const codeMatch = rawName.match(/^(\d+(?:\.\d+)+)\s+(.+)$/);
+        if (!extractedCode && codeMatch) {
+          extractedCode = codeMatch[1];
+        } else if (extractedCode && !rawName.startsWith(extractedCode)) {
+          finalName = `${extractedCode} ${rawName}`;
+        }
+
+        const pts = rawPtsStr !== "" && !isNaN(Number(rawPtsStr)) ? Number(rawPtsStr) : (activePoints || 2);
+        const sanction = rawSanction || activeSanction || "Teguran Langsung";
+        const category = rawCat || (pts >= 25 ? "Berat" : pts >= 10 ? "Sedang" : "Ringan");
+
+        parsedRules.push({
+          bab: activeBab,
+          subBab: activeSubBab,
+          code: extractedCode,
+          name: finalName,
+          sanction,
+          points: pts,
+          category
+        });
+      }
+
+      if (parsedRules.length > 0) return parsedRules;
+    }
+
+    // 2. Format Blok Berurutan (BAB 1 ..., SUB BAB 1 ..., 1.1 ..., 1.2 ..., Sanksi=..., Besar Poin=...)
+    let currentBab = "";
+    let currentSubBab = "";
+    let blockSanction = "";
+    let blockPoints = 0;
+    let pendingItems: { code: string; name: string }[] = [];
+    let seenMetaAfterItems = false;
+
+    const flushPendingItems = () => {
+      if (pendingItems.length === 0) return;
+      const pts = blockPoints > 0 ? blockPoints : 2;
+      const sanction = blockSanction || "Teguran Langsung";
+      const category = pts >= 25 ? "Berat" : pts >= 10 ? "Sedang" : "Ringan";
+      for (const item of pendingItems) {
+        parsedRules.push({
+          bab: currentBab,
+          subBab: currentSubBab,
+          code: item.code,
+          name: item.name,
+          sanction,
+          points: pts,
+          category
+        });
+      }
+      pendingItems = [];
+      seenMetaAfterItems = false;
+    };
+
+    for (let r = 0; r < rows.length; r++) {
+      const row = (rows[r] || []).map((c: any) => String(c ?? "").trim()).filter(Boolean);
+      if (row.length === 0) continue;
+      const fullLine = row.join(" ").trim();
+      if (!fullLine || fullLine.startsWith("#")) continue;
+
+      if (/^bab\b/i.test(fullLine)) {
+        flushPendingItems();
+        currentBab = fullLine.replace(/:$/, "").trim();
+        currentSubBab = "";
+        blockSanction = "";
+        blockPoints = 0;
+        continue;
+      }
+
+      if (/^sub\s*bab\b/i.test(fullLine)) {
+        flushPendingItems();
+        currentSubBab = fullLine.replace(/:$/, "").trim();
+        blockSanction = "";
+        blockPoints = 0;
+        continue;
+      }
+
+      const sanksiMatch = fullLine.match(/^sanksi\s*[=:]\s*(.+)$/i) || (row.length >= 2 && /^sanksi$/i.test(row[0]) ? [null, row.slice(1).join(" ")] : null);
+      if (sanksiMatch && sanksiMatch[1]) {
+        blockSanction = sanksiMatch[1].trim();
+        if (pendingItems.length > 0) seenMetaAfterItems = true;
+        continue;
+      }
+
+      const poinMatch = fullLine.match(/^(?:besar\s*)?poin\s*[=:]\s*(\d+(?:\.\d+)?)/i) || (row.length >= 2 && /^(?:besar\s*)?poin$/i.test(row[0]) ? [null, row[1]] : null);
+      if (poinMatch && poinMatch[1]) {
+        blockPoints = Number(poinMatch[1]) || 0;
+        if (pendingItems.length > 0) seenMetaAfterItems = true;
+        continue;
+      }
+
+      // Jika sudah pernah melihat Sanksi=... / Besar Poin=... setelah daftar butir, dan sekarang ketemu butir baru, flush blok sebelumnya
+      if (seenMetaAfterItems && pendingItems.length > 0) {
+        flushPendingItems();
+      }
+
+      const itemMatch = fullLine.match(/^(\d+(?:\.\d+)*)\s+(.+)$/);
+      if (itemMatch) {
+        const code = itemMatch[1].trim();
+        const text = itemMatch[2].trim();
+        pendingItems.push({
+          code,
+          name: `${code} ${text}`
+        });
+      } else {
+        pendingItems.push({
+          code: "",
+          name: fullLine
+        });
+      }
+    }
+
+    flushPendingItems();
+    return parsedRules;
+  };
+
+  const handleImportRubricFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    setImportingRubric(true);
+    setErrorMsg(null);
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const firstSheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[firstSheetName];
+      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+
+      const parsedRules = parseRubricFromSheetRows(rows);
+      if (parsedRules.length === 0) {
+        alert("Tidak ditemukan data rubrik sanksi yang valid di dalam file. Pastikan format sesuai template.");
+        return;
+      }
+
+      const res = await fetch("/api/infraction-rules/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rules: parsedRules,
+          mode: rubricImportMode
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setInfractionRules(Array.isArray(data.infractionRules) ? data.infractionRules : []);
+        setSuccessMsg(`Berhasil mengimpor ${data.count} rubrik sanksi (BAB & SUB BAB) langsung ke database MySQL!`);
+        setTimeout(() => setSuccessMsg(null), 5000);
+        onRefresh();
+      } else {
+        alert(data.error || "Gagal menyimpan hasil import rubrik sanksi ke MySQL.");
+      }
+    } catch (err: any) {
+      console.error("[Import Rubric Error]:", err);
+      alert("Gagal membaca file Excel/CSV rubrik: " + (err?.message || String(err)));
+    } finally {
+      setImportingRubric(false);
+    }
+  };
+
+  // ============================================================================
+  // 2. TEMPLATE & IMPORT PEMBERIAN POIN PELANGGARAN SISWA (OTOMATIS TERISI SEMUA SISWA AKTIF + MULTI-ISIAN PELANGGARAN + REFERENSI RUBRIK)
+  // ============================================================================
+  const activeStudentsSorted = useMemo(() => {
+    return [...allStudents]
+      .filter(s => {
+        const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === "mutasi" || s.class.toLowerCase() === "mutasi keluar"));
+        const isLulus = s.class && (s.class.toLowerCase() === "lulus" || s.class.toLowerCase() === "lulusan");
+        if (isMut || isLulus) return false;
+        if (classFilter !== "all" && s.class !== classFilter) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const cmpClass = (a.class || "").localeCompare(b.class || "", "id", { numeric: true, sensitivity: "base" });
+        if (cmpClass !== 0) return cmpClass;
+        return (a.name || "").localeCompare(b.name || "", "id", { sensitivity: "base" });
+      });
+  }, [allStudents, classFilter]);
+
+  const getRuleDisplayNumber = (r: any, idx: number): string => {
+    if (r?.code && String(r.code).trim()) return String(r.code).trim();
+    const m = String(r?.name || "").trim().match(/^(\d+(?:\.\d+)*)/);
+    if (m) return m[1];
+    return String(idx + 1);
+  };
+
+  const handleDownloadPointsTemplateCsv = () => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const csvEscape = (val: any) => {
+      const s = String(val ?? "");
+      if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+
+    const lines: string[] = [];
+    // Header Utama: Otomatis terisi semua siswa aktif; BK tinggal mengisi Nomor Pelanggaran (misal 1.1, 1.2) dan Keterangan Tambahan
+    lines.push(
+      [
+        "No",
+        "Tanggal",
+        "NIS",
+        "Nama Siswa",
+        "Kelas",
+        "Nomor Pelanggaran 1 (Contoh: 1.1)",
+        "Keterangan Tambahan 1",
+        "Nomor Pelanggaran 2 (Contoh: 1.2)",
+        "Keterangan Tambahan 2",
+        "Nomor Pelanggaran 3",
+        "Keterangan Tambahan 3"
+      ].map(csvEscape).join(",")
+    );
+
+    activeStudentsSorted.forEach((st, idx) => {
+      lines.push(
+        [
+          idx + 1,
+          todayStr,
+          st.nis || st.id,
+          st.name,
+          st.class,
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ].map(csvEscape).join(",")
+      );
+    });
+
+    lines.push("");
+    lines.push("# ===================================================================================================");
+    lines.push("# DAFTAR REFERENSI NOMOR PELANGGARAN SESUAI RUBRIK POIN (TINGGAL ISI NOMOR PELANGGARAN DI KOLOM ATAS)");
+    lines.push("# Contoh pengisian: tulis 1.1 pada kolom Nomor Pelanggaran 1, dan isi Keterangan Tambahan jika ada.");
+    lines.push("# 1 Siswa dapat diisi beberapa pelanggaran pada Nomor Pelanggaran 1, 2, 3 atau dipisah titik koma (;).");
+    lines.push("# ===================================================================================================");
+    lines.push("# Nomor Pelanggaran,BAB,SUB BAB,Jenis Pelanggaran (Rubrik),Sanksi,Besar Poin,Kategori");
+
+    if (infractionRules.length === 0) {
+      lines.push('# "1.1","BAB 1 Kerapian","SUB BAB 1 Seragam Murid","1.1 Corat-coret topi","Teguran Langsung",2,"Ringan"');
+      lines.push('# "1.2","BAB 1 Kerapian","SUB BAB 1 Seragam Murid","1.2 Memakai topi tidak beridentitas sekolah","Teguran Langsung",2,"Ringan"');
+    } else {
+      infractionRules.forEach((r, idx) => {
+        lines.push(
+          "# " +
+            [
+              getRuleDisplayNumber(r, idx),
+              r.bab || "-",
+              r.subBab || "-",
+              r.name || "-",
+              r.sanction || "-",
+              r.points || 0,
+              r.category || "Ringan"
+            ].map(csvEscape).join(",")
+        );
+      });
+    }
+
+    const csvContent = "\uFEFF" + lines.join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const suffix = classFilter !== "all" ? `_KELAS_${classFilter}` : "_SEMUA_SISWA_AKTIF";
+    link.download = `TEMPLATE_IMPORT_POINT_PELANGGARAN_BK${suffix}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadPointsTemplateExcel = () => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const wb = XLSX.utils.book_new();
+
+    const headerRow = [
+      "No",
+      "Tanggal",
+      "NIS",
+      "Nama Siswa",
+      "Kelas",
+      "Nomor Pelanggaran 1 (Contoh: 1.1)",
+      "Keterangan Tambahan 1",
+      "Nomor Pelanggaran 2 (Contoh: 1.2)",
+      "Keterangan Tambahan 2",
+      "Nomor Pelanggaran 3",
+      "Keterangan Tambahan 3",
+      "",
+      "REFERENSI: Nomor Pelanggaran",
+      "REFERENSI: BAB",
+      "REFERENSI: SUB BAB",
+      "REFERENSI: Jenis Pelanggaran (Rubrik)",
+      "REFERENSI: Sanksi",
+      "REFERENSI: Besar Poin"
+    ];
+
+    const maxRows = Math.max(activeStudentsSorted.length, infractionRules.length, 1);
+    const sheetRows: any[][] = [headerRow];
+
+    for (let i = 0; i < maxRows; i++) {
+      const st = activeStudentsSorted[i];
+      const rule = infractionRules[i];
+      sheetRows.push([
+        st ? i + 1 : "",
+        st ? todayStr : "",
+        st ? (st.nis || st.id) : "",
+        st ? st.name : "",
+        st ? st.class : "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        rule ? getRuleDisplayNumber(rule, i) : "",
+        rule ? (rule.bab || "-") : "",
+        rule ? (rule.subBab || "-") : "",
+        rule ? (rule.name || "-") : "",
+        rule ? (rule.sanction || "-") : "",
+        rule ? (rule.points ?? 0) : ""
+      ]);
+    }
+
+    const wsInput = XLSX.utils.aoa_to_sheet(sheetRows);
+    wsInput["!cols"] = [
+      { wch: 6 },
+      { wch: 13 },
+      { wch: 14 },
+      { wch: 28 },
+      { wch: 10 },
+      { wch: 30 },
+      { wch: 28 },
+      { wch: 30 },
+      { wch: 28 },
+      { wch: 26 },
+      { wch: 28 },
+      { wch: 4 },
+      { wch: 22 },
+      { wch: 22 },
+      { wch: 26 },
+      { wch: 38 },
+      { wch: 24 },
+      { wch: 14 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsInput, "Input Point Pelanggaran");
+
+    const refRows: any[][] = [
+      ["Nomor Pelanggaran", "BAB", "SUB BAB", "Jenis Pelanggaran (Rubrik)", "Sanksi", "Besar Poin", "Kategori"]
+    ];
+    infractionRules.forEach((r, idx) => {
+      refRows.push([
+        getRuleDisplayNumber(r, idx),
+        r.bab || "-",
+        r.subBab || "-",
+        r.name || "-",
+        r.sanction || "-",
+        r.points ?? 0,
+        r.category || "Ringan"
+      ]);
+    });
+    const wsRef = XLSX.utils.aoa_to_sheet(refRows);
+    wsRef["!cols"] = [
+      { wch: 18 },
+      { wch: 24 },
+      { wch: 28 },
+      { wch: 42 },
+      { wch: 26 },
+      { wch: 14 },
+      { wch: 14 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsRef, "Referensi Rubrik Point");
+
+    const suffix = classFilter !== "all" ? `_KELAS_${classFilter}` : "_SEMUA_SISWA_AKTIF";
+    XLSX.writeFile(wb, `TEMPLATE_IMPORT_POINT_PELANGGARAN_BK${suffix}.xlsx`);
+  };
+
+  const handleImportPointsFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    setImportingPoints(true);
+    setErrorMsg(null);
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const firstSheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[firstSheetName];
+      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+
+      if (!rows || rows.length < 2) {
+        alert("File kosong atau tidak memiliki baris data.");
+        return;
+      }
+
+      // Cari baris header utama
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        const cells = (rows[i] || []).map((c: any) => String(c ?? "").trim().toLowerCase());
+        if (cells.some(c => c === "nis" || c.includes("nama siswa") || c.includes("pelanggaran"))) {
+          headerIdx = i;
+          break;
+        }
+      }
+
+      const headers = (rows[headerIdx] || []).map((c: any) => String(c ?? "").trim().toLowerCase());
+      const colDate = headers.findIndex(h => h.includes("tanggal") || h === "date");
+      const colNis = headers.findIndex(h => h === "nis" || h === "nisn" || h === "id siswa");
+      const colName = headers.findIndex(h => h.includes("nama siswa") || h === "nama" || h === "student_name");
+      const colClass = headers.findIndex(h => h === "kelas" || h === "class");
+
+      // Deteksi seluruh pasangan kolom Pelanggaran & Keterangan Tambahan (mendukung 1 siswa banyak isian kolom maupun banyak baris)
+      const infractionSlotCols: { infCol: number; notesCol: number; pointsCol: number; sanctionCol: number }[] = [];
+      headers.forEach((h, idx) => {
+        if (h.startsWith("referensi:")) return; // Abaikan kolom tabel referensi di sebelah kanan
+        if (h.includes("pelanggaran") || h.includes("kode") || h.includes("rubrik")) {
+          // Cari apakah ada kolom keterangan/poin/sanksi setelahnya
+          const slotNumMatch = h.match(/(\d+)/);
+          const slotNum = slotNumMatch ? slotNumMatch[1] : "";
+          const notesCol = headers.findIndex((nh, nIdx) =>
+            nIdx > idx &&
+            !nh.startsWith("referensi:") &&
+            (nh.includes("keterangan") || nh.includes("catatan") || nh === "notes") &&
+            (!slotNum || nh.includes(slotNum))
+          );
+          const pointsCol = headers.findIndex((ph, pIdx) =>
+            pIdx > idx &&
+            !ph.startsWith("referensi:") &&
+            (ph.includes("poin") || ph.includes("point")) &&
+            (!slotNum || ph.includes(slotNum))
+          );
+          const sanctionCol = headers.findIndex((sh, sIdx) =>
+            sIdx > idx &&
+            !sh.startsWith("referensi:") &&
+            sh.includes("sanksi") &&
+            (!slotNum || sh.includes(slotNum))
+          );
+          infractionSlotCols.push({ infCol: idx, notesCol, pointsCol, sanctionCol });
+        }
+      });
+
+      const itemsToImport: any[] = [];
+      const todayStr = new Date().toISOString().split("T")[0];
+
+      for (let r = headerIdx + 1; r < rows.length; r++) {
+        const row = rows[r] || [];
+        const firstNonEmpty = row.map((c: any) => String(c ?? "").trim()).find(Boolean) || "";
+        if (!firstNonEmpty || firstNonEmpty.startsWith("#")) continue;
+
+        const nis = colNis !== -1 ? String(row[colNis] ?? "").trim() : "";
+        const studentName = colName !== -1 ? String(row[colName] ?? "").trim() : "";
+        const className = colClass !== -1 ? String(row[colClass] ?? "").trim() : "";
+        const dateVal = colDate !== -1 && String(row[colDate] ?? "").trim() ? String(row[colDate] ?? "").trim() : todayStr;
+
+        if (!nis && !studentName) continue;
+        if (nis.toLowerCase() === "nis" || studentName.toLowerCase() === "nama siswa") continue;
+
+        for (const slot of infractionSlotCols) {
+          const rawPelanggaranCell = String(row[slot.infCol] ?? "").trim();
+          if (!rawPelanggaranCell || rawPelanggaranCell === "-") continue;
+
+          const rawNotesCell = slot.notesCol !== -1 ? String(row[slot.notesCol] ?? "").trim() : "";
+          const rawPointsCell = slot.pointsCol !== -1 ? String(row[slot.pointsCol] ?? "").trim() : "";
+          const rawSanctionCell = slot.sanctionCol !== -1 ? String(row[slot.sanctionCol] ?? "").trim() : "";
+
+          // Mendukung pengisian beberapa kode/pelanggaran dipisah titik koma (;) di dalam 1 sel juga
+          const splitRefs = rawPelanggaranCell.split(";").map(s => s.trim()).filter(Boolean);
+          for (const refItem of splitRefs) {
+            itemsToImport.push({
+              nis,
+              studentName,
+              className,
+              date: dateVal,
+              ruleRef: refItem,
+              infractionType: refItem,
+              notes: rawNotesCell,
+              points: rawPointsCell !== "" && !isNaN(Number(rawPointsCell)) ? Number(rawPointsCell) : undefined,
+              sanction: rawSanctionCell || undefined
+            });
+          }
+        }
+      }
+
+      if (itemsToImport.length === 0) {
+        alert("Tidak ditemukan isian pelanggaran pada file yang diunggah. Pastikan kolom Pelanggaran sudah diisi pada baris siswa yang melanggar.");
+        return;
+      }
+
+      const res = await fetch("/api/student-infraction-logs/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: itemsToImport })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (Array.isArray(data.studentInfractionLogs)) {
+          setInfractions(data.studentInfractionLogs);
+        } else {
+          fetchAllData();
+        }
+        setSuccessMsg(`Berhasil mengimpor ${data.count} data poin pelanggaran siswa langsung ke MySQL dan dimasukkan ke Daftar/Tabel Point Pelanggaran Siswa!`);
+        setInfractionSubTab("student_points_table");
+        setTimeout(() => setSuccessMsg(null), 5000);
+        onRefresh();
+      } else {
+        alert(data.error || "Gagal mengimpor poin pelanggaran siswa.");
+      }
+    } catch (err: any) {
+      console.error("[Import Points Error]:", err);
+      alert("Gagal membaca file import poin pelanggaran: " + (err?.message || String(err)));
+    } finally {
+      setImportingPoints(false);
     }
   };
 
@@ -1338,7 +2127,7 @@ export default function CounselorPanel({
   const aggregatedInfractions = useMemo(() => {
     const map: { [key: string]: { id: string; name: string; className: string; points: number; count: number; list: StudentInfractionLog[] } } = {};
 
-    infractions.forEach(log => {
+    effectiveInfractions.forEach(log => {
       if (infractionStartDate || infractionEndDate) {
         const d = log.date ? log.date.substring(0, 10) : "";
         if (infractionStartDate && d < infractionStartDate) return;
@@ -1356,13 +2145,19 @@ export default function CounselorPanel({
           list: []
         };
       }
-      map[key].points += (log.points || 0);
-      map[key].count++;
+      map[key].points = Number((map[key].points + (Number(log.points) || 0)).toFixed(2));
+      if ((Number(log.points) || 0) > 0) {
+        map[key].count++;
+      }
       map[key].list.push(log);
     });
 
+    Object.values(map).forEach(st => {
+      if (st.points < 0) st.points = 0;
+    });
+
     return Object.values(map).sort((a, b) => b.points - a.points);
-  }, [infractions, infractionStartDate, infractionEndDate]);
+  }, [effectiveInfractions, infractionStartDate, infractionEndDate]);
 
   // Warn Interventions: Students with high infractions (>10 pts) or High Alpa (>= 2 alpa)
   // Smart Radar Filtering: Optimized with pre-indexed Map lookups
@@ -1583,7 +2378,7 @@ export default function CounselorPanel({
 
   // Infractions filter mapping
   const filteredInfractionsList = useMemo(() => {
-    return infractions.filter(log => {
+    return effectiveInfractions.filter(log => {
       const searchMatch = 
         log.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         log.infractionType.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1600,7 +2395,7 @@ export default function CounselorPanel({
 
       return searchMatch && classMatch;
     });
-  }, [infractions, searchQuery, classFilter, infractionStartDate, infractionEndDate]);
+  }, [effectiveInfractions, searchQuery, classFilter, infractionStartDate, infractionEndDate]);
 
   const filteredInfractionsAggregate = useMemo(() => {
     return aggregatedInfractions.filter(st => {
@@ -2318,13 +3113,22 @@ export default function CounselorPanel({
           <span>Rekap Absensi</span>
         </button>
         <button
-          onClick={() => { setActiveTab('infractions'); setShowPasswordTab(false); }}
+          onClick={() => { setActiveTab('infractions'); setInfractionSubTab('student_points_table'); setShowPasswordTab(false); }}
           className={`py-2 px-3.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
-            activeTab === 'infractions' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
+            activeTab === 'infractions' && infractionSubTab === 'student_points_table' && !showPasswordTab ? "bg-white text-rose-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <FileSpreadsheet size={14} />
+          <span>Daftar/Tabel Point Pelanggaran Siswa</span>
+        </button>
+        <button
+          onClick={() => { setActiveTab('infractions'); setInfractionSubTab('list'); setShowPasswordTab(false); }}
+          className={`py-2 px-3.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            activeTab === 'infractions' && infractionSubTab !== 'student_points_table' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
           }`}
         >
           <AlertTriangle size={14} />
-          <span>Poin Pelanggaran</span>
+          <span>Kasus &amp; Rubrik Sanksi</span>
         </button>
         <button
           onClick={() => { setActiveTab('buku_induk'); setShowPasswordTab(false); }}
@@ -3640,54 +4444,112 @@ export default function CounselorPanel({
             </motion.div>
           )}
 
-          {/* 4. TAB TRACING POIN PELANGGARAN DISIPLIN */}
+          {/* 4. TAB TRACING POIN PELANGGARAN DISIPLIN & RUBRIK SANKSI */}
           {activeTab === 'infractions' && (
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm text-left flex flex-col gap-4"
             >
+              {/* Hidden File Inputs for Import Point & Import Rubrik */}
+              <input
+                ref={pointsFileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleImportPointsFile}
+                className="hidden"
+              />
+              <input
+                ref={rubricFileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleImportRubricFile}
+                className="hidden"
+              />
+
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-100">
                 <div>
                   <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <AlertTriangle size={16} className="text-rose-600 font-bold" /> Deteksi Riwayat &amp; Poin Pelanggaran Siswa
+                    <AlertTriangle size={16} className="text-rose-600 font-bold" /> Portal Poin Pelanggaran Siswa &amp; Rubrik Sanksi BK (MySQL)
                   </h2>
-                  <p className="text-slate-450 text-[11px]">Siswa yang melampaui ambang batas poin tata tertib dapat langsung dipanggil bersama Wali Kelas untuk mediasi.</p>
+                  <p className="text-slate-450 text-[11px]">
+                    Terintegrasi langsung dengan database MySQL, Import Point ber-referensi Nomor Pelanggaran Rubrik, dan Otomatisasi +5 Poin saat siswa tercatat Alpa (A) pada Absensi Wali Kelas.
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={downloadExcelInfractions}
-                  className="cursor-pointer bg-rose-50 border border-rose-250 hover:bg-rose-100 text-rose-800 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
-                >
-                  <FileSpreadsheet size={13} />
-                  <span>Ekspor Excel Poin Pelanggaran</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadPointsTemplateCsv}
+                    className="cursor-pointer bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-800 font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5"
+                    title="Unduh Template CSV Pemberian Poin (Otomatis Terisi Semua Siswa Aktif + Referensi Nomor Pelanggaran)"
+                  >
+                    <Download size={13} />
+                    <span>Template CSV Point</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadPointsTemplateExcel}
+                    className="cursor-pointer bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5"
+                    title="Unduh Template Excel Pemberian Poin (Otomatis Terisi Semua Siswa Aktif + Referensi Nomor Pelanggaran)"
+                  >
+                    <FileSpreadsheet size={13} />
+                    <span>Template Excel Point</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={importingPoints}
+                    onClick={() => pointsFileInputRef.current?.click()}
+                    className="cursor-pointer bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                  >
+                    {importingPoints ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                    <span>Import Point (CSV/Excel)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadExcelInfractions}
+                    className="cursor-pointer bg-slate-100 border border-slate-250 hover:bg-slate-200 text-slate-800 font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5"
+                  >
+                    <Download size={13} />
+                    <span>Ekspor Rekap</span>
+                  </button>
+                </div>
               </div>
 
               {/* SELECTOR SUBTABS DIRECT ON SCREEN */}
               <div className="flex gap-2 border-b border-slate-100 pb-3 flex-wrap">
                 <button
                   type="button"
+                  onClick={() => setInfractionSubTab('student_points_table')}
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    infractionSubTab === 'student_points_table'
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'text-rose-700 bg-rose-50/70 border border-rose-200 hover:bg-rose-100'
+                  }`}
+                >
+                  Daftar/Tabel Point Pelanggaran Siswa 📊
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInfractionSubTab('list')}
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    infractionSubTab === 'list' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  Daftar Kejadian Kasus Masuk 🚨 ({infractions.length})
+                </button>
+                <button
+                  type="button"
                   onClick={() => setInfractionSubTab('points')}
-                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${
-                    infractionSubTab === 'points' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-400 bg-transparent hover:text-slate-700'
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    infractionSubTab === 'points' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-slate-500 bg-transparent hover:text-slate-800'
                   }`}
                 >
                   Kumulatif Poin Tata Tertib 🏆
                 </button>
                 <button
                   type="button"
-                  onClick={() => setInfractionSubTab('list')}
-                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${
-                    infractionSubTab === 'list' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-400 bg-transparent hover:text-slate-700'
-                  }`}
-                >
-                  Daftar Kejadian Kasus Masuk 🚨
-                </button>
-                <button
-                  type="button"
                   onClick={() => setInfractionSubTab('add')}
-                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
                     infractionSubTab === 'add' ? 'bg-rose-600 text-white shadow-xs' : 'text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100'
                   }`}
                 >
@@ -3696,21 +4558,71 @@ export default function CounselorPanel({
                 <button
                   type="button"
                   onClick={() => setInfractionSubTab('reduction')}
-                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${
-                    infractionSubTab === 'reduction' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'text-slate-400 bg-transparent hover:text-emerald-700'
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    infractionSubTab === 'reduction' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'text-slate-500 bg-transparent hover:text-emerald-700'
                   }`}
                 >
-                  Input Pengurangan Poin BK ❇️
+                  Input Pengurangan Poin (%) BK ❇️
                 </button>
                 <button
                   type="button"
                   onClick={() => setInfractionSubTab('rubric')}
-                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${
-                    infractionSubTab === 'rubric' ? 'bg-rose-50 text-rose-700 border border-rose-100' : 'text-slate-400 bg-transparent hover:text-slate-700'
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    infractionSubTab === 'rubric' ? 'bg-amber-600 text-white shadow-xs' : 'text-amber-800 bg-amber-50 border border-amber-200 hover:bg-amber-100'
                   }`}
                 >
-                  Kelola Rubrik Sanksi 📋
+                  Kelola &amp; Import Rubrik Sanksi 📋 ({infractionRules.length})
                 </button>
+              </div>
+
+              {/* PENGATURAN TANGGAL PEMBERLAKUAN POIN KHUSUS KELAS 7 */}
+              <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 shadow-2xs">
+                <div className="flex flex-col gap-0.5 text-left">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black text-amber-900 uppercase tracking-wide flex items-center gap-1.5">
+                      📅 Tanggal Pemberlakuan Poin Khusus Kelas 7
+                    </span>
+                    {grade7PointsEffectiveDate ? (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-250 text-[10px] font-black">
+                        Aktif Mulai: {grade7PointsEffectiveDate}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold">
+                        Semua Tanggal Dihitung
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-amber-800/90 leading-relaxed">
+                    Khusus siswa <strong>Kelas 7</strong>: Jika kejadian tercatat <strong>sebelum tanggal pemberlakuan poin</strong> ini, maka <strong>poin Alpa dari absensi Wali Kelas maupun pelanggaran lainnya tidak dihitung</strong>.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <input
+                    type="date"
+                    value={grade7PointsEffectiveDate}
+                    onChange={(e) => setGrade7PointsEffectiveDate(e.target.value)}
+                    className="bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={savingGrade7Date}
+                    onClick={() => handleSaveGrade7EffectiveDate(grade7PointsEffectiveDate)}
+                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    {savingGrade7Date ? <Loader2 size={12} className="animate-spin" /> : null}
+                    <span>Simpan Tanggal Kelas 7</span>
+                  </button>
+                  {grade7PointsEffectiveDate && (
+                    <button
+                      type="button"
+                      disabled={savingGrade7Date}
+                      onClick={() => handleSaveGrade7EffectiveDate("")}
+                      className="px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-xl text-xs font-extrabold cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* FILTERS PANEL */}
@@ -3721,7 +4633,7 @@ export default function CounselorPanel({
                       <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type="text"
-                        placeholder="Masukkan kata kunci nama siswa atau jenis pelanggaran..."
+                        placeholder="Masukkan kata kunci nama siswa, NIS, atau jenis pelanggaran..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 pointer-events-auto rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 font-semibold focus:bg-white focus:outline-none"
@@ -3787,6 +4699,332 @@ export default function CounselorPanel({
                 <div className="py-20 text-center animate-pulse font-bold text-xs uppercase tracking-widest text-slate-400">
                   Mengalkulasi akumulasi poin kompilasi disiplin...
                 </div>
+              ) : infractionSubTab === 'student_points_table' ? (
+                /* ================= TAB: DAFTAR / TABEL POINT PELANGGARAN SISWA ================= */
+                <div className="flex flex-col gap-4">
+                  {/* Info Banner & View Mode Selector */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+                    <div>
+                      <h3 className="text-xs font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
+                        <span>📊 Daftar / Tabel Point Pelanggaran Siswa</span>
+                        <span className="px-2 py-0.5 text-[9.5px] rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-extrabold">
+                          MySQL Realtime
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Menampilkan seluruh catatan poin pelanggaran dari Import CSV/Excel BK, Input Manual BK, serta penambahan otomatis <strong>+5 Poin</strong> bagi siswa yang tercatat <strong>Alpa (A)</strong> pada Absensi Wali Kelas.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-white border border-slate-200 p-1 rounded-xl shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setStudentPointsViewMode('by_student')}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer ${
+                          studentPointsViewMode === 'by_student'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Per Siswa (Multi-Pelanggaran)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStudentPointsViewMode('all_rows')}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer ${
+                          studentPointsViewMode === 'all_rows'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Semua Baris Kejadian ({filteredInfractionsList.length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {studentPointsViewMode === 'by_student' ? (
+                    <div className="border border-slate-200 rounded-2xl overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 uppercase text-[10px] tracking-wider">
+                            <th className="py-3 px-4 font-black w-12">No</th>
+                            <th className="py-3 px-4 font-black">NIS &amp; Nama Siswa</th>
+                            <th className="py-3 px-4 font-black text-center w-24">Kelas</th>
+                            <th className="py-3 px-4 font-black">Rincian Pelanggaran, Sanksi &amp; Keterangan Tambahan</th>
+                            <th className="py-3 px-4 font-black text-center w-32">Total Poin</th>
+                            <th className="py-3 px-4 font-black text-center w-36">Aksi BK</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-150 font-medium text-slate-700">
+                          {filteredInfractionsAggregate.map((st, idx) => {
+                            const matchedStudent = allStudents.find(
+                              s => s.id === st.id || s.name.trim().toLowerCase() === st.name.trim().toLowerCase()
+                            );
+                            const nisDisplay = matchedStudent?.nis || st.id;
+                            const isSevere = st.points >= 15;
+                            const isMedium = st.points >= 5 && st.points < 15;
+                            return (
+                              <tr key={st.id || idx} className={`hover:bg-slate-50/70 align-top ${isSevere ? 'bg-rose-50/20' : 'bg-white'}`}>
+                                <td className="py-3.5 px-4 font-mono text-slate-400 text-[11px]">{idx + 1}</td>
+                                <td className="py-3.5 px-4">
+                                  <div className="font-extrabold text-slate-900 text-xs">{st.name}</div>
+                                  <div className="text-[10.5px] font-mono text-slate-500 mt-0.5">NIS: {nisDisplay}</div>
+                                </td>
+                                <td className="py-3.5 px-4 text-center">
+                                  <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 font-black text-[11px]">
+                                    {st.className}
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-4">
+                                  <div className="flex flex-col gap-2">
+                                    {st.list.map((item, iIdx) => {
+                                      const isAutoAlpa =
+                                        item.source === 'auto_alpa_walas' ||
+                                        (item.id && item.id.startsWith('sil-alpa-')) ||
+                                        (item.infractionType && item.infractionType.toLowerCase().includes('alpa (a)'));
+                                      const isImport = item.source === 'import_bk';
+                                      return (
+                                        <div
+                                          key={item.id || iIdx}
+                                          className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2"
+                                        >
+                                          <div className="flex flex-col gap-0.5">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className="text-[10px] font-black text-slate-500 font-mono">
+                                                #{iIdx + 1} • {item.date}
+                                              </span>
+                                              {(item.bab || item.subBab) && (
+                                                <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-150 text-[9.5px] font-bold">
+                                                  {[item.bab, item.subBab].filter(Boolean).join(' › ')}
+                                                </span>
+                                              )}
+                                              {isAutoAlpa && (
+                                                <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-250 text-[9px] font-black uppercase">
+                                                  ⚡ Otomatis Alpa Absensi Wali Kelas (+5 Poin)
+                                                </span>
+                                              )}
+                                              {isImport && (
+                                                <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 text-[9px] font-black uppercase">
+                                                  📤 Import CSV/Excel BK
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="font-extrabold text-slate-900 text-xs mt-0.5">
+                                              {item.infractionType}
+                                            </div>
+                                            {item.sanction && (
+                                              <div className="text-[10.5px] text-rose-700 font-semibold">
+                                                Sanksi: {item.sanction}
+                                              </div>
+                                            )}
+                                            {item.notes && (
+                                              <div className="text-[10.5px] text-slate-600 italic">
+                                                Keterangan Tambahan: "{item.notes}"
+                                              </div>
+                                            )}
+                                            {!item.notes && item.actionTaken && (
+                                              <div className="text-[10.5px] text-slate-500">
+                                                Tindak Lanjut: {item.actionTaken}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                                            <span
+                                              className={`px-2 py-0.5 rounded-lg font-mono font-black text-xs border ${
+                                                (item.points || 0) < 0
+                                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                  : 'bg-rose-50 text-rose-700 border-rose-200'
+                                              }`}
+                                            >
+                                              {(item.points || 0) > 0 ? `+${item.points}` : item.points} Poin
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteInfraction(item.id)}
+                                              className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                              title="Hapus item pelanggaran ini"
+                                            >
+                                              <Trash2 size={13} />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </td>
+                                <td className="py-3.5 px-4 text-center">
+                                  <div
+                                    className={`inline-block px-3 py-1 rounded-xl font-mono font-black text-xs border ${
+                                      isSevere
+                                        ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                        : isMedium
+                                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                        : 'bg-slate-100 text-slate-700 border-slate-200'
+                                    }`}
+                                  >
+                                    {st.points} Poin
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 font-bold mt-1">
+                                    {st.count} Pelanggaran
+                                  </div>
+                                </td>
+                                <td className="py-3.5 px-4 text-center">
+                                  <div className="flex flex-col gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setNewInfractionStudentId(matchedStudent?.id || st.id);
+                                        setInfractionSubTab('add');
+                                      }}
+                                      className="px-2.5 py-1 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-800 text-[10px] uppercase font-black rounded-lg transition-all cursor-pointer"
+                                    >
+                                      + Tambah Poin
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReductionStudentId(matchedStudent?.id || st.id);
+                                        setInfractionSubTab('reduction');
+                                      }}
+                                      className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 text-[10px] uppercase font-black rounded-lg transition-all cursor-pointer"
+                                    >
+                                      ❇️ Kurangi Poin (%)
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleInitiateCounseling(
+                                          st.name,
+                                          st.className,
+                                          `Total akumulasi ${st.points} Poin Pelanggaran tata tertib`
+                                        )
+                                      }
+                                      className="px-2.5 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-[10px] uppercase font-black rounded-lg transition-all cursor-pointer"
+                                    >
+                                      Solusi BK
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {filteredInfractionsAggregate.length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="py-12 text-center text-slate-400 font-medium italic">
+                                Belum ada data poin pelanggaran siswa tercatat. Gunakan tombol <strong>Import Point (CSV/Excel)</strong> atau <strong>Beri Poin Pelanggaran</strong> di atas.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-2xl overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 uppercase text-[10px] tracking-wider">
+                            <th className="py-3 px-3 font-black">No</th>
+                            <th className="py-3 px-3 font-black">Tanggal</th>
+                            <th className="py-3 px-3 font-black">Nama Siswa</th>
+                            <th className="py-3 px-3 font-black text-center">Kelas</th>
+                            <th className="py-3 px-3 font-black">BAB / Sub Bab &amp; Jenis Pelanggaran</th>
+                            <th className="py-3 px-3 font-black">Sanksi &amp; Keterangan Tambahan</th>
+                            <th className="py-3 px-3 font-black text-center">Poin</th>
+                            <th className="py-3 px-3 font-black text-center">Sumber</th>
+                            <th className="py-3 px-3 font-black text-center">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                          {paginatedInfractionsList.map((log, idx) => {
+                            const isAutoAlpa =
+                              log.source === 'auto_alpa_walas' ||
+                              (log.id && log.id.startsWith('sil-alpa-')) ||
+                              (log.infractionType && log.infractionType.toLowerCase().includes('alpa (a)'));
+                            return (
+                              <tr key={log.id} className="hover:bg-slate-50 bg-white">
+                                <td className="py-3 px-3 font-mono text-slate-400 text-[11px]">
+                                  {(infractionPage - 1) * infractionPageSize + idx + 1}
+                                </td>
+                                <td className="py-3 px-3 whitespace-nowrap font-mono text-[11px]">
+                                  <div>{log.date}</div>
+                                  <div className="text-[10px] text-slate-400">{log.time}</div>
+                                </td>
+                                <td className="py-3 px-3 font-extrabold text-slate-900">{log.studentName}</td>
+                                <td className="py-3 px-3 text-center">Kelas {log.className}</td>
+                                <td className="py-3 px-3">
+                                  {(log.bab || log.subBab) && (
+                                    <div className="text-[10px] font-bold text-indigo-700 mb-0.5">
+                                      {[log.bab, log.subBab].filter(Boolean).join(' › ')}
+                                    </div>
+                                  )}
+                                  <div className="font-extrabold text-slate-800">{log.infractionType}</div>
+                                </td>
+                                <td className="py-3 px-3">
+                                  {log.sanction && (
+                                    <div className="text-[11px] font-bold text-rose-700">Sanksi: {log.sanction}</div>
+                                  )}
+                                  {log.notes ? (
+                                    <div className="text-[11px] text-slate-600 italic">Ket: "{log.notes}"</div>
+                                  ) : (
+                                    <div className="text-[11px] text-slate-500">{log.actionTaken}</div>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 text-center font-mono font-black text-rose-700">
+                                  {(log.points || 0) > 0 ? `+${log.points}` : log.points} Poin
+                                </td>
+                                <td className="py-3 px-3 text-center">
+                                  {isAutoAlpa ? (
+                                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-250 text-[9.5px] font-black uppercase">
+                                      ⚡ Otomatis Alpa Walas
+                                    </span>
+                                  ) : log.source === 'import_bk' ? (
+                                    <span className="px-2 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 text-[9.5px] font-black uppercase">
+                                      📤 Import CSV/Excel
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[9.5px] font-bold uppercase">
+                                      Guru BK / Walas
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteInfraction(log.id)}
+                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                    title="Hapus"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {filteredInfractionsList.length === 0 && (
+                            <tr>
+                              <td colSpan={9} className="py-10 text-center text-slate-400 italic">
+                                Belum ada catatan poin pelanggaran siswa.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                      {filteredInfractionsList.length > 0 && (
+                        <Pagination
+                          currentPage={infractionPage}
+                          totalItems={filteredInfractionsList.length}
+                          pageSize={infractionPageSize}
+                          onPageChange={setInfractionPage}
+                          onPageSizeChange={(size) => {
+                            setInfractionPageSize(size);
+                            setInfractionPage(1);
+                          }}
+                          pageSizeOptions={[10, 25, 50]}
+                          className="mt-2 rounded-b-2xl border-t"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               ) : infractionSubTab === 'points' ? (
                 <div className="border border-slate-150 rounded-2xl overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
@@ -3850,7 +5088,7 @@ export default function CounselorPanel({
                                   }}
                                   className="px-2.5 py-1 bg-emerald-50 border border-emerald-150 hover:bg-emerald-100 text-emerald-800 text-[10.5px] uppercase font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1"
                                 >
-                                  <span>❇️ Kurangi Poin</span>
+                                  <span>❇️ Kurangi Poin (%)</span>
                                 </button>
                               </div>
                             </td>
@@ -3866,30 +5104,70 @@ export default function CounselorPanel({
                   </table>
                 </div>
               ) : infractionSubTab === 'add' ? (
-                <div className="bg-rose-50/40 border border-rose-200 rounded-2xl p-6 shadow-xxs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-5 border-b border-rose-200 gap-3">
+                <div className="bg-rose-50/40 border border-rose-200 rounded-2xl p-6 shadow-xxs flex flex-col gap-5">
+                  {/* Box Import Cepat via CSV / Excel */}
+                  <div className="bg-white border border-indigo-200 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 shadow-2xs">
+                    <div>
+                      <h4 className="text-xs font-black text-indigo-900 uppercase tracking-wide flex items-center gap-1.5">
+                        <FileSpreadsheet size={14} className="text-indigo-600" />
+                        <span>Import Pemberian Point Pelanggaran via File CSV / Excel</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-600 mt-0.5">
+                        Template otomatis sudah terisi semua siswa aktif. Guru BK tinggal mengisi <strong>Nomor Pelanggaran</strong> (sesuai referensi Rubrik Poin) dan <strong>Keterangan Tambahan</strong> (1 siswa bisa diisi beberapa pelanggaran).
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleDownloadPointsTemplateCsv}
+                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Download size={13} />
+                        <span>Template CSV</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDownloadPointsTemplateExcel}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <FileSpreadsheet size={13} />
+                        <span>Template Excel</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={importingPoints}
+                        onClick={() => pointsFileInputRef.current?.click()}
+                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                      >
+                        {importingPoints ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                        <span>Upload File Import Point</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-rose-200 gap-3">
                     <div className="flex items-center gap-3">
                       <div className="h-8 w-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-base shadow-sm">
                         🚨
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-extrabold text-sm text-slate-900">Form Pemberian Poin Pelanggaran Siswa (Guru BK)</h3>
+                          <h3 className="font-extrabold text-sm text-slate-900">Form Pemberian Poin Pelanggaran Siswa (Manual Guru BK)</h3>
                           <span className="text-[9.5px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-250 px-2 py-0.5 rounded-full">
                             💾 Langsung Simpan ke MySQL
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 font-medium leading-tight mt-0.5">
-                          Pemberian poin sanksi ini langsung disimpan ke basis data MySQL sekolah secara realtime tanpa melalui penyimpanan lokal sementara, dan langsung diakumulasikan ke rekaman tata tertib siswa.
+                          Pemberian poin sanksi ini langsung disimpan ke basis data MySQL sekolah secara realtime dan masuk ke Daftar/Tabel Point Pelanggaran Siswa.
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setInfractionSubTab('points')}
+                      onClick={() => setInfractionSubTab('student_points_table')}
                       className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors self-start sm:self-auto cursor-pointer"
                     >
-                      ← Kembali ke Kumulatif
+                      ← Lihat Tabel Point Siswa
                     </button>
                   </div>
 
@@ -3953,7 +5231,7 @@ export default function CounselorPanel({
                     {/* Acuan Rubrik Sanksi (Opsional Otomatis) */}
                     <div className="flex flex-col gap-1.5 text-left md:col-span-2">
                       <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
-                        📋 Pilih Cepat dari Master Rubrik Sanksi (Opsional)
+                        📋 Pilih Cepat dari Master Rubrik Sanksi (Otomatis Isi BAB, SUB BAB, Sanksi &amp; Poin)
                       </label>
                       <select
                         value={newInfractionRuleId}
@@ -3963,15 +5241,21 @@ export default function CounselorPanel({
                           const matched = infractionRules.find(r => r.id === val);
                           if (matched) {
                             setNewInfractionType(matched.name);
-                            setNewInfractionPoints(matched.points || 5);
+                            setNewInfractionBab(matched.bab || "");
+                            setNewInfractionSubBab(matched.subBab || "");
+                            setNewInfractionSanction(matched.sanction || "");
+                            setNewInfractionPoints(matched.points || 2);
+                            if (matched.sanction) {
+                              setNewInfractionActionTaken(matched.sanction);
+                            }
                           }
                         }}
                         className="p-2 border border-slate-200 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer"
                       >
-                        <option value="">-- Pilih Jenis Pelanggaran dari Rubrik / Input Manual --</option>
-                        {infractionRules.map(r => (
+                        <option value="">-- Pilih Nomor / Jenis Pelanggaran dari Rubrik Sanksi --</option>
+                        {infractionRules.map((r, idx) => (
                           <option key={r.id} value={r.id}>
-                            [{r.category || 'Aturan'}] {r.name} (+{r.points} Poin Sanksi)
+                            [{getRuleDisplayNumber(r, idx)}] {r.bab ? `${r.bab} - ` : ''}{r.subBab ? `${r.subBab}: ` : ''}{r.name} — Sanksi: {r.sanction || '-'} (+{r.points} Poin)
                           </option>
                         ))}
                       </select>
@@ -3985,10 +5269,24 @@ export default function CounselorPanel({
                       <textarea
                         value={newInfractionType}
                         onChange={(e) => setNewInfractionType(e.target.value)}
-                        placeholder="Contoh: Terlambat masuk sekolah lebih dari 30 menit, atribut seragam tidak lengkap, meninggalkan jam KBM tanpa izin..."
+                        placeholder="Contoh: 1.1 Corat-coret topi, 1.2 Memakai topi tidak beridentitas sekolah..."
                         rows={2}
                         className="p-2.5 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 placeholder-slate-400"
                         required
+                      />
+                    </div>
+
+                    {/* Keterangan Tambahan */}
+                    <div className="flex flex-col gap-1.5 text-left md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600 flex items-center gap-1">
+                        📝 Keterangan Tambahan tentang Pelanggaran (Opsional)
+                      </label>
+                      <input
+                        type="text"
+                        value={newInfractionNotes}
+                        onChange={(e) => setNewInfractionNotes(e.target.value)}
+                        placeholder="Tambahkan keterangan tambahan terkait pelanggaran siswa tersebut jika ada..."
+                        className="p-2.5 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 placeholder-slate-400"
                       />
                     </div>
 
@@ -4008,7 +5306,7 @@ export default function CounselorPanel({
                           required
                         />
                         <div className="flex gap-1">
-                          {[5, 10, 15, 20, 25].map(pt => (
+                          {[2, 5, 10, 15, 25].map(pt => (
                             <button
                               key={pt}
                               type="button"
@@ -4090,7 +5388,7 @@ export default function CounselorPanel({
                       <textarea
                         value={newInfractionActionTaken}
                         onChange={(e) => setNewInfractionActionTaken(e.target.value)}
-                        placeholder="Contoh: Peringatan lisan, pembuatan surat pernyataan komitmen disiplin, dan penjadwalan bimbingan konseling individual..."
+                        placeholder="Contoh: Teguran Langsung, Peringatan lisan, pembuatan surat pernyataan komitmen disiplin..."
                         rows={2}
                         className="p-2.5 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
                         required
@@ -4102,7 +5400,7 @@ export default function CounselorPanel({
                       <button
                         type="button"
                         onClick={() => {
-                          setInfractionSubTab('points');
+                          setInfractionSubTab('student_points_table');
                           setNewInfractionType("");
                           setNewInfractionStudentId("");
                           setNewInfractionRuleId("");
@@ -4129,8 +5427,10 @@ export default function CounselorPanel({
                       ❇️
                     </div>
                     <div>
-                      <h3 className="font-extrabold text-sm text-slate-800">Form Pengurangan Poin Tata Tertib Siswa</h3>
-                      <p className="text-[11px] text-slate-500 font-medium leading-tight">Pengurangan poin ini akan terhubung secara realtime ke portal Wali Kelas, Kepala Sekolah, dan portal Akun Siswa.</p>
+                      <h3 className="font-extrabold text-sm text-slate-800">Form Pengurangan Poin Pelanggaran Siswa (Berbasis Persentase %)</h3>
+                      <p className="text-[11px] text-slate-500 font-medium leading-tight">
+                        Pengurangan poin dihitung berdasarkan persentase (%) dari total akumulasi poin pelanggaran siswa saat ini dan tersimpan langsung ke MySQL.
+                      </p>
                     </div>
                   </div>
 
@@ -4182,27 +5482,88 @@ export default function CounselorPanel({
                             const term = reductionStudentSearch.toLowerCase();
                             return s.name.toLowerCase().includes(term) || (s.nis && s.nis.toLowerCase().includes(term));
                           })
-                          .map(s => (
-                            <option key={s.id} value={s.id}>
-                              {s.name} (Kelas {s.class}) - NIS: {s.nis}
-                            </option>
-                          ))}
+                          .sort((a, b) => {
+                            const ptsA = studentPointsMapForReduction.get(a.id) || 0;
+                            const ptsB = studentPointsMapForReduction.get(b.id) || 0;
+                            if (ptsB !== ptsA) return ptsB - ptsA;
+                            return a.name.localeCompare(b.name);
+                          })
+                          .map(s => {
+                            const pts = studentPointsMapForReduction.get(s.id) || 0;
+                            return (
+                              <option key={s.id} value={s.id}>
+                                {s.name} (Kelas {s.class}) - NIS: {s.nis} — [Poin Saat Ini: {pts} Poin]
+                              </option>
+                            );
+                          })}
                       </select>
                     </div>
 
                     <div className="flex flex-col gap-1.5 text-left">
                       <label className="text-[10px] font-black uppercase text-slate-555 flex items-center gap-1">
-                        ⭐ Besaran Poin yang Dikurangi
+                        📊 Persentase Pengurangan Poin (%)
                       </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        value={reductionPoints}
-                        onChange={(e) => setReductionPoints(Number(e.target.value))}
-                        className="p-2 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                        required
-                      />
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type="number"
+                            min="1"
+                            max="100"
+                            step="any"
+                            value={reductionPercentage}
+                            onChange={(e) => setReductionPercentage(Math.min(100, Math.max(0, Number(e.target.value))))}
+                            className="w-full p-2.5 pr-9 border border-slate-250 bg-white rounded-xl text-xs font-extrabold text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            required
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-700">%</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        <span className="text-[10px] font-bold text-slate-400 mr-1">Pilih Cepat:</span>
+                        {[10, 20, 25, 50, 75, 100].map(pct => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => setReductionPercentage(pct)}
+                            className={`px-2.5 py-1 rounded-lg text-[10.5px] font-black border transition-all cursor-pointer ${
+                              Number(reductionPercentage) === pct
+                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'
+                            }`}
+                          >
+                            {pct}%
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Ringkasan Kalkulasi Pengurangan Poin Berbasis Persentase */}
+                    <div className="md:col-span-2 bg-white border border-emerald-200 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 shadow-2xs">
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col">
+                        <span className="text-[10px] font-black uppercase text-slate-400">Total Poin Siswa Saat Ini</span>
+                        <span className="text-base font-black text-rose-700 font-mono mt-0.5">
+                          {selectedReductionStudentCurrentPoints} Poin
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex flex-col">
+                        <span className="text-[10px] font-black uppercase text-emerald-700">
+                          Poin Dikurangi ({reductionPercentage || 0}%)
+                        </span>
+                        <span className="text-base font-black text-emerald-700 font-mono mt-0.5">
+                          -{calculatedReductionPoints} Poin
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-indigo-50/60 border border-indigo-200 flex flex-col">
+                        <span className="text-[10px] font-black uppercase text-indigo-700">Sisa Poin Setelah Dikurangi</span>
+                        <span className="text-base font-black text-indigo-800 font-mono mt-0.5">
+                          {remainingPointsAfterReduction} Poin
+                        </span>
+                      </div>
+                      {reductionStudentId && selectedReductionStudentCurrentPoints <= 0 && (
+                        <div className="sm:col-span-3 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                          ℹ️ Siswa yang dipilih saat ini memiliki <strong>0 Poin Pelanggaran</strong>, sehingga tidak ada poin yang perlu dikurangi.
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex flex-col gap-1.5 text-left font-semibold">
@@ -4238,7 +5599,7 @@ export default function CounselorPanel({
                       <textarea
                         value={reductionReason}
                         onChange={(e) => setReductionReason(e.target.value)}
-                        placeholder="Contoh: Siswa menunjukkan komitmen peningkatan kehadiran yang konsisten pasca pembinaan bimbingan bimbingan konseling dan aktif membantu KBM kelas..."
+                        placeholder="Contoh: Siswa menunjukkan komitmen peningkatan kehadiran yang konsisten pasca pembinaan bimbingan konseling dan aktif membantu KBM kelas..."
                         className="p-3 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                         rows={3}
                         required
@@ -4249,7 +5610,7 @@ export default function CounselorPanel({
                       <button
                         type="button"
                         onClick={() => {
-                          setInfractionSubTab('points');
+                          setInfractionSubTab('student_points_table');
                           setReductionReason("");
                           setReductionStudentId("");
                         }}
@@ -4259,54 +5620,136 @@ export default function CounselorPanel({
                       </button>
                       <button
                         type="submit"
-                        disabled={submittingReduction}
-                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        disabled={submittingReduction || (!!reductionStudentId && selectedReductionStudentCurrentPoints <= 0)}
+                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
                       >
                         {submittingReduction ? <Loader2 size={12} className="animate-spin" /> : null}
-                        <span>Simpan &amp; Kurangi Poin Siswa</span>
+                        <span>Simpan &amp; Kurangi {reductionPercentage || 0}% Poin Siswa</span>
                       </button>
                     </div>
                   </form>
                 </div>
               ) : infractionSubTab === 'rubric' ? (
-                <div className="bg-slate-50/50 border border-slate-200 rounded-2xl p-6 shadow-xxs">
-                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between pb-3 mb-5 border-b border-slate-205 gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="h-7 w-7 rounded-lg bg-rose-500 text-white flex items-center justify-center font-bold text-sm">
+                <div className="bg-slate-50/50 border border-slate-200 rounded-2xl p-6 shadow-xxs flex flex-col gap-5">
+                  <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between pb-4 border-b border-slate-205 gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-8 w-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-sm">
                         📋
                       </div>
                       <div>
-                        <h3 className="font-extrabold text-sm text-slate-800">Master Rubrik &amp; Referensi Poin Sanksi</h3>
-                        <p className="text-[11px] text-slate-500 font-medium leading-tight">Daftar acuan sanksi pelanggaran tata tertib sekolah yang terintegrasi secara langsung dengan jurnal guru wali kelas.</p>
+                        <h3 className="font-extrabold text-sm text-slate-900">Master Rubrik Sanksi &amp; Poin Pelanggaran (BAB &amp; SUB BAB — MySQL)</h3>
+                        <p className="text-[11px] text-slate-500 font-medium leading-tight">
+                          Mendukung Import File Excel/CSV dengan struktur BAB, SUB BAB, Nomor Butir (Contoh: 1.1, 1.2), Sanksi, dan Besar Poin langsung ke database MySQL.
+                        </p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono text-rose-700 bg-rose-100 px-2 py-1 rounded-lg font-black shrink-0">
-                      {infractionRules.length} Acuan Aktif
-                    </span>
+
+                    {/* Toolbar Template & Import Rubrik Excel/CSV */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleDownloadRubricTemplateExcel}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <FileSpreadsheet size={13} />
+                        <span>Template Excel Rubrik</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDownloadRubricTemplateCsv}
+                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Download size={13} />
+                        <span>Template CSV Rubrik</span>
+                      </button>
+                      <select
+                        value={rubricImportMode}
+                        onChange={(e) => setRubricImportMode(e.target.value as 'append' | 'replace')}
+                        className="bg-white border border-slate-250 rounded-xl px-2.5 py-1.5 text-[11px] font-bold text-slate-700 cursor-pointer"
+                        title="Mode Import Rubrik"
+                      >
+                        <option value="append">Mode: Tambahkan ke Rubrik</option>
+                        <option value="replace">Mode: Ganti Seluruh Rubrik</option>
+                      </select>
+                      <button
+                        type="button"
+                        disabled={importingRubric}
+                        onClick={() => rubricFileInputRef.current?.click()}
+                        className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                      >
+                        {importingRubric ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                        <span>Import Rubrik (Excel/CSV)</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                     {/* Left: Input Form */}
-                    <form onSubmit={handleSaveRule} className="lg:col-span-4 bg-white border border-slate-200 p-5 rounded-2xl flex flex-col gap-4 shadow-3xs text-left">
+                    <form onSubmit={handleSaveRule} className="lg:col-span-4 bg-white border border-slate-200 p-5 rounded-2xl flex flex-col gap-3.5 shadow-3xs text-left">
                       <span className="text-[10px] font-black text-rose-800 uppercase tracking-widest block border-b border-slate-100 pb-2">
-                        {editingRuleId ? "✏️ Edit Acuan Sanksi" : "➕ Tambah Referensi Baru"}
+                        {editingRuleId ? "✏️ Edit Acuan Rubrik Sanksi" : "➕ Tambah Rubrik Sanksi Baru (MySQL)"}
                       </span>
 
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[9.5px] font-black text-slate-500 uppercase">Deskripsi Pelanggaran / Aturan</label>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9.5px] font-black text-slate-500 uppercase">BAB (Contoh: BAB 1 Kerapian)</label>
+                        <input
+                          type="text"
+                          value={ruleBabInput}
+                          onChange={(e) => setRuleBabInput(e.target.value)}
+                          placeholder="Contoh: BAB 1 Kerapian"
+                          className="w-full bg-slate-50/50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-rose-500 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9.5px] font-black text-slate-500 uppercase">SUB BAB (Contoh: SUB BAB 1 Seragam Murid)</label>
+                        <input
+                          type="text"
+                          value={ruleSubBabInput}
+                          onChange={(e) => setRuleSubBabInput(e.target.value)}
+                          placeholder="Contoh: SUB BAB 1 Seragam Murid"
+                          className="w-full bg-slate-50/50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-rose-500 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2.5">
+                        <div className="flex flex-col gap-1 col-span-1">
+                          <label className="text-[9.5px] font-black text-slate-500 uppercase">Nomor / Kode</label>
+                          <input
+                            type="text"
+                            value={ruleCodeInput}
+                            onChange={(e) => setRuleCodeInput(e.target.value)}
+                            placeholder="1.1"
+                            className="w-full bg-slate-50/50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-rose-500 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 focus:outline-none"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1 col-span-2">
+                          <label className="text-[9.5px] font-black text-slate-500 uppercase">Sanksi</label>
+                          <input
+                            type="text"
+                            value={ruleSanctionInput}
+                            onChange={(e) => setRuleSanctionInput(e.target.value)}
+                            placeholder="Contoh: Teguran Langsung"
+                            className="w-full bg-slate-50/50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-rose-500 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9.5px] font-black text-slate-500 uppercase">Deskripsi Pelanggaran / Aturan <span className="text-rose-500">*</span></label>
                         <textarea
                           value={ruleNameInput}
                           onChange={(e) => setRuleNameInput(e.target.value)}
-                          placeholder="Misal: Membawa barang terlarang ke sekolah..."
-                          rows={3}
+                          placeholder="Contoh: 1.1 Corat-coret topi"
+                          rows={2}
                           className="w-full bg-slate-50/50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-rose-500 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none placeholder-slate-400"
                           required
                         />
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-[9.5px] font-black text-slate-500 uppercase">Bobot Sanksi (Poin)</label>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[9.5px] font-black text-slate-500 uppercase">Besar Poin <span className="text-rose-500">*</span></label>
                           <input
                             type="number"
                             value={rulePointsInput}
@@ -4317,7 +5760,7 @@ export default function CounselorPanel({
                           />
                         </div>
 
-                        <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-col gap-1">
                           <label className="text-[9.5px] font-black text-slate-500 uppercase">Tingkatan Kasus</label>
                           <select
                             value={ruleCategoryInput}
@@ -4331,21 +5774,25 @@ export default function CounselorPanel({
                         </div>
                       </div>
 
-                      <div className="flex gap-2 mt-2">
+                      <div className="flex gap-2 mt-1">
                         <button
                           type="submit"
                           disabled={loadingRules}
-                          className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs py-2 rounded-xl transition-all cursor-pointer shadow-xs"
+                          className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs py-2.5 rounded-xl transition-all cursor-pointer shadow-xs"
                         >
-                          {editingRuleId ? "Simpan Perubahan" : "Simpan Aturan"}
+                          {editingRuleId ? "Simpan Perubahan ke MySQL" : "Simpan Rubrik ke MySQL"}
                         </button>
                         {editingRuleId && (
                           <button
                             type="button"
                             onClick={() => {
                               setEditingRuleId(null);
+                              setRuleBabInput('');
+                              setRuleSubBabInput('');
+                              setRuleCodeInput('');
                               setRuleNameInput('');
-                              setRulePointsInput(5);
+                              setRuleSanctionInput('');
+                              setRulePointsInput(2);
                               setRuleCategoryInput('Ringan');
                             }}
                             className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-all cursor-pointer"
@@ -4361,36 +5808,46 @@ export default function CounselorPanel({
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
-                            <tr className="bg-slate-50 border-b border-slate-150 text-slate-655 uppercase font-black text-[9px] tracking-wide">
-                              <th className="p-3 pl-4">Deskripsi Pelanggaran / Aturan</th>
-                              <th className="p-3 text-center">Bobot Sanksi</th>
-                              <th className="p-3 text-center">Tingkat</th>
-                              <th className="p-3 text-right pr-4">Aksi Operator BK</th>
+                            <tr className="bg-slate-50 border-b border-slate-150 text-slate-655 uppercase font-black text-[9.5px] tracking-wide">
+                              <th className="p-3 pl-4">No/Kode</th>
+                              <th className="p-3">BAB &amp; SUB BAB</th>
+                              <th className="p-3">Deskripsi Pelanggaran</th>
+                              <th className="p-3">Sanksi</th>
+                              <th className="p-3 text-center">Besar Poin</th>
+                              <th className="p-3 text-right pr-4">Aksi</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                             {loadingRules ? (
                               <tr>
-                                <td colSpan={4} className="p-10 text-center text-slate-400 italic animate-pulse">Memperbarui data acuan dari server...</td>
+                                <td colSpan={6} className="p-10 text-center text-slate-400 italic animate-pulse">Memperbarui data acuan dari MySQL...</td>
                               </tr>
                             ) : infractionRules.length === 0 ? (
                               <tr>
-                                <td colSpan={4} className="p-10 text-center text-slate-400 font-medium italic">Belum ada acuan aturan sanksi terdaftar. Tulis aturan baru di sebelah kiri!</td>
+                                <td colSpan={6} className="p-10 text-center text-slate-400 font-medium italic">
+                                  Belum ada rubrik sanksi di database MySQL. Silakan tambah manual di sebelah kiri atau klik <strong>Import Rubrik (Excel/CSV)</strong> di atas!
+                                </td>
                               </tr>
                             ) : (
-                              infractionRules.map(rule => (
+                              infractionRules.map((rule, rIdx) => (
                                 <tr key={rule.id} className="hover:bg-slate-50/50 bg-white transition-colors">
-                                  <td className="p-3 pl-4 text-slate-800 font-bold max-w-sm">
-                                    <span className="block truncate-custom" title={rule.name}>{rule.name}</span>
+                                  <td className="p-3 pl-4 font-mono font-black text-indigo-700 text-xs whitespace-nowrap">
+                                    {getRuleDisplayNumber(rule, rIdx)}
                                   </td>
-                                  <td className="p-3 text-center font-black text-rose-600 font-mono text-xs">{rule.points} Poin</td>
-                                  <td className="p-3 text-center">
-                                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
-                                      rule.category === 'Ringan' ? 'bg-slate-100 text-slate-600' :
-                                      rule.category === 'Sedang' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                                      'bg-rose-100 text-rose-700 border border-rose-200'
-                                    }`}>
-                                      {rule.category}
+                                  <td className="p-3 text-slate-600 text-[11px]">
+                                    {rule.bab && <div className="font-extrabold text-slate-800">{rule.bab}</div>}
+                                    {rule.subBab && <div className="text-slate-500">{rule.subBab}</div>}
+                                    {!rule.bab && !rule.subBab && <span className="text-slate-400 italic">-</span>}
+                                  </td>
+                                  <td className="p-3 text-slate-800 font-bold max-w-xs">
+                                    <span className="block" title={rule.name}>{rule.name}</span>
+                                  </td>
+                                  <td className="p-3 text-slate-700 font-semibold text-[11px]">
+                                    {rule.sanction || "-"}
+                                  </td>
+                                  <td className="p-3 text-center whitespace-nowrap">
+                                    <span className="font-black text-rose-600 font-mono text-xs bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-lg">
+                                      {rule.points} Poin
                                     </span>
                                   </td>
                                   <td className="p-3 text-right pr-4 shrink-0 whitespace-nowrap font-black">
@@ -4398,9 +5855,13 @@ export default function CounselorPanel({
                                       type="button"
                                       onClick={() => {
                                         setEditingRuleId(rule.id);
-                                        setRuleNameInput(rule.name);
-                                        setRulePointsInput(rule.points);
-                                        setRuleCategoryInput(rule.category);
+                                        setRuleBabInput(rule.bab || '');
+                                        setRuleSubBabInput(rule.subBab || '');
+                                        setRuleCodeInput(rule.code || '');
+                                        setRuleNameInput(rule.name || '');
+                                        setRuleSanctionInput(rule.sanction || '');
+                                        setRulePointsInput(rule.points || 2);
+                                        setRuleCategoryInput(rule.category || 'Ringan');
                                       }}
                                       className="text-indigo-600 hover:text-indigo-800 font-extrabold mr-3 cursor-pointer hover:underline text-[11px]"
                                     >
@@ -4424,57 +5885,83 @@ export default function CounselorPanel({
                   </div>
                 </div>
               ) : (
+                /* ================= TAB: DAFTAR KEJADIAN KASUS MASUK ================= */
                 <div className="flex flex-col gap-3">
-                  {paginatedInfractionsList.map((log) => (
-                    <div key={log.id} className="p-4 bg-slate-50 border border-slate-220 rounded-2xl flex flex-col gap-2 relative">
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          {log.points && log.points < 0 ? (
-                            <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded mr-2 inline-block">❇️ Apresiasi BK</span>
-                          ) : (
-                            <span className="text-[9px] font-black uppercase text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded mr-2 inline-block">🚨 Kasus</span>
-                          )}
-                          <span className="font-extrabold text-xs text-slate-905">{log.studentName} (Kelas {log.className})</span>
-                          <h4 className={`font-extrabold text-sm mt-1 mb-0.5 ${log.points && log.points < 0 ? 'text-emerald-800' : 'text-rose-900'}`}>{log.infractionType}</h4>
+                  {paginatedInfractionsList.map((log) => {
+                    const isAutoAlpa =
+                      log.source === 'auto_alpa_walas' ||
+                      (log.id && log.id.startsWith('sil-alpa-')) ||
+                      (log.infractionType && log.infractionType.toLowerCase().includes('alpa (a)'));
+                    return (
+                      <div key={log.id} className="p-4 bg-slate-50 border border-slate-220 rounded-2xl flex flex-col gap-2 relative">
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            {log.points && log.points < 0 ? (
+                              <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded mr-2 inline-block">❇️ Apresiasi BK</span>
+                            ) : isAutoAlpa ? (
+                              <span className="text-[9px] font-black uppercase text-amber-800 bg-amber-100 border border-amber-250 px-2 py-0.5 rounded mr-2 inline-block">
+                                ⚡ Otomatis Absensi Alpa Wali Kelas (+5 Poin)
+                              </span>
+                            ) : log.source === 'import_bk' ? (
+                              <span className="text-[9px] font-black uppercase text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded mr-2 inline-block">
+                                📤 Import Point BK
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-black uppercase text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded mr-2 inline-block">🚨 Kasus Masuk</span>
+                            )}
+                            <span className="font-extrabold text-xs text-slate-905">{log.studentName} (Kelas {log.className})</span>
+                            {(log.bab || log.subBab) && (
+                              <div className="text-[10px] font-bold text-indigo-700 mt-0.5">
+                                {[log.bab, log.subBab].filter(Boolean).join(' › ')}
+                              </div>
+                            )}
+                            <h4 className={`font-extrabold text-sm mt-1 mb-0.5 ${log.points && log.points < 0 ? 'text-emerald-800' : 'text-rose-900'}`}>{log.infractionType}</h4>
+                            {log.sanction && (
+                              <div className="text-[11px] font-bold text-rose-700">Sanksi: {log.sanction}</div>
+                            )}
+                            {log.notes && (
+                              <div className="text-[11px] text-slate-600 italic">Keterangan Tambahan: "{log.notes}"</div>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            {log.points && log.points < 0 ? (
+                              <span className="font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 rounded font-mono text-xs block text-center">
+                                {log.points} pt
+                              </span>
+                            ) : (
+                              <span className="font-black text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded border border-rose-100 font-mono text-xs block text-center">
+                                +{log.points || 0} pt
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-400 font-medium mt-1.5 block leading-none">{log.date} ({log.time})</span>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          {log.points && log.points < 0 ? (
-                            <span className="font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 rounded font-mono text-xs block text-center">
-                              {log.points} pt
-                            </span>
-                          ) : (
-                            <span className="font-black text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded border border-rose-100 font-mono text-xs block text-center">
-                              +{log.points || 0} pt
-                            </span>
-                          )}
-                          <span className="text-[10px] text-slate-400 font-medium mt-1.5 block leading-none">{log.date} ({log.time})</span>
-                        </div>
-                      </div>
 
-                      <div className="border-t border-slate-150 pt-2 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-1 py-1 text-slate-650 text-xs">
-                        <div>
-                          <strong>Tindakan Wali/Guru:</strong> <span className="italic">"{log.actionTaken}"</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-0.5 font-bold text-[9px] uppercase tracking-wider rounded border ${
-                            log.resolutionStatus === 'Selesai' ? 'bg-emerald-50 text-emerald-700 border-emerald-150' :
-                            log.resolutionStatus === 'Dalam Proses' ? 'bg-amber-50 text-amber-700 border-amber-150' :
-                            'bg-slate-100 text-slate-500 border-slate-205'
-                          }`}>
-                            {log.resolutionStatus}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteInfraction(log.id)}
-                            className="bg-rose-50 border border-rose-100 text-rose-600 hover:bg-rose-100 p-1.5 rounded-lg text-xs font-black transition-colors"
-                            title="Hapus Rekam"
-                          >
-                            Hapus
-                          </button>
+                        <div className="border-t border-slate-150 pt-2 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-1 py-1 text-slate-650 text-xs">
+                          <div>
+                            <strong>Tindak Lanjut:</strong> <span className="italic">"{log.actionTaken}"</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 font-bold text-[9px] uppercase tracking-wider rounded border ${
+                              log.resolutionStatus === 'Selesai' ? 'bg-emerald-50 text-emerald-700 border-emerald-150' :
+                              log.resolutionStatus === 'Dalam Proses' ? 'bg-amber-50 text-amber-700 border-amber-150' :
+                              'bg-slate-100 text-slate-500 border-slate-205'
+                            }`}>
+                              {log.resolutionStatus}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteInfraction(log.id)}
+                              className="bg-rose-50 border border-rose-100 text-rose-600 hover:bg-rose-100 p-1.5 rounded-lg text-xs font-black transition-colors cursor-pointer"
+                              title="Hapus Rekam"
+                            >
+                              Hapus
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {filteredInfractionsList.length === 0 && (
                     <span className="text-slate-400 text-xs font-medium py-8 text-center bg-slate-50 border border-dashed rounded-2xl block">Tidak ada kasus melanggar terdaftar.</span>
                   )}

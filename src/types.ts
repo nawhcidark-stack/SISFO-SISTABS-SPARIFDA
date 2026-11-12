@@ -477,15 +477,25 @@ export interface StudentInfractionLog {
   time: string; // "HH:MM" e.g., "08:15"
   location: string;
   infractionType: string; // Jenis pelanggaran
-  actionTaken: string; // Tindah lanjut / sanksi / pembinaan
-  resolutionStatus: 'Belum Selesai' | 'Dalam Proses' | 'Selesai';
+  actionTaken: string; // Tindak lanjut / sanksi / pembinaan
+  resolutionStatus: 'Belum Selesai' | 'Dalam Proses' | 'Selesai' | 'Butuh Mediasi';
   points?: number;
+  bab?: string;
+  subBab?: string;
+  sanction?: string;
+  notes?: string; // Keterangan tambahan
+  ruleId?: string;
+  source?: string; // 'manual_bk' | 'import_bk' | 'auto_alpa_walas' | 'walas'
   createdAt: string;
 }
 
 export interface InfractionRule {
   id: string;
-  name: string;
+  bab?: string; // Contoh: "BAB 1 Kerapian"
+  subBab?: string; // Contoh: "SUB BAB 1 Seragam Murid"
+  code?: string; // Contoh: "1.1"
+  name: string; // Contoh: "1.1 Corat-coret topi"
+  sanction?: string; // Contoh: "Teguran Langsung"
   points: number;
   category: string; // "Ringan", "Sedang", "Berat"
 }

@@ -2366,16 +2366,18 @@ export async function pullDataFromMysql(): Promise<{
         await connection.query("DELETE FROM `infraction_rules` WHERE `id` IN ('ir-1', 'ir-2', 'ir-3', 'ir-4', 'ir-5')");
       } catch (_) {}
       const [rows]: any = await connection.query('SELECT * FROM `infraction_rules`');
-      resultData.infractionRules = rows.map((r: any) => ({
-        id: r.id,
-        bab: r.bab || '',
-        subBab: r.sub_bab || '',
-        code: r.code || '',
-        name: r.name || '',
-        sanction: r.sanction || '',
-        points: Number(r.points) || 0,
-        category: r.category || 'Ringan'
-      }));
+      resultData.infractionRules = sortInfractionRulesNaturally(
+        rows.map((r: any) => ({
+          id: r.id,
+          bab: r.bab || '',
+          subBab: r.sub_bab || '',
+          code: r.code || '',
+          name: r.name || '',
+          sanction: r.sanction || '',
+          points: Number(r.points) || 0,
+          category: r.category || 'Ringan'
+        }))
+      );
       counts.infractionRules = resultData.infractionRules.length;
     }
 
@@ -5427,6 +5429,55 @@ export async function ensureBkInfractionTablesReady(existingConn?: mysql.PoolCon
   }
 }
 
+export function sortInfractionRulesNaturally<T extends Record<string, any>>(rules: T[]): T[] {
+  const extractRuleSegments = (r: Record<string, any>): number[] | null => {
+    const codeStr = String(r?.code || '').trim();
+    const nameStr = String(r?.name || r?.infractionType || '').trim();
+    const m = codeStr.match(/^(\d+(?:\.\d+)*)/) || nameStr.match(/^(\d+(?:\.\d+)*)/);
+    if (!m) return null;
+    return m[1].split('.').map(n => parseInt(n, 10));
+  };
+
+  const extractBabNumber = (babStr: string): number | null => {
+    const m = String(babStr || '').trim().match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  };
+
+  return [...(rules || [])].sort((a, b) => {
+    const babNumA = extractBabNumber(a?.bab);
+    const babNumB = extractBabNumber(b?.bab);
+    if (babNumA !== null && babNumB !== null && babNumA !== babNumB) {
+      return babNumA - babNumB;
+    }
+
+    const segA = extractRuleSegments(a);
+    const segB = extractRuleSegments(b);
+    if (segA && segB) {
+      const len = Math.max(segA.length, segB.length);
+      for (let i = 0; i < len; i++) {
+        const va = segA[i] ?? -1;
+        const vb = segB[i] ?? -1;
+        if (va !== vb) return va - vb;
+      }
+    } else if (segA && !segB) {
+      return -1;
+    } else if (!segA && segB) {
+      return 1;
+    }
+
+    const babCmp = String(a?.bab || '').localeCompare(String(b?.bab || ''), 'id', { numeric: true, sensitivity: 'base' });
+    if (babCmp !== 0) return babCmp;
+
+    const subBabCmp = String(a?.subBab || '').localeCompare(String(b?.subBab || ''), 'id', { numeric: true, sensitivity: 'base' });
+    if (subBabCmp !== 0) return subBabCmp;
+
+    const codeCmp = String(a?.code || '').localeCompare(String(b?.code || ''), 'id', { numeric: true, sensitivity: 'base' });
+    if (codeCmp !== 0) return codeCmp;
+
+    return String(a?.name || '').localeCompare(String(b?.name || ''), 'id', { numeric: true, sensitivity: 'base' });
+  });
+}
+
 export async function getAllInfractionRulesFromMysql(): Promise<any[]> {
   const p = createPool();
   if (!p) return [];
@@ -5434,8 +5485,8 @@ export async function getAllInfractionRulesFromMysql(): Promise<any[]> {
   try {
     connection = await p.getConnection();
     await ensureBkInfractionTablesReady(connection);
-    const [rows]: any = await connection.query('SELECT * FROM `infraction_rules` ORDER BY `bab` ASC, `sub_bab` ASC, `code` ASC, `name` ASC');
-    return (rows || []).map((r: any) => ({
+    const [rows]: any = await connection.query('SELECT * FROM `infraction_rules`');
+    const mapped = (rows || []).map((r: any) => ({
       id: String(r.id || '').trim(),
       bab: String(r.bab || '').trim(),
       subBab: String(r.sub_bab || '').trim(),
@@ -5445,6 +5496,7 @@ export async function getAllInfractionRulesFromMysql(): Promise<any[]> {
       points: Number(r.points) || 0,
       category: String(r.category || 'Ringan').trim()
     }));
+    return sortInfractionRulesNaturally(mapped);
   } catch (err: any) {
     console.error('[MySQL Get Infraction Rules Error]:', err.message || err);
     return [];

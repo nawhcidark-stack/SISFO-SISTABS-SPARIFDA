@@ -13,7 +13,7 @@ import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransCon
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, seedMissingConfigsToMysql, getConfigFromMysql, getAllConfigsFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql, getAllExtracurricularMasterFromMysql, saveExtracurricularMasterItemToMysql, replaceExtracurricularMasterListInMysql, deleteExtracurricularMasterFromMysql, getExtracurricularGradesFromMysql, saveExtracurricularGradesBatchToMysql, getAllInfractionRulesFromMysql, saveInfractionRulesBatchToMysql, getAllStudentInfractionLogsFromMysql, saveStudentInfractionLogsBatchToMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, seedMissingConfigsToMysql, getConfigFromMysql, getAllConfigsFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql, getAllExtracurricularMasterFromMysql, saveExtracurricularMasterItemToMysql, replaceExtracurricularMasterListInMysql, deleteExtracurricularMasterFromMysql, getExtracurricularGradesFromMysql, saveExtracurricularGradesBatchToMysql, getAllInfractionRulesFromMysql, saveInfractionRulesBatchToMysql, sortInfractionRulesNaturally, getAllStudentInfractionLogsFromMysql, saveStudentInfractionLogsBatchToMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter, formatMidtransPaymentMethod } from "./src/server/routes/midtransRoutes";
@@ -6186,6 +6186,9 @@ async function startServer() {
         infractionRules.push(...mysqlRules);
       }
     } catch (_) {}
+    const sorted = sortInfractionRulesNaturally(infractionRules);
+    infractionRules.length = 0;
+    infractionRules.push(...sorted);
     res.json(infractionRules);
   });
 
@@ -6207,6 +6210,9 @@ async function startServer() {
       category: resolvedCategory
     };
     infractionRules.push(newRule);
+    const sorted = sortInfractionRulesNaturally(infractionRules);
+    infractionRules.length = 0;
+    infractionRules.push(...sorted);
     try {
       await directSaveEntityToMysql('infraction_rules', newRule);
     } catch (err: any) {
@@ -6253,8 +6259,9 @@ async function startServer() {
     }
 
     const freshRules = await getAllInfractionRulesFromMysql();
+    const sortedBatch = sortInfractionRulesNaturally(freshRules.length > 0 ? freshRules : normalizedRules);
     infractionRules.length = 0;
-    infractionRules.push(...(freshRules.length > 0 ? freshRules : normalizedRules));
+    infractionRules.push(...sortedBatch);
     saveState();
 
     res.json({
@@ -6279,6 +6286,10 @@ async function startServer() {
     if (sanction !== undefined) rule.sanction = String(sanction).trim();
     if (points !== undefined) rule.points = Number(points) || 0;
     if (category !== undefined) rule.category = category;
+
+    const sorted = sortInfractionRulesNaturally(infractionRules);
+    infractionRules.length = 0;
+    infractionRules.push(...sorted);
 
     try {
       await directSaveEntityToMysql('infraction_rules', rule);

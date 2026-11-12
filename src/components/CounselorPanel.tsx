@@ -257,7 +257,7 @@ export default function CounselorPanel({
       }
       if (resRules.ok) {
         const data = await resRules.json();
-        setInfractionRules(Array.isArray(data) ? data : []);
+        setInfractionRules(sortInfractionRulesClient(Array.isArray(data) ? data : []));
       }
       if (resJournals.ok) {
         const data = await resJournals.json();
@@ -595,7 +595,7 @@ export default function CounselorPanel({
         const resRules = await fetch("/api/infraction-rules");
         if (resRules.ok) {
           const data = await resRules.json();
-          setInfractionRules(data);
+          setInfractionRules(sortInfractionRulesClient(Array.isArray(data) ? data : []));
         }
         onRefresh();
         setTimeout(() => setSuccessMsg(null), 4000);
@@ -623,7 +623,7 @@ export default function CounselorPanel({
         const resRules = await fetch("/api/infraction-rules");
         if (resRules.ok) {
           const data = await resRules.json();
-          setInfractionRules(data);
+          setInfractionRules(sortInfractionRulesClient(Array.isArray(data) ? data : []));
         }
         onRefresh();
         setTimeout(() => setSuccessMsg(null), 4000);
@@ -903,7 +903,7 @@ export default function CounselorPanel({
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setInfractionRules(Array.isArray(data.infractionRules) ? data.infractionRules : []);
+        setInfractionRules(sortInfractionRulesClient(Array.isArray(data.infractionRules) ? data.infractionRules : []));
         setSuccessMsg(`Berhasil mengimpor ${data.count} rubrik sanksi (BAB & SUB BAB) langsung ke database MySQL!`);
         setTimeout(() => setSuccessMsg(null), 5000);
         onRefresh();
@@ -936,6 +936,48 @@ export default function CounselorPanel({
         return (a.name || "").localeCompare(b.name || "", "id", { sensitivity: "base" });
       });
   }, [allStudents, classFilter]);
+
+  const sortInfractionRulesClient = <T extends Record<string, any>>(rules: T[]): T[] => {
+    const extractSegments = (r: Record<string, any>): number[] | null => {
+      const codeStr = String(r?.code || "").trim();
+      const nameStr = String(r?.name || r?.infractionType || "").trim();
+      const m = codeStr.match(/^(\d+(?:\.\d+)*)/) || nameStr.match(/^(\d+(?:\.\d+)*)/);
+      if (!m) return null;
+      return m[1].split(".").map(n => parseInt(n, 10));
+    };
+    const extractBabNum = (babStr: string): number | null => {
+      const m = String(babStr || "").trim().match(/(\d+)/);
+      return m ? parseInt(m[1], 10) : null;
+    };
+    return [...(rules || [])].sort((a, b) => {
+      const babNumA = extractBabNum(a?.bab);
+      const babNumB = extractBabNum(b?.bab);
+      if (babNumA !== null && babNumB !== null && babNumA !== babNumB) {
+        return babNumA - babNumB;
+      }
+      const segA = extractSegments(a);
+      const segB = extractSegments(b);
+      if (segA && segB) {
+        const len = Math.max(segA.length, segB.length);
+        for (let i = 0; i < len; i++) {
+          const va = segA[i] ?? -1;
+          const vb = segB[i] ?? -1;
+          if (va !== vb) return va - vb;
+        }
+      } else if (segA && !segB) {
+        return -1;
+      } else if (!segA && segB) {
+        return 1;
+      }
+      const babCmp = String(a?.bab || "").localeCompare(String(b?.bab || ""), "id", { numeric: true, sensitivity: "base" });
+      if (babCmp !== 0) return babCmp;
+      const subBabCmp = String(a?.subBab || "").localeCompare(String(b?.subBab || ""), "id", { numeric: true, sensitivity: "base" });
+      if (subBabCmp !== 0) return subBabCmp;
+      const codeCmp = String(a?.code || "").localeCompare(String(b?.code || ""), "id", { numeric: true, sensitivity: "base" });
+      if (codeCmp !== 0) return codeCmp;
+      return String(a?.name || a?.infractionType || "").localeCompare(String(b?.name || b?.infractionType || ""), "id", { numeric: true, sensitivity: "base" });
+    });
+  };
 
   const getRuleDisplayNumber = (r: any, idx: number): string => {
     if (r?.code && String(r.code).trim()) return String(r.code).trim();
@@ -2154,6 +2196,7 @@ export default function CounselorPanel({
 
     Object.values(map).forEach(st => {
       if (st.points < 0) st.points = 0;
+      st.list = sortInfractionRulesClient(st.list);
     });
 
     return Object.values(map).sort((a, b) => b.points - a.points);

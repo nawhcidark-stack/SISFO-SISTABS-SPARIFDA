@@ -98,9 +98,21 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
   const [isSearchingStudents, setIsSearchingStudents] = useState<boolean>(false);
   const [selectedStudent, setSelectedStudent] = useState<StudentSearchResult | null>(null);
   const [pairingAllocationType, setPairingAllocationType] = useState<'auto_spp' | 'savings' | 'treasurer_kas' | 'specific_bill'>('auto_spp');
+  const [pairingAdminFee, setPairingAdminFee] = useState<number>(0);
   const [selectedSpecificBill, setSelectedSpecificBill] = useState<{ id: string; type: 'spp' | 'misc'; title: string } | null>(null);
   const [isPairingSubmitting, setIsPairingSubmitting] = useState<boolean>(false);
   const [pairingSuccessMsg, setPairingSuccessMsg] = useState<string | null>(null);
+
+  const detectBankAdminFee = (grossAmount: number): number => {
+    const gross = Math.max(0, Math.round(Number(grossAmount) || 0));
+    if (gross > 10000) {
+      const rem10k = gross % 10000;
+      const rem5k = gross % 5000;
+      if (rem10k > 5000 && rem10k <= 7500 && gross - rem10k >= 10000) return rem10k;
+      if (rem5k > 0 && gross - rem5k >= 10000) return rem5k;
+    }
+    return 0;
+  };
 
   // Auto-reconcile all state
   const [isAutoReconcilingAll, setIsAutoReconcilingAll] = useState<boolean>(false);
@@ -130,6 +142,8 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
       let descIdx = headers.findIndex(h => h.includes("description") || h.includes("keterangan") || h.includes("deskripsi") || h.includes("item") || h.includes("item_name") || h.includes("items") || h.includes("notes") || h.includes("rincian") || h.includes("detail"));
       let monthIdx = headers.findIndex(h => h.includes("bulan") || h.includes("month") || h.includes("periode"));
       let yearIdx = headers.findIndex(h => h.includes("tahun") || h.includes("year"));
+      let feeIdx = headers.findIndex(h => h.includes("fee") || h.includes("biaya_admin") || h.includes("biaya admin") || h.includes("admin_fee") || h.includes("mdr"));
+      let netIdx = headers.findIndex(h => h.includes("net_amount") || h.includes("nett_amount") || h.includes("net amount") || h.includes("nominal bersih"));
 
       if (orderIdIdx === -1 && txIdIdx !== -1) orderIdIdx = txIdIdx;
       if (orderIdIdx === -1) orderIdIdx = 0; // fallback first column
@@ -141,12 +155,16 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
         const orderId = String(row[orderIdIdx] || '').trim();
         const transactionId = txIdIdx !== -1 && row[txIdIdx] ? String(row[txIdIdx]).trim() : undefined;
         if ((orderId && orderId.length >= 2 && !orderId.toLowerCase().includes("order_id")) || transactionId) {
+          const pType = paymentIdx !== -1 && row[paymentIdx] ? String(row[paymentIdx]).trim() : undefined;
           items.push({
             orderId: orderId || transactionId || "",
             transactionId,
             status: statusIdx !== -1 && row[statusIdx] ? String(row[statusIdx]).trim() : "settlement",
             gross_amount: amountIdx !== -1 && row[amountIdx] ? row[amountIdx] : undefined,
-            payment_type: paymentIdx !== -1 && row[paymentIdx] ? String(row[paymentIdx]).trim() : undefined,
+            admin_fee: feeIdx !== -1 && row[feeIdx] ? row[feeIdx] : undefined,
+            net_amount: netIdx !== -1 && row[netIdx] ? row[netIdx] : undefined,
+            payment_type: pType,
+            paymentType: pType,
             settlement_time: timeIdx !== -1 && row[timeIdx] ? String(row[timeIdx]).trim() : undefined,
             customer_email: emailIdx !== -1 && row[emailIdx] ? String(row[emailIdx]).trim() : undefined,
             customerName: nameIdx !== -1 && row[nameIdx] ? String(row[nameIdx]).trim() : undefined,
@@ -175,6 +193,8 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
       const transactionId = findKey(["transaction_id", "transaction id", "trans_id", "id transaksi", "tx id", "tx_id"]);
       const status = findKey(["status", "transaction_status", "state"]) || "settlement";
       const gross_amount = findKey(["amount", "gross", "total", "nominal", "jumlah"]);
+      const admin_fee = findKey(["admin_fee", "transaction_fee", "biaya_admin", "biaya admin", "fee"]);
+      const net_amount = findKey(["net_amount", "nett_amount", "net amount", "nominal bersih"]);
       const payment_type = findKey(["payment", "channel", "metode"]);
       const settlement_time = findKey(["time", "date", "tanggal", "waktu", "settlement"]);
       const customer_email = findKey(["email", "e-mail", "mail"]);
@@ -183,13 +203,17 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
       const description = findKey(["description", "keterangan", "deskripsi", "item", "item_name", "items", "notes", "rincian", "detail"]);
       const month = findKey(["bulan", "month", "periode"]);
       const year = findKey(["tahun", "year"]);
+      const pTypeStr = payment_type ? String(payment_type).trim() : undefined;
 
       return {
         orderId: orderId ? String(orderId).trim() : (transactionId ? String(transactionId).trim() : ""),
         transactionId: transactionId ? String(transactionId).trim() : undefined,
         status: String(status).trim(),
         gross_amount,
-        payment_type: payment_type ? String(payment_type).trim() : undefined,
+        admin_fee,
+        net_amount,
+        payment_type: pTypeStr,
+        paymentType: pTypeStr,
         settlement_time: settlement_time ? String(settlement_time).trim() : undefined,
         customer_email: customer_email ? String(customer_email).trim() : undefined,
         customerName: customerName ? String(customerName).trim() : undefined,
@@ -374,7 +398,12 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
     setPairingItem(item);
     setSelectedStudent(null);
     setSelectedSpecificBill(null);
-    setPairingAllocationType('auto_spp');
+    const isSavItem =
+      item.orderId?.toUpperCase().startsWith("SAV-") ||
+      item.orderId?.toUpperCase().startsWith("TAB-") ||
+      item.category?.toLowerCase().includes("tabungan");
+    setPairingAllocationType(isSavItem ? 'savings' : 'auto_spp');
+    setPairingAdminFee(detectBankAdminFee(Number(item.amount) || 0));
     setPairingSuccessMsg(null);
 
     // Extract query hint from item
@@ -416,6 +445,7 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
         orderId: pairingItem.orderId,
         transactionId: pairingItem.transactionId,
         amount: pairingItem.amount,
+        adminFee: pairingAllocationType === 'savings' ? pairingAdminFee : undefined,
         studentId: selectedStudent?.id,
         studentNis: selectedStudent?.nis,
         allocationType: pairingAllocationType,
@@ -434,11 +464,19 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
 
       const data = await res.json();
       if (res.ok && data.success) {
+        const effectiveNetAmount =
+          typeof data.netSavingsAmount === "number"
+            ? data.netSavingsAmount
+            : pairingAllocationType === "savings"
+            ? Math.max(0, pairingItem.amount - pairingAdminFee)
+            : pairingItem.amount;
+
         // Update local results state
         setResults(prev => prev.map(r => {
           if (r.orderId === pairingItem.orderId) {
             return {
               ...r,
+              amount: effectiveNetAmount,
               studentName: selectedStudent?.name || (pairingAllocationType === 'treasurer_kas' ? "Kas Umum (BKU)" : r.studentName),
               studentNis: selectedStudent?.nis || r.studentNis,
               studentClass: selectedStudent?.class || r.studentClass,
@@ -456,7 +494,7 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
             ...summary,
             reconciledCount: summary.reconciledCount + 1,
             notFoundCount: Math.max(0, summary.notFoundCount - 1),
-            totalAmountReconciled: summary.totalAmountReconciled + pairingItem.amount
+            totalAmountReconciled: summary.totalAmountReconciled + effectiveNetAmount
           });
         }
 
@@ -1368,19 +1406,72 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
                             type="radio"
                             name="allocType"
                             checked={pairingAllocationType === 'savings'}
-                            onChange={() => setPairingAllocationType('savings')}
+                            onChange={() => {
+                              setPairingAllocationType('savings');
+                              setPairingAdminFee(detectBankAdminFee(Number(pairingItem.amount) || 0));
+                            }}
                             className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
                           />
-                          <div>
+                          <div className="flex-1">
                             <div className="font-black text-slate-900 flex items-center gap-1.5">
                               <Wallet size={14} className="text-emerald-600" />
-                              <span>Setorkan Penuh ke Saldo Tabungan Siswa</span>
+                              <span>Setorkan ke Saldo Tabungan Siswa</span>
                             </div>
                             <p className="text-[11px] text-slate-600 mt-0.5">
-                              Seluruh nominal Rp {pairingItem.amount.toLocaleString("id-ID")} akan masuk sebagai saldo tabungan siswa.
+                              Nominal bersih sebesar{" "}
+                              <strong className="text-emerald-700">
+                                Rp {Math.max(0, pairingItem.amount - pairingAdminFee).toLocaleString("id-ID")}
+                              </strong>{" "}
+                              akan masuk ke saldo tabungan siswa (biaya admin bank tidak ikut masuk saldo).
                             </p>
                           </div>
                         </label>
+
+                        {pairingAllocationType === 'savings' && (
+                          <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-extrabold text-amber-900">
+                                Potongan Biaya Admin Bank (Tidak Masuk Saldo):
+                              </span>
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md">
+                                Otomatis Terdeteksi
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {[0, 4000, 4440, 5000].map((feePreset) => (
+                                <button
+                                  key={feePreset}
+                                  type="button"
+                                  onClick={() => setPairingAdminFee(feePreset)}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                                    pairingAdminFee === feePreset
+                                      ? "bg-amber-600 text-white border-amber-600"
+                                      : "bg-white text-slate-700 border-slate-300 hover:bg-amber-100"
+                                  }`}
+                                >
+                                  Rp {feePreset.toLocaleString("id-ID")}
+                                </button>
+                              ))}
+                              <div className="flex items-center gap-1 ml-auto">
+                                <span className="text-[10px] font-bold text-slate-600">Rp</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={100}
+                                  value={pairingAdminFee}
+                                  onChange={(e) => setPairingAdminFee(Math.max(0, Number(e.target.value) || 0))}
+                                  className="w-24 px-2 py-1 bg-white border border-amber-300 rounded-lg text-xs font-bold text-slate-800 text-right"
+                                />
+                              </div>
+                            </div>
+                            <div className="pt-1.5 border-t border-amber-200/80 flex items-center justify-between text-[11px]">
+                              <span className="font-bold text-slate-700">Saldo Bersih Masuk Tabungan Siswa:</span>
+                              <span className="font-black text-emerald-700 text-xs">
+                                Rp {Math.max(0, pairingItem.amount - pairingAdminFee).toLocaleString("id-ID")}
+                              </span>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Option 3: Record to Treasurer BKU */}
                         <label

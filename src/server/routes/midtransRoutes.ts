@@ -572,6 +572,132 @@ export function parseMidtransTime(timeStr: string): string {
   return new Date().toISOString();
 }
 
+export function isBankTransferPaymentMethod(rawPaymentType?: string): boolean {
+  if (!rawPaymentType) return false;
+  const lower = String(rawPaymentType).toLowerCase();
+  return (
+    lower.includes("bank") ||
+    lower.includes("va") ||
+    lower.includes("virtual") ||
+    lower.includes("echannel") ||
+    lower.includes("mandiri") ||
+    lower.includes("bca") ||
+    lower.includes("bni") ||
+    lower.includes("bri") ||
+    lower.includes("permata") ||
+    lower.includes("cimb") ||
+    lower.includes("bsi") ||
+    lower.includes("danamon") ||
+    lower.includes("transfer")
+  );
+}
+
+/**
+ * Menghitung nominal bersih (pokok) setoran tabungan siswa agar biaya admin bank/Midtrans
+ * (misal Rp 4.000, Rp 4.440, Rp 4.500, Rp 2.500, dll) TIDAK ikut masuk ke dalam saldo tabungan siswa.
+ */
+export function resolveNetSavingsDepositAmount(
+  grossAmount: number,
+  options?: {
+    paymentType?: string;
+    configuredAdminFee?: number;
+    explicitAdminFee?: number;
+    explicitAdminFeeProvided?: boolean;
+    explicitNetAmount?: number;
+    reportFee?: number;
+    existingPrincipalAmount?: number;
+  }
+): { netAmount: number; adminFeeDeducted: number } {
+  const gross = Math.max(0, Math.round(Number(grossAmount) || 0));
+  if (gross <= 0) {
+    return { netAmount: 0, adminFeeDeducted: 0 };
+  }
+
+  // 1. Jika Admin menentukan potongan biaya admin secara eksplisit di form Rekonsiliasi Manual
+  if (
+    options?.explicitAdminFeeProvided &&
+    typeof options.explicitAdminFee === "number" &&
+    !isNaN(options.explicitAdminFee) &&
+    options.explicitAdminFee >= 0
+  ) {
+    const fee = Math.round(options.explicitAdminFee);
+    if (fee > 0 && gross > fee) {
+      return { netAmount: gross - fee, adminFeeDeducted: fee };
+    }
+    if (fee === 0) {
+      return { netAmount: gross, adminFeeDeducted: 0 };
+    }
+  }
+
+  // 2. Jika terdapat nominal bersih eksplisit dari report (dan kelipatan 5.000)
+  if (
+    typeof options?.explicitNetAmount === "number" &&
+    !isNaN(options.explicitNetAmount) &&
+    options.explicitNetAmount >= 10000 &&
+    options.explicitNetAmount < gross &&
+    gross - options.explicitNetAmount <= 15000 &&
+    Math.round(options.explicitNetAmount) % 5000 === 0
+  ) {
+    const net = Math.round(options.explicitNetAmount);
+    return { netAmount: net, adminFeeDeducted: gross - net };
+  }
+
+  // 3. Jika ada transaksi pending tabungan sebelumnya dengan nominal pokok bersih (kelipatan Rp 5.000)
+  if (
+    typeof options?.existingPrincipalAmount === "number" &&
+    !isNaN(options.existingPrincipalAmount) &&
+    options.existingPrincipalAmount >= 10000
+  ) {
+    const principal = Math.round(options.existingPrincipalAmount);
+    if (principal % 5000 === 0 && gross >= principal && gross - principal <= 15000) {
+      return { netAmount: principal, adminFeeDeducted: gross - principal };
+    }
+  }
+
+  // 4. Jika kolom biaya admin di file CSV/Excel report tersedia
+  if (
+    typeof options?.reportFee === "number" &&
+    !isNaN(options.reportFee) &&
+    options.reportFee > 0 &&
+    options.reportFee <= 15000
+  ) {
+    const fee = Math.round(options.reportFee);
+    if (gross - fee >= 10000 && (gross - fee) % 5000 === 0) {
+      return { netAmount: gross - fee, adminFeeDeducted: fee };
+    }
+  }
+
+  // 5. Deteksi otomatis biaya admin bank (VA / Transfer Bank) pada gross_amount
+  // Setor tabungan siswa minimal Rp 10.000 dan kelipatan Rp 5.000 / Rp 10.000.
+  // Apabila terdapat tambahan biaya admin bank (misal Rp 4.000, Rp 4.440 PPN, Rp 4.400, Rp 4.500, Rp 2.500, Rp 3.000, Rp 3.500, Rp 5.500, Rp 6.500),
+  // maka kelebihan biaya admin tersebut dipisahkan agar tidak masuk ke saldo tabungan siswa.
+  if (gross > 10000) {
+    const rem10k = gross % 10000;
+    const rem5k = gross % 5000;
+
+    if (rem10k > 5000 && rem10k <= 7500 && gross - rem10k >= 10000) {
+      return { netAmount: gross - rem10k, adminFeeDeducted: rem10k };
+    }
+
+    if (rem5k > 0 && gross - rem5k >= 10000) {
+      return { netAmount: gross - rem5k, adminFeeDeducted: rem5k };
+    }
+
+    const configuredFee = Math.round(Number(options?.configuredAdminFee) || 0);
+    if (
+      rem10k === 5000 &&
+      isBankTransferPaymentMethod(options?.paymentType) &&
+      configuredFee === 5000 &&
+      gross - 5000 >= 10000
+    ) {
+      return { netAmount: gross - 5000, adminFeeDeducted: 5000 };
+    }
+  }
+
+  return { netAmount: gross, adminFeeDeducted: 0 };
+}
+
+
 // ---------------- Router Factory ----------------
 
 export function createMidtransRouter(deps: MidtransRouterDeps): Router {
@@ -940,9 +1066,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       orderId.toUpperCase().startsWith("NONSPP-") || 
       orderId.toUpperCase().startsWith("LAIN-");
 
-    const isExplicitSavings = options?.preferredCategory === "savings" || 
-      orderId.toUpperCase().startsWith("SAV-") || 
-      orderId.toUpperCase().startsWith("TAB-");
+    const isExplicitSavOrder = options?.preferredCategory === "savings" || 
+      isExplicitSavings(orderId, `${options?.description || ""} ${options?.notes || ""}`) ||
+      savingsTransactions.some(t => (orderId && t.orderId === orderId) || (transactionId && t.transactionId === transactionId));
 
     // 1. Non-SPP (Misc) Allocation
     if (isExplicitMisc) {
@@ -966,28 +1092,56 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         affectedMiscBills.push(exactMisc);
       }
     }
-    // 2. Savings Explicit Allocation
-    else if (isExplicitSavings) {
-      const newSavingsTx: SavingsTransaction = {
-        id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        studentId: targetStudent.id,
-        studentNis: targetStudent.nis,
-        type: "deposit",
-        amount: amountVal,
-        status: "success",
-        createdAt: paidAt,
-        paymentMethod: paymentType,
-        orderId: orderId,
-        transactionId: transactionId,
-        notes: options?.notes || `Setoran Tabungan Midtrans (${orderId})`
-      };
-      savingsTransactions.unshift(newSavingsTx);
-      targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + amountVal;
-      AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
-      savingsDeposited = amountVal;
-      remainingAmount = 0;
-      itemsDetail.push(`Saldo Tabungan (Rp ${amountVal.toLocaleString("id-ID")})`);
-      affectedSavingsTxs.push(newSavingsTx);
+    // 2. Savings Explicit Allocation (Pastikan Biaya Admin Bank tidak ikut masuk ke saldo tabungan siswa)
+    else if (isExplicitSavOrder) {
+      const existingSavTx = savingsTransactions.find(
+        t => (orderId && t.orderId === orderId) || (transactionId && t.transactionId === transactionId)
+      );
+      const { netAmount: netSavingsAmt, adminFeeDeducted } = resolveNetSavingsDepositAmount(amountVal, {
+        paymentType,
+        configuredAdminFee: midtransConfig.adminFee,
+        existingPrincipalAmount: existingSavTx?.amount
+      });
+
+      if (existingSavTx && existingSavTx.status !== "success") {
+        existingSavTx.amount = netSavingsAmt;
+        existingSavTx.status = "success";
+        existingSavTx.paymentMethod = paymentType;
+        existingSavTx.orderId = orderId;
+        if (transactionId) existingSavTx.transactionId = transactionId;
+        if (adminFeeDeducted > 0 && (!existingSavTx.notes || !existingSavTx.notes.includes("Biaya Admin"))) {
+          existingSavTx.notes = `${existingSavTx.notes || `Setoran Tabungan Midtrans (${orderId})`} [Pokok: Rp ${netSavingsAmt.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`;
+        }
+        targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + netSavingsAmt;
+        AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
+        savingsDeposited = netSavingsAmt;
+        remainingAmount = 0;
+        itemsDetail.push(`Saldo Tabungan (Rp ${netSavingsAmt.toLocaleString("id-ID")})`);
+        affectedSavingsTxs.push(existingSavTx);
+      } else {
+        const newSavingsTx: SavingsTransaction = {
+          id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          studentId: targetStudent.id,
+          studentNis: targetStudent.nis,
+          type: "deposit",
+          amount: netSavingsAmt,
+          status: "success",
+          createdAt: paidAt,
+          paymentMethod: paymentType,
+          orderId: orderId,
+          transactionId: transactionId,
+          notes: adminFeeDeducted > 0
+            ? `${options?.notes || `Setoran Tabungan Midtrans (${orderId})`} [Pokok: Rp ${netSavingsAmt.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`
+            : (options?.notes || `Setoran Tabungan Midtrans (${orderId})`)
+        };
+        savingsTransactions.unshift(newSavingsTx);
+        targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + netSavingsAmt;
+        AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
+        savingsDeposited = netSavingsAmt;
+        remainingAmount = 0;
+        itemsDetail.push(`Saldo Tabungan (Rp ${netSavingsAmt.toLocaleString("id-ID")})`);
+        affectedSavingsTxs.push(newSavingsTx);
+      }
     }
     // 3. SPP Allocation: Chronological across unpaid SPP bills
     else {
@@ -1309,7 +1463,14 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           return { status: "settled", actionTaken: false, detailMessage: `Transaksi setoran tabungan ini telah dibatalkan / dikoreksi oleh Admin dan tidak boleh dipulihkan otomatis.`, midtransStatus: statusData };
         }
         if (isSettled && trans.status !== "success") {
+          const { netAmount: cleanSavAmount } = resolveNetSavingsDepositAmount(Number(trans.amount) || 0, {
+            paymentType: actualPaymentType,
+            configuredAdminFee: midtransConfig.adminFee
+          });
+          trans.amount = cleanSavAmount;
           trans.status = "success";
+          trans.paymentMethod = actualPaymentType;
+          if (targetTransactionId) trans.transactionId = targetTransactionId;
           actionTaken = true;
           const student = students.find(s => s.id === trans.studentId);
           if (student) {
@@ -1388,7 +1549,14 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           });
           matchedSavings.forEach(t => {
             if (t.status !== "success") {
+              const { netAmount: cleanSavAmount } = resolveNetSavingsDepositAmount(Number(t.amount) || 0, {
+                paymentType: actualPaymentType,
+                configuredAdminFee: midtransConfig.adminFee
+              });
+              t.amount = cleanSavAmount;
               t.status = "success";
+              t.paymentMethod = actualPaymentType;
+              if (targetTransactionId) t.transactionId = targetTransactionId;
               const student = students.find(s => s.id === t.studentId);
               if (student) {
                 student.savingsBalance = (Number(student.savingsBalance) || 0) + Number(t.amount);
@@ -2509,10 +2677,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
     selectedSpp.forEach(b => { b.orderId = orderId; b.status = "pending"; });
     selectedMisc.forEach(m => { m.orderId = orderId; m.status = "pending"; });
+    const createdCartSavings: SavingsTransaction[] = [];
     selectedSavings.forEach(s => {
       const trans: SavingsTransaction = {
         id: `sav-cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         studentId: s.studentId || student!.id,
+        studentNis: student!.nis,
         type: "deposit",
         amount: s.amount,
         status: "pending",
@@ -2520,9 +2690,15 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         orderId
       };
       savingsTransactions.unshift(trans);
+      createdCartSavings.push(trans);
     });
 
     saveState();
+    if (persistEntities) {
+      if (selectedSpp.length > 0) persistEntities("sppBills", selectedSpp).catch(() => {});
+      if (selectedMisc.length > 0) persistEntities("miscBills", selectedMisc).catch(() => {});
+      if (createdCartSavings.length > 0) persistEntities("savingsTransactions", createdCartSavings).catch(() => {});
+    }
     if (student && student.id) {
       scheduleStudentAutoReconcileQueue(student.id, orderId);
     }
@@ -2725,6 +2901,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     const trans: SavingsTransaction = {
       id: `sav-pay-${Date.now()}`,
       studentId,
+      studentNis: student.nis,
       type: "deposit",
       amount: valAmount,
       status: "pending",
@@ -2733,6 +2910,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     };
     savingsTransactions.unshift(trans);
     saveState();
+    if (persistEntity) {
+      persistEntity("savingsTransactions", trans).catch(() => {});
+    }
     scheduleStudentAutoReconcileQueue(studentId, orderId);
 
     const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
@@ -3120,6 +3300,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           settlementTime,
           notes,
           amount,
+          adminFee: overrideAdminFee,
           orderId = cleanQuery,
           transactionId
         } = allocationOverride;
@@ -3183,31 +3364,70 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         }
 
         if (allocationType === "savings") {
-          const newSavingsTx: SavingsTransaction = {
-            id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            studentId: targetStudent.id,
-            studentNis: targetStudent.nis,
-            type: "deposit",
-            amount: effectiveAmount,
-            status: "success",
-            createdAt: resolvedPaidAt,
-            paymentMethod: paymentType,
-            orderId: effectiveOrderId,
-            transactionId: transactionId ? String(transactionId).trim() : undefined,
-            notes: notes || `Setoran Tabungan Single Reconcile (${effectiveOrderId})`
-          };
-          savingsTransactions.unshift(newSavingsTx);
-          targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + effectiveAmount;
+          const cleanTxIdStr = transactionId ? String(transactionId).trim() : undefined;
+          let existingSavTx = savingsTransactions.find(
+            t =>
+              (effectiveOrderId && t.orderId === effectiveOrderId) ||
+              (cleanTxIdStr && t.transactionId === cleanTxIdStr) ||
+              t.id === effectiveOrderId
+          );
+          if (!existingSavTx) {
+            existingSavTx = savingsTransactions.find(
+              t => t.studentId === targetStudent!.id && t.status === "pending"
+            );
+          }
+
+          const { netAmount: netSavingsAmount, adminFeeDeducted } = resolveNetSavingsDepositAmount(effectiveAmount, {
+            paymentType,
+            configuredAdminFee: midtransConfig.adminFee,
+            explicitAdminFee: overrideAdminFee !== undefined && overrideAdminFee !== null && overrideAdminFee !== "" ? Number(overrideAdminFee) : undefined,
+            explicitAdminFeeProvided: overrideAdminFee !== undefined && overrideAdminFee !== null && overrideAdminFee !== "",
+            existingPrincipalAmount: existingSavTx?.amount
+          });
+
+          let savedTx: SavingsTransaction;
+          if (existingSavTx && existingSavTx.status !== "success") {
+            existingSavTx.amount = netSavingsAmount;
+            existingSavTx.status = "success";
+            existingSavTx.paymentMethod = paymentType;
+            existingSavTx.orderId = effectiveOrderId;
+            if (cleanTxIdStr) existingSavTx.transactionId = cleanTxIdStr;
+            existingSavTx.notes = adminFeeDeducted > 0
+              ? `${notes || existingSavTx.notes || `Setoran Tabungan Single Reconcile (${effectiveOrderId})`} [Pokok: Rp ${netSavingsAmount.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`
+              : (notes || existingSavTx.notes || `Setoran Tabungan Single Reconcile (${effectiveOrderId})`);
+            savedTx = existingSavTx;
+          } else {
+            savedTx = {
+              id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              studentId: targetStudent.id,
+              studentNis: targetStudent.nis,
+              type: "deposit",
+              amount: netSavingsAmount,
+              status: "success",
+              createdAt: resolvedPaidAt,
+              paymentMethod: paymentType,
+              orderId: effectiveOrderId,
+              transactionId: cleanTxIdStr,
+              notes: adminFeeDeducted > 0
+                ? `${notes || `Setoran Tabungan Single Reconcile (${effectiveOrderId})`} [Pokok: Rp ${netSavingsAmount.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`
+                : (notes || `Setoran Tabungan Single Reconcile (${effectiveOrderId})`)
+            };
+            savingsTransactions.unshift(savedTx);
+          }
+
+          targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + netSavingsAmount;
           AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
 
           recordOrUpdateMidtransTransaction({
             orderId: effectiveOrderId,
-            transactionId: transactionId ? String(transactionId).trim() : undefined,
+            transactionId: cleanTxIdStr,
             billType: "savings",
-            grossAmount: effectiveAmount,
+            grossAmount: netSavingsAmount,
             studentName: targetStudent.name,
             studentNis: targetStudent.nis,
-            description: "Setoran Tabungan (Single Reconcile)",
+            description: adminFeeDeducted > 0
+              ? `Setoran Tabungan (Pokok Rp ${netSavingsAmount.toLocaleString("id-ID")}, Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")})`
+              : "Setoran Tabungan (Single Reconcile)",
             transactionStatus: "settlement",
             paymentType,
             settlementTime: resolvedPaidAt
@@ -3215,15 +3435,19 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
           saveState();
           if (persistEntity) {
-            await persistEntity("savingsTransactions", newSavingsTx).catch(e => console.error("Error saving savings tx to MySQL:", e));
+            await persistEntity("savingsTransactions", savedTx).catch(e => console.error("Error saving savings tx to MySQL:", e));
             await persistEntity("students", targetStudent).catch(e => console.error("Error saving student to MySQL:", e));
           }
 
           return res.json({
             success: true,
             actionTaken: true,
-            message: `Berhasil menambahkan Rp ${effectiveAmount.toLocaleString("id-ID")} ke Saldo Tabungan a.n ${targetStudent.name} (NIS: ${targetStudent.nis}).`,
+            message: adminFeeDeducted > 0
+              ? `Berhasil menambahkan Rp ${netSavingsAmount.toLocaleString("id-ID")} ke Saldo Tabungan a.n ${targetStudent.name} (NIS: ${targetStudent.nis}). Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} otomatis dipisahkan dan tidak masuk saldo.`
+              : `Berhasil menambahkan Rp ${netSavingsAmount.toLocaleString("id-ID")} ke Saldo Tabungan a.n ${targetStudent.name} (NIS: ${targetStudent.nis}).`,
             allocationType: "savings",
+            netSavingsAmount,
+            adminFeeDeducted,
             newBalance: targetStudent.savingsBalance
           });
         }
@@ -3866,9 +4090,14 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         if (!cleanOrderId && !cleanTxId) continue;
 
         const amountVal = Number(item.grossAmount || item.amount || item.gross_amount || 0);
+        const itemReportFee = Number(item.adminFee || item.admin_fee || item.fee || item.transaction_fee || item.biaya_admin || 0);
+        const itemNetAmount = Number(item.netAmount || item.net_amount || item.nett_amount || 0);
         const rawStatus = String(item.status || item.transaction_status || "settlement").toLowerCase().trim();
-        const actualPaymentType = item.paymentType ? (item.paymentType.toLowerCase().includes("midtrans") ? item.paymentType : `Midtrans (${item.paymentType})`) : "Midtrans Online";
-        const reportTime = item.settlementTime || item.transactionTime || new Date().toISOString();
+        const rawPaymentTypeStr = String(item.paymentType || item.payment_type || item["Payment Type"] || item["Channel"] || "").trim();
+        const actualPaymentType = rawPaymentTypeStr
+          ? (rawPaymentTypeStr.toLowerCase().includes("midtrans") ? rawPaymentTypeStr : formatMidtransPaymentMethod(rawPaymentTypeStr))
+          : "Midtrans Online";
+        const reportTime = item.settlementTime || item.settlement_time || item.transactionTime || item.transaction_time || new Date().toISOString();
         const resolvedPaidAt = parseMidtransTime(reportTime);
         const customerEmail = String(item.customerEmail || item.customer_email || "").trim().toLowerCase();
         const rawNis = String(item.studentNis || item.nis || "").trim();
@@ -4171,6 +4400,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
             matchedSavings.forEach(t => {
               if (t.status !== "success" && !t.isVoidedByAdmin && !voidedPayments.some(v => v.billId === t.id)) {
+                const { netAmount: cleanSavAmt } = resolveNetSavingsDepositAmount(Number(t.amount) || 0, {
+                  paymentType: actualPaymentType,
+                  configuredAdminFee: midtransConfig.adminFee,
+                  reportFee: itemReportFee > 0 ? itemReportFee : undefined
+                });
+                t.amount = cleanSavAmt;
                 t.status = "success";
                 t.paymentMethod = actualPaymentType;
                 if (cleanTxId) t.transactionId = cleanTxId;
@@ -4268,7 +4503,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               cleanOrderId,
               cleanTxId,
               actualPaymentType,
-              resolvedPaidAt
+              resolvedPaidAt,
+              { description: rawDesc }
             );
 
             if (!alloc.reconciled) {
@@ -4395,10 +4631,24 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 message: `DIBATALKAN ADMIN: Transaksi setoran tabungan a.n ${student?.name || 'Siswa'} telah dibatalkan / dikoreksi oleh Admin sekolah.`
               });
             } else {
+              // Pastikan biaya admin bank dari gross_amount tidak ikut masuk ke saldo tabungan siswa
+              const grossCandidate = amountVal > 0 ? amountVal : Number(savingsTx.amount) || 0;
+              const { netAmount: netSavingsAmt, adminFeeDeducted } = resolveNetSavingsDepositAmount(grossCandidate, {
+                paymentType: actualPaymentType,
+                configuredAdminFee: midtransConfig.adminFee,
+                reportFee: itemReportFee > 0 ? itemReportFee : undefined,
+                explicitNetAmount: itemNetAmount > 0 ? itemNetAmount : undefined,
+                existingPrincipalAmount: Number(savingsTx.amount) || undefined
+              });
+
+              savingsTx.amount = netSavingsAmt;
               savingsTx.status = "success";
               savingsTx.paymentMethod = actualPaymentType;
               savingsTx.orderId = cleanOrderId;
               if (cleanTxId) savingsTx.transactionId = cleanTxId;
+              if (adminFeeDeducted > 0 && (!savingsTx.notes || !savingsTx.notes.includes("Biaya Admin"))) {
+                savingsTx.notes = `${savingsTx.notes || "Setoran Tabungan (Midtrans Report)"} [Pokok: Rp ${netSavingsAmt.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`;
+              }
 
               if (student) {
                 student.savingsBalance = (Number(student.savingsBalance) || 0) + Number(savingsTx.amount);
@@ -4416,7 +4666,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 type: "incoming",
                 category: "Setoran Tabungan",
                 amount: savingsTx.amount,
-                description: `Setoran Tabungan Midtrans Online (${student?.name || "Siswa"}) [Order: ${cleanOrderId}]`,
+                description: `Setoran Tabungan Midtrans Online (${student?.name || "Siswa"}) [Order: ${cleanOrderId}]${adminFeeDeducted > 0 ? ` (Pokok Rp ${savingsTx.amount.toLocaleString("id-ID")}, Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")})` : ""}`,
                 date: resolvedPaidAt.substring(0, 10),
                 source: "savings",
                 studentName: student?.name,
@@ -4438,7 +4688,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 grossAmount: savingsTx.amount,
                 studentName: student?.name,
                 studentNis: student?.nis,
-                description: "Setoran Tabungan",
+                description: adminFeeDeducted > 0
+                  ? `Setoran Tabungan (Pokok Rp ${savingsTx.amount.toLocaleString("id-ID")}, Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")})`
+                  : "Setoran Tabungan",
                 transactionStatus: "settlement",
                 paymentType: actualPaymentType,
                 settlementTime: resolvedPaidAt
@@ -4456,7 +4708,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 reportPaymentType: actualPaymentType,
                 reportTime: savingsTx.createdAt || resolvedPaidAt,
                 reconciliationStatus: "reconciled",
-                message: `BERHASIL DILUNASI! Setoran Tabungan Rp ${savingsTx.amount.toLocaleString("id-ID")} a.n ${student?.name || 'Siswa'} berhasil ditambahkan ke saldo tabungan.`
+                message: adminFeeDeducted > 0
+                  ? `BERHASIL DILUNASI! Setoran Tabungan Rp ${savingsTx.amount.toLocaleString("id-ID")} a.n ${student?.name || 'Siswa'} berhasil ditambahkan ke saldo tabungan (Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak ikut masuk ke saldo).`
+                  : `BERHASIL DILUNASI! Setoran Tabungan Rp ${savingsTx.amount.toLocaleString("id-ID")} a.n ${student?.name || 'Siswa'} berhasil ditambahkan ke saldo tabungan.`
               });
             }
             continue;
@@ -4464,34 +4718,44 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
           // If no existing transaction record but targetStudent identified:
           if (targetStudent && amountVal > 0) {
+            const { netAmount: netSavingsAmt, adminFeeDeducted } = resolveNetSavingsDepositAmount(amountVal, {
+              paymentType: actualPaymentType,
+              configuredAdminFee: midtransConfig.adminFee,
+              reportFee: itemReportFee > 0 ? itemReportFee : undefined,
+              explicitNetAmount: itemNetAmount > 0 ? itemNetAmount : undefined
+            });
+
             const newSavingsTx: SavingsTransaction = {
               id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
               studentId: targetStudent.id,
+              studentNis: targetStudent.nis,
               type: "deposit",
-              amount: amountVal,
+              amount: netSavingsAmt,
               status: "success",
               createdAt: resolvedPaidAt,
               paymentMethod: actualPaymentType,
               orderId: cleanOrderId,
               transactionId: cleanTxId,
-              notes: `Setoran Tabungan (Midtrans Report Import)`
+              notes: adminFeeDeducted > 0
+                ? `Setoran Tabungan (Midtrans Report Import) [Pokok: Rp ${netSavingsAmt.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`
+                : `Setoran Tabungan (Midtrans Report Import)`
             };
             savingsTransactions.unshift(newSavingsTx);
-            targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + amountVal;
+            targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + netSavingsAmt;
             AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
             touchedSavingsMap.set(newSavingsTx.id, newSavingsTx);
             touchedStudentsMap.set(targetStudent.id, targetStudent);
 
             reconciledCount++;
-            totalAmountReconciled += amountVal;
+            totalAmountReconciled += netSavingsAmt;
             stateChanged = true;
 
             const newKas: TreasurerTransaction = {
               id: `trx-kas-mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${reconciledCount}`,
               type: "incoming",
               category: "Setoran Tabungan",
-              amount: amountVal,
-              description: `Setoran Tabungan Midtrans Online (${targetStudent.name}) [Order: ${cleanOrderId}]`,
+              amount: netSavingsAmt,
+              description: `Setoran Tabungan Midtrans Online (${targetStudent.name}) [Order: ${cleanOrderId}]${adminFeeDeducted > 0 ? ` (Pokok Rp ${netSavingsAmt.toLocaleString("id-ID")}, Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")})` : ""}`,
               date: resolvedPaidAt.substring(0, 10),
               source: "savings",
               studentName: targetStudent.name,
@@ -4510,10 +4774,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               orderId: cleanOrderId,
               transactionId: cleanTxId,
               billType: "savings",
-              grossAmount: amountVal,
+              grossAmount: netSavingsAmt,
               studentName: targetStudent.name,
               studentNis: targetStudent.nis,
-              description: "Setoran Tabungan",
+              description: adminFeeDeducted > 0
+                ? `Setoran Tabungan (Pokok Rp ${netSavingsAmt.toLocaleString("id-ID")}, Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")})`
+                : "Setoran Tabungan",
               transactionStatus: "settlement",
               paymentType: actualPaymentType,
               settlementTime: resolvedPaidAt
@@ -4526,12 +4792,14 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               studentNis: targetStudent.nis,
               studentClass: targetStudent.class,
               category: "Setoran Tabungan",
-              amount: amountVal,
+              amount: netSavingsAmt,
               reportStatus: rawStatus,
               reportPaymentType: actualPaymentType,
               reportTime: resolvedPaidAt,
               reconciliationStatus: "reconciled",
-              message: `BERHASIL DILUNASI! Setoran Tabungan Rp ${amountVal.toLocaleString("id-ID")} a.n ${targetStudent.name} (NIS: ${targetStudent.nis}) berhasil ditambahkan ke saldo tabungan.`
+              message: adminFeeDeducted > 0
+                ? `BERHASIL DILUNASI! Setoran Tabungan Rp ${netSavingsAmt.toLocaleString("id-ID")} a.n ${targetStudent.name} (NIS: ${targetStudent.nis}) berhasil ditambahkan ke saldo tabungan (Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak ikut masuk ke saldo).`
+                : `BERHASIL DILUNASI! Setoran Tabungan Rp ${netSavingsAmt.toLocaleString("id-ID")} a.n ${targetStudent.name} (NIS: ${targetStudent.nis}) berhasil ditambahkan ke saldo tabungan.`
             });
             continue;
           }
@@ -4905,8 +5173,11 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             cleanOrderId || `MT-${Date.now()}`,
             cleanTxId,
             actualPaymentType,
-            resolvedPaidAt
+            resolvedPaidAt,
+            { description: rawDesc }
           );
+
+          const effectiveAllocAmt = alloc.amountReconciled > 0 ? alloc.amountReconciled : (alloc.savingsDeposited > 0 ? alloc.savingsDeposited : amountVal);
 
           alloc.affectedSppBills.forEach(b => touchedSppMap.set(b.id, b));
           alloc.affectedMiscBills.forEach(m => touchedMiscMap.set(m.id, m));
@@ -4914,14 +5185,14 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           touchedStudentsMap.set(targetStudent.id, targetStudent);
 
           reconciledCount++;
-          totalAmountReconciled += amountVal;
+          totalAmountReconciled += effectiveAllocAmt;
           stateChanged = true;
 
           const newKas: TreasurerTransaction = {
             id: `trx-kas-mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${reconciledCount}`,
             type: "incoming",
             category: alloc.category,
-            amount: amountVal,
+            amount: effectiveAllocAmt,
             description: `Pembayaran Online Midtrans: ${alloc.category} (${targetStudent.name}) [Order: ${cleanOrderId || `MT-${Date.now()}`}]`,
             date: resolvedPaidAt.substring(0, 10),
             source: alloc.paidSppCount > 0 ? "spp" : (alloc.paidMiscCount > 0 ? "custom" : "savings"),
@@ -4941,7 +5212,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             orderId: cleanOrderId || `MT-${Date.now()}`,
             transactionId: cleanTxId,
             billType: alloc.paidSppCount > 0 ? "spp" : (alloc.paidMiscCount > 0 ? "misc" : "savings"),
-            grossAmount: amountVal,
+            grossAmount: effectiveAllocAmt,
             studentName: targetStudent.name,
             studentNis: targetStudent.nis,
             description: alloc.category,
@@ -4957,7 +5228,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             studentNis: targetStudent.nis,
             studentClass: targetStudent.class || "-",
             category: alloc.category,
-            amount: amountVal,
+            amount: effectiveAllocAmt,
             reportStatus: rawStatus,
             reportPaymentType: actualPaymentType,
             reportTime: resolvedPaidAt,
@@ -5066,6 +5337,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         orderId,
         transactionId,
         amount,
+        adminFee: manualAdminFee,
         studentId,
         studentNis,
         allocationType = "auto_spp", // 'auto_spp' | 'savings' | 'specific_bill' | 'treasurer_kas'
@@ -5150,32 +5422,95 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       }
 
       if (allocationType === "savings") {
-        // Force allocate 100% to student's savings account
-        const newSavingsTx: SavingsTransaction = {
-          id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          studentId: targetStudent.id,
-          studentNis: targetStudent.nis,
-          type: "deposit",
-          amount: amountVal,
-          status: "success",
-          createdAt: resolvedPaidAt,
-          paymentMethod: paymentType,
-          orderId: cleanOrderId,
-          transactionId: cleanTxId,
-          notes: notes || `Setoran Tabungan Manual Reconcile (${cleanOrderId})`
-        };
-        savingsTransactions.unshift(newSavingsTx);
-        targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + amountVal;
+        // Pastikan biaya admin bank tidak ikut masuk ke dalam saldo tabungan siswa
+        let existingSavTx = savingsTransactions.find(
+          t =>
+            (cleanOrderId && t.orderId === cleanOrderId) ||
+            (cleanTxId && t.transactionId === cleanTxId) ||
+            t.id === cleanOrderId
+        );
+        if (!existingSavTx) {
+          existingSavTx = savingsTransactions.find(
+            t => t.studentId === targetStudent!.id && t.status === "pending"
+          );
+        }
+
+        const { netAmount: netSavingsAmount, adminFeeDeducted } = resolveNetSavingsDepositAmount(amountVal, {
+          paymentType,
+          configuredAdminFee: midtransConfig.adminFee,
+          explicitAdminFee: manualAdminFee !== undefined && manualAdminFee !== null && manualAdminFee !== "" ? Number(manualAdminFee) : undefined,
+          explicitAdminFeeProvided: manualAdminFee !== undefined && manualAdminFee !== null && manualAdminFee !== "",
+          existingPrincipalAmount: existingSavTx?.amount
+        });
+
+        let savedTx: SavingsTransaction;
+        if (existingSavTx && existingSavTx.status !== "success") {
+          existingSavTx.amount = netSavingsAmount;
+          existingSavTx.status = "success";
+          existingSavTx.paymentMethod = paymentType;
+          existingSavTx.orderId = cleanOrderId;
+          if (cleanTxId) existingSavTx.transactionId = cleanTxId;
+          existingSavTx.notes = adminFeeDeducted > 0
+            ? `${notes || existingSavTx.notes || `Setoran Tabungan Manual Reconcile (${cleanOrderId})`} [Pokok: Rp ${netSavingsAmount.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`
+            : (notes || existingSavTx.notes || `Setoran Tabungan Manual Reconcile (${cleanOrderId})`);
+          savedTx = existingSavTx;
+        } else {
+          savedTx = {
+            id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            studentId: targetStudent.id,
+            studentNis: targetStudent.nis,
+            type: "deposit",
+            amount: netSavingsAmount,
+            status: "success",
+            createdAt: resolvedPaidAt,
+            paymentMethod: paymentType,
+            orderId: cleanOrderId,
+            transactionId: cleanTxId,
+            notes: adminFeeDeducted > 0
+              ? `${notes || `Setoran Tabungan Manual Reconcile (${cleanOrderId})`} [Pokok: Rp ${netSavingsAmount.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`
+              : (notes || `Setoran Tabungan Manual Reconcile (${cleanOrderId})`)
+          };
+          savingsTransactions.unshift(savedTx);
+        }
+
+        targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + netSavingsAmount;
         AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
+
+        const existingKas = treasurerTransactions.find(
+          t => (cleanOrderId && t.orderId === cleanOrderId) || (cleanTxId && t.transactionId === cleanTxId)
+        );
+        let newKas: TreasurerTransaction | undefined;
+        if (!existingKas && netSavingsAmount > 0) {
+          newKas = {
+            id: `trx-kas-mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: "incoming",
+            category: "Setoran Tabungan",
+            amount: netSavingsAmount,
+            description: `Setoran Tabungan Midtrans (Manual Reconcile - ${targetStudent.name}) [Order: ${cleanOrderId}]${adminFeeDeducted > 0 ? ` (Pokok Rp ${netSavingsAmount.toLocaleString("id-ID")}, Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")})` : ""}`,
+            date: resolvedPaidAt.substring(0, 10),
+            source: "savings",
+            studentName: targetStudent.name,
+            studentId: targetStudent.id,
+            nis: targetStudent.nis,
+            createdBy: "Bendahara (Manual Reconcile)",
+            paymentMethod: "bank",
+            orderId: cleanOrderId,
+            transactionId: cleanTxId,
+            fundingSource: "Kas Bank/Midtrans"
+          };
+          treasurerTransactions.unshift(newKas);
+        }
 
         recordOrUpdateMidtransTransaction({
           orderId: cleanOrderId,
           transactionId: cleanTxId,
           billType: "savings",
-          grossAmount: amountVal,
+          grossAmount: netSavingsAmount,
           studentName: targetStudent.name,
           studentNis: targetStudent.nis,
-          description: "Setoran Tabungan (Manual Reconcile)",
+          description: adminFeeDeducted > 0
+            ? `Setoran Tabungan (Pokok Rp ${netSavingsAmount.toLocaleString("id-ID")}, Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")})`
+            : "Setoran Tabungan (Manual Reconcile)",
           transactionStatus: "settlement",
           paymentType,
           settlementTime: resolvedPaidAt
@@ -5183,14 +5518,21 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
         saveState();
         if (persistEntity) {
-          await persistEntity("savingsTransactions", newSavingsTx).catch(err => console.error("Error persisting savings to MySQL:", err));
+          await persistEntity("savingsTransactions", savedTx).catch(err => console.error("Error persisting savings to MySQL:", err));
           await persistEntity("students", targetStudent).catch(err => console.error("Error persisting student balance to MySQL:", err));
+          if (newKas) {
+            await persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting savings kas to MySQL:", err));
+          }
         }
 
         return res.json({
           success: true,
-          message: `Berhasil menambahkan Rp ${amountVal.toLocaleString("id-ID")} ke Saldo Tabungan a.n ${targetStudent.name} (NIS: ${targetStudent.nis}).`,
+          message: adminFeeDeducted > 0
+            ? `Berhasil menambahkan Rp ${netSavingsAmount.toLocaleString("id-ID")} ke Saldo Tabungan a.n ${targetStudent.name} (NIS: ${targetStudent.nis}). Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} otomatis dipisahkan dan tidak masuk ke saldo tabungan.`
+            : `Berhasil menambahkan Rp ${netSavingsAmount.toLocaleString("id-ID")} ke Saldo Tabungan a.n ${targetStudent.name} (NIS: ${targetStudent.nis}).`,
           allocationType: "savings",
+          netSavingsAmount,
+          adminFeeDeducted,
           newBalance: targetStudent.savingsBalance
         });
       }

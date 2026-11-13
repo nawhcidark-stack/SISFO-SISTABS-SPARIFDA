@@ -60,7 +60,19 @@ export const SingleMidtransReconcileModal: React.FC<SingleMidtransReconcileModal
     amount: number;
   } | null>(null);
   const [pairingNotes, setPairingNotes] = useState<string>("");
+  const [pairingAdminFee, setPairingAdminFee] = useState<number>(0);
   const [isPairingSubmitting, setIsPairingSubmitting] = useState<boolean>(false);
+
+  const detectBankAdminFee = (grossAmount: number): number => {
+    const gross = Math.max(0, Math.round(Number(grossAmount) || 0));
+    if (gross > 10000) {
+      const rem10k = gross % 10000;
+      const rem5k = gross % 5000;
+      if (rem10k > 5000 && rem10k <= 7500 && gross - rem10k >= 10000) return rem10k;
+      if (rem5k > 0 && gross - rem5k >= 10000) return rem5k;
+    }
+    return 0;
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -118,6 +130,8 @@ export const SingleMidtransReconcileModal: React.FC<SingleMidtransReconcileModal
         setCheckResult(null);
       } else {
         setCheckResult(data);
+        const grossAmt = Number(data?.midtransData?.grossAmount) || 0;
+        setPairingAdminFee(detectBankAdminFee(grossAmt));
         if (data.actionTaken) {
           setSuccessMsg(data.message || "Transaksi berhasil direkonsiliasi dan berstatus LUNAS!");
           if (onSuccessReconciliation) {
@@ -261,6 +275,7 @@ export const SingleMidtransReconcileModal: React.FC<SingleMidtransReconcileModal
           orderId: orderIdToPair,
           transactionId: txIdToPair,
           amount: grossAmt,
+          adminFee: pairingAllocationType === "savings" ? pairingAdminFee : undefined,
           studentId: selectedStudent?.id,
           studentNis: selectedStudent?.nis,
           allocationType: pairingAllocationType,
@@ -863,13 +878,16 @@ export const SingleMidtransReconcileModal: React.FC<SingleMidtransReconcileModal
                           type="radio"
                           name="allocation"
                           checked={pairingAllocationType === "savings"}
-                          onChange={() => setPairingAllocationType("savings")}
+                          onChange={() => {
+                            setPairingAllocationType("savings");
+                            setPairingAdminFee(detectBankAdminFee(Number(mt?.grossAmount) || 0));
+                          }}
                           className="mt-0.5 text-indigo-600"
                         />
                         <div>
                           <span className="font-extrabold block text-xs">💰 Saldo Tabungan Siswa</span>
                           <span className="text-[10px] text-slate-500">
-                            Masukkan nominal ini ke saldo rekening tabungan siswa.
+                            Masukkan nominal pokok ke saldo tabungan siswa (tanpa biaya admin bank).
                           </span>
                         </div>
                       </label>
@@ -918,6 +936,52 @@ export const SingleMidtransReconcileModal: React.FC<SingleMidtransReconcileModal
                         </div>
                       </label>
                     </div>
+
+                    {pairingAllocationType === "savings" && (
+                      <div className="mt-2 p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-extrabold text-amber-900">
+                            Potongan Biaya Admin Bank (Tidak Masuk Saldo Tabungan):
+                          </span>
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md">
+                            Otomatis Terdeteksi
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {[0, 4000, 4440, 5000].map((feePreset) => (
+                            <button
+                              key={feePreset}
+                              type="button"
+                              onClick={() => setPairingAdminFee(feePreset)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                                pairingAdminFee === feePreset
+                                  ? "bg-amber-600 text-white border-amber-600"
+                                  : "bg-white text-slate-700 border-slate-300 hover:bg-amber-100"
+                              }`}
+                            >
+                              Rp {feePreset.toLocaleString("id-ID")}
+                            </button>
+                          ))}
+                          <div className="flex items-center gap-1 ml-auto">
+                            <span className="text-[10px] font-bold text-slate-600">Rp</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={100}
+                              value={pairingAdminFee}
+                              onChange={(e) => setPairingAdminFee(Math.max(0, Number(e.target.value) || 0))}
+                              className="w-24 px-2 py-1 bg-white border border-amber-300 rounded-lg text-xs font-bold text-slate-800 text-right"
+                            />
+                          </div>
+                        </div>
+                        <div className="pt-1.5 border-t border-amber-200/80 flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-slate-700">Saldo Bersih Masuk Tabungan Siswa:</span>
+                          <span className="font-black text-emerald-700 text-xs">
+                            Rp {Math.max(0, (Number(mt?.grossAmount) || 0) - pairingAdminFee).toLocaleString("id-ID")}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Step 2b: Dropdown for Specific Bill if selected */}

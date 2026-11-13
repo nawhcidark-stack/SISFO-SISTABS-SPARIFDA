@@ -16,7 +16,7 @@ import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
 import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, seedMissingConfigsToMysql, getConfigFromMysql, getAllConfigsFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql, getAllExtracurricularMasterFromMysql, saveExtracurricularMasterItemToMysql, replaceExtracurricularMasterListInMysql, deleteExtracurricularMasterFromMysql, getExtracurricularGradesFromMysql, saveExtracurricularGradesBatchToMysql, getAllInfractionRulesFromMysql, saveInfractionRulesBatchToMysql, sortInfractionRulesNaturally, getAllStudentInfractionLogsFromMysql, saveStudentInfractionLogsBatchToMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
-import { createMidtransRouter, formatMidtransPaymentMethod } from "./src/server/routes/midtransRoutes";
+import { createMidtransRouter, formatMidtransPaymentMethod, resolveNetSavingsDepositAmount } from "./src/server/routes/midtransRoutes";
 
 
 // Setup serverport
@@ -1559,12 +1559,37 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
 
     let netTxAmount = 0;
     let hasInitialTx = false;
+    let anyTxSanitized = false;
     studentTxs.forEach(t => {
       if (t.id?.startsWith("sav-init-") || t.notes?.toLowerCase().includes("saldo awal")) {
         hasInitialTx = true;
       }
       if (t.type === "deposit") {
-        netTxAmount += Number(t.amount) || 0;
+        let txAmt = Number(t.amount) || 0;
+        const isMidtransDeposit =
+          !t.id?.startsWith("sav-init-") &&
+          Boolean(
+            t.orderId ||
+            t.transactionId ||
+            (t.paymentMethod && t.paymentMethod.toLowerCase().includes("midtrans")) ||
+            (t.notes && (t.notes.toLowerCase().includes("midtrans") || t.notes.toLowerCase().includes("reconcile") || t.notes.toLowerCase().includes("gateway")))
+          );
+        if (isMidtransDeposit && txAmt > 10000) {
+          const { netAmount, adminFeeDeducted } = resolveNetSavingsDepositAmount(txAmt, {
+            paymentType: t.paymentMethod,
+            configuredAdminFee: midtransConfig.adminFee
+          });
+          if (adminFeeDeducted > 0 && netAmount > 0 && netAmount !== txAmt) {
+            t.amount = netAmount;
+            txAmt = netAmount;
+            if (!t.notes || !t.notes.includes("Biaya Admin")) {
+              t.notes = `${t.notes || "Setoran Tabungan Midtrans"} [Pokok: Rp ${netAmount.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`;
+            }
+            anyTxSanitized = true;
+            persistEntity("savingsTransactions", t).catch(() => {});
+          }
+        }
+        netTxAmount += txAmt;
       } else if (t.type === "withdrawal") {
         netTxAmount -= Number(t.amount) || 0;
       }
@@ -1608,7 +1633,12 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
       netTxAmount = existingBalance;
     }
 
-    student.savingsBalance = netTxAmount;
+    if (student.savingsBalance !== netTxAmount || anyTxSanitized) {
+      student.savingsBalance = netTxAmount;
+      persistEntity("students", student).catch(() => {});
+    } else {
+      student.savingsBalance = netTxAmount;
+    }
   });
 }
 
@@ -13582,7 +13612,11 @@ async function startServer() {
       }
 
       if (!transaction && isSettled) {
-        const recoveredAmount = Number(statusData.gross_amount) || 0;
+        const rawGrossAmount = Number(statusData.gross_amount) || 0;
+        const { netAmount: recoveredAmount, adminFeeDeducted } = resolveNetSavingsDepositAmount(rawGrossAmount, {
+          paymentType: actualPaymentType,
+          configuredAdminFee: midtransConfig.adminFee
+        });
         if (recoveredAmount > 0) {
           const targetStudentId = student ? student.id : (activeOrderId.split("-")[1] || "unknown");
           transaction = {
@@ -13595,7 +13629,9 @@ async function startServer() {
             orderId: targetOrderId,
             transactionId: targetTransactionId || undefined,
             paymentMethod: actualPaymentType,
-            notes: "Setoran via Payment Gateway (Auto Recovery / Reconciled)"
+            notes: adminFeeDeducted > 0
+              ? `Setoran via Payment Gateway (Auto Recovery / Reconciled) [Pokok: Rp ${recoveredAmount.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`
+              : "Setoran via Payment Gateway (Auto Recovery / Reconciled)"
           };
           savingsTransactions.push(transaction);
         }
@@ -13608,6 +13644,11 @@ async function startServer() {
           }
 
           if (transaction.status === "pending") {
+            const { netAmount: cleanSavAmount } = resolveNetSavingsDepositAmount(Number(transaction.amount) || 0, {
+              paymentType: actualPaymentType,
+              configuredAdminFee: midtransConfig.adminFee
+            });
+            transaction.amount = cleanSavAmount;
             transaction.status = "success";
             transaction.paymentMethod = actualPaymentType;
             transaction.orderId = targetOrderId;
@@ -13706,6 +13747,11 @@ async function startServer() {
           student = students.find(s => s.id === matchedSav.studentId || String(s.nis).trim() === String(matchedSav.studentId).trim());
         }
         if (matchedSav.status !== "success") {
+          const { netAmount: cleanSavAmount } = resolveNetSavingsDepositAmount(Number(matchedSav.amount) || 0, {
+            paymentType: actualPaymentType,
+            configuredAdminFee: midtransConfig.adminFee
+          });
+          matchedSav.amount = cleanSavAmount;
           matchedSav.status = "success";
           matchedSav.paymentMethod = actualPaymentType;
           if (targetTransactionId) matchedSav.transactionId = targetTransactionId;
@@ -13724,7 +13770,11 @@ async function startServer() {
           detailMessage = `Setoran Tabungan ${student?.name || "Siswa"} (Rp ${matchedSav.amount.toLocaleString("id-ID")}) telah LUNAS & saldo aktif: Rp ${(student?.savingsBalance || 0).toLocaleString("id-ID")}` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
         }
       } else if (student) {
-        const amt = Number(statusData.gross_amount) || 0;
+        const rawGrossAmt = Number(statusData.gross_amount) || 0;
+        const { netAmount: amt, adminFeeDeducted } = resolveNetSavingsDepositAmount(rawGrossAmt, {
+          paymentType: actualPaymentType,
+          configuredAdminFee: midtransConfig.adminFee
+        });
         if (amt > 0) {
           const newTx: SavingsTransaction = {
             id: `sav-pay-recov-${Date.now()}`,
@@ -13736,7 +13786,9 @@ async function startServer() {
             orderId: targetOrderId,
             transactionId: targetTransactionId || cleanOrderId,
             paymentMethod: actualPaymentType,
-            notes: "Setoran Tabungan (Midtrans Reconciled)"
+            notes: adminFeeDeducted > 0
+              ? `Setoran Tabungan (Midtrans Reconciled) [Pokok: Rp ${amt.toLocaleString("id-ID")}, Biaya Admin Bank Rp ${adminFeeDeducted.toLocaleString("id-ID")} tidak masuk saldo]`
+              : "Setoran Tabungan (Midtrans Reconciled)"
           };
           savingsTransactions.push(newTx);
           student.savingsBalance = (student.savingsBalance || 0) + amt;

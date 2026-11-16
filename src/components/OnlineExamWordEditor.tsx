@@ -36,7 +36,10 @@ import {
   Users,
   Database,
   FileText,
-  Edit3
+  Edit3,
+  Upload,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import {
   CurriculumSubject,
@@ -48,6 +51,15 @@ import {
   OnlineExamScoreTargetMode,
   OnlineExamSubmission
 } from '../types';
+import {
+  downloadOnlineExamExcelTemplate,
+  downloadOnlineExamDocxTemplate,
+  downloadOnlineExamWordTextTemplate,
+  getSampleStructuredTextTemplate,
+  parseOnlineExamExcelBuffer,
+  parseOnlineExamDocxBuffer,
+  parseOnlineExamStructuredText
+} from '../utils/onlineExamImportHelper';
 
 interface OnlineExamWordEditorProps {
   creatorId: string;
@@ -446,7 +458,9 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
   const [saving, setSaving] = useState(false);
   const [toastMsg, setToastMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const [activeRibbonTab, setActiveRibbonTab] = useState<'home' | 'insert' | 'questions' | 'equation'>('home');
+  const [activeRibbonTab, setActiveRibbonTab] = useState<
+    'home' | 'insert' | 'questions' | 'equation' | 'import_template'
+  >('home');
   const [viewMode, setViewMode] = useState<'single_fast' | 'full_sheet'>('full_sheet');
   const [focusedQuestionIdx, setFocusedQuestionIdx] = useState<number>(0);
   const [fontFamily, setFontFamily] = useState<string>('Times New Roman');
@@ -462,6 +476,14 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
     d: ''
   });
   const [eqInsertTarget, setEqInsertTarget] = useState<string>('stem');
+
+  // Flexible Question Import & Template State
+  const [importRawText, setImportRawText] = useState<string>('');
+  const [importedPreviewQuestions, setImportedPreviewQuestions] = useState<OnlineExamQuestion[]>([]);
+  const [importSourceLabel, setImportSourceLabel] = useState<string>('');
+  const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
+  const [importingFile, setImportingFile] = useState<boolean>(false);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Teacher's UH Online schedules & submissions state
   const [teacherSchedules, setTeacherSchedules] = useState<
@@ -823,6 +845,116 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
       const nextQuestions = prev.questions.map((q, idx) => (idx === index ? updater(q) : q));
       return { ...prev, questions: nextQuestions };
     });
+  };
+
+  const handleImportFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportingFile(true);
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+        const buffer = await file.arrayBuffer();
+        const parsed = parseOnlineExamExcelBuffer(buffer);
+        if (parsed.length === 0) {
+          showToast(
+            'error',
+            'Tidak ditemukan baris soal yang valid pada file Excel/CSV. Pastikan kolom PERTANYAAN terisi.'
+          );
+        } else {
+          setImportedPreviewQuestions(parsed);
+          setImportSourceLabel(`File Excel/CSV: ${file.name} (${parsed.length} butir soal)`);
+          showToast(
+            'success',
+            `Berhasil membaca ${parsed.length} butir soal dari file ${file.name}! Silakan tinjau pratinjau di bawah lalu klik Terapkan ke Lembar Kerja.`
+          );
+        }
+      } else if (ext === 'docx') {
+        const buffer = await file.arrayBuffer();
+        const { questions: parsed, extractedText } = await parseOnlineExamDocxBuffer(buffer);
+        setImportRawText(extractedText);
+        setImportedPreviewQuestions(parsed);
+        setImportSourceLabel(`File Microsoft Word (.docx): ${file.name} (${parsed.length} butir soal)`);
+        if (parsed.length > 0) {
+          showToast(
+            'success',
+            `Berhasil membaca ${parsed.length} butir soal dari dokumen Microsoft Word (${file.name})! Silakan klik Terapkan ke Lembar Kerja.`
+          );
+        } else {
+          showToast(
+            'error',
+            'Teks dokumen Word berhasil dibaca ke kotak editor import, namun format soal belum terdeteksi. Silakan sesuaikan di kotak teks.'
+          );
+        }
+      } else {
+        const text = await file.text();
+        setImportRawText(text);
+        const parsed = parseOnlineExamStructuredText(text);
+        setImportedPreviewQuestions(parsed);
+        setImportSourceLabel(`File Teks: ${file.name} (${parsed.length} butir soal)`);
+        if (parsed.length > 0) {
+          showToast('success', `Berhasil membaca ${parsed.length} butir soal dari file ${file.name}!`);
+        } else {
+          showToast('error', 'Format soal belum terdeteksi dari file teks. Periksa format penomoran soal.');
+        }
+      }
+    } catch (err: any) {
+      showToast('error', err?.message || 'Gagal memproses file import soal.');
+    } finally {
+      setImportingFile(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleParseRawTextToPreview = (customText?: string) => {
+    const targetText = customText !== undefined ? customText : importRawText;
+    if (!targetText.trim()) {
+      showToast('error', 'Kotak teks naskah soal masih kosong. Tempel (paste) soal atau muat contoh template terlebih dahulu.');
+      return;
+    }
+    const parsed = parseOnlineExamStructuredText(targetText);
+    setImportedPreviewQuestions(parsed);
+    setImportSourceLabel(`Hasil Copy-Paste / Teks Cepat (${parsed.length} butir soal)`);
+    if (parsed.length === 0) {
+      showToast(
+        'error',
+        'Belum ada nomor soal yang terdeteksi. Pastikan tiap soal diawali nomor (contoh: 1. Pertanyaan... diikuti A. ... B. ... dan KUNCI: A).'
+      );
+    } else {
+      showToast('success', `Berhasil mem-parsing ${parsed.length} butir soal dari teks! Silakan klik Terapkan ke Lembar Kerja.`);
+    }
+  };
+
+  const handleApplyImportedQuestionsToWorksheet = (modeOverride?: 'append' | 'replace') => {
+    const activeMode = modeOverride || importMode;
+    let questionsToUse = importedPreviewQuestions;
+    if (questionsToUse.length === 0 && importRawText.trim()) {
+      questionsToUse = parseOnlineExamStructuredText(importRawText);
+    }
+    if (questionsToUse.length === 0) {
+      showToast('error', 'Belum ada soal hasil import untuk dimasukkan ke lembar kerja.');
+      return;
+    }
+
+    const baseQuestions = activeMode === 'replace' ? [] : currentPacket.questions;
+    const merged = [...baseQuestions, ...questionsToUse].map((q, idx) => ({
+      ...q,
+      number: idx + 1
+    }));
+
+    setCurrentPacket(prev => ({
+      ...prev,
+      questions: merged,
+      questionCount: merged.length,
+      updatedAt: new Date().toISOString()
+    }));
+    setFocusedQuestionIdx(activeMode === 'replace' ? 0 : Math.max(0, baseQuestions.length));
+    showToast(
+      'success',
+      `${questionsToUse.length} butir soal berhasil ${
+        activeMode === 'replace' ? 'menggantikan isi lembar kerja' : 'ditambahkan ke lembar kerja'
+      }! Total sekarang: ${merged.length} soal. Jangan lupa klik Simpan ke MySQL.`
+    );
   };
 
   const handleImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>, questionIdx: number) => {
@@ -2067,6 +2199,43 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
+                  onClick={() =>
+                    downloadOnlineExamDocxTemplate(
+                      currentPacket.subjectName || 'Matematika',
+                      currentPacket.gradeLevel || '7'
+                    )
+                  }
+                  className="px-2.5 py-1.5 rounded bg-sky-300 hover:bg-sky-200 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                  title="Unduh Template Microsoft Word (.docx) Resmi untuk Soal 5 Tipe CBT"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Template Word (.docx)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadOnlineExamExcelTemplate(
+                      currentPacket.subjectName || 'Matematika',
+                      currentPacket.gradeLevel || '7'
+                    )
+                  }
+                  className="px-2.5 py-1.5 rounded bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                  title="Unduh Template Excel (.xlsx) untuk Import Soal 5 Tipe CBT"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Template Excel (.xlsx)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveRibbonTab('import_template')}
+                  className="px-2.5 py-1.5 rounded bg-teal-400 hover:bg-teal-300 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                  title="Import Soal dari Word (.docx), Excel (.xlsx), atau Copy-Paste Cepat"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Import Soal</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setIsFullscreen(prev => !prev)}
                   className="px-2.5 py-1.5 rounded bg-white/15 hover:bg-white/25 text-xs font-semibold flex items-center gap-1.5 border border-white/25 transition cursor-pointer"
                   title={isFullscreen ? 'Kembali ke Tampilan Panel Normal' : 'Perlebar Lembar Kerja ke Layar Penuh'}
@@ -2217,6 +2386,18 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
                 >
                   <span className="font-serif text-sm font-black">π</span>
                   <span>Equation (Rumus Matematika)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveRibbonTab('import_template')}
+                  className={`px-3 sm:px-4 py-1.5 font-extrabold rounded-t transition flex items-center gap-1.5 cursor-pointer ${
+                    activeRibbonTab === 'import_template'
+                      ? 'bg-white text-emerald-700 border-t border-x border-slate-300 -mb-px'
+                      : 'text-emerald-900 bg-emerald-100/80 hover:bg-emerald-200/80'
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Import Soal & Template (Excel / Word / Copy-Paste)</span>
                 </button>
               </div>
 
@@ -2578,6 +2759,295 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
                           <span className="font-serif text-sm font-black">π</span>
                           <span>Sisipkan Rumus Sekarang</span>
                         </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeRibbonTab === 'import_template' && (
+                  <div className="w-full space-y-4 py-1.5 text-slate-800">
+                    {/* Hidden File Input for Excel / Word / Text */}
+                    <input
+                      ref={importFileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv,.docx,.txt"
+                      onChange={handleImportFileSelect}
+                      className="hidden"
+                    />
+
+                    {/* Top Banner: Download Template & Upload File */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5">
+                      {/* Left: Download Templates (5 cols) */}
+                      <div className="lg:col-span-5 space-y-2 border-b lg:border-b-0 lg:border-r border-emerald-200 pb-3 lg:pb-0 lg:pr-3">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-emerald-600 text-white font-extrabold flex items-center justify-center text-xs">
+                            1
+                          </span>
+                          <div>
+                            <h4 className="font-extrabold text-slate-900 text-xs sm:text-sm">
+                              Unduh Template Resmi Soal Ujian Online (CBT)
+                            </h4>
+                            <p className="text-[11px] text-slate-600">
+                              Sudah mendukung 5 tipe soal: PG, PG Kompleks, Menjodohkan, Benar/Salah, & Uraian.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              downloadOnlineExamDocxTemplate(
+                                currentPacket.subjectName || 'Matematika',
+                                currentPacket.gradeLevel || '7'
+                              )
+                            }
+                            className="px-3 py-2 rounded-xl bg-[#185abd] hover:bg-blue-800 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <FileText className="w-4 h-4" />
+                            <span>Unduh Template Word (.docx)</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              downloadOnlineExamExcelTemplate(
+                                currentPacket.subjectName || 'Matematika',
+                                currentPacket.gradeLevel || '7'
+                              )
+                            }
+                            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <FileSpreadsheet className="w-4 h-4" />
+                            <span>Unduh Template Excel (.xlsx)</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              downloadOnlineExamWordTextTemplate(
+                                currentPacket.subjectName || 'Matematika',
+                                currentPacket.gradeLevel || '7'
+                              )
+                            }
+                            className="px-2.5 py-2 rounded-xl bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Template Teks (.txt)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Middle: Upload File Excel / Word (4 cols) */}
+                      <div className="lg:col-span-4 space-y-2 border-b lg:border-b-0 lg:border-r border-emerald-200 pb-3 lg:pb-0 lg:pr-3">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-[#185abd] text-white font-extrabold flex items-center justify-center text-xs">
+                            2
+                          </span>
+                          <div>
+                            <h4 className="font-extrabold text-slate-900 text-xs sm:text-sm">
+                              Upload File Soal (Excel / Word / Teks)
+                            </h4>
+                            <p className="text-[11px] text-slate-600">
+                              Mendukung file <b>.xlsx, .xls, .csv, .docx (MS Word), .txt</b>.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            disabled={importingFile}
+                            onClick={() => importFileInputRef.current?.click()}
+                            className="w-full py-2.5 px-3 rounded-xl border-2 border-dashed border-[#185abd] bg-white hover:bg-blue-50 text-[#185abd] font-extrabold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+                          >
+                            <Upload className="w-4 h-4" />
+                            <span>
+                              {importingFile
+                                ? 'Memproses File Soal...'
+                                : 'Pilih & Upload File Soal (.xlsx / .docx / .txt)'}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Right: Mode Penggabungan & Terapkan (3 cols) */}
+                      <div className="lg:col-span-3 flex flex-col justify-between gap-2">
+                        <div>
+                          <label className="block text-[11px] font-extrabold text-slate-700 mb-1">
+                            3. Cara Memasukkan ke Lembar Kerja:
+                          </label>
+                          <select
+                            value={importMode}
+                            onChange={e => setImportMode(e.target.value as 'append' | 'replace')}
+                            className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 bg-white"
+                          >
+                            <option value="append">
+                              + Tambahkan ke Bawah Soal yang Ada ({currentPacket.questions.length} Soal)
+                            </option>
+                            <option value="replace">
+                              ↻ Ganti Seluruh Soal di Lembar Kerja
+                            </option>
+                          </select>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleApplyImportedQuestionsToWorksheet()}
+                          disabled={importedPreviewQuestions.length === 0 && !importRawText.trim()}
+                          className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-extrabold text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Check className="w-4 h-4" />
+                          <span>
+                            Terapkan ke Lembar Kerja ({importedPreviewQuestions.length} Soal)
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bottom Section: Copy-Paste Smart Parser + Live Preview Table */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+                      {/* Left: Smart Copy-Paste Textarea (6 cols) */}
+                      <div className="lg:col-span-6 bg-slate-50 border border-slate-300 rounded-xl p-3 space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <h5 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                              <FileText className="w-4 h-4 text-[#185abd]" />
+                              Copy-Paste Naskah Soal Cepat dari MS Word / Google Docs
+                            </h5>
+                            <p className="text-[10px] text-slate-500">
+                              Ketik atau paste soal berurutan (1. ..., A. ..., B. ..., KUNCI: A). Otomatis dikonversi menjadi butir soal CBT!
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const sample = getSampleStructuredTextTemplate(
+                                  currentPacket.subjectName || 'Matematika',
+                                  currentPacket.gradeLevel || '7'
+                                );
+                                setImportRawText(sample);
+                                handleParseRawTextToPreview(sample);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-bold text-[11px] cursor-pointer"
+                            >
+                              Muat Contoh 5 Tipe Soal
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setImportRawText('');
+                                setImportedPreviewQuestions([]);
+                                setImportSourceLabel('');
+                              }}
+                              className="px-2 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[11px] cursor-pointer"
+                            >
+                              Bersihkan
+                            </button>
+                          </div>
+                        </div>
+
+                        <textarea
+                          rows={7}
+                          value={importRawText}
+                          onChange={e => setImportRawText(e.target.value)}
+                          placeholder={`Contoh format Copy-Paste dari Word:\n1. [PG] Hasil dari 15 + 25 adalah ...\nA. 30\nB. 35\nC. 40\nD. 45\nKUNCI: C\nBOBOT: 1\n\n2. [URAIAN] Jelaskan pengertian ekosistem!\nKUNCI: hubungan timbal balik, makhluk hidup, lingkungan\nBOBOT: 4`}
+                          className="w-full border border-slate-300 rounded-lg p-2.5 text-xs font-mono text-slate-900 bg-white focus:border-[#185abd] focus:outline-none"
+                        />
+
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[10px] text-slate-500">
+                            Tips: Anda juga bisa menandai kunci PG langsung dengan tanda bintang <b>*C. Jawaban benar</b>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleParseRawTextToPreview()}
+                            className="px-3 py-1.5 rounded-lg bg-[#185abd] hover:bg-blue-800 text-white font-extrabold text-xs flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Baca & Pratinjau Teks Soal</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Right: Live Preview of Parsed Questions (6 cols) */}
+                      <div className="lg:col-span-6 bg-white border border-slate-300 rounded-xl p-3 flex flex-col justify-between space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                          <div>
+                            <h5 className="font-extrabold text-slate-800 text-xs">
+                              Pratinjau Soal Siap Import ({importedPreviewQuestions.length} Butir Soal)
+                            </h5>
+                            <p className="text-[10px] text-slate-500">
+                              {importSourceLabel || 'Belum ada file/teks yang di-import. Upload Excel/Word atau klik Muat Contoh.'}
+                            </p>
+                          </div>
+                          {importedPreviewQuestions.length > 0 && (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleApplyImportedQuestionsToWorksheet('append')}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] cursor-pointer"
+                              >
+                                + Tambahkan ({importedPreviewQuestions.length})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleApplyImportedQuestionsToWorksheet('replace')}
+                                className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] cursor-pointer"
+                              >
+                                ↻ Ganti Semua
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {importedPreviewQuestions.length === 0 ? (
+                          <div className="py-10 text-center text-slate-400 text-xs">
+                            Hasil pembacaan file Excel (.xlsx), Word (.docx), atau Copy-Paste akan tampil di sini sebelum dimasukkan ke lembar kerja.
+                          </div>
+                        ) : (
+                          <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 pr-1">
+                            {importedPreviewQuestions.map((q, idx) => {
+                              const tMeta = QUESTION_TYPE_META[q.type];
+                              const plainStem = (q.questionHtml || '').replace(/<[^>]+>/g, ' ').trim();
+                              const keySummary =
+                                q.type === 'pg'
+                                  ? `Kunci: ${q.correctOptionId || 'A'}`
+                                  : q.type === 'pg_kompleks'
+                                  ? `Kunci: ${(q.correctOptionIds || []).join(', ')}`
+                                  : q.type === 'menjodohkan'
+                                  ? `${(q.matchingPairs || []).length} Pasang`
+                                  : q.type === 'benar_salah'
+                                  ? `Kunci: ${(q.trueFalseItems || [])
+                                      .map(it => (it.isTrue ? 'B' : 'S'))
+                                      .join(',')}`
+                                  : `Kunci: ${q.answerKeyText || '-'}`;
+
+                              return (
+                                <div key={q.id} className="py-2 flex items-start justify-between gap-2 text-xs">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                      <span className="font-extrabold text-slate-900">#{idx + 1}</span>
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${tMeta.badgeClass}`}
+                                      >
+                                        {tMeta.shortLabel}
+                                      </span>
+                                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                        {keySummary}
+                                      </span>
+                                      <span className="text-[10px] text-slate-500">
+                                        Bobot: {q.scoreWeight}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-700 line-clamp-1">{plainStem}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

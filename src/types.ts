@@ -1080,3 +1080,178 @@ export interface GuestBookEntry {
   updatedAt?: string;
 }
 
+// ==========================================
+// UJIAN ONLINE (CBT) & BANK SOAL TERINTEGRASI
+// ==========================================
+
+export type OnlineExamQuestionType =
+  | 'pg'
+  | 'pg_kompleks'
+  | 'menjodohkan'
+  | 'benar_salah'
+  | 'uraian';
+
+export interface OnlineExamOption {
+  id: string;
+  label: string;
+  textHtml: string;
+  text?: string;
+}
+
+export interface OnlineExamMatchingPair {
+  id: string;
+  leftPremise: string;
+  rightResponse: string;
+  leftText?: string;
+  rightText?: string;
+}
+
+export interface OnlineExamTrueFalseItem {
+  id: string;
+  statement: string;
+  isTrue: boolean;
+}
+
+export interface OnlineExamQuestion {
+  id: string;
+  number: number;
+  type: OnlineExamQuestionType;
+  questionHtml: string;
+  imageUrl?: string;
+  scoreWeight: number;
+  weight?: number;
+  options?: OnlineExamOption[];
+  correctOptionId?: string;
+  correctOption?: string;
+  correctOptionIds?: string[];
+  correctOptions?: string[];
+  matchingPairs?: OnlineExamMatchingPair[];
+  trueFalseItems?: OnlineExamTrueFalseItem[];
+  trueFalseStatements?: OnlineExamTrueFalseItem[];
+  answerKeyText?: string;
+  essayAnswerKey?: string;
+}
+
+export type OnlineExamPacketPurpose = 'bank_soal' | 'ulangan_harian' | 'both';
+
+export type OnlineExamScoreTargetMode =
+  | 'sas'
+  | 'uh_tp1'
+  | 'uh_tp2'
+  | 'uh_tp3'
+  | 'uh_tp4';
+
+export interface OnlineExamPacket {
+  id: string;
+  title: string;
+  subjectId: string;
+  subjectName: string;
+  gradeLevel: '7' | '8' | '9' | string;
+  targetClasses: string[];
+  semester: 'Ganjil' | 'Genap' | string;
+  academicYear: string;
+  examCategory: 'SAS' | 'SAT' | 'STS' | 'UH' | 'TryOut';
+  packetPurpose?: OnlineExamPacketPurpose;
+  creatorId: string;
+  creatorName: string;
+  creatorRole: 'Guru Mapel' | 'Wali Kelas' | 'Waka Kurikulum' | 'subject_teacher' | 'homeroom' | 'waka_kurikulum';
+  status: 'draft' | 'published' | 'Draft' | 'Tersimpan di Bank Soal' | 'Terjadwal' | 'Selesai';
+  questions: OnlineExamQuestion[];
+  questionCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OnlineExamSickStudentOverride {
+  studentId: string;
+  studentNis?: string;
+  studentName: string;
+  className: string;
+  homeLatitude?: number;
+  homeLongitude?: number;
+  allowedRadiusMeters: number;
+  reason?: string;
+  notes?: string;
+}
+
+export interface OnlineExamScoringConfig {
+  pgWeight: number;
+  pgKompleksWeight: number;
+  menjodohkanWeight: number;
+  benarSalahWeight: number;
+  uraianWeight: number;
+  maxScaleScore: number;
+  scaleMax?: number;
+  useQuestionCustomScore: boolean;
+  useCustomQuestionWeights?: boolean;
+  autoSyncToSas: boolean;
+  scoreTargetMode?: OnlineExamScoreTargetMode;
+  scheduleType?: 'waka_sas' | 'teacher_uh';
+  creatorId?: string;
+  creatorName?: string;
+  creatorRole?: string;
+}
+
+export interface OnlineExamSchedule {
+  id: string;
+  packetId: string;
+  packetTitle: string;
+  subjectId: string;
+  subjectName: string;
+  gradeLevel: '7' | '8' | '9' | string;
+  targetClasses: string[];
+  semester: 'Ganjil' | 'Genap' | string;
+  academicYear: string;
+  examDate: string; // 'YYYY-MM-DD' (WIB)
+  startTimeWib: string; // 'HH:mm' (WIB)
+  endTimeWib: string; // 'HH:mm' (WIB)
+  durationMinutes: number;
+  isActive: boolean;
+  tokenCode?: string;
+  gpsLockEnabled: boolean;
+  schoolLatitude: number;
+  schoolLongitude: number;
+  schoolRadiusMeters: number;
+  sickStudentDefaultRadiusMeters: number;
+  sickStudentsHomeOverrides: OnlineExamSickStudentOverride[];
+  scoringConfig: OnlineExamScoringConfig;
+  scheduleType?: 'waka_sas' | 'teacher_uh';
+  scoreTargetMode?: OnlineExamScoreTargetMode;
+  creatorId?: string;
+  creatorName?: string;
+  creatorRole?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OnlineExamSubmission {
+  id: string;
+  scheduleId: string;
+  packetId: string;
+  studentId: string;
+  studentNis: string;
+  studentName: string;
+  className: string;
+  subjectId: string;
+  subjectName: string;
+  semester: 'Ganjil' | 'Genap' | string;
+  academicYear: string;
+  status: 'in_progress' | 'submitted' | 'graded';
+  startedAt: string;
+  submittedAt?: string;
+  gpsLatitude?: number;
+  gpsLongitude?: number;
+  gpsDistanceMeters?: number;
+  isSickHomeMode?: boolean;
+  answers: Record<string, any>;
+  questionScores?: Record<string, number>;
+  rawScore: number;
+  maxRawScore: number;
+  finalScoreSas: number;
+  syncedToSas: boolean;
+  scoreTargetMode?: OnlineExamScoreTargetMode;
+  updatedAt: string;
+}
+
+
+

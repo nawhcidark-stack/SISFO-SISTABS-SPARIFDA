@@ -7,6 +7,7 @@ import ScheduleView from './ScheduleView';
 import { TpJournalSelector } from './TpJournalSelector';
 import { SharedTpBankView } from './SharedTpBankView';
 import { SharedTpQuickSelector } from './SharedTpQuickSelector';
+import { OnlineExamWordEditor } from './OnlineExamWordEditor';
 import { 
   Calendar, Check, AlertCircle, AlertTriangle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
@@ -61,7 +62,7 @@ export default function SubjectTeacherPanel({
   subjectTeachers = [],
   homerooms = []
 }: SubjectTeacherPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'create' | 'history' | 'notifications' | 'profile' | 'penilaian' | 'pkg' | 'jadwal'>('create');
+  const [activeSubTab, setActiveSubTab] = useState<'create' | 'history' | 'notifications' | 'profile' | 'penilaian' | 'pkg' | 'jadwal' | 'ujian_online'>('create');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(getWIBDateStr());
@@ -1839,8 +1840,8 @@ export default function SubjectTeacherPanel({
         </div>
       </div>
 
-      {/* Navigation Subtabs (Desktop: flex, Mobile: hidden) */}
-      <div className="hidden md:flex border-b border-slate-200 gap-1.5 px-1 bg-slate-50/50 p-1 rounded-2xl border w-fit select-none">
+      {/* Navigation Subtabs */}
+      <div className="flex flex-wrap border-b border-slate-200 gap-1.5 px-1.5 bg-slate-50/50 p-1.5 rounded-2xl border w-full max-w-full select-none">
         <button
           onClick={() => { setActiveSubTab('create'); setFeedback(null); }}
           className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 ${
@@ -1902,6 +1903,17 @@ export default function SubjectTeacherPanel({
         >
           <BookOpen size={13} />
           <span>Penilaian Merdeka</span>
+        </button>
+        <button
+          onClick={() => { setActiveSubTab('ujian_online'); setFeedback(null); }}
+          className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 ${
+            activeSubTab === 'ujian_online'
+              ? 'bg-[#185abd] text-white border border-[#185abd] shadow-sm font-black'
+              : 'text-[#185abd] bg-blue-50/70 hover:bg-blue-100/70'
+          }`}
+        >
+          <FileText size={13} />
+          <span>Buat Soal Ujian (CBT)</span>
         </button>
         <button
           onClick={() => { setActiveSubTab('pkg'); setFeedback(null); }}
@@ -2425,7 +2437,25 @@ export default function SubjectTeacherPanel({
         </div>
       )}
 
-      {/* View: Jadwal Mengajar */}
+      {/* View: Buat Soal Ujian Online (CBT) */}
+      {activeSubTab === 'ujian_online' && (
+        <div className="w-full min-w-0 text-left">
+          <OnlineExamWordEditor
+            creatorId={currentTeacher.id}
+            creatorName={currentTeacher.name}
+            creatorRole="Guru Mapel"
+            curriculumSubjects={[]}
+            allowedSubjectNames={allowedSubjects}
+            defaultClassName={selectedClass || allowedClasses[0]}
+            availableClasses={allowedClasses}
+            onRefreshData={() => {
+              fetchAssessments();
+              if (onRefresh) onRefresh();
+            }}
+          />
+        </div>
+      )}
+
       {activeSubTab === 'jadwal' && (
         <div className="w-full text-left">
           <ScheduleView
@@ -5404,6 +5434,24 @@ export default function SubjectTeacherPanel({
                   </div>
                   <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
                     Jadwal Pelajaran
+                  </span>
+                </button>
+
+                {/* Buat Soal Ujian Online (MS Word) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('ujian_online');
+                    setFeedback(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 shadow-md shadow-blue-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📝
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Buat Soal Ujian (MS Word)
                   </span>
                 </button>
 

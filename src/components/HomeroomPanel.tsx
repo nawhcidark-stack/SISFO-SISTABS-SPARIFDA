@@ -10,6 +10,7 @@ import { StudentFinancialRecapModal } from './StudentFinancialRecapModal';
 import { TpJournalSelector } from './TpJournalSelector';
 import { SharedTpBankView } from './SharedTpBankView';
 import { SharedTpQuickSelector } from './SharedTpQuickSelector';
+import { OnlineExamWordEditor } from './OnlineExamWordEditor';
 import { 
   exportSppRecapToExcel, 
   exportMiscRecapToExcel, 
@@ -784,7 +785,7 @@ export default function HomeroomPanel({
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [passbookStudent, setPassbookStudent] = useState<Student | null>(null);
   const [recapModalStudent, setRecapModalStudent] = useState<Student | null>(null);
-  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'poin_pelanggaran' | 'pkg' | 'buku_induk' | 'kokurikuler' | 'jadwal'>('record');
+  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'poin_pelanggaran' | 'pkg' | 'buku_induk' | 'kokurikuler' | 'jadwal' | 'ujian_online'>('record');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
@@ -4232,6 +4233,7 @@ Wassalamualaikum Wr. Wb.
           { id: 'perkembangan', label: 'Perkembangan', icon: '📈' },
           { id: 'poin_pelanggaran', label: 'Poin Pelanggaran', icon: '⚠️' },
           { id: 'kokurikuler', label: 'Nilai Kokurikuler', icon: '⭐' },
+          { id: 'ujian_online', label: 'Buat Soal CBT', icon: '📝', highlight: true },
           { id: 'buku_induk', label: 'Buku Induk', icon: '📗' },
           { id: 'pkg', label: 'PKG', icon: '🎖️' },
           { id: 'profile', label: 'Profil', icon: '👤' },
@@ -4391,6 +4393,20 @@ Wassalamualaikum Wr. Wb.
               </button>
 
               <button
+                id="tab-btn-ujian-online"
+                onClick={() => setActiveSubTab('ujian_online')}
+                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                  activeSubTab === 'ujian_online'
+                    ? 'bg-[#185abd] text-white shadow-md'
+                    : 'text-[#185abd] bg-blue-50 hover:bg-blue-100'
+                }`}
+                title="Buat Soal Ujian Online (Lembar Kerja Microsoft Word)"
+              >
+                <span className="text-sm">📝</span>
+                <span className="inline">Buat Soal Ujian (CBT)</span>
+              </button>
+
+              <button
                 id="tab-btn-pkg"
                 onClick={() => setActiveSubTab('pkg')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
@@ -4487,7 +4503,7 @@ Wassalamualaikum Wr. Wb.
         </div>
 
         {/* Right Details/List/Form Column */}
-        <div className="md:col-span-9 font-sans">
+        <div className="md:col-span-9 min-w-0 w-full font-sans">
           {activeSubTab === 'record' && (
             <form onSubmit={handleSubmitAttendance} className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left flex flex-col">
               {/* Header */}
@@ -7979,6 +7995,25 @@ Wassalamualaikum Wr. Wb.
             </div>
           )}
 
+          {activeSubTab === 'ujian_online' && (
+            <div className="w-full min-w-0 text-left">
+              <OnlineExamWordEditor
+                creatorId={currentTeacher.id}
+                creatorName={currentTeacher.name}
+                creatorRole="Wali Kelas"
+                curriculumSubjects={[]}
+                defaultClassName={currentTeacher.className}
+                availableClasses={Array.from(
+                  new Set([
+                    currentTeacher.className,
+                    ...students.map(s => s.class)
+                  ].filter(Boolean))
+                ).sort()}
+                onRefreshData={onRefresh}
+              />
+            </div>
+          )}
+
           {activeSubTab === 'buku_induk' && (
             <div className="w-full">
               <BukuIndukManagement
@@ -8933,6 +8968,23 @@ Wassalamualaikum Wr. Wb.
                   </div>
                   <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
                     Kokurikuler
+                  </span>
+                </button>
+
+                {/* Buat Soal Ujian Online (MS Word) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('ujian_online');
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 shadow-md shadow-blue-500/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📝
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Buat Soal Ujian
                   </span>
                 </button>
 

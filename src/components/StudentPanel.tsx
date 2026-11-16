@@ -19,6 +19,7 @@ import { SavingsPassbookModal } from './SavingsPassbookModal';
 import { Pagination } from './Pagination';
 import ReceiptFinancialFooter, { getStudentFinancialSummary } from './ReceiptFinancialFooter';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from '../utils/notificationUtils';
+import { OnlineExamStudentPortal } from './OnlineExamStudentPortal';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency
 function StudentQrCode({ text, size = 140 }: { text: string; size?: number }) {
@@ -145,7 +146,7 @@ export default function StudentPanel({
     }
   }, [globalAcademicYear]);
 
-  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'jadwal' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk' | 'rapor'>('spp');
+  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'jadwal' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk' | 'rapor' | 'ujian_online'>('spp');
   const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
   const [reportReleaseConfig, setReportReleaseConfig] = useState<{
     midtermReleased?: boolean;
@@ -2263,6 +2264,30 @@ export default function StudentPanel({
                   )}
                 </button>
 
+                {/* Ujian Online (CBT) */}
+                <button
+                  id="mobile-menu-ujian-online"
+                  type="button"
+                  onClick={() => setActiveTab('ujian_online')}
+                  className="flex flex-col items-center justify-start text-center group cursor-pointer focus:outline-none transition-all active:scale-95"
+                >
+                  <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xs ${
+                    activeTab === 'ujian_online'
+                      ? 'bg-gradient-to-br from-[#185abd] to-indigo-700 text-white ring-2 ring-blue-600 ring-offset-2 scale-105 shadow-md shadow-blue-500/25'
+                      : 'bg-blue-50 text-[#185abd] border border-blue-100/80 group-hover:bg-blue-100/70'
+                  }`}>
+                    <Award className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <span className={`text-[10px] leading-tight text-center mt-1.5 transition-colors line-clamp-1 max-w-[76px] ${
+                    activeTab === 'ujian_online' ? 'font-extrabold text-[#185abd]' : 'font-semibold text-slate-700'
+                  }`}>
+                    Ujian Online
+                  </span>
+                  {activeTab === 'ujian_online' && (
+                    <span className="w-3.5 h-0.5 bg-[#185abd] rounded-full mt-0.5 animate-fade-in" />
+                  )}
+                </button>
+
                 {/* 5. Jadwal Pelajaran */}
                 <button
                   id="mobile-menu-jadwal"
@@ -2565,6 +2590,25 @@ export default function StudentPanel({
                     </span>
                   )}
                 </button>
+                <button
+                  id="tab-ujian-online"
+                  onClick={() => setActiveTab('ujian_online')}
+                  className={`py-2 px-3 md:py-3 md:px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none shrink-0 whitespace-nowrap ${
+                    activeTab === 'ujian_online'
+                      ? 'border-[#185abd] text-[#185abd] font-extrabold'
+                      : 'border-transparent text-slate-500 hover:text-[#185abd]'
+                  }`}
+                  title="Portal Ujian Online (CBT) - Otomatis Aktif Sesuai Jadwal WIB & Radius GPS"
+                >
+                  <div className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                    activeTab === 'ujian_online'
+                      ? 'bg-blue-100 text-[#185abd] shadow-xs ring-1 ring-blue-200/50'
+                      : 'bg-blue-50/50 text-blue-500/80 hover:bg-blue-100/50 hover:text-[#185abd]'
+                  } md:bg-transparent md:p-0 md:shadow-none md:ring-0 md:text-inherit`}>
+                    <Award className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
+                  </div>
+                  <span className="hidden md:inline">Ujian Online (CBT)</span>
+                </button>
               </div>
 
               <div className="flex items-center gap-1.5 sm:self-center shrink-0">
@@ -2603,6 +2647,15 @@ export default function StudentPanel({
 
             {/* Panel Tab Core Content */}
             <div className="p-6 flex-1">
+              {activeTab === 'ujian_online' && currentStudent && (
+                <OnlineExamStudentPortal
+                  student={currentStudent}
+                  onExamSubmitted={() => {
+                    onRefresh();
+                  }}
+                />
+              )}
+
               {activeTab === 'spp' && (
                 <div>
                   {midtransStatus?.isDisabled && (

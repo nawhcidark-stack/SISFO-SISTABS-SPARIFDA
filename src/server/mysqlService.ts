@@ -1,7 +1,17 @@
 import fs from 'fs';
 import path from 'path';
 import mysql from 'mysql2/promise';
-import { MysqlDatabaseConfig, MysqlTestResult, MysqlSyncResult, CurriculumSubject, CurriculumTpDescription } from '../types';
+import {
+  MysqlDatabaseConfig,
+  MysqlTestResult,
+  MysqlSyncResult,
+  CurriculumSubject,
+  CurriculumTpDescription,
+  OnlineExamPacket,
+  OnlineExamSchedule,
+  OnlineExamSubmission,
+  MerdekaAssessment
+} from '../types';
 import { toProperCase, toUpperCase, toSentenceCase } from '../utils/textFormatters';
 
 const CONFIG_FILE = path.join(process.cwd(), 'mysql_config.json');
@@ -5687,3 +5697,997 @@ export async function saveStudentInfractionLogsBatchToMysql(
     if (connection) connection.release();
   }
 }
+
+// ============================================================================
+// ONLINE EXAM (UJIAN ONLINE / CBT) DIRECT MYSQL STORAGE & SAS SCORE SYNC
+// ============================================================================
+
+let onlineExamTablesEnsured = false;
+
+async function ensureOnlineExamTablesReady(connection: mysql.PoolConnection): Promise<void> {
+  if (onlineExamTablesEnsured) return;
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS \`online_exam_packets\` (
+      \`id\` VARCHAR(96) NOT NULL,
+      \`title\` VARCHAR(255) NOT NULL,
+      \`subject_id\` VARCHAR(96) NOT NULL,
+      \`subject_name\` VARCHAR(191) NOT NULL,
+      \`grade_level\` VARCHAR(16) NOT NULL DEFAULT '7',
+      \`target_classes_json\` LONGTEXT DEFAULT NULL,
+      \`semester\` VARCHAR(32) NOT NULL DEFAULT 'Genap',
+      \`academic_year\` VARCHAR(32) NOT NULL DEFAULT '2025/2026',
+      \`exam_category\` VARCHAR(32) NOT NULL DEFAULT 'SAS',
+      \`packet_purpose\` VARCHAR(32) NOT NULL DEFAULT 'bank_soal',
+      \`creator_id\` VARCHAR(96) NOT NULL,
+      \`creator_name\` VARCHAR(191) NOT NULL,
+      \`creator_role\` VARCHAR(64) NOT NULL DEFAULT 'Guru Mapel',
+      \`status\` VARCHAR(32) NOT NULL DEFAULT 'published',
+      \`questions_json\` LONGTEXT NOT NULL,
+      \`question_count\` INT NOT NULL DEFAULT 0,
+      \`created_at\` VARCHAR(64) DEFAULT NULL,
+      \`updated_at\` VARCHAR(64) DEFAULT NULL,
+      PRIMARY KEY (\`id\`),
+      INDEX \`idx_oep_subject\` (\`subject_id\`),
+      INDEX \`idx_oep_grade\` (\`grade_level\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  try {
+    const [cols]: any = await connection.query("SHOW COLUMNS FROM `online_exam_packets`");
+    const colNames = new Set((cols || []).map((c: any) => c.Field));
+    if (!colNames.has('packet_purpose')) {
+      await connection.query(
+        "ALTER TABLE `online_exam_packets` ADD COLUMN `packet_purpose` VARCHAR(32) NOT NULL DEFAULT 'bank_soal'"
+      );
+    }
+  } catch (_e) {
+    // ignore
+  }
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS \`online_exam_schedules\` (
+      \`id\` VARCHAR(96) NOT NULL,
+      \`packet_id\` VARCHAR(96) NOT NULL,
+      \`packet_title\` VARCHAR(255) NOT NULL,
+      \`subject_id\` VARCHAR(96) NOT NULL,
+      \`subject_name\` VARCHAR(191) NOT NULL,
+      \`grade_level\` VARCHAR(16) NOT NULL DEFAULT '7',
+      \`target_classes_json\` LONGTEXT DEFAULT NULL,
+      \`semester\` VARCHAR(32) NOT NULL DEFAULT 'Genap',
+      \`academic_year\` VARCHAR(32) NOT NULL DEFAULT '2025/2026',
+      \`exam_date\` VARCHAR(32) NOT NULL,
+      \`start_time_wib\` VARCHAR(16) NOT NULL,
+      \`end_time_wib\` VARCHAR(16) NOT NULL,
+      \`duration_minutes\` INT NOT NULL DEFAULT 90,
+      \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`token_code\` VARCHAR(32) DEFAULT NULL,
+      \`gps_lock_enabled\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`school_latitude\` DOUBLE NOT NULL DEFAULT -7.9096,
+      \`school_longitude\` DOUBLE NOT NULL DEFAULT 110.2966,
+      \`school_radius_meters\` INT NOT NULL DEFAULT 150,
+      \`sick_student_default_radius_meters\` INT NOT NULL DEFAULT 15000,
+      \`sick_students_overrides_json\` LONGTEXT DEFAULT NULL,
+      \`scoring_config_json\` LONGTEXT DEFAULT NULL,
+      \`created_at\` VARCHAR(64) DEFAULT NULL,
+      \`updated_at\` VARCHAR(64) DEFAULT NULL,
+      PRIMARY KEY (\`id\`),
+      INDEX \`idx_oes_date\` (\`exam_date\`),
+      INDEX \`idx_oes_packet\` (\`packet_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS \`online_exam_submissions\` (
+      \`id\` VARCHAR(128) NOT NULL,
+      \`schedule_id\` VARCHAR(96) NOT NULL,
+      \`packet_id\` VARCHAR(96) NOT NULL,
+      \`student_id\` VARCHAR(96) NOT NULL,
+      \`student_nis\` VARCHAR(64) DEFAULT NULL,
+      \`student_name\` VARCHAR(191) NOT NULL,
+      \`class_name\` VARCHAR(64) NOT NULL,
+      \`subject_id\` VARCHAR(96) NOT NULL,
+      \`subject_name\` VARCHAR(191) NOT NULL,
+      \`semester\` VARCHAR(32) NOT NULL DEFAULT 'Genap',
+      \`academic_year\` VARCHAR(32) NOT NULL DEFAULT '2025/2026',
+      \`status\` VARCHAR(32) NOT NULL DEFAULT 'in_progress',
+      \`started_at\` VARCHAR(64) DEFAULT NULL,
+      \`submitted_at\` VARCHAR(64) DEFAULT NULL,
+      \`gps_latitude\` DOUBLE DEFAULT NULL,
+      \`gps_longitude\` DOUBLE DEFAULT NULL,
+      \`gps_distance_meters\` DOUBLE DEFAULT NULL,
+      \`is_sick_home_mode\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`answers_json\` LONGTEXT DEFAULT NULL,
+      \`question_scores_json\` LONGTEXT DEFAULT NULL,
+      \`raw_score\` DOUBLE NOT NULL DEFAULT 0,
+      \`max_raw_score\` DOUBLE NOT NULL DEFAULT 100,
+      \`final_score_sas\` DOUBLE NOT NULL DEFAULT 0,
+      \`synced_to_sas\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`updated_at\` VARCHAR(64) DEFAULT NULL,
+      PRIMARY KEY (\`id\`),
+      INDEX \`idx_oesub_sched_student\` (\`schedule_id\`, \`student_id\`),
+      INDEX \`idx_oesub_student\` (\`student_id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  onlineExamTablesEnsured = true;
+}
+
+function mapRowToOnlineExamPacket(r: any, includeQuestions: boolean = true): OnlineExamPacket {
+  let targetClasses: string[] = [];
+  try {
+    if (r.target_classes_json) {
+      targetClasses = typeof r.target_classes_json === 'string' ? JSON.parse(r.target_classes_json) : r.target_classes_json;
+    }
+  } catch (_e) {
+    targetClasses = [];
+  }
+
+  let questions: any[] = [];
+  if (includeQuestions && r.questions_json) {
+    try {
+      questions = typeof r.questions_json === 'string' ? JSON.parse(r.questions_json) : r.questions_json;
+    } catch (_e) {
+      questions = [];
+    }
+  }
+
+  const rawPurpose = String(r.packet_purpose || '');
+  const packetPurpose: 'bank_soal' | 'ulangan_harian' | 'both' =
+    rawPurpose === 'ulangan_harian' || rawPurpose === 'both' || rawPurpose === 'bank_soal'
+      ? rawPurpose
+      : r.exam_category === 'UH'
+      ? 'ulangan_harian'
+      : 'bank_soal';
+
+  return {
+    id: String(r.id),
+    title: String(r.title || ''),
+    subjectId: String(r.subject_id || ''),
+    subjectName: String(r.subject_name || ''),
+    gradeLevel: (String(r.grade_level || '7') as '7' | '8' | '9'),
+    targetClasses: Array.isArray(targetClasses) ? targetClasses : [],
+    semester: (r.semester === 'Ganjil' ? 'Ganjil' : 'Genap'),
+    academicYear: String(r.academic_year || '2025/2026'),
+    examCategory: (['SAS', 'SAT', 'STS', 'UH', 'TryOut'].includes(r.exam_category) ? r.exam_category : 'SAS') as any,
+    packetPurpose,
+    creatorId: String(r.creator_id || ''),
+    creatorName: String(r.creator_name || ''),
+    creatorRole: (['Guru Mapel', 'Wali Kelas', 'Waka Kurikulum'].includes(r.creator_role) ? r.creator_role : 'Guru Mapel') as any,
+    status: (r.status === 'draft' ? 'draft' : 'published'),
+    questions: Array.isArray(questions) ? questions : [],
+    questionCount: Number(r.question_count ?? (Array.isArray(questions) ? questions.length : 0)),
+    createdAt: String(r.created_at || new Date().toISOString()),
+    updatedAt: String(r.updated_at || new Date().toISOString())
+  };
+}
+
+export async function getOnlineExamPacketsFromMysql(includeQuestions: boolean = true): Promise<OnlineExamPacket[]> {
+  const p = createPool();
+  if (!p) return [];
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureOnlineExamTablesReady(connection);
+    const selectCols = includeQuestions
+      ? '*'
+      : '`id`, `title`, `subject_id`, `subject_name`, `grade_level`, `target_classes_json`, `semester`, `academic_year`, `exam_category`, `packet_purpose`, `creator_id`, `creator_name`, `creator_role`, `status`, `question_count`, `created_at`, `updated_at`';
+    const [rows] = await connection.query<mysql.RowDataPacket[]>(
+      `SELECT ${selectCols} FROM \`online_exam_packets\` ORDER BY \`updated_at\` DESC`
+    );
+    return (rows || []).map(r => mapRowToOnlineExamPacket(r, includeQuestions));
+  } catch (err: any) {
+    console.error('[MySQL Get Online Exam Packets Error]:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function getOnlineExamPacketByIdFromMysql(id: string): Promise<OnlineExamPacket | null> {
+  const p = createPool();
+  if (!p || !id) return null;
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureOnlineExamTablesReady(connection);
+    const [rows] = await connection.query<mysql.RowDataPacket[]>(
+      'SELECT * FROM `online_exam_packets` WHERE `id` = ? LIMIT 1',
+      [id]
+    );
+    if (!rows || rows.length === 0) return null;
+    return mapRowToOnlineExamPacket(rows[0], true);
+  } catch (err: any) {
+    console.error('[MySQL Get Online Exam Packet By ID Error]:', err.message || err);
+    return null;
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function saveOnlineExamPacketToMysql(
+  packet: OnlineExamPacket
+): Promise<{ success: boolean; packet?: OnlineExamPacket; message: string; error?: string }> {
+  const p = createPool();
+  if (!p) {
+    return { success: false, message: 'Pool MySQL belum terkonfigurasi.' };
+  }
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureOnlineExamTablesReady(connection);
+
+    const now = new Date().toISOString();
+    const id = packet.id || `pkt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const questions = Array.isArray(packet.questions) ? packet.questions : [];
+    const targetClasses = Array.isArray(packet.targetClasses) ? packet.targetClasses : [];
+    const packetPurpose: 'bank_soal' | 'ulangan_harian' | 'both' =
+      packet.packetPurpose === 'ulangan_harian' || packet.packetPurpose === 'both' || packet.packetPurpose === 'bank_soal'
+        ? packet.packetPurpose
+        : packet.examCategory === 'UH'
+        ? 'ulangan_harian'
+        : 'bank_soal';
+
+    const normalized: OnlineExamPacket = {
+      id,
+      title: (packet.title || 'Paket Soal Ujian Online').trim(),
+      subjectId: packet.subjectId || '',
+      subjectName: packet.subjectName || '',
+      gradeLevel: packet.gradeLevel || '7',
+      targetClasses,
+      semester: packet.semester === 'Ganjil' ? 'Ganjil' : 'Genap',
+      academicYear: packet.academicYear || '2025/2026',
+      examCategory: packet.examCategory || (packetPurpose === 'ulangan_harian' ? 'UH' : 'SAS'),
+      packetPurpose,
+      creatorId: packet.creatorId || 'guru',
+      creatorName: packet.creatorName || 'Guru Mapel',
+      creatorRole: packet.creatorRole || 'Guru Mapel',
+      status: packet.status === 'draft' ? 'draft' : 'published',
+      questions,
+      questionCount: questions.length,
+      createdAt: packet.createdAt || now,
+      updatedAt: now
+    };
+
+    await connection.query(
+      `INSERT INTO \`online_exam_packets\` (
+        \`id\`, \`title\`, \`subject_id\`, \`subject_name\`, \`grade_level\`,
+        \`target_classes_json\`, \`semester\`, \`academic_year\`, \`exam_category\`,
+        \`packet_purpose\`, \`creator_id\`, \`creator_name\`, \`creator_role\`, \`status\`,
+        \`questions_json\`, \`question_count\`, \`created_at\`, \`updated_at\`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        \`title\` = VALUES(\`title\`),
+        \`subject_id\` = VALUES(\`subject_id\`),
+        \`subject_name\` = VALUES(\`subject_name\`),
+        \`grade_level\` = VALUES(\`grade_level\`),
+        \`target_classes_json\` = VALUES(\`target_classes_json\`),
+        \`semester\` = VALUES(\`semester\`),
+        \`academic_year\` = VALUES(\`academic_year\`),
+        \`exam_category\` = VALUES(\`exam_category\`),
+        \`packet_purpose\` = VALUES(\`packet_purpose\`),
+        \`creator_id\` = VALUES(\`creator_id\`),
+        \`creator_name\` = VALUES(\`creator_name\`),
+        \`creator_role\` = VALUES(\`creator_role\`),
+        \`status\` = VALUES(\`status\`),
+        \`questions_json\` = VALUES(\`questions_json\`),
+        \`question_count\` = VALUES(\`question_count\`),
+        \`updated_at\` = VALUES(\`updated_at\`)`,
+      [
+        normalized.id,
+        normalized.title,
+        normalized.subjectId,
+        normalized.subjectName,
+        normalized.gradeLevel,
+        JSON.stringify(normalized.targetClasses),
+        normalized.semester,
+        normalized.academicYear,
+        normalized.examCategory,
+        normalized.packetPurpose,
+        normalized.creatorId,
+        normalized.creatorName,
+        normalized.creatorRole,
+        normalized.status,
+        JSON.stringify(normalized.questions),
+        normalized.questionCount,
+        normalized.createdAt,
+        normalized.updatedAt
+      ]
+    );
+
+    const destLabel =
+      packetPurpose === 'ulangan_harian'
+        ? 'Daftar Soal Ulangan Harian Kelas'
+        : packetPurpose === 'both'
+        ? 'Bank Soal Mapel & Ulangan Harian Kelas'
+        : 'Bank Soal Master Data Mapel';
+
+    return {
+      success: true,
+      packet: normalized,
+      message: `Paket soal berhasil disimpan ke ${destLabel} (MySQL).`
+    };
+  } catch (err: any) {
+    console.error('[MySQL Save Online Exam Packet Error]:', err.message || err);
+    return {
+      success: false,
+      message: 'Gagal menyimpan paket soal ujian online ke MySQL.',
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function deleteOnlineExamPacketFromMysql(
+  id: string
+): Promise<{ success: boolean; message: string; error?: string }> {
+  const p = createPool();
+  if (!p) return { success: false, message: 'Pool MySQL belum terkonfigurasi.' };
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureOnlineExamTablesReady(connection);
+    await connection.query('DELETE FROM `online_exam_packets` WHERE `id` = ?', [id]);
+    return { success: true, message: 'Paket soal berhasil dihapus dari Bank Soal MySQL.' };
+  } catch (err: any) {
+    console.error('[MySQL Delete Online Exam Packet Error]:', err.message || err);
+    return { success: false, message: 'Gagal menghapus paket soal dari MySQL.', error: err.message || String(err) };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+function mapRowToOnlineExamSchedule(r: any): OnlineExamSchedule {
+  let targetClasses: string[] = [];
+  try {
+    if (r.target_classes_json) {
+      targetClasses = typeof r.target_classes_json === 'string' ? JSON.parse(r.target_classes_json) : r.target_classes_json;
+    }
+  } catch (_e) {
+    targetClasses = [];
+  }
+
+  let sickOverrides: any[] = [];
+  try {
+    if (r.sick_students_overrides_json) {
+      sickOverrides = typeof r.sick_students_overrides_json === 'string'
+        ? JSON.parse(r.sick_students_overrides_json)
+        : r.sick_students_overrides_json;
+    }
+  } catch (_e) {
+    sickOverrides = [];
+  }
+
+  let scoringConfig: any = {
+    pgWeight: 1,
+    pgKompleksWeight: 2,
+    menjodohkanWeight: 2,
+    benarSalahWeight: 1,
+    uraianWeight: 4,
+    maxScaleScore: 100,
+    useQuestionCustomScore: true,
+    autoSyncToSas: true,
+    scoreTargetMode: 'sas',
+    scheduleType: 'waka_sas'
+  };
+  try {
+    if (r.scoring_config_json) {
+      const parsed = typeof r.scoring_config_json === 'string' ? JSON.parse(r.scoring_config_json) : r.scoring_config_json;
+      scoringConfig = { ...scoringConfig, ...parsed };
+    }
+  } catch (_e) {
+    // keep default
+  }
+
+  return {
+    id: String(r.id),
+    packetId: String(r.packet_id || ''),
+    packetTitle: String(r.packet_title || ''),
+    subjectId: String(r.subject_id || ''),
+    subjectName: String(r.subject_name || ''),
+    gradeLevel: (String(r.grade_level || '7') as '7' | '8' | '9'),
+    targetClasses: Array.isArray(targetClasses) ? targetClasses : [],
+    semester: r.semester === 'Ganjil' ? 'Ganjil' : 'Genap',
+    academicYear: String(r.academic_year || '2025/2026'),
+    examDate: String(r.exam_date || ''),
+    startTimeWib: String(r.start_time_wib || '07:30'),
+    endTimeWib: String(r.end_time_wib || '09:30'),
+    durationMinutes: Number(r.duration_minutes || 90),
+    isActive: Boolean(r.is_active),
+    tokenCode: r.token_code ? String(r.token_code) : '',
+    gpsLockEnabled: Boolean(r.gps_lock_enabled),
+    schoolLatitude: Number(r.school_latitude ?? -7.9096),
+    schoolLongitude: Number(r.school_longitude ?? 110.2966),
+    schoolRadiusMeters: Number(r.school_radius_meters ?? 150),
+    sickStudentDefaultRadiusMeters: Number(r.sick_student_default_radius_meters ?? 15000),
+    sickStudentsHomeOverrides: Array.isArray(sickOverrides) ? sickOverrides : [],
+    scoringConfig,
+    scheduleType: scoringConfig.scheduleType || 'waka_sas',
+    scoreTargetMode: ['sas', 'uh_tp1', 'uh_tp2', 'uh_tp3', 'uh_tp4'].includes(scoringConfig.scoreTargetMode)
+      ? scoringConfig.scoreTargetMode
+      : scoringConfig.scheduleType === 'teacher_uh'
+      ? 'uh_tp1'
+      : 'sas',
+    creatorId: scoringConfig.creatorId || '',
+    creatorName: scoringConfig.creatorName || '',
+    creatorRole: scoringConfig.creatorRole || '',
+    createdAt: String(r.created_at || new Date().toISOString()),
+    updatedAt: String(r.updated_at || new Date().toISOString())
+  };
+}
+
+export async function getOnlineExamSchedulesFromMysql(): Promise<OnlineExamSchedule[]> {
+  const p = createPool();
+  if (!p) return [];
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureOnlineExamTablesReady(connection);
+    const [rows] = await connection.query<mysql.RowDataPacket[]>(
+      'SELECT * FROM `online_exam_schedules` ORDER BY `exam_date` DESC, `start_time_wib` ASC'
+    );
+    return (rows || []).map(mapRowToOnlineExamSchedule);
+  } catch (err: any) {
+    console.error('[MySQL Get Online Exam Schedules Error]:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function saveOnlineExamScheduleToMysql(
+  schedule: OnlineExamSchedule
+): Promise<{ success: boolean; schedule?: OnlineExamSchedule; message: string; error?: string }> {
+  const p = createPool();
+  if (!p) return { success: false, message: 'Pool MySQL belum terkonfigurasi.' };
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureOnlineExamTablesReady(connection);
+
+    const now = new Date().toISOString();
+    const id = schedule.id || `sch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const scheduleType = schedule.scheduleType || schedule.scoringConfig?.scheduleType || 'waka_sas';
+    const rawTargetMode = String(schedule.scoreTargetMode || schedule.scoringConfig?.scoreTargetMode || '');
+    const scoreTargetMode: 'sas' | 'uh_tp1' | 'uh_tp2' | 'uh_tp3' | 'uh_tp4' = (
+      ['sas', 'uh_tp1', 'uh_tp2', 'uh_tp3', 'uh_tp4'].includes(rawTargetMode)
+        ? rawTargetMode
+        : scheduleType === 'teacher_uh'
+        ? 'uh_tp1'
+        : 'sas'
+    ) as 'sas' | 'uh_tp1' | 'uh_tp2' | 'uh_tp3' | 'uh_tp4';
+
+    const mergedScoringConfig = {
+      pgWeight: Number(schedule.scoringConfig?.pgWeight ?? 1),
+      pgKompleksWeight: Number(schedule.scoringConfig?.pgKompleksWeight ?? 2),
+      menjodohkanWeight: Number(schedule.scoringConfig?.menjodohkanWeight ?? 2),
+      benarSalahWeight: Number(schedule.scoringConfig?.benarSalahWeight ?? 1),
+      uraianWeight: Number(schedule.scoringConfig?.uraianWeight ?? 4),
+      maxScaleScore: Number(schedule.scoringConfig?.maxScaleScore ?? 100),
+      useQuestionCustomScore: Boolean(schedule.scoringConfig?.useQuestionCustomScore ?? true),
+      autoSyncToSas: true,
+      scoreTargetMode,
+      scheduleType,
+      creatorId: schedule.creatorId || schedule.scoringConfig?.creatorId || '',
+      creatorName: schedule.creatorName || schedule.scoringConfig?.creatorName || '',
+      creatorRole: schedule.creatorRole || schedule.scoringConfig?.creatorRole || ''
+    };
+
+    const normalized: OnlineExamSchedule = {
+      id,
+      packetId: schedule.packetId || '',
+      packetTitle: schedule.packetTitle || '',
+      subjectId: schedule.subjectId || '',
+      subjectName: schedule.subjectName || '',
+      gradeLevel: schedule.gradeLevel || '7',
+      targetClasses: Array.isArray(schedule.targetClasses) ? schedule.targetClasses : [],
+      semester: schedule.semester === 'Ganjil' ? 'Ganjil' : 'Genap',
+      academicYear: schedule.academicYear || '2025/2026',
+      examDate: schedule.examDate || new Date().toISOString().split('T')[0],
+      startTimeWib: schedule.startTimeWib || '07:30',
+      endTimeWib: schedule.endTimeWib || '09:30',
+      durationMinutes: Number(schedule.durationMinutes || 90),
+      isActive: schedule.isActive !== undefined ? Boolean(schedule.isActive) : true,
+      tokenCode: schedule.tokenCode || '',
+      gpsLockEnabled: schedule.gpsLockEnabled !== undefined ? Boolean(schedule.gpsLockEnabled) : true,
+      schoolLatitude: Number(schedule.schoolLatitude ?? -7.9096),
+      schoolLongitude: Number(schedule.schoolLongitude ?? 110.2966),
+      schoolRadiusMeters: Number(schedule.schoolRadiusMeters ?? 150),
+      sickStudentDefaultRadiusMeters: Number(schedule.sickStudentDefaultRadiusMeters ?? 15000),
+      sickStudentsHomeOverrides: Array.isArray(schedule.sickStudentsHomeOverrides) ? schedule.sickStudentsHomeOverrides : [],
+      scoringConfig: mergedScoringConfig,
+      scheduleType,
+      scoreTargetMode,
+      creatorId: mergedScoringConfig.creatorId,
+      creatorName: mergedScoringConfig.creatorName,
+      creatorRole: mergedScoringConfig.creatorRole,
+      createdAt: schedule.createdAt || now,
+      updatedAt: now
+    };
+
+    await connection.query(
+      `INSERT INTO \`online_exam_schedules\` (
+        \`id\`, \`packet_id\`, \`packet_title\`, \`subject_id\`, \`subject_name\`,
+        \`grade_level\`, \`target_classes_json\`, \`semester\`, \`academic_year\`,
+        \`exam_date\`, \`start_time_wib\`, \`end_time_wib\`, \`duration_minutes\`,
+        \`is_active\`, \`token_code\`, \`gps_lock_enabled\`, \`school_latitude\`,
+        \`school_longitude\`, \`school_radius_meters\`, \`sick_student_default_radius_meters\`,
+        \`sick_students_overrides_json\`, \`scoring_config_json\`, \`created_at\`, \`updated_at\`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        \`packet_id\` = VALUES(\`packet_id\`),
+        \`packet_title\` = VALUES(\`packet_title\`),
+        \`subject_id\` = VALUES(\`subject_id\`),
+        \`subject_name\` = VALUES(\`subject_name\`),
+        \`grade_level\` = VALUES(\`grade_level\`),
+        \`target_classes_json\` = VALUES(\`target_classes_json\`),
+        \`semester\` = VALUES(\`semester\`),
+        \`academic_year\` = VALUES(\`academic_year\`),
+        \`exam_date\` = VALUES(\`exam_date\`),
+        \`start_time_wib\` = VALUES(\`start_time_wib\`),
+        \`end_time_wib\` = VALUES(\`end_time_wib\`),
+        \`duration_minutes\` = VALUES(\`duration_minutes\`),
+        \`is_active\` = VALUES(\`is_active\`),
+        \`token_code\` = VALUES(\`token_code\`),
+        \`gps_lock_enabled\` = VALUES(\`gps_lock_enabled\`),
+        \`school_latitude\` = VALUES(\`school_latitude\`),
+        \`school_longitude\` = VALUES(\`school_longitude\`),
+        \`school_radius_meters\` = VALUES(\`school_radius_meters\`),
+        \`sick_student_default_radius_meters\` = VALUES(\`sick_student_default_radius_meters\`),
+        \`sick_students_overrides_json\` = VALUES(\`sick_students_overrides_json\`),
+        \`scoring_config_json\` = VALUES(\`scoring_config_json\`),
+        \`updated_at\` = VALUES(\`updated_at\`)`,
+      [
+        normalized.id,
+        normalized.packetId,
+        normalized.packetTitle,
+        normalized.subjectId,
+        normalized.subjectName,
+        normalized.gradeLevel,
+        JSON.stringify(normalized.targetClasses),
+        normalized.semester,
+        normalized.academicYear,
+        normalized.examDate,
+        normalized.startTimeWib,
+        normalized.endTimeWib,
+        normalized.durationMinutes,
+        normalized.isActive ? 1 : 0,
+        normalized.tokenCode || null,
+        normalized.gpsLockEnabled ? 1 : 0,
+        normalized.schoolLatitude,
+        normalized.schoolLongitude,
+        normalized.schoolRadiusMeters,
+        normalized.sickStudentDefaultRadiusMeters,
+        JSON.stringify(normalized.sickStudentsHomeOverrides),
+        JSON.stringify(normalized.scoringConfig),
+        normalized.createdAt,
+        normalized.updatedAt
+      ]
+    );
+
+    return {
+      success: true,
+      schedule: normalized,
+      message: 'Jadwal ujian online, pengaturan GPS, dan konfigurasi skor berhasil disimpan ke MySQL.'
+    };
+  } catch (err: any) {
+    console.error('[MySQL Save Online Exam Schedule Error]:', err.message || err);
+    return {
+      success: false,
+      message: 'Gagal menyimpan jadwal ujian online ke MySQL.',
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function deleteOnlineExamScheduleFromMysql(
+  id: string
+): Promise<{ success: boolean; message: string; error?: string }> {
+  const p = createPool();
+  if (!p) return { success: false, message: 'Pool MySQL belum terkonfigurasi.' };
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureOnlineExamTablesReady(connection);
+    await connection.query('DELETE FROM `online_exam_schedules` WHERE `id` = ?', [id]);
+    return { success: true, message: 'Jadwal ujian berhasil dihapus dari MySQL.' };
+  } catch (err: any) {
+    console.error('[MySQL Delete Online Exam Schedule Error]:', err.message || err);
+    return { success: false, message: 'Gagal menghapus jadwal ujian dari MySQL.', error: err.message || String(err) };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+function mapRowToOnlineExamSubmission(r: any): OnlineExamSubmission {
+  let answers: Record<string, any> = {};
+  try {
+    if (r.answers_json) {
+      answers = typeof r.answers_json === 'string' ? JSON.parse(r.answers_json) : r.answers_json;
+    }
+  } catch (_e) {
+    answers = {};
+  }
+
+  let questionScores: Record<string, number> = {};
+  try {
+    if (r.question_scores_json) {
+      questionScores = typeof r.question_scores_json === 'string' ? JSON.parse(r.question_scores_json) : r.question_scores_json;
+    }
+  } catch (_e) {
+    questionScores = {};
+  }
+
+  return {
+    id: String(r.id),
+    scheduleId: String(r.schedule_id || ''),
+    packetId: String(r.packet_id || ''),
+    studentId: String(r.student_id || ''),
+    studentNis: String(r.student_nis || ''),
+    studentName: String(r.student_name || ''),
+    className: String(r.class_name || ''),
+    subjectId: String(r.subject_id || ''),
+    subjectName: String(r.subject_name || ''),
+    semester: r.semester === 'Ganjil' ? 'Ganjil' : 'Genap',
+    academicYear: String(r.academic_year || '2025/2026'),
+    status: (['in_progress', 'submitted', 'graded'].includes(r.status) ? r.status : 'in_progress') as any,
+    startedAt: String(r.started_at || new Date().toISOString()),
+    submittedAt: r.submitted_at ? String(r.submitted_at) : undefined,
+    gpsLatitude: r.gps_latitude !== null && r.gps_latitude !== undefined ? Number(r.gps_latitude) : undefined,
+    gpsLongitude: r.gps_longitude !== null && r.gps_longitude !== undefined ? Number(r.gps_longitude) : undefined,
+    gpsDistanceMeters: r.gps_distance_meters !== null && r.gps_distance_meters !== undefined ? Number(r.gps_distance_meters) : undefined,
+    isSickHomeMode: Boolean(r.is_sick_home_mode),
+    answers: answers || {},
+    questionScores: questionScores || {},
+    rawScore: Number(r.raw_score || 0),
+    maxRawScore: Number(r.max_raw_score || 100),
+    finalScoreSas: Number(r.final_score_sas || 0),
+    syncedToSas: Boolean(r.synced_to_sas),
+    updatedAt: String(r.updated_at || new Date().toISOString())
+  };
+}
+
+export async function getOnlineExamSubmissionsFromMysql(filters?: {
+  scheduleId?: string;
+  studentId?: string;
+  packetId?: string;
+}): Promise<OnlineExamSubmission[]> {
+  const p = createPool();
+  if (!p) return [];
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureOnlineExamTablesReady(connection);
+
+    const whereClauses: string[] = [];
+    const params: any[] = [];
+    if (filters?.scheduleId) {
+      whereClauses.push('`schedule_id` = ?');
+      params.push(filters.scheduleId);
+    }
+    if (filters?.studentId) {
+      whereClauses.push('`student_id` = ?');
+      params.push(filters.studentId);
+    }
+    if (filters?.packetId) {
+      whereClauses.push('`packet_id` = ?');
+      params.push(filters.packetId);
+    }
+
+    const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const [rows] = await connection.query<mysql.RowDataPacket[]>(
+      `SELECT * FROM \`online_exam_submissions\` ${whereSql} ORDER BY \`updated_at\` DESC`,
+      params
+    );
+    return (rows || []).map(mapRowToOnlineExamSubmission);
+  } catch (err: any) {
+    console.error('[MySQL Get Online Exam Submissions Error]:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+function calcSingleTpScore(tugas1Val: any, uhVal: any): number | null {
+  const n1 = tugas1Val !== undefined && tugas1Val !== null && String(tugas1Val).trim() !== '' && !Number.isNaN(Number(tugas1Val))
+    ? Number(tugas1Val)
+    : null;
+  const nUh = uhVal !== undefined && uhVal !== null && String(uhVal).trim() !== '' && !Number.isNaN(Number(uhVal))
+    ? Number(uhVal)
+    : null;
+  if (n1 === null && nUh === null) return null;
+  if (n1 !== null && nUh !== null) return Math.round(n1 * 0.7 + nUh * 0.3);
+  if (n1 !== null) return Math.round(n1);
+  return Math.round(nUh!);
+}
+
+export async function saveOnlineExamSubmissionDirectToMysql(
+  submission: OnlineExamSubmission,
+  options?: {
+    autoSyncToSas?: boolean;
+    scoreTargetMode?: 'sas' | 'uh_tp1' | 'uh_tp2' | 'uh_tp3' | 'uh_tp4';
+    teacherName?: string;
+  }
+): Promise<{
+  success: boolean;
+  submission?: OnlineExamSubmission;
+  syncedMerdekaAssessment?: MerdekaAssessment;
+  message: string;
+  error?: string;
+}> {
+  const p = createPool();
+  if (!p) return { success: false, message: 'Pool MySQL belum terkonfigurasi.' };
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await p.getConnection();
+    await ensureOnlineExamTablesReady(connection);
+
+    const now = new Date().toISOString();
+    const id = submission.id || `sub-${submission.scheduleId}-${submission.studentId}`;
+    const targetMode: 'sas' | 'uh_tp1' | 'uh_tp2' | 'uh_tp3' | 'uh_tp4' =
+      options?.scoreTargetMode ||
+      submission.scoreTargetMode ||
+      'sas';
+
+    const shouldSyncAssessment =
+      submission.status !== 'in_progress' && options?.autoSyncToSas !== false;
+
+    const normalized: OnlineExamSubmission = {
+      ...submission,
+      id,
+      syncedToSas: shouldSyncAssessment ? true : Boolean(submission.syncedToSas),
+      scoreTargetMode: targetMode,
+      updatedAt: now
+    };
+
+    await connection.query(
+      `INSERT INTO \`online_exam_submissions\` (
+        \`id\`, \`schedule_id\`, \`packet_id\`, \`student_id\`, \`student_nis\`,
+        \`student_name\`, \`class_name\`, \`subject_id\`, \`subject_name\`,
+        \`semester\`, \`academic_year\`, \`status\`, \`started_at\`, \`submitted_at\`,
+        \`gps_latitude\`, \`gps_longitude\`, \`gps_distance_meters\`, \`is_sick_home_mode\`,
+        \`answers_json\`, \`question_scores_json\`, \`raw_score\`, \`max_raw_score\`,
+        \`final_score_sas\`, \`synced_to_sas\`, \`updated_at\`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        \`status\` = VALUES(\`status\`),
+        \`submitted_at\` = VALUES(\`submitted_at\`),
+        \`gps_latitude\` = VALUES(\`gps_latitude\`),
+        \`gps_longitude\` = VALUES(\`gps_longitude\`),
+        \`gps_distance_meters\` = VALUES(\`gps_distance_meters\`),
+        \`is_sick_home_mode\` = VALUES(\`is_sick_home_mode\`),
+        \`answers_json\` = VALUES(\`answers_json\`),
+        \`question_scores_json\` = VALUES(\`question_scores_json\`),
+        \`raw_score\` = VALUES(\`raw_score\`),
+        \`max_raw_score\` = VALUES(\`max_raw_score\`),
+        \`final_score_sas\` = VALUES(\`final_score_sas\`),
+        \`synced_to_sas\` = VALUES(\`synced_to_sas\`),
+        \`updated_at\` = VALUES(\`updated_at\`)`,
+      [
+        normalized.id,
+        normalized.scheduleId,
+        normalized.packetId,
+        normalized.studentId,
+        normalized.studentNis || '',
+        normalized.studentName,
+        normalized.className,
+        normalized.subjectId,
+        normalized.subjectName,
+        normalized.semester,
+        normalized.academicYear,
+        normalized.status,
+        normalized.startedAt || now,
+        normalized.submittedAt || null,
+        normalized.gpsLatitude ?? null,
+        normalized.gpsLongitude ?? null,
+        normalized.gpsDistanceMeters ?? null,
+        normalized.isSickHomeMode ? 1 : 0,
+        JSON.stringify(normalized.answers || {}),
+        JSON.stringify(normalized.questionScores || {}),
+        normalized.rawScore,
+        normalized.maxRawScore,
+        normalized.finalScoreSas,
+        normalized.syncedToSas ? 1 : 0,
+        normalized.updatedAt
+      ]
+    );
+
+    let syncedAssessment: MerdekaAssessment | undefined;
+
+    if (shouldSyncAssessment) {
+      const [existingRows] = await connection.query<mysql.RowDataPacket[]>(
+        `SELECT * FROM \`merdeka_assessments\`
+         WHERE \`student_id\` = ?
+           AND (LOWER(\`subject\`) = LOWER(?) OR LOWER(\`subject\`) = LOWER(?))
+           AND \`semester\` = ?
+           AND \`academic_year\` = ?
+         LIMIT 1`,
+        [
+          normalized.studentId,
+          normalized.subjectName,
+          normalized.subjectId,
+          normalized.semester,
+          normalized.academicYear
+        ]
+      );
+
+      const scoreRounded = Math.round(Number(normalized.finalScoreSas) * 100) / 100;
+      const ex = existingRows && existingRows.length > 0 ? existingRows[0] : null;
+      const assessId = ex
+        ? String(ex.id)
+        : `ma-${normalized.studentId}-${normalized.subjectId}-${normalized.semester}-${normalized.academicYear.replace(/[^a-zA-Z0-9]/g, '')}`.slice(0, 64);
+
+      const teacherName =
+        options?.teacherName ||
+        (ex && ex.teacher_name ? String(ex.teacher_name) : 'Sistem Ujian Online (CBT)');
+
+      let tp1Tugas1 = ex?.tp1_tugas1 ?? '';
+      let tp1Uh = ex?.tp1_uh ?? '';
+      let tp2Tugas1 = ex?.tp2_tugas1 ?? '';
+      let tp2Uh = ex?.tp2_uh ?? '';
+      let tp3Tugas1 = ex?.tp3_tugas1 ?? '';
+      let tp3Uh = ex?.tp3_uh ?? '';
+      let tp4Tugas1 = ex?.tp4_tugas1 ?? '';
+      let tp4Uh = ex?.tp4_uh ?? '';
+
+      let nilaiKokurikuler = Number(ex?.nilai_kokurikuler || 0);
+      let nilaiPts = Number(ex?.nilai_pts || 0);
+      let nilaiPas = Number(ex?.nilai_pas || 0);
+      let nilaiSAS = Number(ex?.nilai_sas || nilaiPas || 0);
+
+      if (targetMode === 'uh_tp1') tp1Uh = String(Math.round(scoreRounded));
+      else if (targetMode === 'uh_tp2') tp2Uh = String(Math.round(scoreRounded));
+      else if (targetMode === 'uh_tp3') tp3Uh = String(Math.round(scoreRounded));
+      else if (targetMode === 'uh_tp4') tp4Uh = String(Math.round(scoreRounded));
+      else {
+        nilaiPas = scoreRounded;
+        nilaiSAS = scoreRounded;
+      }
+
+      const nTp1 = calcSingleTpScore(tp1Tugas1, tp1Uh);
+      const nTp2 = calcSingleTpScore(tp2Tugas1, tp2Uh);
+      const nTp3 = calcSingleTpScore(tp3Tugas1, tp3Uh);
+      const nTp4 = calcSingleTpScore(tp4Tugas1, tp4Uh);
+
+      const validTps = [nTp1, nTp2, nTp3, nTp4].filter((v): v is number => v !== null);
+      const nilaiRataTp =
+        validTps.length > 0
+          ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length)
+          : Number(ex?.nilai_rata_tp || 0);
+
+      const hasOtherComponents = nilaiRataTp > 0 || nilaiKokurikuler > 0 || nilaiPts > 0 || nilaiPas > 0;
+      const nilaiAkhirMapel = hasOtherComponents
+        ? Math.round((nilaiRataTp * 3 + nilaiKokurikuler + nilaiPts + nilaiPas) / 6)
+        : Math.round(scoreRounded);
+
+      const deskripsiCapaian =
+        ex?.deskripsi_capaian ||
+        `Menunjukkan penguasaan kompetensi pada mata pelajaran ${normalized.subjectName} (${
+          targetMode.startsWith('uh_') ? `Ulangan Harian ${targetMode.replace('uh_tp', 'TP ')}` : 'SAS Online'
+        }: ${scoreRounded}).`;
+
+      syncedAssessment = {
+        id: assessId,
+        studentId: normalized.studentId,
+        studentName: normalized.studentName,
+        className: normalized.className,
+        subject: normalized.subjectName,
+        teacherName,
+        semester: normalized.semester,
+        academicYear: normalized.academicYear,
+        tp1Name: ex?.tp1_name || undefined,
+        tp1Tugas1,
+        tp1Tugas2: ex?.tp1_tugas2 || undefined,
+        tp1Uh,
+        nilaiTp1: nTp1 ?? undefined,
+        tp2Name: ex?.tp2_name || undefined,
+        tp2Tugas1,
+        tp2Tugas2: ex?.tp2_tugas2 || undefined,
+        tp2Uh,
+        nilaiTp2: nTp2 ?? undefined,
+        tp3Name: ex?.tp3_name || undefined,
+        tp3Tugas1,
+        tp3Tugas2: ex?.tp3_tugas2 || undefined,
+        tp3Uh,
+        nilaiTp3: nTp3 ?? undefined,
+        tp4Name: ex?.tp4_name || undefined,
+        tp4Tugas1,
+        tp4Tugas2: ex?.tp4_tugas2 || undefined,
+        tp4Uh,
+        nilaiTp4: nTp4 ?? undefined,
+        nilaiRataTp,
+        nilaiFormatif: nilaiRataTp,
+        nilaiKokurikuler,
+        nilaiPts,
+        nilaiPas,
+        nilaiSAS,
+        nilaiAkhirMapel,
+        nilaiRapor: nilaiAkhirMapel,
+        deskripsiCapaian,
+        createdAt: ex?.created_at || now
+      };
+
+      await connection.query(
+        `INSERT INTO \`merdeka_assessments\` (
+          \`id\`, \`student_id\`, \`student_name\`, \`class_name\`,
+          \`subject\`, \`teacher_name\`, \`semester\`, \`academic_year\`,
+          \`tp1_uh\`, \`nilai_tp1\`, \`tp2_uh\`, \`nilai_tp2\`,
+          \`tp3_uh\`, \`nilai_tp3\`, \`tp4_uh\`, \`nilai_tp4\`,
+          \`nilai_rata_tp\`, \`nilai_formatif\`, \`nilai_kokurikuler\`, \`nilai_pts\`,
+          \`nilai_pas\`, \`nilai_sas\`, \`nilai_akhir_mapel\`, \`nilai_rapor\`,
+          \`deskripsi_capaian\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`tp1_uh\` = VALUES(\`tp1_uh\`),
+          \`nilai_tp1\` = VALUES(\`nilai_tp1\`),
+          \`tp2_uh\` = VALUES(\`tp2_uh\`),
+          \`nilai_tp2\` = VALUES(\`nilai_tp2\`),
+          \`tp3_uh\` = VALUES(\`tp3_uh\`),
+          \`nilai_tp3\` = VALUES(\`nilai_tp3\`),
+          \`tp4_uh\` = VALUES(\`tp4_uh\`),
+          \`nilai_tp4\` = VALUES(\`nilai_tp4\`),
+          \`nilai_rata_tp\` = VALUES(\`nilai_rata_tp\`),
+          \`nilai_formatif\` = VALUES(\`nilai_formatif\`),
+          \`nilai_pas\` = VALUES(\`nilai_pas\`),
+          \`nilai_sas\` = VALUES(\`nilai_sas\`),
+          \`nilai_akhir_mapel\` = VALUES(\`nilai_akhir_mapel\`),
+          \`nilai_rapor\` = VALUES(\`nilai_rapor\`),
+          \`updated_at\` = NOW()`,
+        [
+          syncedAssessment.id,
+          syncedAssessment.studentId,
+          syncedAssessment.studentName,
+          syncedAssessment.className,
+          syncedAssessment.subject,
+          syncedAssessment.teacherName,
+          syncedAssessment.semester,
+          syncedAssessment.academicYear,
+          syncedAssessment.tp1Uh || null,
+          syncedAssessment.nilaiTp1 ?? null,
+          syncedAssessment.tp2Uh || null,
+          syncedAssessment.nilaiTp2 ?? null,
+          syncedAssessment.tp3Uh || null,
+          syncedAssessment.nilaiTp3 ?? null,
+          syncedAssessment.tp4Uh || null,
+          syncedAssessment.nilaiTp4 ?? null,
+          syncedAssessment.nilaiRataTp ?? 0,
+          syncedAssessment.nilaiFormatif ?? 0,
+          syncedAssessment.nilaiKokurikuler ?? 0,
+          syncedAssessment.nilaiPts ?? 0,
+          syncedAssessment.nilaiPas ?? 0,
+          syncedAssessment.nilaiSAS ?? 0,
+          syncedAssessment.nilaiAkhirMapel ?? 0,
+          syncedAssessment.nilaiRapor ?? 0,
+          syncedAssessment.deskripsiCapaian,
+          syncedAssessment.createdAt
+        ]
+      );
+    }
+
+    const modeMsg = targetMode.startsWith('uh_tp')
+      ? `Jawaban disimpan ke MySQL dan Nilai (${normalized.finalScoreSas}) otomatis masuk ke Nilai Ulangan Harian (${targetMode.replace('uh_tp', 'TP ')}) di Penilaian!`
+      : `Jawaban ujian disimpan ke MySQL dan Nilai SAS (${normalized.finalScoreSas}) otomatis masuk ke Sistem Penilaian.`;
+
+    return {
+      success: true,
+      submission: normalized,
+      syncedMerdekaAssessment: syncedAssessment,
+      message: submission.status === 'in_progress'
+        ? 'Progres pengerjaan ujian berhasil disimpan ke MySQL.'
+        : modeMsg
+    };
+  } catch (err: any) {
+    console.error('[MySQL Save Online Exam Submission Error]:', err.message || err);
+    return {
+      success: false,
+      message: 'Gagal menyimpan hasil ujian online ke MySQL.',
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+

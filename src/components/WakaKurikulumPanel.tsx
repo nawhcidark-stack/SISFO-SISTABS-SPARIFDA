@@ -60,6 +60,7 @@ import {
 } from '../utils/raporAkhirPrint';
 import { RaporAkhirF4Preview } from './RaporAkhirF4Preview';
 import { WakaExtracurricularView } from './WakaExtracurricularView';
+import { OnlineExamWakaManager } from './OnlineExamWakaManager';
 
 const normalizeSubjectCache = new Map<string, string>();
 
@@ -252,8 +253,8 @@ export default function WakaKurikulumPanel({
     () => (rawSubjectTeachers || []).filter(st => !isDummySubjectTeacher(st)),
     [rawSubjectTeachers]
   );
-  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'ekstrakurikuler' | 'rekap_nilai' | 'detail_nilai' | 'status_belum_input' | 'rapor' | 'rapor_tengah_semester' | 'password'>('monitoring');
-  const [masterMapelSubTab, setMasterMapelSubTab] = useState<'mapel_list' | 'bank_tp'>('mapel_list');
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'ujian_online' | 'import_pts_pas' | 'ekstrakurikuler' | 'rekap_nilai' | 'detail_nilai' | 'status_belum_input' | 'rapor' | 'rapor_tengah_semester' | 'password'>('monitoring');
+  const [masterMapelSubTab, setMasterMapelSubTab] = useState<'mapel_list' | 'bank_tp' | 'bank_soal'>('mapel_list');
   const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
   const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
 
@@ -3371,6 +3372,18 @@ export default function WakaKurikulumPanel({
         </button>
 
         <button
+          onClick={() => setActiveTab('ujian_online')}
+          className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'ujian_online'
+              ? 'border-[#185abd] text-[#185abd]'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <FileText size={15} className="text-[#185abd]" />
+          <span>Ujian Online (Jadwal WIB, GPS &amp; Skor SAS)</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('import_pts_pas')}
           className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'import_pts_pas'
@@ -3487,6 +3500,20 @@ export default function WakaKurikulumPanel({
         />
       )}
 
+      {/* TAB: UJIAN ONLINE (JADWAL OTOMATIS WIB, KUNCI LOKASI GPS & SETTING SKOR SAS) */}
+      {activeTab === 'ujian_online' && (
+        <OnlineExamWakaManager
+          curriculumSubjects={curriculumSubjectsList}
+          students={students}
+          attendanceLogs={attendanceLogs}
+          defaultView="jadwal_skor"
+          onSasScoreSynced={() => {
+            fetchRaporMysqlData();
+            if (onRefreshData) onRefreshData();
+          }}
+        />
+      )}
+
       {/* TAB: MASTER DATA MATA PELAJARAN (KURIKULUM MERDEKA) */}
       {activeTab === 'master_mapel' && (
         <div className="space-y-6 animate-fade-in text-left">
@@ -3527,7 +3554,39 @@ export default function WakaKurikulumPanel({
                 Tersinkronisasi Otomatis
               </span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setMasterMapelSubTab('bank_soal')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                masterMapelSubTab === 'bank_soal'
+                  ? 'bg-[#185abd] text-white shadow-md shadow-blue-600/25'
+                  : 'bg-white hover:bg-blue-50 text-[#185abd] border border-blue-200'
+              }`}
+            >
+              <FileText size={15} />
+              <span>Bank Soal Ujian Online (CBT)</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                masterMapelSubTab === 'bank_soal' ? 'bg-blue-800 text-blue-100' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+              }`}>
+                Direct MySQL
+              </span>
+            </button>
           </div>
+
+          {/* VIEW 0: BANK SOAL UJIAN ONLINE DI MASTER DATA MAPEL */}
+          {masterMapelSubTab === 'bank_soal' && (
+            <OnlineExamWakaManager
+              curriculumSubjects={curriculumSubjectsList}
+              students={students}
+              attendanceLogs={attendanceLogs}
+              defaultView="bank_soal"
+              onSasScoreSynced={() => {
+                fetchRaporMysqlData();
+                if (onRefreshData) onRefreshData();
+              }}
+            />
+          )}
 
           {/* VIEW 1: BANK TP BERSAMA */}
           {masterMapelSubTab === 'bank_tp' && (

@@ -17,6 +17,7 @@ import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, 
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter, formatMidtransPaymentMethod, resolveNetSavingsDepositAmount } from "./src/server/routes/midtransRoutes";
+import { createOnlineExamRouter } from "./src/server/routes/onlineExamRoutes";
 
 
 // Setup serverport
@@ -1633,11 +1634,9 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
       netTxAmount = existingBalance;
     }
 
-    if (student.savingsBalance !== netTxAmount || anyTxSanitized) {
-      student.savingsBalance = netTxAmount;
+    student.savingsBalance = netTxAmount;
+    if (anyTxSanitized) {
       persistEntity("students", student).catch(() => {});
-    } else {
-      student.savingsBalance = netTxAmount;
     }
   });
 }
@@ -2499,11 +2498,11 @@ async function startServer() {
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
     res.setHeader("Surrogate-Control", "no-store");
-    if (!isInitialSyncCompleted && !req.path.startsWith("/notifications/stream")) {
+    if (!isInitialSyncCompleted && !req.path.startsWith("/notifications/stream") && !req.path.startsWith("/health")) {
       try {
         await Promise.race([
           mysqlInitPromise,
-          new Promise((resolve) => setTimeout(resolve, 15000))
+          new Promise((resolve) => setTimeout(resolve, 5000))
         ]);
       } catch (_) {}
     }
@@ -8233,6 +8232,37 @@ async function startServer() {
     saveState();
     res.json({ success: true, merdekaAssessments, deletedItem });
   });
+
+  // --- ONLINE EXAM (UJIAN ONLINE / CBT) ENDPOINTS (DIRECT MYSQL) ---
+  app.use(
+    "/api/online-exams",
+    createOnlineExamRouter({
+      getStudents: () => students,
+      getAttendanceLogs: () => attendanceLogs,
+      getMerdekaAssessments: () => merdekaAssessments,
+      upsertMerdekaAssessmentInMemory: (syncedAssessment) => {
+        const existingIdx = merdekaAssessments.findIndex(
+          a =>
+            a.id === syncedAssessment.id ||
+            (a.studentId === syncedAssessment.studentId &&
+              isSameSubject(a.subject, syncedAssessment.subject) &&
+              a.semester === syncedAssessment.semester &&
+              a.academicYear === syncedAssessment.academicYear)
+        );
+        if (existingIdx !== -1) {
+          merdekaAssessments[existingIdx] = {
+            ...merdekaAssessments[existingIdx],
+            nilaiPas: syncedAssessment.nilaiPas,
+            nilaiSAS: syncedAssessment.nilaiSAS,
+            nilaiAkhirMapel: syncedAssessment.nilaiAkhirMapel,
+            nilaiRapor: syncedAssessment.nilaiRapor
+          };
+        } else {
+          merdekaAssessments.unshift(syncedAssessment);
+        }
+      }
+    })
+  );
 
   // --- CLASS SCHEDULES (JADWAL PELAJARAN / MENGAJAR) ENDPOINTS ---
   function checkJamKeOverlap(jamA: string, jamB: string): boolean {

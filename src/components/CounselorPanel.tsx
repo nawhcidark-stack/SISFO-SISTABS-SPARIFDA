@@ -107,7 +107,9 @@ export default function CounselorPanel({
 
   // Secondary sub-tab states for custom list or aggregates
   const [attendanceSubTab, setAttendanceSubTab] = useState<'diary' | 'aggregate'>('aggregate');
-  const [infractionSubTab, setInfractionSubTab] = useState<'student_points_table' | 'list' | 'points' | 'add' | 'reduction' | 'rubric'>('student_points_table');
+  const [infractionSubTab, setInfractionSubTab] = useState<
+    'student_points_table' | 'list' | 'points' | 'add' | 'adjustment' | 'reduction' | 'rubric'
+  >('student_points_table');
   const [studentPointsViewMode, setStudentPointsViewMode] = useState<'by_student' | 'all_rows'>('by_student');
 
   // Infraction rules rubric configuration inside Counselor Panel
@@ -126,6 +128,16 @@ export default function CounselorPanel({
   const rubricFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [importingPoints, setImportingPoints] = useState(false);
   const pointsFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Penyesuaian Poin Pelanggaran BK (Cukup Input Jumlah Poin Tanpa Keterangan Pelanggaran)
+  const [importingAdjustments, setImportingAdjustments] = useState(false);
+  const adjustmentFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [adjustmentImportMode, setAdjustmentImportMode] = useState<'set_total' | 'delta'>('set_total');
+  const [adjustmentTemplateScope, setAdjustmentTemplateScope] = useState<
+    'all_students' | 'students_with_points'
+  >('all_students');
+  const [inlinePointEdits, setInlinePointEdits] = useState<Record<string, string>>({});
+  const [savingInlineAdjustments, setSavingInlineAdjustments] = useState(false);
 
   // Suggestion & Solutions form state
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
@@ -1285,7 +1297,21 @@ export default function CounselorPanel({
       }
 
       if (itemsToImport.length === 0) {
-        alert("Tidak ditemukan isian pelanggaran pada file yang diunggah. Pastikan kolom Pelanggaran sudah diisi pada baris siswa yang melanggar.");
+        // Fallback cerdas: cek apakah file yang diunggah adalah Template Penyesuaian Poin (tanpa nomor/keterangan pelanggaran)
+        const hasAdjustCol = headers.some(
+          h =>
+            h.includes("jumlah poin") ||
+            h.includes("penyesuaian") ||
+            h.includes("poin baru") ||
+            h.includes("sesuaikan")
+        );
+        if (hasAdjustCol) {
+          await parseAndSubmitPointAdjustmentRows(rows, adjustmentImportMode);
+          return;
+        }
+        alert(
+          "Tidak ditemukan isian pelanggaran pada file yang diunggah. Jika Anda ingin menyesuaikan jumlah poin tanpa keterangan pelanggaran, gunakan kolom 'Jumlah Poin Siswa (Sesuaikan Di Sini)' pada Template Penyesuaian Poin."
+        );
         return;
       }
 
@@ -1314,6 +1340,324 @@ export default function CounselorPanel({
       alert("Gagal membaca file import poin pelanggaran: " + (err?.message || String(err)));
     } finally {
       setImportingPoints(false);
+    }
+  };
+
+  // ============================================================================
+  // 3. TEMPLATE & IMPORT PENYESUAIAN POIN PELANGGARAN SISWA (CUKUP INPUT JUMLAH POIN TANPA KETERANGAN PELANGGARAN)
+  // ============================================================================
+  const getStudentsForAdjustmentTemplate = (
+    scopeOverride?: 'all_students' | 'students_with_points'
+  ) => {
+    const scope = scopeOverride || adjustmentTemplateScope;
+    const baseList = activeStudentsSorted.map(st => ({
+      ...st,
+      currentPoints: Math.max(0, Number((studentPointsMapForReduction.get(st.id) || 0).toFixed(2)))
+    }));
+    if (scope === 'students_with_points') {
+      const withPts = baseList.filter(s => s.currentPoints > 0);
+      return withPts.length > 0 ? withPts : baseList;
+    }
+    return baseList;
+  };
+
+  const handleDownloadPointAdjustmentTemplateExcel = (
+    scopeOverride?: 'all_students' | 'students_with_points'
+  ) => {
+    const targetList = getStudentsForAdjustmentTemplate(scopeOverride);
+    const wb = XLSX.utils.book_new();
+
+    const headerRow = [
+      "No",
+      "NIS",
+      "Nama Siswa",
+      "Kelas",
+      "Poin Saat Ini (Data Aplikasi)",
+      "Jumlah Poin Siswa (Sesuaikan Di Sini)"
+    ];
+
+    const sheetRows: any[][] = [headerRow];
+    targetList.forEach((st, idx) => {
+      const defaultVal = adjustmentImportMode === 'delta' ? 0 : st.currentPoints;
+      sheetRows.push([
+        idx + 1,
+        st.nis || st.id,
+        st.name,
+        st.class,
+        st.currentPoints,
+        defaultVal
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+    ws["!cols"] = [
+      { wch: 6 },
+      { wch: 16 },
+      { wch: 32 },
+      { wch: 12 },
+      { wch: 28 },
+      { wch: 34 }
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, "Penyesuaian Poin BK");
+
+    const guideRows = [
+      ["PANDUAN SINGKAT PENYESUAIAN POIN PELANGGARAN BK (TANPA KETERANGAN PELANGGARAN)"],
+      [""],
+      ["1. Template ini sudah terisi otomatis dengan Data Siswa dan Poin Saat Ini dari aplikasi."],
+      ["2. Guru BK cukup mengubah/menyesuaikan angka pada kolom 'Jumlah Poin Siswa (Sesuaikan Di Sini)' tanpa perlu mengisi keterangan atau jenis pelanggaran."],
+      ["3. Contoh: Jika Poin Saat Ini = 15 lalu diubah menjadi 10, maka poin siswa otomatis disesuaikan menjadi 10 Poin (-5 Poin)."],
+      ["4. Contoh: Jika Poin Saat Ini = 0 lalu diubah menjadi 10, maka poin siswa otomatis disesuaikan menjadi 10 Poin (+10 Poin)."],
+      ["5. Contoh: Jika Poin Saat Ini = 20 lalu diubah menjadi 0, maka poin siswa otomatis di-reset menjadi 0 Poin (-20 Poin)."],
+      ["6. Siswa yang angkanya tidak diubah (tetap sama dengan Poin Saat Ini) tidak akan mengalami perubahan."]
+    ];
+    const wsGuide = XLSX.utils.aoa_to_sheet(guideRows);
+    wsGuide["!cols"] = [{ wch: 95 }];
+    XLSX.utils.book_append_sheet(wb, wsGuide, "Panduan Pengisian");
+
+    const suffix = classFilter !== "all" ? `_KELAS_${classFilter}` : "_SEMUA_SISWA";
+    XLSX.writeFile(wb, `TEMPLATE_PENYESUAIAN_POIN_PELANGGARAN_BK${suffix}.xlsx`);
+  };
+
+  const handleDownloadPointAdjustmentTemplateCsv = (
+    scopeOverride?: 'all_students' | 'students_with_points'
+  ) => {
+    const targetList = getStudentsForAdjustmentTemplate(scopeOverride);
+    const csvEscape = (val: any) => {
+      const s = String(val ?? "");
+      if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+
+    const lines: string[] = [];
+    lines.push(
+      [
+        "No",
+        "NIS",
+        "Nama Siswa",
+        "Kelas",
+        "Poin Saat Ini (Data Aplikasi)",
+        "Jumlah Poin Siswa (Sesuaikan Di Sini)"
+      ]
+        .map(csvEscape)
+        .join(",")
+    );
+
+    targetList.forEach((st, idx) => {
+      const defaultVal = adjustmentImportMode === 'delta' ? 0 : st.currentPoints;
+      lines.push(
+        [
+          idx + 1,
+          st.nis || st.id,
+          st.name,
+          st.class,
+          st.currentPoints,
+          defaultVal
+        ]
+          .map(csvEscape)
+          .join(",")
+      );
+    });
+
+    const csvContent = "\uFEFF" + lines.join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const suffix = classFilter !== "all" ? `_KELAS_${classFilter}` : "_SEMUA_SISWA";
+    link.download = `TEMPLATE_PENYESUAIAN_POIN_PELANGGARAN_BK${suffix}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const parseAndSubmitPointAdjustmentRows = async (
+    rows: any[][],
+    modeOverride?: 'set_total' | 'delta'
+  ) => {
+    if (!rows || rows.length < 2) {
+      alert("File kosong atau tidak memiliki baris data siswa.");
+      return;
+    }
+
+    let headerIdx = 0;
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const cells = (rows[i] || []).map((c: any) => String(c ?? "").trim().toLowerCase());
+      if (cells.some(c => c === "nis" || c.includes("nama siswa") || c.includes("jumlah poin"))) {
+        headerIdx = i;
+        break;
+      }
+    }
+
+    const headers = (rows[headerIdx] || []).map((c: any) => String(c ?? "").trim().toLowerCase());
+    const colNis = headers.findIndex(h => h === "nis" || h === "nisn" || h === "id siswa" || h === "id");
+    const colName = headers.findIndex(h => h.includes("nama siswa") || h === "nama" || h === "student_name");
+    const colClass = headers.findIndex(h => h === "kelas" || h === "class");
+
+    // Cari kolom Jumlah Poin Siswa (Sesuaikan Di Sini) / Poin Baru / Penyesuaian Poin
+    let colTargetPoints = headers.findIndex(
+      h =>
+        h.includes("sesuaikan") ||
+        h.includes("jumlah poin") ||
+        h.includes("poin baru") ||
+        h.includes("penyesuaian poin") ||
+        h.includes("poin penyesuaian")
+    );
+    if (colTargetPoints === -1) {
+      // Fallback: cari kolom terakhir yang mengandung kata "poin"
+      for (let c = headers.length - 1; c >= 0; c--) {
+        if (headers[c].includes("poin") || headers[c].includes("point")) {
+          colTargetPoints = c;
+          break;
+        }
+      }
+    }
+
+    if (colTargetPoints === -1) {
+      alert(
+        "Kolom 'Jumlah Poin Siswa (Sesuaikan Di Sini)' tidak ditemukan pada file. Pastikan Anda menggunakan Template Penyesuaian Poin BK."
+      );
+      return;
+    }
+
+    const items: any[] = [];
+    for (let r = headerIdx + 1; r < rows.length; r++) {
+      const row = rows[r] || [];
+      const firstNonEmpty = row.map((c: any) => String(c ?? "").trim()).find(Boolean) || "";
+      if (!firstNonEmpty || firstNonEmpty.startsWith("#")) continue;
+
+      const nis = colNis !== -1 ? String(row[colNis] ?? "").trim() : "";
+      const studentName = colName !== -1 ? String(row[colName] ?? "").trim() : "";
+      const className = colClass !== -1 ? String(row[colClass] ?? "").trim() : "";
+      const rawPointsStr = String(row[colTargetPoints] ?? "").trim();
+
+      if (!nis && !studentName) continue;
+      if (nis.toLowerCase() === "nis" || studentName.toLowerCase() === "nama siswa") continue;
+      if (rawPointsStr === "") continue;
+
+      const parsedPts = Number(rawPointsStr.replace(",", "."));
+      if (isNaN(parsedPts)) continue;
+
+      items.push({
+        nis,
+        studentName,
+        className,
+        points: parsedPts
+      });
+    }
+
+    if (items.length === 0) {
+      alert("Tidak ditemukan baris penyesuaian poin siswa yang valid di dalam file.");
+      return;
+    }
+
+    const res = await fetch("/api/student-infraction-logs/adjust-points", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items,
+        mode: modeOverride || adjustmentImportMode
+      })
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success) {
+      if (Array.isArray(data.studentInfractionLogs)) {
+        setInfractions(data.studentInfractionLogs);
+      } else {
+        fetchAllData();
+      }
+      setInlinePointEdits({});
+      setSuccessMsg(
+        data.message ||
+          `Berhasil menyesuaikan poin pelanggaran untuk ${data.count} siswa langsung ke database MySQL!`
+      );
+      setInfractionSubTab("student_points_table");
+      setTimeout(() => setSuccessMsg(null), 5000);
+      onRefresh();
+    } else {
+      alert(data.error || "Gagal menyimpan penyesuaian poin siswa.");
+    }
+  };
+
+  const handleImportPointAdjustmentFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    setImportingAdjustments(true);
+    setErrorMsg(null);
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const firstSheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[firstSheetName];
+      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      await parseAndSubmitPointAdjustmentRows(rows, adjustmentImportMode);
+    } catch (err: any) {
+      console.error("[Import Point Adjustment Error]:", err);
+      alert("Gagal membaca file penyesuaian poin: " + (err?.message || String(err)));
+    } finally {
+      setImportingAdjustments(false);
+    }
+  };
+
+  const handleSaveInlinePointAdjustments = async () => {
+    const items: any[] = [];
+    Object.entries(inlinePointEdits).forEach(([studentId, valStr]) => {
+      const trimmed = String(valStr ?? "").trim();
+      if (trimmed === "") return;
+      const num = Number(trimmed.replace(",", "."));
+      if (isNaN(num)) return;
+      const st = allStudents.find(s => s.id === studentId);
+      if (!st) return;
+      const currentPts = Math.max(0, Number((studentPointsMapForReduction.get(st.id) || 0).toFixed(2)));
+      if (Math.abs(num - currentPts) < 0.001) return;
+      items.push({
+        studentId: st.id,
+        nis: st.nis || st.id,
+        studentName: st.name,
+        className: st.class,
+        points: num
+      });
+    });
+
+    if (items.length === 0) {
+      alert("Silakan ubah angka Jumlah Poin pada minimal 1 siswa terlebih dahulu sebelum menyimpan.");
+      return;
+    }
+
+    setSavingInlineAdjustments(true);
+    try {
+      const res = await fetch("/api/student-infraction-logs/adjust-points", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items,
+          mode: "set_total"
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (Array.isArray(data.studentInfractionLogs)) {
+          setInfractions(data.studentInfractionLogs);
+        } else {
+          fetchAllData();
+        }
+        setInlinePointEdits({});
+        setSuccessMsg(
+          data.message ||
+            `Berhasil menyimpan penyesuaian poin untuk ${data.count} siswa langsung ke database MySQL!`
+        );
+        setTimeout(() => setSuccessMsg(null), 5000);
+        onRefresh();
+      } else {
+        alert(data.error || "Gagal menyimpan penyesuaian poin siswa.");
+      }
+    } catch (err: any) {
+      alert("Gagal menghubungi server: " + (err?.message || String(err)));
+    } finally {
+      setSavingInlineAdjustments(false);
     }
   };
 
@@ -4494,12 +4838,19 @@ export default function CounselorPanel({
               animate={{ opacity: 1, y: 0 }}
               className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm text-left flex flex-col gap-4"
             >
-              {/* Hidden File Inputs for Import Point & Import Rubrik */}
+              {/* Hidden File Inputs for Import Point, Penyesuaian Poin & Import Rubrik */}
               <input
                 ref={pointsFileInputRef}
                 type="file"
                 accept=".csv,.xlsx,.xls"
                 onChange={handleImportPointsFile}
+                className="hidden"
+              />
+              <input
+                ref={adjustmentFileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleImportPointAdjustmentFile}
                 className="hidden"
               />
               <input
@@ -4516,41 +4867,51 @@ export default function CounselorPanel({
                     <AlertTriangle size={16} className="text-rose-600 font-bold" /> Portal Poin Pelanggaran Siswa &amp; Rubrik Sanksi BK (MySQL)
                   </h2>
                   <p className="text-slate-450 text-[11px]">
-                    Terintegrasi langsung dengan database MySQL, Import Point ber-referensi Nomor Pelanggaran Rubrik, dan Otomatisasi +5 Poin saat siswa tercatat Alpa (A) pada Absensi Wali Kelas.
+                    Terintegrasi langsung dengan database MySQL, Template &amp; Import Penyesuaian Poin Cepat (Tanpa Keterangan Pelanggaran), dan Otomatisasi +5 Poin Alpa Absensi Wali Kelas.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleDownloadPointsTemplateCsv}
-                    className="cursor-pointer bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-800 font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5"
-                    title="Unduh Template CSV Pemberian Poin (Otomatis Terisi Semua Siswa Aktif + Referensi Nomor Pelanggaran)"
+                    onClick={() => handleDownloadPointAdjustmentTemplateExcel('all_students')}
+                    className="cursor-pointer bg-amber-50 border border-amber-300 hover:bg-amber-100 text-amber-900 font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs"
+                    title="Unduh Template Excel Penyesuaian Poin (Sudah Berisi Data Siswa & Poin Aplikasi — BK Cukup Input Jumlah Poin Tanpa Keterangan Pelanggaran)"
                   >
-                    <Download size={13} />
-                    <span>Template CSV Point</span>
+                    <FileSpreadsheet size={13} className="text-amber-700" />
+                    <span>Template Penyesuaian Poin (.xlsx)</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={importingAdjustments}
+                    onClick={() => adjustmentFileInputRef.current?.click()}
+                    className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                    title="Import File Penyesuaian Poin Pelanggaran Siswa (Cukup Jumlah Poin Tanpa Keterangan Pelanggaran)"
+                  >
+                    {importingAdjustments ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                    <span>Import Penyesuaian Poin</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleDownloadPointsTemplateExcel}
-                    className="cursor-pointer bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5"
-                    title="Unduh Template Excel Pemberian Poin (Otomatis Terisi Semua Siswa Aktif + Referensi Nomor Pelanggaran)"
+                    className="cursor-pointer bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-800 font-extrabold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5"
+                    title="Unduh Template Excel Pemberian Poin Ber-Referensi Nomor Pelanggaran Rubrik"
                   >
-                    <FileSpreadsheet size={13} />
-                    <span>Template Excel Point</span>
+                    <Download size={13} />
+                    <span>Template Point (Rubrik)</span>
                   </button>
                   <button
                     type="button"
                     disabled={importingPoints}
                     onClick={() => pointsFileInputRef.current?.click()}
-                    className="cursor-pointer bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                    className="cursor-pointer bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
                   >
                     {importingPoints ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                    <span>Import Point (CSV/Excel)</span>
+                    <span>Import Point</span>
                   </button>
                   <button
                     type="button"
                     onClick={downloadExcelInfractions}
-                    className="cursor-pointer bg-slate-100 border border-slate-250 hover:bg-slate-200 text-slate-800 font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5"
+                    className="cursor-pointer bg-slate-100 border border-slate-250 hover:bg-slate-200 text-slate-800 font-extrabold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5"
                   >
                     <Download size={13} />
                     <span>Ekspor Rekap</span>
@@ -4570,6 +4931,17 @@ export default function CounselorPanel({
                   }`}
                 >
                   Daftar/Tabel Point Pelanggaran Siswa 📊
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInfractionSubTab('adjustment')}
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                    infractionSubTab === 'adjustment'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-emerald-800 bg-emerald-50 border border-emerald-250 hover:bg-emerald-100'
+                  }`}
+                >
+                  ⚡ Penyesuaian Poin Cepat (Template &amp; Import Tanpa Keterangan)
                 </button>
                 <button
                   type="button"
@@ -4745,6 +5117,52 @@ export default function CounselorPanel({
               ) : infractionSubTab === 'student_points_table' ? (
                 /* ================= TAB: DAFTAR / TABEL POINT PELANGGARAN SISWA ================= */
                 <div className="flex flex-col gap-4">
+                  {/* Banner Cepat: Template & Import Penyesuaian Poin Tanpa Keterangan Pelanggaran */}
+                  <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 shadow-2xs">
+                    <div>
+                      <h4 className="text-xs font-black text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
+                        <span>⚡ Penyesuaian Poin Pelanggaran Cepat (Cukup Input Jumlah Poin Tanpa Keterangan)</span>
+                      </h4>
+                      <p className="text-[11px] text-emerald-900/90 mt-0.5">
+                        Template sudah berisi <strong>NIS, Nama Siswa, Kelas, dan Poin Saat Ini dari Aplikasi</strong>. Guru BK cukup menyesuaikan <strong>Jumlah Poin</strong> masing-masing siswa tanpa perlu menambahkan keterangan pelanggaran.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadPointAdjustmentTemplateExcel('all_students')}
+                        className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <FileSpreadsheet size={13} className="text-emerald-700" />
+                        <span>Unduh Template Excel (.xlsx)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadPointAdjustmentTemplateCsv('all_students')}
+                        className="px-3 py-1.5 bg-white hover:bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Download size={13} />
+                        <span>Template CSV</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={importingAdjustments}
+                        onClick={() => adjustmentFileInputRef.current?.click()}
+                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                      >
+                        {importingAdjustments ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                        <span>Upload File Penyesuaian Poin</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInfractionSubTab('adjustment')}
+                        className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold cursor-pointer"
+                      >
+                        Edit Poin Langsung di Tabel →
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Info Banner & View Mode Selector */}
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
                     <div>
@@ -4755,7 +5173,7 @@ export default function CounselorPanel({
                         </span>
                       </h3>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Menampilkan seluruh catatan poin pelanggaran dari Import CSV/Excel BK, Input Manual BK, serta penambahan otomatis <strong>+5 Poin</strong> bagi siswa yang tercatat <strong>Alpa (A)</strong> pada Absensi Wali Kelas.
+                        Menampilkan seluruh catatan poin pelanggaran dari Import CSV/Excel BK, Penyesuaian Poin BK, Input Manual BK, serta penambahan otomatis <strong>+5 Poin</strong> bagi siswa yang tercatat <strong>Alpa (A)</strong> pada Absensi Wali Kelas.
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5 bg-white border border-slate-200 p-1 rounded-xl shrink-0">
@@ -5463,8 +5881,290 @@ export default function CounselorPanel({
                     </div>
                   </form>
                 </div>
+              ) : infractionSubTab === 'adjustment' ? (
+                /* ================= TAB: PENYESUAIAN POIN PELANGGARAN CEPAT (TEMPLATE & IMPORT TANPA KETERANGAN) ================= */
+                <div className="flex flex-col gap-5">
+                  <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-5 space-y-4">
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 pb-3 border-b border-emerald-200">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-extrabold text-sm text-slate-900">
+                            ⚡ Template &amp; Import Penyesuaian Poin Pelanggaran Siswa (Tanpa Keterangan Pelanggaran)
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white">
+                            Data Otomatis dari Aplikasi • Direct MySQL
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-1">
+                          Unduh template Excel/CSV yang <strong>sudah berisi daftar siswa dan poin pelanggaran saat ini dari aplikasi</strong>. Guru BK cukup menyesuaikan angka pada kolom <strong>Jumlah Poin Siswa</strong> untuk masing-masing siswa tanpa perlu mengisi keterangan atau jenis pelanggaran.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadPointAdjustmentTemplateExcel(adjustmentTemplateScope)}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <FileSpreadsheet size={14} />
+                          <span>Unduh Template Excel (.xlsx)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadPointAdjustmentTemplateCsv(adjustmentTemplateScope)}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Download size={14} />
+                          <span>Unduh Template CSV (.csv)</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={importingAdjustments}
+                          onClick={() => adjustmentFileInputRef.current?.click()}
+                          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                        >
+                          {importingAdjustments ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                          <span>Upload &amp; Import File Penyesuaian Poin</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Opsi Cakupan Siswa & Mode Perhitungan Saat Import */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                      <div className="bg-white border border-emerald-200 rounded-xl p-3.5">
+                        <label className="block text-[10.5px] font-black uppercase text-slate-600 mb-1.5">
+                          1. Cakupan Data Siswa di Template yang Diunduh:
+                        </label>
+                        <select
+                          value={adjustmentTemplateScope}
+                          onChange={e =>
+                            setAdjustmentTemplateScope(
+                              e.target.value as 'all_students' | 'students_with_points'
+                            )
+                          }
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 bg-white"
+                        >
+                          <option value="all_students">
+                            Semua Siswa Aktif ({activeStudentsSorted.length} Siswa — Sesuai Filter Kelas)
+                          </option>
+                          <option value="students_with_points">
+                            Hanya Siswa yang Sudah Memiliki Poin &gt; 0 (
+                            {
+                              activeStudentsSorted.filter(
+                                s => (studentPointsMapForReduction.get(s.id) || 0) > 0
+                              ).length
+                            }{' '}
+                            Siswa)
+                          </option>
+                        </select>
+                        <p className="text-[10.5px] text-slate-500 mt-1.5">
+                          Tip: Anda juga dapat memfilter per kelas melalui pilihan <strong>Kelas</strong> di atas sebelum mengunduh template.
+                        </p>
+                      </div>
+
+                      <div className="bg-white border border-emerald-200 rounded-xl p-3.5">
+                        <label className="block text-[10.5px] font-black uppercase text-slate-600 mb-1.5">
+                          2. Cara Kerja Kolom "Jumlah Poin Siswa" Saat Di-Import:
+                        </label>
+                        <select
+                          value={adjustmentImportMode}
+                          onChange={e =>
+                            setAdjustmentImportMode(e.target.value as 'set_total' | 'delta')
+                          }
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 bg-white"
+                        >
+                          <option value="set_total">
+                            Sesuaikan Total Poin Akhir Siswa (Rekomendasi — Angka di Excel Menjadi Total Poin Siswa)
+                          </option>
+                          <option value="delta">
+                            Tambah / Kurangi Poin (+/-) ke Poin Saat Ini (Contoh: isi 5 untuk +5, atau -5 untuk -5)
+                          </option>
+                        </select>
+                        <p className="text-[10.5px] text-slate-500 mt-1.5">
+                          Pada mode <strong>Sesuaikan Total Poin Akhir</strong>, kolom Jumlah Poin sudah terisi poin siswa saat ini. Cukup ubah angkanya sesuai jumlah poin baru yang diinginkan!
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tabel Penyesuaian Poin Langsung di Layar (Tanpa Perlu Keterangan Pelanggaran) */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
+                      <div>
+                        <h4 className="font-extrabold text-xs sm:text-sm text-slate-900">
+                          📋 Tabel Penyesuaian Jumlah Poin Siswa Langsung di Aplikasi (Tanpa Keterangan Pelanggaran)
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Selain lewat Import Excel/CSV di atas, Anda juga dapat langsung mengubah angka <strong>Jumlah Poin Siswa</strong> pada tabel di bawah ini lalu klik <strong>Simpan Penyesuaian Poin ke MySQL</strong>.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {Object.keys(inlinePointEdits).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setInlinePointEdits({})}
+                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                          >
+                            Reset Perubahan ({Object.keys(inlinePointEdits).length})
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          disabled={savingInlineAdjustments || Object.keys(inlinePointEdits).length === 0}
+                          onClick={handleSaveInlinePointAdjustments}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          {savingInlineAdjustments ? <Loader2 size={13} className="animate-spin" /> : <Check size={14} />}
+                          <span>
+                            Simpan Penyesuaian Poin ke MySQL ({Object.keys(inlinePointEdits).length} Siswa Diubah)
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-200 rounded-xl overflow-x-auto max-h-[520px] overflow-y-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 z-10 text-[10px] uppercase text-slate-700">
+                          <tr>
+                            <th className="py-2.5 px-3 font-black w-12">No</th>
+                            <th className="py-2.5 px-3 font-black">NIS</th>
+                            <th className="py-2.5 px-3 font-black">Nama Siswa</th>
+                            <th className="py-2.5 px-3 font-black text-center">Kelas</th>
+                            <th className="py-2.5 px-3 font-black text-center">Poin Saat Ini (Aplikasi)</th>
+                            <th className="py-2.5 px-3 font-black text-center w-56">
+                              Jumlah Poin Siswa (Sesuaikan)
+                            </th>
+                            <th className="py-2.5 px-3 font-black text-center">Selisih Perubahan</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {activeStudentsSorted
+                            .filter(st => {
+                              if (!searchQuery.trim()) return true;
+                              const q = searchQuery.toLowerCase();
+                              return (
+                                st.name.toLowerCase().includes(q) ||
+                                (st.nis && st.nis.toLowerCase().includes(q)) ||
+                                (st.class && st.class.toLowerCase().includes(q))
+                              );
+                            })
+                            .map((st, idx) => {
+                              const currentPts = Math.max(
+                                0,
+                                Number((studentPointsMapForReduction.get(st.id) || 0).toFixed(2))
+                              );
+                              const editedRaw = inlinePointEdits[st.id];
+                              const displayVal = editedRaw !== undefined ? editedRaw : String(currentPts);
+                              const parsedNew = Number(String(displayVal).replace(",", "."));
+                              const diff =
+                                editedRaw !== undefined && !isNaN(parsedNew)
+                                  ? Number((Math.max(0, parsedNew) - currentPts).toFixed(2))
+                                  : 0;
+
+                              return (
+                                <tr
+                                  key={st.id}
+                                  className={`hover:bg-slate-50 ${
+                                    Math.abs(diff) > 0.001 ? 'bg-emerald-50/50' : 'bg-white'
+                                  }`}
+                                >
+                                  <td className="py-2.5 px-3 font-mono text-slate-400">{idx + 1}</td>
+                                  <td className="py-2.5 px-3 font-mono text-slate-600">
+                                    {st.nis || st.id}
+                                  </td>
+                                  <td className="py-2.5 px-3 font-extrabold text-slate-900">
+                                    {st.name}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center font-bold text-slate-700">
+                                    Kelas {st.class}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-lg font-mono font-black text-xs border ${
+                                        currentPts > 0
+                                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                          : 'bg-slate-100 text-slate-600 border-slate-200'
+                                      }`}
+                                    >
+                                      {currentPts} Poin
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      value={displayVal}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setInlinePointEdits(prev => {
+                                          const next = { ...prev };
+                                          if (val === "" || Number(val) === currentPts) {
+                                            delete next[st.id];
+                                          } else {
+                                            next[st.id] = val;
+                                          }
+                                          return next;
+                                        });
+                                      }}
+                                      className="w-32 text-center border border-slate-300 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 rounded-lg px-2.5 py-1 font-mono font-extrabold text-xs text-slate-900 bg-white"
+                                    />
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center font-mono font-black">
+                                    {Math.abs(diff) < 0.001 ? (
+                                      <span className="text-slate-400 text-[11px]">Tetap</span>
+                                    ) : diff > 0 ? (
+                                      <span className="text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
+                                        +{diff} Poin
+                                      </span>
+                                    ) : (
+                                      <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                                        {diff} Poin
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               ) : infractionSubTab === 'reduction' ? (
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-xxs">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-xxs space-y-5">
+                  {/* Banner Pintasan ke Template & Import Penyesuaian Poin Tanpa Keterangan */}
+                  <div className="bg-white border border-emerald-200 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 shadow-2xs">
+                    <div>
+                      <h4 className="text-xs font-black text-emerald-900 uppercase tracking-wide">
+                        ⚡ Ingin Menyesuaikan Jumlah Poin Banyak Siswa Sekaligus Tanpa Isi Alasan/Keterangan?
+                      </h4>
+                      <p className="text-[11px] text-slate-600 mt-0.5">
+                        Unduh <strong>Template Penyesuaian Poin</strong> (sudah berisi data siswa &amp; poin dari aplikasi), sesuaikan angka jumlah poin masing-masing siswa, lalu upload kembali.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadPointAdjustmentTemplateExcel('all_students')}
+                        className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <FileSpreadsheet size={13} />
+                        <span>Template Excel (.xlsx)</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={importingAdjustments}
+                        onClick={() => adjustmentFileInputRef.current?.click()}
+                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {importingAdjustments ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                        <span>Import Penyesuaian Poin</span>
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-2 pb-3 mb-5 border-b border-slate-205">
                     <div className="h-7 w-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center font-bold text-sm">
                       ❇️

@@ -6188,6 +6188,162 @@ async function startServer() {
     });
   });
 
+  // Batch Penyesuaian Poin Pelanggaran Siswa (BK cukup input jumlah poin tanpa keterangan pelanggaran) -> Langsung ke MySQL
+  app.post("/api/student-infraction-logs/adjust-points", async (req, res) => {
+    const { items, mode = "set_total" } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Data penyesuaian poin kosong atau tidak valid." });
+    }
+
+    try {
+      const mysqlRows = await getAllStudentInfractionLogsFromMysql();
+      if (Array.isArray(mysqlRows) && isMysqlHydrated) {
+        studentInfractionLogs.length = 0;
+        studentInfractionLogs.push(...mysqlRows);
+      }
+    } catch (_) {}
+
+    // Hitung total poin aktif saat ini untuk masing-masing siswa di aplikasi
+    const currentPointsMap = new Map<string, number>();
+    studentInfractionLogs.forEach(l => {
+      if (isGrade7InfractionBeforeEffectiveDate(l.className, l.date, l.studentId, l.studentName)) {
+        return;
+      }
+      const matched = students.find(
+        s =>
+          s.id === l.studentId ||
+          (s.nis && s.nis === l.studentId) ||
+          s.name.trim().toLowerCase() === String(l.studentName || "").trim().toLowerCase()
+      );
+      const key = matched ? matched.id : String(l.studentId || "").trim();
+      if (!key) return;
+      const prev = currentPointsMap.get(key) || 0;
+      currentPointsMap.set(key, Number((prev + (Number(l.points) || 0)).toFixed(2)));
+    });
+    currentPointsMap.forEach((val, key) => {
+      if (val < 0) currentPointsMap.set(key, 0);
+    });
+
+    const now = new Date();
+    const defaultDate = now.toISOString().split("T")[0];
+    const defaultTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const newLogs: StudentInfractionLog[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const raw = items[i] || {};
+      if (raw.points === undefined || raw.points === null || String(raw.points).trim() === "") {
+        continue;
+      }
+      const parsedPoints = Number(String(raw.points).replace(",", "."));
+      if (isNaN(parsedPoints)) continue;
+
+      const rawId = String(raw.studentId || "").trim();
+      const rawNis = String(raw.nis || "").trim();
+      const rawName = String(raw.studentName || raw.name || "").trim();
+
+      const matchedStudent = students.find(s => {
+        if (rawId && (s.id === rawId || s.nis === rawId || s.nisn === rawId)) return true;
+        if (rawNis && (s.nis === rawNis || s.id === rawNis || s.nisn === rawNis)) return true;
+        if (rawName && s.name.trim().toLowerCase() === rawName.toLowerCase()) return true;
+        return false;
+      });
+
+      const resolvedStudentId = matchedStudent ? matchedStudent.id : (rawId || rawNis);
+      const resolvedStudentName = matchedStudent ? matchedStudent.name : rawName;
+      const resolvedClassName = matchedStudent
+        ? matchedStudent.class
+        : String(raw.className || raw.class || "-").trim();
+
+      if (!resolvedStudentId && !resolvedStudentName) continue;
+
+      const key = resolvedStudentId || resolvedStudentName;
+      const currentPts = Math.max(0, Number((currentPointsMap.get(key) || 0).toFixed(2)));
+
+      let delta = 0;
+      let targetPts = currentPts;
+
+      if (mode === "delta") {
+        delta = Number(parsedPoints.toFixed(2));
+        targetPts = Math.max(0, Number((currentPts + delta).toFixed(2)));
+        delta = Number((targetPts - currentPts).toFixed(2));
+      } else {
+        targetPts = Math.max(0, Number(parsedPoints.toFixed(2)));
+        delta = Number((targetPts - currentPts).toFixed(2));
+      }
+
+      if (Math.abs(delta) < 0.001) {
+        continue;
+      }
+
+      const resolvedDate = String(raw.date || defaultDate).substring(0, 10);
+      if (
+        isGrade7InfractionBeforeEffectiveDate(
+          resolvedClassName,
+          resolvedDate,
+          resolvedStudentId,
+          resolvedStudentName
+        )
+      ) {
+        continue;
+      }
+
+      currentPointsMap.set(key, targetPts);
+
+      const isAddition = delta > 0;
+      const logItem: StudentInfractionLog = {
+        id: `sil-adj-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+        studentId: resolvedStudentId,
+        studentName: resolvedStudentName,
+        className: resolvedClassName,
+        date: resolvedDate,
+        time: defaultTime,
+        location: "Ruang Bimbingan Konseling (BK)",
+        infractionType: isAddition
+          ? `Penyesuaian Poin Pelanggaran (+${delta} Poin)`
+          : `Penyesuaian Pengurangan Poin (${delta} Poin)`,
+        actionTaken: isAddition
+          ? `Penyesuaian jumlah poin oleh Guru BK (+${delta} Poin; total poin siswa disesuaikan dari ${currentPts} menjadi ${targetPts} Poin)`
+          : `Penyesuaian jumlah poin oleh Guru BK (${delta} Poin; total poin siswa disesuaikan dari ${currentPts} menjadi ${targetPts} Poin)`,
+        resolutionStatus: "Selesai",
+        points: delta,
+        bab: "",
+        subBab: "",
+        sanction: "",
+        notes: `Penyesuaian poin BK: ${currentPts} Poin → ${targetPts} Poin`,
+        ruleId: "",
+        source: "adjustment_bk",
+        createdAt: new Date().toISOString()
+      };
+
+      newLogs.push(logItem);
+    }
+
+    if (newLogs.length === 0) {
+      return res.status(400).json({
+        error:
+          "Tidak ditemukan perubahan jumlah poin siswa (seluruh jumlah poin pada file masih sama dengan poin saat ini di aplikasi)."
+      });
+    }
+
+    const mysqlRes = await saveStudentInfractionLogsBatchToMysql(newLogs);
+    studentInfractionLogs.unshift(...newLogs);
+    saveState();
+
+    const effectiveLogs = studentInfractionLogs.filter(
+      l => !isGrade7InfractionBeforeEffectiveDate(l.className, l.date, l.studentId, l.studentName)
+    );
+
+    res.json({
+      success: true,
+      count: newLogs.length,
+      mysqlSaved: mysqlRes.success,
+      mysqlMessage: mysqlRes.message,
+      studentInfractionLogs: effectiveLogs,
+      newLogs,
+      message: `Berhasil menyesuaikan jumlah poin pelanggaran untuk ${newLogs.length} siswa langsung ke database MySQL!`
+    });
+  });
+
   app.delete("/api/student-infraction-logs/:id", async (req, res) => {
     const { id } = req.params;
     const index = studentInfractionLogs.findIndex(l => l.id === id);

@@ -10,6 +10,8 @@ import compression from "compression";
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
 import { GoogleGenAI, Type } from "@google/genai";
+import Tesseract from "tesseract.js";
+import { parseIndonesianOfficialLetterText } from "./src/utils/letterScannerHelper";
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeacherAssignment, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription, SharedLearningObjective, CorrespondenceRecord } from "./src/types";
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
@@ -14360,38 +14362,46 @@ async function startServer() {
 
   app.post("/api/correspondence/scan", async (req, res) => {
     try {
-      const { imageBase64, mimeType, preferredType } = req.body || {};
-      if (!imageBase64 || typeof imageBase64 !== "string") {
-        return res.status(400).json({ error: "Data gambar tangkapan kamera tidak ditemukan." });
+      const { imageBase64, mimeType, preferredType, rawOcrText } = req.body || {};
+      const schoolNameRef = schoolIdentity?.name || "SMP Ma'arif NU Pandaan";
+      const todayIso = new Date().toISOString().split("T")[0];
+      const prefType: "masuk" | "keluar" = preferredType === "keluar" ? "keluar" : "masuk";
+
+      // Jika klien sudah mengirimkan hasil OCR mentah, langsung parse dengan struktur surat resmi Indonesia
+      if (rawOcrText && typeof rawOcrText === "string" && rawOcrText.trim().length > 5) {
+        const parsedFromText = parseIndonesianOfficialLetterText(rawOcrText, schoolNameRef, prefType);
+        return res.json({
+          success: true,
+          extracted: parsedFromText
+        });
       }
 
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return res.status(500).json({
-          error: "GEMINI_API_KEY belum terkonfigurasi di Settings > Secrets."
-        });
+      if (!imageBase64 || typeof imageBase64 !== "string") {
+        return res.status(400).json({ error: "Data gambar tangkapan kamera tidak ditemukan." });
       }
 
       // Bersihkan prefix data URL jika ada, gambar hanya diproses di memori untuk ekstraksi teks dan langsung dibuang
       const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, "").trim();
       const resolvedMime = mimeType && String(mimeType).startsWith("image/") ? String(mimeType) : "image/jpeg";
-      const schoolNameRef = schoolIdentity?.name || "SMP Ma'arif NU Pandaan";
-      const todayIso = new Date().toISOString().split("T")[0];
+      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
 
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            "User-Agent": "aistudio-build"
-          }
-        }
-      });
+      // 1. Jika GEMINI_API_KEY tersedia, gunakan Gemini Vision (gemini-4-hydrogen)
+      if (apiKey) {
+        try {
+          const ai = new GoogleGenAI({
+            apiKey,
+            httpOptions: {
+              headers: {
+                "User-Agent": "aistudio-build"
+              }
+            }
+          });
 
-      const promptText = `Anda adalah sistem pemindai dokumen surat resmi sekolah (${schoolNameRef}).
+          const promptText = `Anda adalah sistem pemindai dokumen surat resmi sekolah (${schoolNameRef}).
 Tugas Anda adalah membaca foto surat ini secara akurat dan mengekstrak seluruh informasi penting dari surat untuk mengisi buku agenda Surat Masuk / Surat Keluar secara otomatis.
 
 Petunjuk Ekstraksi:
-1. detectedType: Tentukan apakah surat ini adalah "masuk" (dikirim oleh instansi/pihak luar kepada ${schoolNameRef} / Kepala Sekolah / Guru / Siswa) atau "keluar" (diterbitkan oleh ${schoolNameRef} untuk pihak lain). Jika ragu, gunakan "${preferredType === "keluar" ? "keluar" : "masuk"}".
+1. detectedType: Tentukan apakah surat ini adalah "masuk" (dikirim oleh instansi/pihak luar kepada ${schoolNameRef} / Kepala Sekolah / Guru / Siswa) atau "keluar" (diterbitkan oleh ${schoolNameRef} untuk pihak lain). Jika ragu, gunakan "${prefType}".
 2. letterNumber: Salin Nomor Surat persis seperti yang tertulis pada surat (contoh: "005/124/424.071/2026" atau "142/SMP.MNU/XI/2026").
 3. letterDate: Konversikan tanggal surat ke format YYYY-MM-DD (contoh: jika tertulis "Pandaan, 17 November 2026", hasilkan "2026-11-17"). Jika tidak ada tahun/tanggal jelas, gunakan "${todayIso}".
 4. sender: Nama instansi/lembaga/pihak pengirim surat (baca dari Kop Surat di bagian atas atau bagian penandatangan di bawah).
@@ -14403,104 +14413,87 @@ Petunjuk Ekstraksi:
 10. summary: Ringkasan padat dan jelas mengenai isi pokok surat (1-3 kalimat). Jika berupa undangan/kegiatan, cantumkan juga Hari/Tanggal, Jam, dan Tempat pelaksanaan yang tertulis di dalam surat.
 11. dispositionSuggestion: Saran tindak lanjut atau disposisi singkat (contoh: "Dihadiri Kepala Sekolah / Waka Kurikulum", "Diumumkan kepada Guru & Siswa", "Arsip Tata Usaha").`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-4-hydrogen",
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType: resolvedMime,
-                data: cleanBase64
-              }
+          const response = await ai.models.generateContent({
+            model: "gemini-4-hydrogen",
+            contents: {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: resolvedMime,
+                    data: cleanBase64
+                  }
+                },
+                {
+                  text: promptText
+                }
+              ]
             },
-            {
-              text: promptText
-            }
-          ]
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              detectedType: {
-                type: Type.STRING,
-                description: "masuk atau keluar"
-              },
-              letterNumber: {
-                type: Type.STRING,
-                description: "Nomor surat yang tertera pada dokumen"
-              },
-              letterDate: {
-                type: Type.STRING,
-                description: "Tanggal surat dalam format YYYY-MM-DD"
-              },
-              sender: {
-                type: Type.STRING,
-                description: "Instansi atau pihak pengirim surat"
-              },
-              recipient: {
-                type: Type.STRING,
-                description: "Pihak tujuan atau penerima surat"
-              },
-              subject: {
-                type: Type.STRING,
-                description: "Perihal atau pokok surat"
-              },
-              category: {
-                type: Type.STRING,
-                description: "Klasifikasi surat: Undangan, Edaran, Permohonan, Pemberitahuan, SK / Tugas, Penting, Rahasia, atau Biasa"
-              },
-              attachmentCount: {
-                type: Type.STRING,
-                description: "Jumlah lampiran surat"
-              },
-              signatory: {
-                type: Type.STRING,
-                description: "Nama dan jabatan penandatangan surat"
-              },
-              summary: {
-                type: Type.STRING,
-                description: "Ringkasan isi surat (termasuk waktu dan tempat jika undangan)"
-              },
-              dispositionSuggestion: {
-                type: Type.STRING,
-                description: "Saran disposisi atau tindak lanjut"
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  detectedType: { type: Type.STRING },
+                  letterNumber: { type: Type.STRING },
+                  letterDate: { type: Type.STRING },
+                  sender: { type: Type.STRING },
+                  recipient: { type: Type.STRING },
+                  subject: { type: Type.STRING },
+                  category: { type: Type.STRING },
+                  attachmentCount: { type: Type.STRING },
+                  signatory: { type: Type.STRING },
+                  summary: { type: Type.STRING },
+                  dispositionSuggestion: { type: Type.STRING }
+                }
               }
+            }
+          });
+
+          const rawJsonText = (response.text ?? "{}").trim();
+          let extracted: any = {};
+          try {
+            extracted = JSON.parse(rawJsonText);
+          } catch {
+            const match = rawJsonText.match(/\{[\s\S]*\}/);
+            if (match) {
+              extracted = JSON.parse(match[0]);
             }
           }
-        }
-      });
 
-      const rawJsonText = (response.text ?? "{}").trim();
-      let extracted: any = {};
-      try {
-        extracted = JSON.parse(rawJsonText);
-      } catch {
-        const match = rawJsonText.match(/\{[\s\S]*\}/);
-        if (match) {
-          extracted = JSON.parse(match[0]);
+          if (extracted && (extracted.letterNumber || extracted.subject || extracted.sender)) {
+            return res.json({
+              success: true,
+              extracted: {
+                type: extracted.detectedType === "keluar" ? "keluar" : prefType,
+                letterNumber: String(extracted.letterNumber || "-").trim(),
+                letterDate: /^\d{4}-\d{2}-\d{2}$/.test(String(extracted.letterDate || "").trim())
+                  ? String(extracted.letterDate).trim()
+                  : todayIso,
+                sender: String(extracted.sender || "").trim(),
+                recipient: String(extracted.recipient || "").trim(),
+                subject: String(extracted.subject || "").trim(),
+                category: String(extracted.category || "Biasa").trim(),
+                attachmentCount: String(extracted.attachmentCount || "-").trim(),
+                signatory: String(extracted.signatory || "").trim(),
+                summary: String(extracted.summary || "").trim(),
+                dispositionTo: String(extracted.dispositionSuggestion || "").trim()
+              }
+            });
+          }
+        } catch (geminiErr: any) {
+          console.warn("[Gemini Scan Fallback to Built-in OCR]:", geminiErr?.message || geminiErr);
         }
       }
 
-      // Gambar tidak disimpan di server maupun database — langsung kirim hasil ekstraksi teks
+      // 2. Fallback Otomatis: Gunakan Mesin OCR Bawaan Server (Tesseract.js) + Parser Surat Resmi Indonesia
+      const imgBuffer = Buffer.from(cleanBase64, "base64");
+      const ocrResult = await Tesseract.recognize(imgBuffer, "ind+eng");
+      const recognizedText = ocrResult?.data?.text || "";
+      const parsed = parseIndonesianOfficialLetterText(recognizedText, schoolNameRef, prefType);
+
       return res.json({
         success: true,
-        extracted: {
-          type: extracted.detectedType === "keluar" ? "keluar" : (preferredType === "keluar" ? "keluar" : "masuk"),
-          letterNumber: String(extracted.letterNumber || "").trim(),
-          letterDate: /^\d{4}-\d{2}-\d{2}$/.test(String(extracted.letterDate || "").trim())
-            ? String(extracted.letterDate).trim()
-            : todayIso,
-          sender: String(extracted.sender || "").trim(),
-          recipient: String(extracted.recipient || "").trim(),
-          subject: String(extracted.subject || "").trim(),
-          category: String(extracted.category || "Biasa").trim(),
-          attachmentCount: String(extracted.attachmentCount || "-").trim(),
-          signatory: String(extracted.signatory || "").trim(),
-          summary: String(extracted.summary || "").trim(),
-          dispositionTo: String(extracted.dispositionSuggestion || "").trim()
-        }
+        extracted: parsed
       });
     } catch (err: any) {
       console.error("[POST /api/correspondence/scan Error]:", err?.message || err);

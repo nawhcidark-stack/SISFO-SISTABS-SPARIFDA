@@ -18,7 +18,6 @@ import {
   Upload,
   Sparkles,
   Calendar,
-  Filter,
   Check,
   SwitchCamera,
   Eye
@@ -26,6 +25,11 @@ import {
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
 import { CorrespondenceRecord, SchoolIdentity } from "../types";
+import {
+  scanLetterImageClientSideOcr,
+  parseIndonesianOfficialLetterText,
+  ExtractedLetterData
+} from "../utils/letterScannerHelper";
 
 interface CorrespondenceManagementProps {
   schoolIdentity?: SchoolIdentity;
@@ -61,11 +65,16 @@ export default function CorrespondenceManagement({
   schoolIdentity
 }: CorrespondenceManagementProps) {
   const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const schoolName = schoolIdentity?.name || "SMP Ma'arif NU Pandaan";
 
   const [records, setRecords] = useState<CorrespondenceRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [scanning, setScanning] = useState<boolean>(false);
+  const [scanProgressText, setScanProgressText] = useState<string>("");
+  const [lastScannedSummary, setLastScannedSummary] = useState<ExtractedLetterData | null>(null);
+  const [showRawScannedText, setShowRawScannedText] = useState<boolean>(false);
+  const [manualRawTextToParse, setManualRawTextToParse] = useState<string>("");
   const [feedback, setFeedback] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
 
   // Filter & Tab states
@@ -111,7 +120,7 @@ export default function CorrespondenceManagement({
     setFeedback({ type, message });
     setTimeout(() => {
       setFeedback(prev => (prev?.message === message ? null : prev));
-    }, 6000);
+    }, 7000);
   };
 
   const fetchRecords = async () => {
@@ -138,6 +147,14 @@ export default function CorrespondenceManagement({
     };
   }, []);
 
+  // Pastikan stream kamera selalu terhubung ke elemen <video> saat isCameraOpen aktif
+  useEffect(() => {
+    if (isCameraOpen && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [isCameraOpen]);
+
   // Generate automatic Agenda Number based on type & current year
   const generateNextAgendaNumber = (targetType: "masuk" | "keluar", dateRef?: string) => {
     const d = dateRef ? new Date(dateRef) : new Date();
@@ -155,13 +172,16 @@ export default function CorrespondenceManagement({
 
   const resetForm = (defaultType: "masuk" | "keluar" = "masuk") => {
     setEditingId(null);
+    setLastScannedSummary(null);
+    setShowRawScannedText(false);
+    setManualRawTextToParse("");
     setType(defaultType);
     setAgendaNumber(generateNextAgendaNumber(defaultType, todayStr));
     setLetterNumber("");
     setLetterDate(todayStr);
     setReceivedOrSentDate(todayStr);
-    setSender(defaultType === "keluar" ? (schoolIdentity?.name || "SMP Ma'arif NU Pandaan") : "");
-    setRecipient(defaultType === "masuk" ? `Kepala ${schoolIdentity?.name || "SMP Ma'arif NU Pandaan"}` : "");
+    setSender(defaultType === "keluar" ? schoolName : "");
+    setRecipient(defaultType === "masuk" ? `Kepala ${schoolName}` : "");
     setSubject("");
     setCategory("Undangan");
     setAttachmentCount("-");
@@ -184,6 +204,7 @@ export default function CorrespondenceManagement({
 
   const handleOpenEditForm = (rec: CorrespondenceRecord) => {
     setEditingId(rec.id);
+    setLastScannedSummary(null);
     setType(rec.type);
     setAgendaNumber(rec.agendaNumber || "");
     setLetterNumber(rec.letterNumber || "");
@@ -203,7 +224,7 @@ export default function CorrespondenceManagement({
   };
 
   // ============================================================================
-  // CAMERA STREAM & AI OCR SCANNER (GAMBAR TIDAK DISIMPAN)
+  // CAMERA STREAM & AUTO-FILL SCANNER (GAMBAR TIDAK DISIMPAN)
   // ============================================================================
   const stopCameraStream = () => {
     if (streamRef.current) {
@@ -223,7 +244,9 @@ export default function CorrespondenceManagement({
     setCameraFacingMode(facing);
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setCameraError("Browser ini tidak mendukung akses kamera langsung. Gunakan tombol 'Ambil Foto Kamera HP' di bawah.");
+      setCameraError(
+        "Browser ini tidak mendukung akses pratinjau kamera langsung. Silakan klik tombol 'Potret Kamera HP Langsung' di bawah."
+      );
       return;
     }
 
@@ -244,7 +267,7 @@ export default function CorrespondenceManagement({
     } catch (err: any) {
       console.warn("Camera stream fallback:", err);
       setCameraError(
-        "Tidak dapat mengakses pratinjau kamera langsung. Silakan klik tombol 'Buka Kamera HP Native' di bawah untuk memotret surat langsung."
+        "Izin pratinjau kamera belum aktif di frame ini. Silakan klik tombol 'Potret Kamera HP Langsung' untuk memotret surat menggunakan aplikasi kamera bawaan HP Anda."
       );
     }
   };
@@ -254,68 +277,139 @@ export default function CorrespondenceManagement({
     startCameraStream(nextFacing);
   };
 
+  const applyExtractedDataToForm = (ext: ExtractedLetterData) => {
+    const detectedType: "masuk" | "keluar" = ext.type === "keluar" ? "keluar" : "masuk";
+    setType(detectedType);
+    if (!editingId) {
+      setAgendaNumber(generateNextAgendaNumber(detectedType, ext.letterDate || todayStr));
+    }
+    if (ext.letterNumber) setLetterNumber(ext.letterNumber);
+    if (ext.letterDate) setLetterDate(ext.letterDate);
+    if (ext.sender) setSender(ext.sender);
+    if (ext.recipient) setRecipient(ext.recipient);
+    if (ext.subject) setSubject(ext.subject);
+    if (ext.category) setCategory(ext.category);
+    if (ext.attachmentCount) setAttachmentCount(ext.attachmentCount);
+    if (ext.signatory) setSignatory(ext.signatory);
+    if (ext.summary) setSummary(ext.summary);
+    if (ext.dispositionTo) setDispositionTo(ext.dispositionTo);
+    setStatus(detectedType === "masuk" ? "Diterima" : "Terkirim");
+    setLastScannedSummary(ext);
+    if (ext.rawText) {
+      setManualRawTextToParse(ext.rawText);
+    }
+    if (!isFormOpen) {
+      setIsFormOpen(true);
+    }
+  };
+
   const processScannedImageBase64 = async (dataUrl: string, mimeType = "image/jpeg") => {
     setScanning(true);
+    setScanProgressText("Memulai pemindaian surat otomatis...");
     try {
-      const res = await fetch("/api/correspondence/scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageBase64: dataUrl,
-          mimeType,
-          preferredType: type
-        })
-      });
+      // 1. Jalankan pembacaan OCR langsung di klien dengan indikator progres nyata
+      // sekaligus mencoba endpoint server jika server menggunakan Gemini Vision
+      let extractedResult: ExtractedLetterData | null = null;
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Gagal mengekstrak informasi dari gambar surat.");
+      try {
+        setScanProgressText("Menghubungi pemindai surat otomatis...");
+        const serverPromise = fetch("/api/correspondence/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageBase64: dataUrl,
+            mimeType,
+            preferredType: type
+          })
+        }).then(async r => {
+          if (!r.ok) return null;
+          const j = await r.json();
+          return j?.success && j?.extracted ? (j.extracted as ExtractedLetterData) : null;
+        }).catch(() => null);
+
+        const clientOcrPromise = scanLetterImageClientSideOcr(
+          dataUrl,
+          schoolName,
+          type,
+          statusMsg => setScanProgressText(statusMsg)
+        ).catch(() => null);
+
+        const [serverExt, clientExt] = await Promise.all([serverPromise, clientOcrPromise]);
+
+        // Gabungkan hasil terbaik dari server & client OCR agar tidak ada kolom yang kosong
+        if (serverExt && clientExt) {
+          extractedResult = {
+            type: serverExt.type || clientExt.type,
+            letterNumber:
+              serverExt.letterNumber && serverExt.letterNumber !== "-"
+                ? serverExt.letterNumber
+                : clientExt.letterNumber,
+            letterDate: serverExt.letterDate || clientExt.letterDate,
+            sender:
+              serverExt.sender && serverExt.sender !== "Instansi Pengirim Surat"
+                ? serverExt.sender
+                : clientExt.sender,
+            recipient:
+              serverExt.recipient && serverExt.recipient !== "Penerima Surat"
+                ? serverExt.recipient
+                : clientExt.recipient,
+            subject:
+              serverExt.subject && serverExt.subject !== "Surat Masuk / Keluar"
+                ? serverExt.subject
+                : clientExt.subject,
+            category: serverExt.category !== "Biasa" ? serverExt.category : clientExt.category,
+            attachmentCount:
+              serverExt.attachmentCount && serverExt.attachmentCount !== "-"
+                ? serverExt.attachmentCount
+                : clientExt.attachmentCount,
+            signatory: serverExt.signatory || clientExt.signatory,
+            summary:
+              (serverExt.summary && serverExt.summary.length >= (clientExt.summary || "").length
+                ? serverExt.summary
+                : clientExt.summary) || "",
+            dispositionTo: serverExt.dispositionTo || clientExt.dispositionTo,
+            rawText: clientExt.rawText || serverExt.rawText
+          };
+        } else {
+          extractedResult = serverExt || clientExt;
+        }
+      } catch (innerErr) {
+        console.warn("Fallback direct client OCR:", innerErr);
+        extractedResult = await scanLetterImageClientSideOcr(
+          dataUrl,
+          schoolName,
+          type,
+          statusMsg => setScanProgressText(statusMsg)
+        );
       }
 
-      const ext = data.extracted || {};
-      const detectedType: "masuk" | "keluar" = ext.type === "keluar" ? "keluar" : "masuk";
-
-      setType(detectedType);
-      if (!editingId) {
-        setAgendaNumber(generateNextAgendaNumber(detectedType, ext.letterDate || todayStr));
+      if (!extractedResult) {
+        throw new Error("Tidak dapat membaca teks pada foto surat. Pastikan foto surat cukup terang dan tidak buram.");
       }
-      if (ext.letterNumber) setLetterNumber(ext.letterNumber);
-      if (ext.letterDate) setLetterDate(ext.letterDate);
-      if (ext.sender) setSender(ext.sender);
-      if (ext.recipient) setRecipient(ext.recipient);
-      if (ext.subject) setSubject(ext.subject);
-      if (ext.category) setCategory(ext.category);
-      if (ext.attachmentCount) setAttachmentCount(ext.attachmentCount);
-      if (ext.signatory) setSignatory(ext.signatory);
-      if (ext.summary) setSummary(ext.summary);
-      if (ext.dispositionTo) setDispositionTo(ext.dispositionTo);
-      setStatus(detectedType === "masuk" ? "Diterima" : "Terkirim");
 
-      if (!isFormOpen) {
-        setIsFormOpen(true);
-      }
+      applyExtractedDataToForm(extractedResult);
 
       showToast(
         "success",
-        "Pemindaian surat berhasil! Data surat otomatis terisi dan gambar surat telah dihapus dari memori (tidak disimpan)."
+        "Pemindaian surat berhasil! Data surat otomatis terisi ke formulir dan gambar surat telah dihapus (tidak disimpan)."
       );
     } catch (err: any) {
       console.error("[Scan Correspondence Error]:", err);
       showToast("error", err?.message || "Gagal memindai surat. Pastikan tulisan pada surat terlihat jelas.");
     } finally {
       setScanning(false);
+      setScanProgressText("");
     }
   };
 
   const handleCaptureFromLiveVideo = async () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) {
-      showToast("error", "Kamera belum siap menangkap gambar.");
+      showToast("error", "Kamera belum siap menangkap gambar. Silakan tunggu 1 detik atau gunakan tombol 'Potret Kamera HP Langsung'.");
       return;
     }
 
-    // Resize in temporary offscreen canvas, extract text, then immediately discard canvas/dataUrl
-    const maxDim = 1600;
+    const maxDim = 1800;
     let w = video.videoWidth;
     let h = video.videoHeight;
     if (w > maxDim || h > maxDim) {
@@ -334,9 +428,9 @@ export default function CorrespondenceManagement({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, w, h);
-    const tempBase64 = canvas.toDataURL("image/jpeg", 0.84);
+    const tempBase64 = canvas.toDataURL("image/jpeg", 0.88);
 
-    // Matikan kamera & bersihkan canvas segera
+    // Matikan kamera & bersihkan canvas segera (Gambar tidak disimpan)
     stopCameraStream();
     canvas.width = 0;
     canvas.height = 0;
@@ -350,16 +444,20 @@ export default function CorrespondenceManagement({
     e.target.value = "";
 
     stopCameraStream();
+    if (!isFormOpen) {
+      resetForm(activeFilterType === "keluar" ? "keluar" : "masuk");
+      setIsFormOpen(true);
+    }
     setScanning(true);
+    setScanProgressText("Memproses tangkapan foto kamera HP...");
 
     try {
-      // Kompresi di memori menggunakan Image + Canvas, lalu langsung buang setelah dikirim ke pemindai
       const tempDataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
           const img = new Image();
           img.onload = () => {
-            const maxDim = 1600;
+            const maxDim = 1800;
             let w = img.width;
             let h = img.height;
             if (w > maxDim || h > maxDim) {
@@ -380,7 +478,7 @@ export default function CorrespondenceManagement({
               return;
             }
             ctx.drawImage(img, 0, 0, w, h);
-            const compressed = canvas.toDataURL("image/jpeg", 0.84);
+            const compressed = canvas.toDataURL("image/jpeg", 0.88);
             canvas.width = 0;
             canvas.height = 0;
             resolve(compressed);
@@ -395,8 +493,16 @@ export default function CorrespondenceManagement({
       await processScannedImageBase64(tempDataUrl, "image/jpeg");
     } catch (err: any) {
       setScanning(false);
+      setScanProgressText("");
       showToast("error", err?.message || "Gagal memproses foto surat.");
     }
+  };
+
+  const handleReparseManualText = () => {
+    if (!manualRawTextToParse.trim()) return;
+    const parsed = parseIndonesianOfficialLetterText(manualRawTextToParse, schoolName, type);
+    applyExtractedDataToForm(parsed);
+    showToast("success", "Data kolom surat berhasil diperbarui dari teks surat!");
   };
 
   // ============================================================================
@@ -799,7 +905,7 @@ export default function CorrespondenceManagement({
               onClick={() => {
                 resetForm(activeFilterType === "keluar" ? "keluar" : "masuk");
                 setIsFormOpen(true);
-                startCameraStream("environment");
+                nativeCameraInputRef.current?.click();
               }}
               className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
             >
@@ -917,7 +1023,7 @@ export default function CorrespondenceManagement({
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Gunakan tombol <strong>Kamera HP</strong> di bawah untuk memotret surat fisik agar seluruh kolom terisi otomatis, atau ketik manual.
+                Gunakan tombol <strong>Potret Kamera HP</strong> di bawah untuk memotret surat fisik agar seluruh kolom terisi otomatis, atau ketik manual.
               </p>
             </div>
 
@@ -942,20 +1048,30 @@ export default function CorrespondenceManagement({
                   <span>Pemindai Surat Otomatis via Kamera HP (Auto-Fill Data Surat)</span>
                 </h4>
                 <p className="text-[11px] text-slate-600 mt-0.5">
-                  Arahkan kamera HP ke lembaran surat. Sistem langsung membaca <strong>Kop/Pengirim, Nomor Surat, Tanggal, Perihal, Tujuan, Penandatangan, &amp; Isi Pokok</strong> tanpa menyimpan foto surat.
+                  Foto lembaran surat dengan jelas. Sistem otomatis membaca <strong>Kop/Pengirim, Nomor Surat, Tanggal, Perihal, Tujuan, Penandatangan, &amp; Isi Pokok</strong> lalu menghapus gambar dari memori.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={scanning}
+                  onClick={() => nativeCameraInputRef.current?.click()}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  <Camera size={14} />
+                  <span>Potret Kamera HP (Autofokus)</span>
+                </button>
+
                 {!isCameraOpen ? (
                   <button
                     type="button"
                     disabled={scanning}
                     onClick={() => startCameraStream("environment")}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
                   >
                     <Camera size={14} />
-                    <span>Buka Kamera Live</span>
+                    <span>Kamera Live di Layar</span>
                   </button>
                 ) : (
                   <button
@@ -964,19 +1080,9 @@ export default function CorrespondenceManagement({
                     className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs"
                   >
                     <X size={14} />
-                    <span>Tutup Kamera</span>
+                    <span>Tutup Kamera Live</span>
                   </button>
                 )}
-
-                <button
-                  type="button"
-                  disabled={scanning}
-                  onClick={() => nativeCameraInputRef.current?.click()}
-                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                >
-                  <Camera size={14} />
-                  <span>Potret Kamera HP Langsung</span>
-                </button>
 
                 <button
                   type="button"
@@ -990,11 +1096,58 @@ export default function CorrespondenceManagement({
               </div>
             </div>
 
-            {/* Indikator Loading Pemindaian AI */}
+            {/* Indikator Loading Pemindaian Otomatis */}
             {scanning && (
-              <div className="p-4 rounded-xl bg-white/90 border border-emerald-300 flex items-center justify-center gap-3 text-emerald-900 font-extrabold text-xs shadow-2xs">
-                <Loader2 size={18} className="animate-spin text-emerald-600" />
-                <span>Sedang membaca &amp; mengekstrak informasi surat secara otomatis (gambar tidak disimpan)...</span>
+              <div className="p-4 rounded-xl bg-white border border-emerald-300 flex flex-col sm:flex-row items-center justify-center gap-3 text-emerald-900 font-extrabold text-xs shadow-2xs">
+                <Loader2 size={20} className="animate-spin text-emerald-600 shrink-0" />
+                <div className="text-center sm:text-left">
+                  <div>{scanProgressText || "Sedang membaca & mengekstrak informasi surat secara otomatis..."}</div>
+                  <div className="text-[10.5px] font-semibold text-slate-500 mt-0.5">
+                    Mohon tunggu beberapa detik • Gambar surat tidak disimpan di server maupun database.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Hasil Pemindaian Terakhir */}
+            {!scanning && lastScannedSummary && (
+              <div className="p-3.5 rounded-xl bg-white border border-emerald-300 flex flex-col gap-2 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 font-extrabold text-emerald-900">
+                    <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                    <span>Data Surat Berhasil Dipindai &amp; Diisi Otomatis ke Kolom di Bawah!</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowRawScannedText(prev => !prev)}
+                    className="text-[11px] font-bold text-indigo-700 hover:underline cursor-pointer"
+                  >
+                    {showRawScannedText ? "Sembunyikan Teks Terbaca" : "Lihat / Edit Teks Terbaca dari Surat"}
+                  </button>
+                </div>
+
+                {showRawScannedText && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <label className="block text-[10px] font-black uppercase text-slate-500">
+                      Teks Hasil Bacaan Surat (Dapat Diedit Lalu Klik "Terapkan Ulang ke Kolom"):
+                    </label>
+                    <textarea
+                      rows={5}
+                      value={manualRawTextToParse}
+                      onChange={e => setManualRawTextToParse(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-slate-300 font-mono text-[11px] text-slate-800 bg-slate-50"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleReparseManualText}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold cursor-pointer"
+                      >
+                        Terapkan Ulang Teks ke Kolom Formulir
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1087,7 +1240,7 @@ export default function CorrespondenceManagement({
                     if (!editingId) {
                       setAgendaNumber(generateNextAgendaNumber("keluar", receivedOrSentDate || letterDate));
                       setStatus("Terkirim");
-                      if (!sender) setSender(schoolIdentity?.name || "SMP Ma'arif NU Pandaan");
+                      if (!sender) setSender(schoolName);
                     }
                   }}
                   className={`py-2.5 px-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 border cursor-pointer transition-all ${
@@ -1206,7 +1359,7 @@ export default function CorrespondenceManagement({
               />
             </div>
 
-            {/* Lampiran & Penandatangan */}
+            {/* Lampiran & Status */}
             <div className="grid grid-cols-2 gap-2">
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10.5px] font-black uppercase text-slate-600">

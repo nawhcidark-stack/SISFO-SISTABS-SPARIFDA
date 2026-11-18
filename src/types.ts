@@ -1253,5 +1253,23 @@ export interface OnlineExamSubmission {
   updatedAt: string;
 }
 
-
-
+export interface CorrespondenceRecord {
+  id: string;
+  type: 'masuk' | 'keluar';
+  agendaNumber: string;
+  letterNumber: string;
+  letterDate: string; // YYYY-MM-DD
+  receivedOrSentDate: string; // YYYY-MM-DD
+  sender: string;
+  recipient: string;
+  subject: string;
+  category: string; // Biasa, Penting, Undangan, Edaran, Permohonan, SK/Tugas, Rahasia, dll.
+  attachmentCount: string;
+  summary: string;
+  signatory: string;
+  dispositionTo: string;
+  notes: string;
+  status: string; // Diterima, Didisposisikan, Ditindaklanjuti, Terkirim, Arsip
+  createdAt: string;
+  updatedAt?: string;
+}

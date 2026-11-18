@@ -9,11 +9,12 @@ import compression from "compression";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeacherAssignment, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription, SharedLearningObjective } from "./src/types";
+import { GoogleGenAI, Type } from "@google/genai";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeacherAssignment, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription, SharedLearningObjective, CorrespondenceRecord } from "./src/types";
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, seedMissingConfigsToMysql, getConfigFromMysql, getAllConfigsFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql, getAllExtracurricularMasterFromMysql, saveExtracurricularMasterItemToMysql, replaceExtracurricularMasterListInMysql, deleteExtracurricularMasterFromMysql, getExtracurricularGradesFromMysql, saveExtracurricularGradesBatchToMysql, getAllInfractionRulesFromMysql, saveInfractionRulesBatchToMysql, sortInfractionRulesNaturally, getAllStudentInfractionLogsFromMysql, saveStudentInfractionLogsBatchToMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, seedMissingConfigsToMysql, getConfigFromMysql, getAllConfigsFromMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool, getAllGuestBooksFromMysql, saveGuestBookToMysql, deleteGuestBookFromMysql, getAllExtracurricularMasterFromMysql, saveExtracurricularMasterItemToMysql, replaceExtracurricularMasterListInMysql, deleteExtracurricularMasterFromMysql, getExtracurricularGradesFromMysql, saveExtracurricularGradesBatchToMysql, getAllInfractionRulesFromMysql, saveInfractionRulesBatchToMysql, sortInfractionRulesNaturally, getAllStudentInfractionLogsFromMysql, saveStudentInfractionLogsBatchToMysql, getAllCorrespondenceLogsFromMysql, saveCorrespondenceLogToMysql, deleteCorrespondenceLogFromMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter, formatMidtransPaymentMethod, resolveNetSavingsDepositAmount } from "./src/server/routes/midtransRoutes";
@@ -14259,6 +14260,255 @@ async function startServer() {
       res.sendFile(iconPath);
     } else {
       next();
+    }
+  });
+
+  // ============================================================================
+  // PENCATATAN SURAT MASUK & SURAT KELUAR + PEMINDAI OTOMATIS KAMERA HP (TANPA SIMPAN GAMBAR)
+  // ============================================================================
+  const correspondenceLogsMemory: CorrespondenceRecord[] = [];
+
+  app.get("/api/correspondence", async (_req, res) => {
+    try {
+      const mysqlRows = await getAllCorrespondenceLogsFromMysql();
+      if (Array.isArray(mysqlRows) && mysqlRows.length > 0) {
+        correspondenceLogsMemory.length = 0;
+        correspondenceLogsMemory.push(...mysqlRows);
+        return res.json(mysqlRows);
+      }
+      return res.json(correspondenceLogsMemory);
+    } catch (err: any) {
+      console.error("[GET /api/correspondence Error]:", err.message || err);
+      return res.json(correspondenceLogsMemory);
+    }
+  });
+
+  app.post("/api/correspondence", async (req, res) => {
+    try {
+      const body = req.body || {};
+      // Pastikan gambar tidak pernah disimpan ke dalam record surat
+      delete body.imageBase64;
+      delete body.imageUrl;
+      delete body.photoUrl;
+
+      const mysqlResult = await saveCorrespondenceLogToMysql(body);
+      if (mysqlResult.success && mysqlResult.item) {
+        const idx = correspondenceLogsMemory.findIndex(item => item.id === mysqlResult.item.id);
+        if (idx > -1) {
+          correspondenceLogsMemory[idx] = mysqlResult.item;
+        } else {
+          correspondenceLogsMemory.unshift(mysqlResult.item);
+        }
+        return res.json({
+          success: true,
+          message: mysqlResult.message,
+          item: mysqlResult.item
+        });
+      }
+
+      // Fallback in-memory jika MySQL sedang tidak terjangkau
+      const todayStr = new Date().toISOString().split("T")[0];
+      const fallbackItem: CorrespondenceRecord = {
+        id: body.id || `srt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        type: body.type === "keluar" ? "keluar" : "masuk",
+        agendaNumber: String(body.agendaNumber || "").trim(),
+        letterNumber: String(body.letterNumber || "-").trim(),
+        letterDate: String(body.letterDate || todayStr).trim(),
+        receivedOrSentDate: String(body.receivedOrSentDate || body.letterDate || todayStr).trim(),
+        sender: String(body.sender || "-").trim(),
+        recipient: String(body.recipient || "-").trim(),
+        subject: String(body.subject || "-").trim(),
+        category: String(body.category || "Biasa").trim(),
+        attachmentCount: String(body.attachmentCount || "-").trim(),
+        summary: String(body.summary || "").trim(),
+        signatory: String(body.signatory || "").trim(),
+        dispositionTo: String(body.dispositionTo || "").trim(),
+        notes: String(body.notes || "").trim(),
+        status: String(body.status || (body.type === "keluar" ? "Terkirim" : "Diterima")).trim(),
+        createdAt: body.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      const idx = correspondenceLogsMemory.findIndex(item => item.id === fallbackItem.id);
+      if (idx > -1) {
+        correspondenceLogsMemory[idx] = fallbackItem;
+      } else {
+        correspondenceLogsMemory.unshift(fallbackItem);
+      }
+      return res.json({
+        success: true,
+        message: "Data surat berhasil disimpan (tanpa menyimpan gambar surat).",
+        item: fallbackItem
+      });
+    } catch (err: any) {
+      console.error("[POST /api/correspondence Error]:", err.message || err);
+      return res.status(500).json({ error: err.message || "Gagal menyimpan data surat." });
+    }
+  });
+
+  app.delete("/api/correspondence/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      await deleteCorrespondenceLogFromMysql(id);
+      const idx = correspondenceLogsMemory.findIndex(item => item.id === id);
+      if (idx > -1) correspondenceLogsMemory.splice(idx, 1);
+      return res.json({ success: true, message: "Data surat berhasil dihapus." });
+    } catch (err: any) {
+      console.error("[DELETE /api/correspondence/:id Error]:", err.message || err);
+      return res.status(500).json({ error: err.message || "Gagal menghapus data surat." });
+    }
+  });
+
+  app.post("/api/correspondence/scan", async (req, res) => {
+    try {
+      const { imageBase64, mimeType, preferredType } = req.body || {};
+      if (!imageBase64 || typeof imageBase64 !== "string") {
+        return res.status(400).json({ error: "Data gambar tangkapan kamera tidak ditemukan." });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({
+          error: "GEMINI_API_KEY belum terkonfigurasi di Settings > Secrets."
+        });
+      }
+
+      // Bersihkan prefix data URL jika ada, gambar hanya diproses di memori untuk ekstraksi teks dan langsung dibuang
+      const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, "").trim();
+      const resolvedMime = mimeType && String(mimeType).startsWith("image/") ? String(mimeType) : "image/jpeg";
+      const schoolNameRef = schoolIdentity?.name || "SMP Ma'arif NU Pandaan";
+      const todayIso = new Date().toISOString().split("T")[0];
+
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build"
+          }
+        }
+      });
+
+      const promptText = `Anda adalah sistem pemindai dokumen surat resmi sekolah (${schoolNameRef}).
+Tugas Anda adalah membaca foto surat ini secara akurat dan mengekstrak seluruh informasi penting dari surat untuk mengisi buku agenda Surat Masuk / Surat Keluar secara otomatis.
+
+Petunjuk Ekstraksi:
+1. detectedType: Tentukan apakah surat ini adalah "masuk" (dikirim oleh instansi/pihak luar kepada ${schoolNameRef} / Kepala Sekolah / Guru / Siswa) atau "keluar" (diterbitkan oleh ${schoolNameRef} untuk pihak lain). Jika ragu, gunakan "${preferredType === "keluar" ? "keluar" : "masuk"}".
+2. letterNumber: Salin Nomor Surat persis seperti yang tertulis pada surat (contoh: "005/124/424.071/2026" atau "142/SMP.MNU/XI/2026").
+3. letterDate: Konversikan tanggal surat ke format YYYY-MM-DD (contoh: jika tertulis "Pandaan, 17 November 2026", hasilkan "2026-11-17"). Jika tidak ada tahun/tanggal jelas, gunakan "${todayIso}".
+4. sender: Nama instansi/lembaga/pihak pengirim surat (baca dari Kop Surat di bagian atas atau bagian penandatangan di bawah).
+5. recipient: Nama pihak tujuan/penerima surat (baca dari bagian "Kepada Yth..."). Jika surat masuk dan tujuan tidak tertulis eksplisit, isi "Kepala ${schoolNameRef}".
+6. subject: Perihal / Hal pokok surat. Jika tidak ada label "Perihal:", simpulkan judul pokok surat dari isi paragraf utama secara singkat dan jelas.
+7. category: Pilih salah satu klasifikasi yang paling sesuai: "Undangan", "Edaran", "Permohonan", "Pemberitahuan", "SK / Tugas", "Penting", "Rahasia", atau "Biasa".
+8. attachmentCount: Jumlah lampiran yang tertulis pada bagian "Lampiran:" (contoh: "-", "1 Lembar", "1 Berkas", "2 Eks"). Jika tidak ada, isi "-".
+9. signatory: Nama pejabat/pihak yang menandatangani surat beserta jabatannya (contoh: "Drs. H. Ahmad, M.Pd. (Kepala Dinas Pendidikan)").
+10. summary: Ringkasan padat dan jelas mengenai isi pokok surat (1-3 kalimat). Jika berupa undangan/kegiatan, cantumkan juga Hari/Tanggal, Jam, dan Tempat pelaksanaan yang tertulis di dalam surat.
+11. dispositionSuggestion: Saran tindak lanjut atau disposisi singkat (contoh: "Dihadiri Kepala Sekolah / Waka Kurikulum", "Diumumkan kepada Guru & Siswa", "Arsip Tata Usaha").`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-4-hydrogen",
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: resolvedMime,
+                data: cleanBase64
+              }
+            },
+            {
+              text: promptText
+            }
+          ]
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              detectedType: {
+                type: Type.STRING,
+                description: "masuk atau keluar"
+              },
+              letterNumber: {
+                type: Type.STRING,
+                description: "Nomor surat yang tertera pada dokumen"
+              },
+              letterDate: {
+                type: Type.STRING,
+                description: "Tanggal surat dalam format YYYY-MM-DD"
+              },
+              sender: {
+                type: Type.STRING,
+                description: "Instansi atau pihak pengirim surat"
+              },
+              recipient: {
+                type: Type.STRING,
+                description: "Pihak tujuan atau penerima surat"
+              },
+              subject: {
+                type: Type.STRING,
+                description: "Perihal atau pokok surat"
+              },
+              category: {
+                type: Type.STRING,
+                description: "Klasifikasi surat: Undangan, Edaran, Permohonan, Pemberitahuan, SK / Tugas, Penting, Rahasia, atau Biasa"
+              },
+              attachmentCount: {
+                type: Type.STRING,
+                description: "Jumlah lampiran surat"
+              },
+              signatory: {
+                type: Type.STRING,
+                description: "Nama dan jabatan penandatangan surat"
+              },
+              summary: {
+                type: Type.STRING,
+                description: "Ringkasan isi surat (termasuk waktu dan tempat jika undangan)"
+              },
+              dispositionSuggestion: {
+                type: Type.STRING,
+                description: "Saran disposisi atau tindak lanjut"
+              }
+            }
+          }
+        }
+      });
+
+      const rawJsonText = (response.text ?? "{}").trim();
+      let extracted: any = {};
+      try {
+        extracted = JSON.parse(rawJsonText);
+      } catch {
+        const match = rawJsonText.match(/\{[\s\S]*\}/);
+        if (match) {
+          extracted = JSON.parse(match[0]);
+        }
+      }
+
+      // Gambar tidak disimpan di server maupun database — langsung kirim hasil ekstraksi teks
+      return res.json({
+        success: true,
+        extracted: {
+          type: extracted.detectedType === "keluar" ? "keluar" : (preferredType === "keluar" ? "keluar" : "masuk"),
+          letterNumber: String(extracted.letterNumber || "").trim(),
+          letterDate: /^\d{4}-\d{2}-\d{2}$/.test(String(extracted.letterDate || "").trim())
+            ? String(extracted.letterDate).trim()
+            : todayIso,
+          sender: String(extracted.sender || "").trim(),
+          recipient: String(extracted.recipient || "").trim(),
+          subject: String(extracted.subject || "").trim(),
+          category: String(extracted.category || "Biasa").trim(),
+          attachmentCount: String(extracted.attachmentCount || "-").trim(),
+          signatory: String(extracted.signatory || "").trim(),
+          summary: String(extracted.summary || "").trim(),
+          dispositionTo: String(extracted.dispositionSuggestion || "").trim()
+        }
+      });
+    } catch (err: any) {
+      console.error("[POST /api/correspondence/scan Error]:", err?.message || err);
+      return res.status(500).json({
+        error:
+          err?.message ||
+          "Gagal memindai data surat secara otomatis. Pastikan foto surat terlihat jelas dan pencahayaan cukup."
+      });
     }
   });
 

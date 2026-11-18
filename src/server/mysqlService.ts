@@ -6691,3 +6691,212 @@ export async function saveOnlineExamSubmissionDirectToMysql(
   }
 }
 
+// ==========================================================
+// DIRECT CORRESPONDENCE LOGS (SURAT MASUK & SURAT KELUAR) MYSQL OPERATIONS
+// Catatan: Gambar surat hasil scan kamera HP TIDAK disimpan sesuai permintaan
+// ==========================================================
+
+export async function ensureCorrespondenceLogsTableExists(): Promise<void> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`correspondence_logs\` (
+        \`id\` VARCHAR(64) NOT NULL,
+        \`type\` VARCHAR(16) NOT NULL DEFAULT 'masuk',
+        \`agenda_number\` VARCHAR(100) DEFAULT '',
+        \`letter_number\` VARCHAR(150) NOT NULL DEFAULT '',
+        \`letter_date\` VARCHAR(32) NOT NULL DEFAULT '',
+        \`received_or_sent_date\` VARCHAR(32) NOT NULL DEFAULT '',
+        \`sender\` VARCHAR(255) NOT NULL DEFAULT '',
+        \`recipient\` VARCHAR(255) NOT NULL DEFAULT '',
+        \`subject\` TEXT NOT NULL,
+        \`category\` VARCHAR(64) DEFAULT 'Biasa',
+        \`attachment_count\` VARCHAR(64) DEFAULT '-',
+        \`summary\` TEXT DEFAULT NULL,
+        \`signatory\` VARCHAR(200) DEFAULT '',
+        \`disposition_to\` VARCHAR(255) DEFAULT '',
+        \`notes\` TEXT DEFAULT NULL,
+        \`status\` VARCHAR(64) DEFAULT 'Diterima',
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`idx_type\` (\`type\`),
+        KEY \`idx_letter_date\` (\`letter_date\`),
+        KEY \`idx_received_or_sent_date\` (\`received_or_sent_date\`),
+        KEY \`idx_letter_number\` (\`letter_number\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+  } catch (err: any) {
+    console.warn('[MySQL ensureCorrespondenceLogsTableExists Warning]:', err.message || err);
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function getAllCorrespondenceLogsFromMysql(): Promise<any[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureCorrespondenceLogsTableExists();
+    const [rows]: any = await connection.query(`
+      SELECT
+        \`id\`,
+        \`type\`,
+        \`agenda_number\` AS agendaNumber,
+        \`letter_number\` AS letterNumber,
+        \`letter_date\` AS letterDate,
+        \`received_or_sent_date\` AS receivedOrSentDate,
+        \`sender\`,
+        \`recipient\`,
+        \`subject\`,
+        \`category\`,
+        \`attachment_count\` AS attachmentCount,
+        \`summary\`,
+        \`signatory\`,
+        \`disposition_to\` AS dispositionTo,
+        \`notes\`,
+        \`status\`,
+        \`created_at\` AS createdAt,
+        \`updated_at\` AS updatedAt
+      FROM \`correspondence_logs\`
+      ORDER BY \`received_or_sent_date\` DESC, \`letter_date\` DESC, \`created_at\` DESC
+    `);
+    return Array.isArray(rows) ? rows : [];
+  } catch (err: any) {
+    console.error('[MySQL Get Correspondence Logs Error]:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function saveCorrespondenceLogToMysql(entry: any): Promise<{ success: boolean; message: string; error?: string; item?: any }> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureCorrespondenceLogsTableExists();
+
+    const id = entry.id || `srt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const type: 'masuk' | 'keluar' = entry.type === 'keluar' ? 'keluar' : 'masuk';
+    const todayStr = new Date().toISOString().split('T')[0];
+    const agendaNumber = String(entry.agendaNumber || '').trim();
+    const letterNumber = String(entry.letterNumber || '-').trim();
+    const letterDate = String(entry.letterDate || todayStr).trim();
+    const receivedOrSentDate = String(entry.receivedOrSentDate || letterDate || todayStr).trim();
+    const sender = String(entry.sender || '-').trim();
+    const recipient = String(entry.recipient || '-').trim();
+    const subject = String(entry.subject || '-').trim();
+    const category = String(entry.category || 'Biasa').trim();
+    const attachmentCount = String(entry.attachmentCount || '-').trim();
+    const summary = String(entry.summary || '').trim();
+    const signatory = String(entry.signatory || '').trim();
+    const dispositionTo = String(entry.dispositionTo || '').trim();
+    const notes = String(entry.notes || '').trim();
+    const status = String(entry.status || (type === 'masuk' ? 'Diterima' : 'Terkirim')).trim();
+    const createdAt = entry.createdAt || new Date().toISOString();
+
+    await connection.query(
+      `INSERT INTO \`correspondence_logs\` (
+        \`id\`, \`type\`, \`agenda_number\`, \`letter_number\`, \`letter_date\`, \`received_or_sent_date\`,
+        \`sender\`, \`recipient\`, \`subject\`, \`category\`, \`attachment_count\`, \`summary\`,
+        \`signatory\`, \`disposition_to\`, \`notes\`, \`status\`, \`created_at\`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ON DUPLICATE KEY UPDATE
+        \`type\` = VALUES(\`type\`),
+        \`agenda_number\` = VALUES(\`agenda_number\`),
+        \`letter_number\` = VALUES(\`letter_number\`),
+        \`letter_date\` = VALUES(\`letter_date\`),
+        \`received_or_sent_date\` = VALUES(\`received_or_sent_date\`),
+        \`sender\` = VALUES(\`sender\`),
+        \`recipient\` = VALUES(\`recipient\`),
+        \`subject\` = VALUES(\`subject\`),
+        \`category\` = VALUES(\`category\`),
+        \`attachment_count\` = VALUES(\`attachment_count\`),
+        \`summary\` = VALUES(\`summary\`),
+        \`signatory\` = VALUES(\`signatory\`),
+        \`disposition_to\` = VALUES(\`disposition_to\`),
+        \`notes\` = VALUES(\`notes\`),
+        \`status\` = VALUES(\`status\`),
+        \`updated_at\` = NOW()`,
+      [
+        id,
+        type,
+        agendaNumber,
+        letterNumber,
+        letterDate,
+        receivedOrSentDate,
+        sender,
+        recipient,
+        subject,
+        category,
+        attachmentCount,
+        summary,
+        signatory,
+        dispositionTo,
+        notes,
+        status
+      ]
+    );
+
+    const savedItem = {
+      id,
+      type,
+      agendaNumber,
+      letterNumber,
+      letterDate,
+      receivedOrSentDate,
+      sender,
+      recipient,
+      subject,
+      category,
+      attachmentCount,
+      summary,
+      signatory,
+      dispositionTo,
+      notes,
+      status,
+      createdAt,
+      updatedAt: new Date().toISOString()
+    };
+
+    return {
+      success: true,
+      message: `Data Surat ${type === 'masuk' ? 'Masuk' : 'Keluar'} berhasil disimpan ke database MySQL (tanpa menyimpan gambar surat).`,
+      item: savedItem
+    };
+  } catch (err: any) {
+    console.error('[MySQL Save Correspondence Log Error]:', err.message || err);
+    return {
+      success: false,
+      message: 'Gagal menyimpan data surat ke database MySQL.',
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function deleteCorrespondenceLogFromMysql(id: string): Promise<{ success: boolean; message: string; error?: string }> {
+  if (!id) return { success: false, message: 'ID surat diperlukan.' };
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await ensureCorrespondenceLogsTableExists();
+    await connection.query('DELETE FROM `correspondence_logs` WHERE `id` = ?', [id]);
+    return { success: true, message: 'Data surat berhasil dihapus dari database MySQL.' };
+  } catch (err: any) {
+    console.error('[MySQL Delete Correspondence Log Error]:', err.message || err);
+    return {
+      success: false,
+      message: 'Gagal menghapus data surat dari database MySQL.',
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}

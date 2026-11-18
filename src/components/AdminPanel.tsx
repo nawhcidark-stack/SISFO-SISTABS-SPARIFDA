@@ -93,6 +93,7 @@ import {
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
 import AdminSpmbManagement from "./AdminSpmbManagement";
+import CorrespondenceManagement from "./CorrespondenceManagement";
 import QRScannerModal from "./QRScannerModal";
 import StudentPaymentCard from "./StudentPaymentCard";
 import Pagination from "./Pagination";
@@ -407,6 +408,7 @@ export default function AdminPanel({
     | "pembayaran_lain"
     | "jadwal"
     | "spmb"
+    | "surat_menyurat"
   >("roster");
 
   useEffect(() => {
@@ -5049,6 +5051,33 @@ export default function AdminPanel({
           </button>
 
           <button
+            id="admin-menu-surat-menyurat"
+            onClick={() => {
+              setAdminTab("surat_menyurat");
+              setSelectedStudent(null);
+            }}
+            className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+              adminTab === "surat_menyurat"
+                ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
+                : "text-indigo-800 bg-indigo-50/70 hover:bg-indigo-100/80 border border-indigo-200/70"
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <Camera size={15} className={adminTab === "surat_menyurat" ? "text-emerald-400" : "text-indigo-600"} />
+              <span>Surat Masuk &amp; Keluar</span>
+            </div>
+            <span
+              className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                adminTab === "surat_menyurat"
+                  ? "bg-emerald-500 text-slate-950"
+                  : "bg-indigo-200 text-indigo-900"
+              }`}
+            >
+              Scan HP
+            </span>
+          </button>
+
+          <button
             id="admin-menu-spmb"
             onClick={() => {
               setAdminTab("spmb");
@@ -7902,6 +7931,12 @@ export default function AdminPanel({
               schoolIdentity={schoolIdentity}
               students={students}
             />
+          </div>
+        )}
+
+        {adminTab === "surat_menyurat" && (
+          <div className="w-full">
+            <CorrespondenceManagement schoolIdentity={schoolIdentity} />
           </div>
         )}
 
@@ -21807,6 +21842,24 @@ export default function AdminPanel({
                   </div>
                   <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
                     Buku Induk
+                  </span>
+                </button>
+
+                {/* 8b. Surat Masuk & Keluar (Scan Kamera HP) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminTab("surat_menyurat");
+                    setSelectedStudent(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-teal-600 shadow-md shadow-indigo-600/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    📨
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Surat Masuk &amp; Keluar
                   </span>
                 </button>
 

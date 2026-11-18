@@ -43,6 +43,7 @@ import {
   Upload
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import JSZip from "jszip";
 import { motion, AnimatePresence } from "motion/react";
 import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student, ClassSchedule, SubjectTeacher, HomeroomTeacher } from "../types";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -1361,7 +1362,7 @@ export default function CounselorPanel({
     return baseList;
   };
 
-  const handleDownloadPointAdjustmentTemplateExcel = (
+  const handleDownloadPointAdjustmentTemplateExcel = async (
     scopeOverride?: 'all_students' | 'students_with_points'
   ) => {
     const targetList = getStudentsForAdjustmentTemplate(scopeOverride);
@@ -1373,11 +1374,19 @@ export default function CounselorPanel({
       "Nama Siswa",
       "Kelas",
       "Poin Saat Ini (Data Aplikasi)",
-      "Jumlah Poin Siswa (Sesuaikan Di Sini)"
+      "Jumlah Poin Siswa (Sesuaikan Di Sini)",
+      "Status Poin"
     ];
 
     const sheetRows: any[][] = [headerRow];
+    const redRowNumbers = new Set<number>(); // 1-indexed Excel row numbers (row 1 is header)
+
     targetList.forEach((st, idx) => {
+      const hasPoints = st.currentPoints > 0;
+      const excelRowNum = idx + 2;
+      if (hasPoints) {
+        redRowNumbers.add(excelRowNum);
+      }
       const defaultVal = adjustmentImportMode === 'delta' ? 0 : st.currentPoints;
       sheetRows.push([
         idx + 1,
@@ -1385,7 +1394,8 @@ export default function CounselorPanel({
         st.name,
         st.class,
         st.currentPoints,
-        defaultVal
+        defaultVal,
+        hasPoints ? `🔴 ADA POIN (${st.currentPoints} Poin)` : "-"
       ]);
     });
 
@@ -1396,7 +1406,8 @@ export default function CounselorPanel({
       { wch: 32 },
       { wch: 12 },
       { wch: 28 },
-      { wch: 34 }
+      { wch: 34 },
+      { wch: 26 }
     ];
     XLSX.utils.book_append_sheet(wb, ws, "Penyesuaian Poin BK");
 
@@ -1404,18 +1415,136 @@ export default function CounselorPanel({
       ["PANDUAN SINGKAT PENYESUAIAN POIN PELANGGARAN BK (TANPA KETERANGAN PELANGGARAN)"],
       [""],
       ["1. Template ini sudah terisi otomatis dengan Data Siswa dan Poin Saat Ini dari aplikasi."],
-      ["2. Guru BK cukup mengubah/menyesuaikan angka pada kolom 'Jumlah Poin Siswa (Sesuaikan Di Sini)' tanpa perlu mengisi keterangan atau jenis pelanggaran."],
-      ["3. Contoh: Jika Poin Saat Ini = 15 lalu diubah menjadi 10, maka poin siswa otomatis disesuaikan menjadi 10 Poin (-5 Poin)."],
-      ["4. Contoh: Jika Poin Saat Ini = 0 lalu diubah menjadi 10, maka poin siswa otomatis disesuaikan menjadi 10 Poin (+10 Poin)."],
-      ["5. Contoh: Jika Poin Saat Ini = 20 lalu diubah menjadi 0, maka poin siswa otomatis di-reset menjadi 0 Poin (-20 Poin)."],
-      ["6. Siswa yang angkanya tidak diubah (tetap sama dengan Poin Saat Ini) tidak akan mengalami perubahan."]
+      ["2. Baris siswa yang sudah memiliki poin pelanggaran (> 0) otomatis diberi TANDA BLOK MERAH agar mudah dikenali oleh Guru BK."],
+      ["3. Guru BK cukup mengubah/menyesuaikan angka pada kolom 'Jumlah Poin Siswa (Sesuaikan Di Sini)' tanpa perlu mengisi keterangan atau jenis pelanggaran."],
+      ["4. Contoh: Jika Poin Saat Ini = 15 lalu diubah menjadi 10, maka poin siswa otomatis disesuaikan menjadi 10 Poin (-5 Poin)."],
+      ["5. Contoh: Jika Poin Saat Ini = 0 lalu diubah menjadi 10, maka poin siswa otomatis disesuaikan menjadi 10 Poin (+10 Poin)."],
+      ["6. Contoh: Jika Poin Saat Ini = 20 lalu diubah menjadi 0, maka poin siswa otomatis di-reset menjadi 0 Poin (-20 Poin)."],
+      ["7. Siswa yang angkanya tidak diubah (tetap sama dengan Poin Saat Ini) tidak akan mengalami perubahan."]
     ];
     const wsGuide = XLSX.utils.aoa_to_sheet(guideRows);
-    wsGuide["!cols"] = [{ wch: 95 }];
+    wsGuide["!cols"] = [{ wch: 98 }];
     XLSX.utils.book_append_sheet(wb, wsGuide, "Panduan Pengisian");
 
     const suffix = classFilter !== "all" ? `_KELAS_${classFilter}` : "_SEMUA_SISWA";
-    XLSX.writeFile(wb, `TEMPLATE_PENYESUAIAN_POIN_PELANGGARAN_BK${suffix}.xlsx`);
+    const fileName = `TEMPLATE_PENYESUAIAN_POIN_PELANGGARAN_BK${suffix}.xlsx`;
+
+    try {
+      const rawBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const zip = await JSZip.loadAsync(rawBuffer);
+
+      // Style indices (cellXfs):
+      // s="0": Baris normal (putih, border tipis abu-abu, teks gelap)
+      // s="1": Baris Header (blok gelap/merah tua, teks putih tebal, rata tengah)
+      // s="2": Baris Siswa yang Ada Poinnya - BLOK MERAH (latar merah #FCA5A5, border merah #DC2626, teks merah tua tebal #7F1D1D)
+      // s="3": Kolom Angka Poin pada Siswa yang Ada Poinnya - BLOK MERAH TEGAS (latar merah #EF4444, border merah #B91C1C, teks putih tebal #FFFFFF, rata tengah)
+      // s="4": Kolom Edit Jumlah Poin pada Siswa yang Ada Poinnya - BLOK MERAH TERANG (latar #FECACA, border merah #DC2626, teks merah tua tebal #7F1D1D, rata tengah)
+      // s="5": Kolom Angka Poin pada Siswa Normal (0 Poin) - rata tengah
+      const customStylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="4">
+    <font><sz val="11"/><color rgb="FF1E293B"/><name val="Calibri"/><family val="2"/></font>
+    <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font>
+    <font><b/><sz val="11"/><color rgb="FF7F1D1D"/><name val="Calibri"/><family val="2"/></font>
+    <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font>
+  </fonts>
+  <fills count="6">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF991B1B"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFCA5A5"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFDC2626"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFECACA"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="3">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border>
+      <left style="thin"><color rgb="FFCBD5E1"/></left>
+      <right style="thin"><color rgb="FFCBD5E1"/></right>
+      <top style="thin"><color rgb="FFCBD5E1"/></top>
+      <bottom style="thin"><color rgb="FFCBD5E1"/></bottom>
+      <diagonal/>
+    </border>
+    <border>
+      <left style="thin"><color rgb="FFDC2626"/></left>
+      <right style="thin"><color rgb="FFDC2626"/></right>
+      <top style="thin"><color rgb="FFDC2626"/></top>
+      <bottom style="thin"><color rgb="FFDC2626"/></bottom>
+      <diagonal/>
+    </border>
+  </borders>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
+  <cellXfs count="6">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="4" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="5" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+  </cellXfs>
+  <cellStyles count="1">
+    <cellStyle name="Normal" xfId="0" builtinId="0"/>
+  </cellStyles>
+</styleSheet>`;
+
+      zip.file("xl/styles.xml", customStylesXml);
+
+      const sheet1File = zip.file("xl/worksheets/sheet1.xml");
+      if (sheet1File) {
+        let sheetXml = await sheet1File.async("string");
+        sheetXml = sheetXml.replace(
+          /<row r="(\d+)"([^>]*)>([\s\S]*?)<\/row>/g,
+          (_match, rowNumStr, rowAttrs, inner) => {
+            const rNum = parseInt(rowNumStr, 10);
+            if (rNum === 1) {
+              const styledHeader = inner.replace(
+                /<c r="([A-Z]+\d+)"/g,
+                `<c r="$1" s="1"`
+              );
+              return `<row r="${rNum}" ht="26" customHeight="1"${rowAttrs}>${styledHeader}</row>`;
+            }
+            if (redRowNumbers.has(rNum)) {
+              const styledRedRow = inner.replace(
+                /<c r="([A-Z]+)(\d+)"/g,
+                (_m: string, col: string, r: string) => {
+                  if (col === "E") return `<c r="${col}${r}" s="3"`;
+                  if (col === "F") return `<c r="${col}${r}" s="4"`;
+                  return `<c r="${col}${r}" s="2"`;
+                }
+              );
+              return `<row r="${rNum}" ht="21" customHeight="1"${rowAttrs}>${styledRedRow}</row>`;
+            }
+            const styledNormalRow = inner.replace(
+              /<c r="([A-Z]+)(\d+)"/g,
+              (_m: string, col: string, r: string) => {
+                if (col === "A" || col === "D" || col === "E" || col === "F" || col === "G") {
+                  return `<c r="${col}${r}" s="5"`;
+                }
+                return `<c r="${col}${r}" s="0"`;
+              }
+            );
+            return `<row r="${rNum}" ht="20" customHeight="1"${rowAttrs}>${styledNormalRow}</row>`;
+          }
+        );
+        zip.file("xl/worksheets/sheet1.xml", sheetXml);
+      }
+
+      const finalBlob = await zip.generateAsync({
+        type: "blob",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      });
+      const url = URL.createObjectURL(finalBlob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Fallback standard XLSX writeFile:", err);
+      XLSX.writeFile(wb, fileName);
+    }
   };
 
   const handleDownloadPointAdjustmentTemplateCsv = (
@@ -1438,13 +1567,15 @@ export default function CounselorPanel({
         "Nama Siswa",
         "Kelas",
         "Poin Saat Ini (Data Aplikasi)",
-        "Jumlah Poin Siswa (Sesuaikan Di Sini)"
+        "Jumlah Poin Siswa (Sesuaikan Di Sini)",
+        "Status Poin"
       ]
         .map(csvEscape)
         .join(",")
     );
 
     targetList.forEach((st, idx) => {
+      const hasPoints = st.currentPoints > 0;
       const defaultVal = adjustmentImportMode === 'delta' ? 0 : st.currentPoints;
       lines.push(
         [
@@ -1453,7 +1584,8 @@ export default function CounselorPanel({
           st.name,
           st.class,
           st.currentPoints,
-          defaultVal
+          defaultVal,
+          hasPoints ? `🔴 ADA POIN (${st.currentPoints} Poin)` : "-"
         ]
           .map(csvEscape)
           .join(",")
@@ -5896,7 +6028,7 @@ export default function CounselorPanel({
                           </span>
                         </div>
                         <p className="text-xs text-slate-600 mt-1">
-                          Unduh template Excel/CSV yang <strong>sudah berisi daftar siswa dan poin pelanggaran saat ini dari aplikasi</strong>. Guru BK cukup menyesuaikan angka pada kolom <strong>Jumlah Poin Siswa</strong> untuk masing-masing siswa tanpa perlu mengisi keterangan atau jenis pelanggaran.
+                          Unduh template Excel/CSV yang <strong>sudah berisi daftar siswa dan poin pelanggaran saat ini dari aplikasi</strong>. Siswa yang sudah memiliki poin pelanggaran (&gt; 0) <strong>otomatis diberi tanda blok merah</strong> di dalam file Excel maupun di tabel bawah agar mudah dilihat dan disesuaikan oleh Guru BK.
                         </p>
                       </div>
 
@@ -5907,7 +6039,7 @@ export default function CounselorPanel({
                           className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs"
                         >
                           <FileSpreadsheet size={14} />
-                          <span>Unduh Template Excel (.xlsx)</span>
+                          <span>Unduh Template Excel (.xlsx • Blok Merah Otomatis)</span>
                         </button>
                         <button
                           type="button"
@@ -5945,7 +6077,7 @@ export default function CounselorPanel({
                           className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 bg-white"
                         >
                           <option value="all_students">
-                            Semua Siswa Aktif ({activeStudentsSorted.length} Siswa — Sesuai Filter Kelas)
+                            Semua Siswa Aktif ({activeStudentsSorted.length} Siswa — Siswa Berpoin Otomatis Blok Merah)
                           </option>
                           <option value="students_with_points">
                             Hanya Siswa yang Sudah Memiliki Poin &gt; 0 (
@@ -5958,7 +6090,7 @@ export default function CounselorPanel({
                           </option>
                         </select>
                         <p className="text-[10.5px] text-slate-500 mt-1.5">
-                          Tip: Anda juga dapat memfilter per kelas melalui pilihan <strong>Kelas</strong> di atas sebelum mengunduh template.
+                          Pada file Excel (<code>.xlsx</code>), seluruh baris siswa yang memiliki poin &gt; 0 otomatis diberi <strong>tanda blok warna merah</strong>.
                         </p>
                       </div>
 
@@ -5991,11 +6123,16 @@ export default function CounselorPanel({
                   <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
                       <div>
-                        <h4 className="font-extrabold text-xs sm:text-sm text-slate-900">
-                          📋 Tabel Penyesuaian Jumlah Poin Siswa Langsung di Aplikasi (Tanpa Keterangan Pelanggaran)
-                        </h4>
-                        <p className="text-[11px] text-slate-500">
-                          Selain lewat Import Excel/CSV di atas, Anda juga dapat langsung mengubah angka <strong>Jumlah Poin Siswa</strong> pada tabel di bawah ini lalu klik <strong>Simpan Penyesuaian Poin ke MySQL</strong>.
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-extrabold text-xs sm:text-sm text-slate-900">
+                            📋 Tabel Penyesuaian Jumlah Poin Siswa Langsung di Aplikasi (Tanpa Keterangan Pelanggaran)
+                          </h4>
+                          <span className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-black">
+                            🔴 Blok Merah = Siswa Memiliki Poin (&gt; 0)
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Siswa yang memiliki poin otomatis ditandai <strong>blok merah</strong>. Anda dapat langsung mengubah angka <strong>Jumlah Poin Siswa</strong> di bawah ini lalu klik <strong>Simpan Penyesuaian Poin ke MySQL</strong>.
                         </p>
                       </div>
 
@@ -6054,6 +6191,7 @@ export default function CounselorPanel({
                                 0,
                                 Number((studentPointsMapForReduction.get(st.id) || 0).toFixed(2))
                               );
+                              const hasPoints = currentPts > 0;
                               const editedRaw = inlinePointEdits[st.id];
                               const displayVal = editedRaw !== undefined ? editedRaw : String(currentPts);
                               const parsedNew = Number(String(displayVal).replace(",", "."));
@@ -6065,25 +6203,54 @@ export default function CounselorPanel({
                               return (
                                 <tr
                                   key={st.id}
-                                  className={`hover:bg-slate-50 ${
-                                    Math.abs(diff) > 0.001 ? 'bg-emerald-50/50' : 'bg-white'
+                                  className={`transition-colors ${
+                                    Math.abs(diff) > 0.001
+                                      ? 'bg-emerald-100/80 border-l-4 border-l-emerald-600'
+                                      : hasPoints
+                                      ? 'bg-rose-100/90 hover:bg-rose-200/75 border-l-4 border-l-rose-600'
+                                      : 'bg-white hover:bg-slate-50'
                                   }`}
                                 >
-                                  <td className="py-2.5 px-3 font-mono text-slate-400">{idx + 1}</td>
-                                  <td className="py-2.5 px-3 font-mono text-slate-600">
+                                  <td
+                                    className={`py-2.5 px-3 font-mono ${
+                                      hasPoints ? 'text-rose-900 font-black' : 'text-slate-400'
+                                    }`}
+                                  >
+                                    {idx + 1}
+                                  </td>
+                                  <td
+                                    className={`py-2.5 px-3 font-mono ${
+                                      hasPoints ? 'text-rose-900 font-bold' : 'text-slate-600'
+                                    }`}
+                                  >
                                     {st.nis || st.id}
                                   </td>
-                                  <td className="py-2.5 px-3 font-extrabold text-slate-900">
-                                    {st.name}
+                                  <td
+                                    className={`py-2.5 px-3 font-extrabold ${
+                                      hasPoints ? 'text-rose-950' : 'text-slate-900'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span>{st.name}</span>
+                                      {hasPoints && (
+                                        <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black uppercase">
+                                          Ada Poin
+                                        </span>
+                                      )}
+                                    </div>
                                   </td>
-                                  <td className="py-2.5 px-3 text-center font-bold text-slate-700">
+                                  <td
+                                    className={`py-2.5 px-3 text-center font-bold ${
+                                      hasPoints ? 'text-rose-900' : 'text-slate-700'
+                                    }`}
+                                  >
                                     Kelas {st.class}
                                   </td>
                                   <td className="py-2.5 px-3 text-center">
                                     <span
                                       className={`px-2.5 py-0.5 rounded-lg font-mono font-black text-xs border ${
-                                        currentPts > 0
-                                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                        hasPoints
+                                          ? 'bg-rose-600 text-white border-rose-700 shadow-2xs'
                                           : 'bg-slate-100 text-slate-600 border-slate-200'
                                       }`}
                                     >
@@ -6108,12 +6275,18 @@ export default function CounselorPanel({
                                           return next;
                                         });
                                       }}
-                                      className="w-32 text-center border border-slate-300 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 rounded-lg px-2.5 py-1 font-mono font-extrabold text-xs text-slate-900 bg-white"
+                                      className={`w-32 text-center border rounded-lg px-2.5 py-1 font-mono font-extrabold text-xs focus:outline-none focus:ring-2 ${
+                                        hasPoints
+                                          ? 'border-rose-400 bg-rose-50 text-rose-950 focus:border-rose-600 focus:ring-rose-500'
+                                          : 'border-slate-300 bg-white text-slate-900 focus:border-emerald-600 focus:ring-emerald-500'
+                                      }`}
                                     />
                                   </td>
                                   <td className="py-2.5 px-3 text-center font-mono font-black">
                                     {Math.abs(diff) < 0.001 ? (
-                                      <span className="text-slate-400 text-[11px]">Tetap</span>
+                                      <span className={hasPoints ? 'text-rose-800 text-[11px] font-bold' : 'text-slate-400 text-[11px]'}>
+                                        Tetap
+                                      </span>
                                     ) : diff > 0 ? (
                                       <span className="text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
                                         +{diff} Poin

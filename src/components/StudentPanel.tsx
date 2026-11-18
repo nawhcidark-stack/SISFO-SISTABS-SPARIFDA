@@ -11,7 +11,7 @@ import {
   printRaporAkhirSemesterF4
 } from '../utils/raporAkhirPrint';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, Award, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone, LogOut } from 'lucide-react';
+import { GraduationCap, Award, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 import ScheduleView from './ScheduleView';
@@ -147,6 +147,7 @@ export default function StudentPanel({
   }, [globalAcademicYear]);
 
   const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'jadwal' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk' | 'rapor' | 'ujian_online'>('spp');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
   const [reportReleaseConfig, setReportReleaseConfig] = useState<{
     midtermReleased?: boolean;
@@ -1862,9 +1863,44 @@ export default function StudentPanel({
   }
 
   return (
-    <div id="student-panel-root" className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-24 md:pb-0">
+    <div id="student-panel-root" className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-24 md:pb-0 relative">
+      {/* Tombol Mengambang di Sisi Kiri Layar Saat Side Menu Disembunyikan */}
+      {isSidebarCollapsed && (
+        <button
+          type="button"
+          onClick={() => setIsSidebarCollapsed(false)}
+          title="Tampilkan Panel Profil Sisi Kiri"
+          className="hidden md:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900 hover:bg-indigo-600 text-white py-3.5 px-2 rounded-r-2xl shadow-xl border border-l-0 border-slate-700 items-center gap-1.5 cursor-pointer transition-all group print:hidden"
+        >
+          <PanelLeftOpen size={16} className="text-emerald-400 group-hover:scale-110 transition-transform" />
+          <span className="[writing-mode:vertical-lr] rotate-180 text-[10px] font-black uppercase tracking-widest">
+            Buka Panel Kiri
+          </span>
+        </button>
+      )}
+
       {/* Left Column: Account Selector and Profile Details */}
-      <div className={`md:col-span-4 flex flex-col gap-6 ${mobileTab === 'beranda' ? 'flex' : 'hidden md:flex'}`}>
+      <div
+        className={`${
+          isSidebarCollapsed
+            ? 'hidden'
+            : `md:col-span-4 flex flex-col gap-6 ${mobileTab === 'beranda' ? 'flex' : 'hidden md:flex'}`
+        }`}
+      >
+        <div className="hidden md:flex items-center justify-between bg-white border border-slate-200 rounded-xl px-3.5 py-2 shadow-2xs">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+            Panel Profil &amp; Saldo
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsSidebarCollapsed(true)}
+            title="Sembunyikan Panel Kiri"
+            className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-extrabold flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <PanelLeftClose size={13} />
+            <span>Sembunyikan</span>
+          </button>
+        </div>
         {/* Student Selector */}
         {isLoginLocked ? (
           <div className="bg-gradient-to-r from-blue-700 to-emerald-600 border-4 border-emerald-400 text-white p-5 rounded-xl shadow-lg relative overflow-hidden flex items-center gap-3">
@@ -2114,7 +2150,26 @@ export default function StudentPanel({
       </div>
 
       {/* Right Column: SPP Checklist / Deposits Form & History */}
-      <div className={`md:col-span-8 ${mobileTab === 'beranda' ? 'block' : 'hidden md:block'}`}>
+      <div
+        className={`${
+          isSidebarCollapsed ? 'md:col-span-12' : 'md:col-span-8'
+        } ${mobileTab === 'beranda' ? 'block' : 'hidden md:block'} flex flex-col gap-4`}
+      >
+        {isSidebarCollapsed && (
+          <div className="hidden md:flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-2xs print:hidden">
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(false)}
+              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center gap-2 cursor-pointer shadow-xs transition-all"
+            >
+              <PanelLeftOpen size={14} className="text-emerald-400" />
+              <span>Tampilkan Panel Profil Kiri</span>
+            </button>
+            <span className="text-[11px] font-semibold text-slate-500">
+              Mode Layar Penuh Aktif • Panel kiri disembunyikan
+            </span>
+          </div>
+        )}
         {currentStudent ? (
           <motion.div
             initial={{ opacity: 0, x: 20 }}

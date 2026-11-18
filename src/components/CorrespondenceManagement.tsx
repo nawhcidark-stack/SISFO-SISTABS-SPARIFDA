@@ -851,30 +851,61 @@ export default function CorrespondenceManagement({
         </div>
       )}
 
-      {/* Header Banner */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col gap-5 print:hidden">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-          <div className="flex items-start gap-3.5">
+      {/* Header Banner (Structured for PC & Mobile) */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col gap-4 print:hidden">
+        {/* Tier 1: Title & Export Report Buttons */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-emerald-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/20 shrink-0">
               <FileText size={22} />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
                   Buku Agenda Surat Masuk &amp; Surat Keluar
                 </h2>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-250 flex items-center gap-1">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1 whitespace-nowrap">
                   <Sparkles size={11} /> Pemindai Kamera HP Otomatis
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                Pindai surat fisik menggunakan <strong>Kamera HP</strong> — Nomor Surat, Tanggal, Pengirim, Tujuan, Perihal, dan Ringkasan Isi otomatis terisi.{" "}
-                <strong className="text-slate-700">Gambar surat tidak disimpan</strong> demi menghemat penyimpanan server &amp; database.
+                Pindai surat fisik via <strong>Kamera HP</strong> agar data surat terisi otomatis ke Buku Agenda.{" "}
+                <strong className="text-slate-700">Gambar surat tidak disimpan</strong> di server maupun database.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 self-start md:self-center">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors"
+            >
+              <FileSpreadsheet size={15} className="text-emerald-700 shrink-0" />
+              <span>Cetak Excel (.xlsx)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrintPdfReport}
+              className="px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap transition-colors"
+            >
+              <Printer size={15} className="shrink-0" />
+              <span>Cetak Laporan PDF</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Tier 2: Action Toolbar (Pindai Kamera HP & Catat Manual) */}
+        <div className="bg-slate-50/90 border border-slate-200/80 rounded-xl p-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-slate-600 font-semibold">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+            <span>
+              Pilih metode pencatatan surat baru (pindai otomatis dengan kamera atau input manual):
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 lg:flex items-center gap-2 shrink-0">
             <button
               type="button"
               disabled={scanning}
@@ -883,100 +914,82 @@ export default function CorrespondenceManagement({
                 setIsFormOpen(true);
                 nativeCameraInputRef.current?.click();
               }}
-              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 whitespace-nowrap"
             >
-              {scanning ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} />}
+              {scanning ? <Loader2 size={15} className="animate-spin shrink-0" /> : <Camera size={15} className="shrink-0" />}
               <span>Pindai Surat (Kamera HP)</span>
             </button>
 
             <button
               type="button"
               onClick={() => handleOpenNewForm("masuk", false)}
-              className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-sm cursor-pointer"
+              className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
             >
-              <Plus size={14} />
+              <Plus size={14} className="shrink-0" />
               <span>Catat Surat Masuk</span>
             </button>
 
             <button
               type="button"
               onClick={() => handleOpenNewForm("keluar", false)}
-              className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-sm cursor-pointer"
+              className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
             >
-              <Plus size={14} />
+              <Plus size={14} className="shrink-0" />
               <span>Catat Surat Keluar</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              className="px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-250 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer"
-            >
-              <FileSpreadsheet size={14} />
-              <span>Cetak Excel (.xlsx)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePrintPdfReport}
-              className="px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Printer size={14} />
-              <span>Cetak Laporan PDF</span>
             </button>
           </div>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+        {/* Tier 3: Summary KPI Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 truncate">
                 Total Agenda Surat
               </div>
-              <div className="text-2xl font-black text-slate-900 mt-0.5">{stats.total}</div>
-              <div className="text-[10px] text-slate-500 font-semibold mt-0.5">Tersimpan di MySQL</div>
+              <div className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{stats.total}</div>
+              <div className="text-[10px] text-slate-500 font-semibold mt-0.5 truncate">Tersimpan di MySQL</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-slate-200/70 text-slate-700 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-slate-200/70 text-slate-700 flex items-center justify-center shrink-0">
               <FileText size={18} />
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200/80 flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-indigo-600">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200/80 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-wider text-indigo-600 truncate">
                 Surat Masuk (SM)
               </div>
-              <div className="text-2xl font-black text-indigo-950 mt-0.5">{stats.masuk}</div>
-              <div className="text-[10px] text-indigo-700 font-semibold mt-0.5">Dokumen Diterima</div>
+              <div className="text-xl sm:text-2xl font-black text-indigo-950 mt-0.5">{stats.masuk}</div>
+              <div className="text-[10px] text-indigo-700 font-semibold mt-0.5 truncate">Dokumen Diterima</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
               <ArrowDownLeft size={18} />
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-amber-700">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-wider text-amber-700 truncate">
                 Surat Keluar (SK)
               </div>
-              <div className="text-2xl font-black text-amber-950 mt-0.5">{stats.keluar}</div>
-              <div className="text-[10px] text-amber-700 font-semibold mt-0.5">Dokumen Diterbitkan</div>
+              <div className="text-xl sm:text-2xl font-black text-amber-950 mt-0.5">{stats.keluar}</div>
+              <div className="text-[10px] text-amber-700 font-semibold mt-0.5 truncate">Dokumen Diterbitkan</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
               <ArrowUpRight size={18} />
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-emerald-700">
-                Bulan Ini
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-wider text-emerald-700 truncate">
+                Agenda Bulan Ini
               </div>
-              <div className="text-2xl font-black text-emerald-950 mt-0.5">{stats.thisMonth}</div>
-              <div className="text-[10px] text-emerald-700 font-semibold mt-0.5">Tanpa Simpan Gambar</div>
+              <div className="text-xl sm:text-2xl font-black text-emerald-950 mt-0.5">{stats.thisMonth}</div>
+              <div className="text-[10px] text-emerald-700 font-semibold mt-0.5 truncate">Tanpa Simpan Gambar</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
               <Calendar size={18} />
             </div>
           </div>
@@ -1453,61 +1466,73 @@ export default function CorrespondenceManagement({
           FILTER & TABEL BUKU AGENDA SURAT MASUK & KELUAR
           ============================================================================ */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 print:hidden">
-        <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3 pb-3 border-b border-slate-100">
-          {/* Sub-Tab Jenis Surat */}
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-col gap-3 pb-3 border-b border-slate-100">
+          {/* Row 1: Sub-Tab Jenis Surat & Tombol Refresh */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setActiveFilterType("all")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-extrabold cursor-pointer transition-all whitespace-nowrap ${
+                  activeFilterType === "all"
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                Semua Surat ({records.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveFilterType("masuk")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap ${
+                  activeFilterType === "masuk"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200"
+                }`}
+              >
+                <ArrowDownLeft size={13} /> Surat Masuk ({stats.masuk})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveFilterType("keluar")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap ${
+                  activeFilterType === "keluar"
+                    ? "bg-amber-600 text-white shadow-xs"
+                    : "bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200"
+                }`}
+              >
+                <ArrowUpRight size={13} /> Surat Keluar ({stats.keluar})
+              </button>
+            </div>
+
             <button
               type="button"
-              onClick={() => setActiveFilterType("all")}
-              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
-                activeFilterType === "all"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
+              onClick={fetchRecords}
+              title="Muat ulang data dari MySQL"
+              className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
             >
-              Semua Surat ({records.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFilterType("masuk")}
-              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition-all ${
-                activeFilterType === "masuk"
-                  ? "bg-indigo-600 text-white shadow-xs"
-                  : "bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200"
-              }`}
-            >
-              <ArrowDownLeft size={13} /> Surat Masuk ({stats.masuk})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveFilterType("keluar")}
-              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition-all ${
-                activeFilterType === "keluar"
-                  ? "bg-amber-600 text-white shadow-xs"
-                  : "bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200"
-              }`}
-            >
-              <ArrowUpRight size={13} /> Surat Keluar ({stats.keluar})
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+              <span className="hidden sm:inline">Muat Ulang</span>
             </button>
           </div>
 
-          {/* Search & Period Filters */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[200px]">
+          {/* Row 2: Search & Period Filters */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5">
+            <div className="relative sm:col-span-2 lg:col-span-6">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Cari No. Surat, Pengirim, Perihal..."
-                className="w-full pl-8 pr-3 py-2 border border-slate-250 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Cari No. Surat, Pengirim, Tujuan, Perihal, atau Isi..."
+                className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
             <select
               value={filterMonth}
               onChange={e => setFilterMonth(e.target.value)}
-              className="border border-slate-250 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 bg-white"
+              className="lg:col-span-2 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 bg-white"
             >
               <option value="all">Semua Bulan</option>
               <option value="01">Januari</option>
@@ -1527,7 +1552,7 @@ export default function CorrespondenceManagement({
             <select
               value={filterYear}
               onChange={e => setFilterYear(e.target.value)}
-              className="border border-slate-250 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 bg-white"
+              className="lg:col-span-2 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 bg-white"
             >
               <option value="all">Semua Tahun</option>
               {availableYears.map(y => (
@@ -1540,7 +1565,7 @@ export default function CorrespondenceManagement({
             <select
               value={filterCategory}
               onChange={e => setFilterCategory(e.target.value)}
-              className="border border-slate-250 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 bg-white"
+              className="lg:col-span-2 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 bg-white"
             >
               <option value="all">Semua Kategori</option>
               {LETTER_CATEGORIES.map(c => (
@@ -1549,15 +1574,6 @@ export default function CorrespondenceManagement({
                 </option>
               ))}
             </select>
-
-            <button
-              type="button"
-              onClick={fetchRecords}
-              title="Muat ulang data dari MySQL"
-              className="p-2 rounded-xl border border-slate-250 hover:bg-slate-100 text-slate-600 cursor-pointer"
-            >
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            </button>
           </div>
         </div>
 

@@ -46,7 +46,9 @@ import {
   MessageSquare,
   AlertTriangle,
   ChevronRight,
-  ListFilter
+  ListFilter,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { CurriculumTpDescription, SharedLearningObjective } from '../types';
@@ -256,6 +258,7 @@ export default function WakaKurikulumPanel({
   const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'ujian_online' | 'import_pts_pas' | 'ekstrakurikuler' | 'rekap_nilai' | 'detail_nilai' | 'status_belum_input' | 'rapor' | 'rapor_tengah_semester' | 'password'>('monitoring');
   const [masterMapelSubTab, setMasterMapelSubTab] = useState<'mapel_list' | 'bank_tp' | 'bank_soal'>('mapel_list');
   const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
+  const [isRaporSidebarCollapsed, setIsRaporSidebarCollapsed] = useState<boolean>(false);
   const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
 
   // Rapor Release State (Kontrol Rilis Rapor ke Akun Siswa - Permanen di MySQL)
@@ -6623,19 +6626,44 @@ export default function WakaKurikulumPanel({
           </div>
 
           {/* Main Grid: Student Selector (Left) & Report Preview (Right) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start relative">
+            {isRaporSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setIsRaporSidebarCollapsed(false)}
+                title="Tampilkan Daftar Siswa di Sisi Kiri"
+                className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900 hover:bg-indigo-600 text-white py-3.5 px-2 rounded-r-2xl shadow-xl border border-l-0 border-slate-700 items-center gap-1.5 cursor-pointer transition-all group print:hidden"
+              >
+                <PanelLeftOpen size={16} className="text-emerald-400 group-hover:scale-110 transition-transform" />
+                <span className="[writing-mode:vertical-lr] rotate-180 text-[10px] font-black uppercase tracking-widest">
+                  Daftar Siswa
+                </span>
+              </button>
+            )}
+
             {/* Left Column: Student Roster in Selected Class (4 Cols) */}
-            <div className="lg:col-span-4 flex flex-col gap-3">
+            <div className={`${isRaporSidebarCollapsed ? 'hidden' : 'lg:col-span-4'} flex flex-col gap-3`}>
               <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm flex flex-col gap-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 gap-2">
                   <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
                     Daftar Siswa ({filteredRaporStudents.length})
                   </span>
-                  {selectedRaporClass && !selectedRaporClass.startsWith('ALL') && (
-                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
-                      {homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporClass))?.name || 'Wali Kelas'}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {selectedRaporClass && !selectedRaporClass.startsWith('ALL') && (
+                      <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                        {homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporClass))?.name || 'Wali Kelas'}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsRaporSidebarCollapsed(true)}
+                      title="Sembunyikan Daftar Siswa ke Sisi Kiri"
+                      className="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-extrabold cursor-pointer transition-colors"
+                    >
+                      <PanelLeftClose size={12} />
+                      <span>Sembunyikan</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Quick Search */}
@@ -6712,7 +6740,22 @@ export default function WakaKurikulumPanel({
             </div>
 
             {/* Right Column: Interactive Report Card Preview (8 Cols) */}
-            <div className="lg:col-span-8 flex flex-col gap-4">
+            <div className={`${isRaporSidebarCollapsed ? 'lg:col-span-12' : 'lg:col-span-8'} flex flex-col gap-4`}>
+              {isRaporSidebarCollapsed && (
+                <div className="hidden lg:flex items-center justify-between bg-white border border-slate-200 rounded-2xl px-4 py-2.5 shadow-2xs print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setIsRaporSidebarCollapsed(false)}
+                    className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center gap-2 cursor-pointer shadow-xs transition-all"
+                  >
+                    <PanelLeftOpen size={14} className="text-emerald-400" />
+                    <span>Tampilkan Daftar Siswa di Sisi Kiri</span>
+                  </button>
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    Mode Pratinjau Rapor Lebar Penuh
+                  </span>
+                </div>
+              )}
               {selectedRaporStudent ? (() => {
                 const att = selectedStudentAttendance;
                 const scores = selectedStudentRaporRows;
@@ -7289,19 +7332,44 @@ export default function WakaKurikulumPanel({
               </div>
 
               {/* Main Grid: Student Selector (Left) & Report Preview (Right) */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start relative">
+                {isRaporSidebarCollapsed && (
+                  <button
+                    type="button"
+                    onClick={() => setIsRaporSidebarCollapsed(false)}
+                    title="Tampilkan Daftar Siswa di Sisi Kiri"
+                    className="hidden lg:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900 hover:bg-indigo-600 text-white py-3.5 px-2 rounded-r-2xl shadow-xl border border-l-0 border-slate-700 items-center gap-1.5 cursor-pointer transition-all group print:hidden"
+                  >
+                    <PanelLeftOpen size={16} className="text-emerald-400 group-hover:scale-110 transition-transform" />
+                    <span className="[writing-mode:vertical-lr] rotate-180 text-[10px] font-black uppercase tracking-widest">
+                      Daftar Siswa
+                    </span>
+                  </button>
+                )}
+
                 {/* Left Column: Student List */}
-                <div className="lg:col-span-4 flex flex-col gap-3">
+                <div className={`${isRaporSidebarCollapsed ? 'hidden' : 'lg:col-span-4'} flex flex-col gap-3`}>
                   <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm flex flex-col gap-3">
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 gap-2">
                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
                         Daftar Siswa ({filteredRaporStudents.length})
                       </span>
-                      {selectedRaporClass && !selectedRaporClass.startsWith('ALL') && (
-                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
-                          {homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporClass))?.name || 'Wali Kelas'}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {selectedRaporClass && !selectedRaporClass.startsWith('ALL') && (
+                          <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                            {homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporClass))?.name || 'Wali Kelas'}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setIsRaporSidebarCollapsed(true)}
+                          title="Sembunyikan Daftar Siswa ke Sisi Kiri"
+                          className="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-extrabold cursor-pointer transition-colors"
+                        >
+                          <PanelLeftClose size={12} />
+                          <span>Sembunyikan</span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="relative">
@@ -7368,7 +7436,22 @@ export default function WakaKurikulumPanel({
                 </div>
 
                 {/* Right Column: Report Card Preview (F4 2 Halaman) */}
-                <div className="lg:col-span-8 flex flex-col gap-4">
+                <div className={`${isRaporSidebarCollapsed ? 'lg:col-span-12' : 'lg:col-span-8'} flex flex-col gap-4`}>
+                  {isRaporSidebarCollapsed && (
+                    <div className="hidden lg:flex items-center justify-between bg-white border border-slate-200 rounded-2xl px-4 py-2.5 shadow-2xs print:hidden">
+                      <button
+                        type="button"
+                        onClick={() => setIsRaporSidebarCollapsed(false)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center gap-2 cursor-pointer shadow-xs transition-all"
+                      >
+                        <PanelLeftOpen size={14} className="text-emerald-400" />
+                        <span>Tampilkan Daftar Siswa di Sisi Kiri</span>
+                      </button>
+                      <span className="text-[11px] font-semibold text-slate-500">
+                        Mode Pratinjau Rapor Lebar Penuh
+                      </span>
+                    </div>
+                  )}
                   {selectedRaporStudent ? (() => {
                     const att = selectedStudentAttendance;
                     const scores = selectedStudentRaporRows;

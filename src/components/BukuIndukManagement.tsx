@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   BookOpen, Search, FileUp, FileDown, Edit, X, Check, Filter, 
   Users, CheckSquare, Square, AlertCircle, RefreshCw, UserCheck, 
-  Trash2, ShieldAlert, ExternalLink, Eye, Info, Hash
+  Trash2, ShieldAlert, ExternalLink, Eye, Info, Hash, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import { Pagination } from './Pagination';
 import BulkNisEditorModal from './BulkNisEditorModal';
@@ -22,6 +22,7 @@ export default function BukuIndukManagement({
   onRefresh
 }: BukuIndukManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const [selectedGrade, setSelectedGrade] = useState('ALL');
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -725,15 +726,26 @@ export default function BukuIndukManagement({
       </div>
 
       {/* Main Grid: Statistics + Import Board */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
         
         {/* Left Side: Upload Board or Status Cards */}
-        <div className="lg:col-span-4 flex flex-col gap-4">
+        <div className={`${isLeftPanelCollapsed ? 'hidden' : 'lg:col-span-4'} flex flex-col gap-4`}>
           {/* Quick Stats Panel */}
           <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col gap-4">
-            <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-1.5 border-b border-slate-100 pb-2">
-              <Users size={15} className="text-indigo-505" /> Statistik Buku Induk
-            </h3>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2 gap-2">
+              <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-1.5">
+                <Users size={15} className="text-indigo-505" /> Statistik Buku Induk
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsLeftPanelCollapsed(true)}
+                title="Sembunyikan Panel Kiri"
+                className="hidden lg:inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-extrabold cursor-pointer transition-colors"
+              >
+                <PanelLeftClose size={12} />
+                <span>Sembunyikan</span>
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-3 text-left">
               <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl">
                 <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mb-0.5">Total Murid</span>
@@ -847,7 +859,22 @@ export default function BukuIndukManagement({
         </div>
 
         {/* Right Side: Tabular List view of Student Master profiles */}
-        <div className="lg:col-span-8 flex flex-col gap-4">
+        <div className={`${isLeftPanelCollapsed ? 'lg:col-span-12' : 'lg:col-span-8'} flex flex-col gap-4`}>
+          {isLeftPanelCollapsed && (
+            <div className="hidden lg:flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setIsLeftPanelCollapsed(false)}
+                className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center gap-2 cursor-pointer shadow-xs transition-all"
+              >
+                <PanelLeftOpen size={14} className="text-emerald-400" />
+                <span>Tampilkan Panel Statistik &amp; Impor Buku Induk</span>
+              </button>
+              <span className="text-[11px] font-semibold text-slate-500">
+                Mode Tabel Lebar Penuh • Panel kiri disembunyikan
+              </span>
+            </div>
+          )}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
             
             {/* Filter and Search header */}

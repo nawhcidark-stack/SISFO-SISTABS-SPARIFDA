@@ -89,6 +89,8 @@ import {
   ListChecks,
   FileSpreadsheet,
   ChevronDown,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -392,6 +394,7 @@ export default function AdminPanel({
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [passbookModalStudent, setPassbookModalStudent] = useState<Student | null>(null);
   const [isTeacherTransitionModalOpen, setIsTeacherTransitionModalOpen] = useState<boolean>(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [adminTab, setAdminTab] = useState<
     | "roster"
     | "broadcast"
@@ -4873,14 +4876,44 @@ export default function AdminPanel({
   return (
     <div
       id="admin-panel-root"
-      className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-24 md:pb-0"
+      className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-24 md:pb-0 relative"
     >
-      {/* Sidebar Command List */}
-      <div className="hidden md:flex md:col-span-3 flex-col gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-1.5">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-2.5 block">
-            Menu Administrasi
+      {/* Tombol Mengambang di Sisi Kiri Layar Saat Side Menu Disembunyikan */}
+      {isSidebarCollapsed && (
+        <button
+          type="button"
+          onClick={() => setIsSidebarCollapsed(false)}
+          title="Tampilkan Side Menu Administrasi"
+          className="hidden md:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900 hover:bg-indigo-600 text-white py-3.5 px-2 rounded-r-2xl shadow-xl border border-l-0 border-slate-700 items-center gap-1.5 cursor-pointer transition-all group print:hidden"
+        >
+          <PanelLeftOpen size={16} className="text-emerald-400 group-hover:scale-110 transition-transform" />
+          <span className="[writing-mode:vertical-lr] rotate-180 text-[10px] font-black uppercase tracking-widest">
+            Buka Menu
           </span>
+        </button>
+      )}
+
+      {/* Sidebar Command List */}
+      <div
+        className={`${
+          isSidebarCollapsed ? "hidden" : "hidden md:flex md:col-span-3"
+        } flex-col gap-4 transition-all duration-200 print:hidden`}
+      >
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-1.5">
+          <div className="flex items-center justify-between pl-1 mb-2 pb-2 border-b border-slate-100">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Menu Administrasi
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(true)}
+              title="Sembunyikan Side Menu ke Sisi Kiri"
+              className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-extrabold flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <PanelLeftClose size={13} />
+              <span>Sembunyikan</span>
+            </button>
+          </div>
 
           <button
             id="admin-menu-roster"
@@ -5239,7 +5272,26 @@ export default function AdminPanel({
       </div>
 
       {/* Main Action Stage */}
-      <div className="md:col-span-9 flex flex-col gap-6">
+      <div
+        className={`${
+          isSidebarCollapsed ? "md:col-span-12" : "md:col-span-9"
+        } flex flex-col gap-6 min-w-0 transition-all duration-200`}
+      >
+        {isSidebarCollapsed && (
+          <div className="hidden md:flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-2xs print:hidden">
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(false)}
+              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center gap-2 cursor-pointer shadow-xs transition-all"
+            >
+              <PanelLeftOpen size={14} className="text-emerald-400" />
+              <span>Tampilkan Side Menu Administrasi</span>
+            </button>
+            <span className="text-[11px] font-semibold text-slate-500">
+              Mode Layar Penuh Aktif • Side menu disembunyikan ke sisi kiri
+            </span>
+          </div>
+        )}
         {/* Tab Jadwal Pelajaran */}
         {adminTab === "jadwal" && (
           <div className="flex flex-col gap-6 animate-fade-in text-left">

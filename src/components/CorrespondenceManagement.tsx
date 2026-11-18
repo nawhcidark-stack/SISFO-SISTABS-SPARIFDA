@@ -28,6 +28,7 @@ import { CorrespondenceRecord, SchoolIdentity } from "../types";
 import {
   scanLetterImageClientSideOcr,
   parseIndonesianOfficialLetterText,
+  extractEmbeddedJpegFromPdfArrayBuffer,
   ExtractedLetterData
 } from "../utils/letterScannerHelper";
 
@@ -66,6 +67,7 @@ export default function CorrespondenceManagement({
 }: CorrespondenceManagementProps) {
   const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
   const schoolName = schoolIdentity?.name || "SMP Ma'arif NU Pandaan";
+  const principalName = schoolIdentity?.principal || "H. Lasudi, S.Pd.";
 
   const [records, setRecords] = useState<CorrespondenceRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -307,13 +309,20 @@ export default function CorrespondenceManagement({
     setScanning(true);
     setScanProgressText("Memulai pemindaian surat otomatis...");
     try {
-      // 1. Jalankan pembacaan OCR langsung di klien dengan indikator progres nyata
-      // sekaligus mencoba endpoint server jika server menggunakan Gemini Vision
       let extractedResult: ExtractedLetterData | null = null;
 
       try {
-        setScanProgressText("Menghubungi pemindai surat otomatis...");
-        const serverPromise = fetch("/api/correspondence/scan", {
+        extractedResult = await scanLetterImageClientSideOcr(
+          dataUrl,
+          schoolName,
+          type,
+          statusMsg => setScanProgressText(statusMsg),
+          principalName
+        );
+      } catch (clientErr) {
+        console.warn("Fallback server scan:", clientErr);
+        setScanProgressText("Menghubungi pemindai surat otomatis server...");
+        const r = await fetch("/api/correspondence/scan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -321,66 +330,13 @@ export default function CorrespondenceManagement({
             mimeType,
             preferredType: type
           })
-        }).then(async r => {
-          if (!r.ok) return null;
+        });
+        if (r.ok) {
           const j = await r.json();
-          return j?.success && j?.extracted ? (j.extracted as ExtractedLetterData) : null;
-        }).catch(() => null);
-
-        const clientOcrPromise = scanLetterImageClientSideOcr(
-          dataUrl,
-          schoolName,
-          type,
-          statusMsg => setScanProgressText(statusMsg)
-        ).catch(() => null);
-
-        const [serverExt, clientExt] = await Promise.all([serverPromise, clientOcrPromise]);
-
-        // Gabungkan hasil terbaik dari server & client OCR agar tidak ada kolom yang kosong
-        if (serverExt && clientExt) {
-          extractedResult = {
-            type: serverExt.type || clientExt.type,
-            letterNumber:
-              serverExt.letterNumber && serverExt.letterNumber !== "-"
-                ? serverExt.letterNumber
-                : clientExt.letterNumber,
-            letterDate: serverExt.letterDate || clientExt.letterDate,
-            sender:
-              serverExt.sender && serverExt.sender !== "Instansi Pengirim Surat"
-                ? serverExt.sender
-                : clientExt.sender,
-            recipient:
-              serverExt.recipient && serverExt.recipient !== "Penerima Surat"
-                ? serverExt.recipient
-                : clientExt.recipient,
-            subject:
-              serverExt.subject && serverExt.subject !== "Surat Masuk / Keluar"
-                ? serverExt.subject
-                : clientExt.subject,
-            category: serverExt.category !== "Biasa" ? serverExt.category : clientExt.category,
-            attachmentCount:
-              serverExt.attachmentCount && serverExt.attachmentCount !== "-"
-                ? serverExt.attachmentCount
-                : clientExt.attachmentCount,
-            signatory: serverExt.signatory || clientExt.signatory,
-            summary:
-              (serverExt.summary && serverExt.summary.length >= (clientExt.summary || "").length
-                ? serverExt.summary
-                : clientExt.summary) || "",
-            dispositionTo: serverExt.dispositionTo || clientExt.dispositionTo,
-            rawText: clientExt.rawText || serverExt.rawText
-          };
-        } else {
-          extractedResult = serverExt || clientExt;
+          if (j?.success && j?.extracted) {
+            extractedResult = j.extracted as ExtractedLetterData;
+          }
         }
-      } catch (innerErr) {
-        console.warn("Fallback direct client OCR:", innerErr);
-        extractedResult = await scanLetterImageClientSideOcr(
-          dataUrl,
-          schoolName,
-          type,
-          statusMsg => setScanProgressText(statusMsg)
-        );
       }
 
       if (!extractedResult) {
@@ -391,7 +347,7 @@ export default function CorrespondenceManagement({
 
       showToast(
         "success",
-        "Pemindaian surat berhasil! Data surat otomatis terisi ke formulir dan gambar surat telah dihapus (tidak disimpan)."
+        "Pemindaian surat berhasil! Data surat otomatis terisi secara terstruktur ke formulir dan gambar surat telah dihapus (tidak disimpan)."
       );
     } catch (err: any) {
       console.error("[Scan Correspondence Error]:", err);
@@ -428,7 +384,7 @@ export default function CorrespondenceManagement({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, w, h);
-    const tempBase64 = canvas.toDataURL("image/jpeg", 0.88);
+    const tempBase64 = canvas.toDataURL("image/jpeg", 0.9);
 
     // Matikan kamera & bersihkan canvas segera (Gambar tidak disimpan)
     stopCameraStream();
@@ -449,15 +405,30 @@ export default function CorrespondenceManagement({
       setIsFormOpen(true);
     }
     setScanning(true);
-    setScanProgressText("Memproses tangkapan foto kamera HP...");
+    setScanProgressText("Memproses tangkapan foto surat...");
 
     try {
+      const isPdfFile =
+        file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
+      if (isPdfFile) {
+        const arrayBuf = await file.arrayBuffer();
+        const extractedJpegUrl = extractEmbeddedJpegFromPdfArrayBuffer(arrayBuf);
+        if (!extractedJpegUrl) {
+          throw new Error(
+            "File PDF ini tidak memiliki gambar hasil foto/scan di dalamnya. Silakan gunakan foto surat (JPG/PNG) atau kamera HP langsung."
+          );
+        }
+        await processScannedImageBase64(extractedJpegUrl, "image/jpeg");
+        return;
+      }
+
       const tempDataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
           const img = new Image();
           img.onload = () => {
-            const maxDim = 1800;
+            const maxDim = 2000;
             let w = img.width;
             let h = img.height;
             if (w > maxDim || h > maxDim) {
@@ -478,7 +449,7 @@ export default function CorrespondenceManagement({
               return;
             }
             ctx.drawImage(img, 0, 0, w, h);
-            const compressed = canvas.toDataURL("image/jpeg", 0.88);
+            const compressed = canvas.toDataURL("image/jpeg", 0.92);
             canvas.width = 0;
             canvas.height = 0;
             resolve(compressed);
@@ -500,7 +471,12 @@ export default function CorrespondenceManagement({
 
   const handleReparseManualText = () => {
     if (!manualRawTextToParse.trim()) return;
-    const parsed = parseIndonesianOfficialLetterText(manualRawTextToParse, schoolName, type);
+    const parsed = parseIndonesianOfficialLetterText(
+      manualRawTextToParse,
+      schoolName,
+      type,
+      principalName
+    );
     applyExtractedDataToForm(parsed);
     showToast("success", "Data kolom surat berhasil diperbarui dari teks surat!");
   };
@@ -841,7 +817,7 @@ export default function CorrespondenceManagement({
       <input
         ref={fileGalleryInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.pdf,application/pdf"
         onChange={handleFileOrNativeCameraCapture}
         className="hidden"
       />

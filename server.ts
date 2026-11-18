@@ -14364,12 +14364,18 @@ async function startServer() {
     try {
       const { imageBase64, mimeType, preferredType, rawOcrText } = req.body || {};
       const schoolNameRef = schoolIdentity?.name || "SMP Ma'arif NU Pandaan";
+      const principalNameRef = schoolIdentity?.principal || "H. Lasudi, S.Pd.";
       const todayIso = new Date().toISOString().split("T")[0];
       const prefType: "masuk" | "keluar" = preferredType === "keluar" ? "keluar" : "masuk";
 
       // Jika klien sudah mengirimkan hasil OCR mentah, langsung parse dengan struktur surat resmi Indonesia
       if (rawOcrText && typeof rawOcrText === "string" && rawOcrText.trim().length > 5) {
-        const parsedFromText = parseIndonesianOfficialLetterText(rawOcrText, schoolNameRef, prefType);
+        const parsedFromText = parseIndonesianOfficialLetterText(
+          rawOcrText,
+          schoolNameRef,
+          prefType,
+          principalNameRef
+        );
         return res.json({
           success: true,
           extracted: parsedFromText
@@ -14402,16 +14408,16 @@ Tugas Anda adalah membaca foto surat ini secara akurat dan mengekstrak seluruh i
 
 Petunjuk Ekstraksi:
 1. detectedType: Tentukan apakah surat ini adalah "masuk" (dikirim oleh instansi/pihak luar kepada ${schoolNameRef} / Kepala Sekolah / Guru / Siswa) atau "keluar" (diterbitkan oleh ${schoolNameRef} untuk pihak lain). Jika ragu, gunakan "${prefType}".
-2. letterNumber: Salin Nomor Surat persis seperti yang tertulis pada surat (contoh: "005/124/424.071/2026" atau "142/SMP.MNU/XI/2026").
-3. letterDate: Konversikan tanggal surat ke format YYYY-MM-DD (contoh: jika tertulis "Pandaan, 17 November 2026", hasilkan "2026-11-17"). Jika tidak ada tahun/tanggal jelas, gunakan "${todayIso}".
-4. sender: Nama instansi/lembaga/pihak pengirim surat (baca dari Kop Surat di bagian atas atau bagian penandatangan di bawah).
-5. recipient: Nama pihak tujuan/penerima surat (baca dari bagian "Kepada Yth..."). Jika surat masuk dan tujuan tidak tertulis eksplisit, isi "Kepala ${schoolNameRef}".
-6. subject: Perihal / Hal pokok surat. Jika tidak ada label "Perihal:", simpulkan judul pokok surat dari isi paragraf utama secara singkat dan jelas.
+2. letterNumber: Salin Nomor Surat persis seperti yang tertulis pada surat (contoh: "067/I05.28.080/SMP.Mrf/O/X/2026").
+3. letterDate: Konversikan tanggal penerbitan surat (yang tertulis setelah nama kota seperti "Pandaan, 21 Oktober 2026", BUKAN tanggal pelaksanaan acara) ke format YYYY-MM-DD (contoh: "2026-10-21"). Jika tidak ada tahun/tanggal jelas, gunakan "${todayIso}".
+4. sender: Nama instansi/lembaga/pihak pengirim surat (baca dari Kop Surat di bagian atas, abaikan teks miring dekoratif/logo).
+5. recipient: Nama pihak tujuan/penerima surat (baca dari bagian "Kepada Yth...").
+6. subject: Perihal / Hal pokok surat.
 7. category: Pilih salah satu klasifikasi yang paling sesuai: "Undangan", "Edaran", "Permohonan", "Pemberitahuan", "SK / Tugas", "Penting", "Rahasia", atau "Biasa".
-8. attachmentCount: Jumlah lampiran yang tertulis pada bagian "Lampiran:" (contoh: "-", "1 Lembar", "1 Berkas", "2 Eks"). Jika tidak ada, isi "-".
-9. signatory: Nama pejabat/pihak yang menandatangani surat beserta jabatannya (contoh: "Drs. H. Ahmad, M.Pd. (Kepala Dinas Pendidikan)").
-10. summary: Ringkasan padat dan jelas mengenai isi pokok surat (1-3 kalimat). Jika berupa undangan/kegiatan, cantumkan juga Hari/Tanggal, Jam, dan Tempat pelaksanaan yang tertulis di dalam surat.
-11. dispositionSuggestion: Saran tindak lanjut atau disposisi singkat (contoh: "Dihadiri Kepala Sekolah / Waka Kurikulum", "Diumumkan kepada Guru & Siswa", "Arsip Tata Usaha").`;
+8. attachmentCount: Jumlah lampiran yang tertulis pada bagian "Lampiran:" (contoh: "-", "1 Lembar").
+9. signatory: Nama pejabat/pihak yang menandatangani surat beserta jabatannya.
+10. summary: Ringkasan padat dan jelas mengenai isi pokok surat (1-3 kalimat) beserta Hari/Tanggal, Pukul, Tempat, dan Acara pelaksanaan jika ada. Abaikan bagian potongan kupon bukti kehadiran di bawah garis potong.
+11. dispositionSuggestion: Saran tindak lanjut atau Tindasan/Tembusan yang tertera pada surat.`;
 
           const response = await ai.models.generateContent({
             model: "gemini-4-hydrogen",
@@ -14489,7 +14495,12 @@ Petunjuk Ekstraksi:
       const imgBuffer = Buffer.from(cleanBase64, "base64");
       const ocrResult = await Tesseract.recognize(imgBuffer, "ind+eng");
       const recognizedText = ocrResult?.data?.text || "";
-      const parsed = parseIndonesianOfficialLetterText(recognizedText, schoolNameRef, prefType);
+      const parsed = parseIndonesianOfficialLetterText(
+        recognizedText,
+        schoolNameRef,
+        prefType,
+        principalNameRef
+      );
 
       return res.json({
         success: true,

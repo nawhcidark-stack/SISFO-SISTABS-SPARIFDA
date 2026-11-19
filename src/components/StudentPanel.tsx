@@ -8,7 +8,15 @@ import {
   RaporSubjectRow,
   buildCapaianTujuanPembelajaran,
   cleanSubjectDisplayName,
-  printRaporAkhirSemesterF4
+  printRaporAkhirSemesterF4,
+  DEFAULT_FINAL_MARGIN_TOP_CM,
+  DEFAULT_FINAL_MARGIN_BOTTOM_CM,
+  DEFAULT_FINAL_MARGIN_LEFT_CM,
+  DEFAULT_FINAL_MARGIN_RIGHT_CM,
+  DEFAULT_MIDTERM_MARGIN_TOP_CM,
+  DEFAULT_MIDTERM_MARGIN_BOTTOM_CM,
+  DEFAULT_MIDTERM_MARGIN_LEFT_CM,
+  DEFAULT_MIDTERM_MARGIN_RIGHT_CM
 } from '../utils/raporAkhirPrint';
 import { motion, AnimatePresence } from 'motion/react';
 import { GraduationCap, Award, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
@@ -241,7 +249,15 @@ export default function StudentPanel({
       schoolAddress: schoolIdentity?.address || '',
       principalName: schoolIdentity?.principal || '',
       fase: 'D',
-      showHomeroomNameInSig: true
+      showHomeroomNameInSig: true,
+      midtermMarginTopCm: DEFAULT_MIDTERM_MARGIN_TOP_CM,
+      midtermMarginBottomCm: DEFAULT_MIDTERM_MARGIN_BOTTOM_CM,
+      midtermMarginLeftCm: DEFAULT_MIDTERM_MARGIN_LEFT_CM,
+      midtermMarginRightCm: DEFAULT_MIDTERM_MARGIN_RIGHT_CM,
+      finalMarginTopCm: DEFAULT_FINAL_MARGIN_TOP_CM,
+      finalMarginBottomCm: DEFAULT_FINAL_MARGIN_BOTTOM_CM,
+      finalMarginLeftCm: DEFAULT_FINAL_MARGIN_LEFT_CM,
+      finalMarginRightCm: DEFAULT_FINAL_MARGIN_RIGHT_CM
     },
     studentRecords: {}
   });
@@ -724,6 +740,25 @@ export default function StudentPanel({
 
     const docTitle = `${isAkhir ? 'Rapor Akhir Semester' : 'Rapor Tengah Semester'} - ${currentStudent.name}`;
 
+    const midTopCm = Number.isFinite(Number(raporSemesterData.settings?.midtermMarginTopCm)) && Number(raporSemesterData.settings?.midtermMarginTopCm) >= 0
+      ? Number(raporSemesterData.settings?.midtermMarginTopCm)
+      : DEFAULT_MIDTERM_MARGIN_TOP_CM;
+    const midBottomCm = Number.isFinite(Number(raporSemesterData.settings?.midtermMarginBottomCm)) && Number(raporSemesterData.settings?.midtermMarginBottomCm) >= 0
+      ? Number(raporSemesterData.settings?.midtermMarginBottomCm)
+      : DEFAULT_MIDTERM_MARGIN_BOTTOM_CM;
+    const midLeftCm = Number.isFinite(Number(raporSemesterData.settings?.midtermMarginLeftCm)) && Number(raporSemesterData.settings?.midtermMarginLeftCm) >= 0
+      ? Number(raporSemesterData.settings?.midtermMarginLeftCm)
+      : DEFAULT_MIDTERM_MARGIN_LEFT_CM;
+    const midRightCm = Number.isFinite(Number(raporSemesterData.settings?.midtermMarginRightCm)) && Number(raporSemesterData.settings?.midtermMarginRightCm) >= 0
+      ? Number(raporSemesterData.settings?.midtermMarginRightCm)
+      : DEFAULT_MIDTERM_MARGIN_RIGHT_CM;
+
+    const midTopMm = Number((midTopCm * 10).toFixed(2));
+    const midBottomMm = Number((midBottomCm * 10).toFixed(2));
+    const midLeftMm = Number((midLeftCm * 10).toFixed(2));
+    const midRightMm = Number((midRightCm * 10).toFixed(2));
+    const midMaxHeightMm = Number(Math.max(150, 297 - midTopMm - midBottomMm).toFixed(2));
+
     printWin.document.write(`
       <!DOCTYPE html>
       <html>
@@ -733,7 +768,7 @@ export default function StudentPanel({
           <style>
             @page {
               size: A4 portrait;
-              margin: 4mm 6mm 4mm 6mm;
+              margin: ${midTopMm}mm ${midRightMm}mm ${midBottomMm}mm ${midLeftMm}mm;
             }
             * {
               box-sizing: border-box;
@@ -752,7 +787,7 @@ export default function StudentPanel({
               padding: 0;
               margin: 0;
               width: 100%;
-              max-height: 289mm;
+              max-height: ${midMaxHeightMm}mm;
               page-break-inside: avoid;
               break-inside: avoid;
               overflow: hidden;
@@ -770,7 +805,7 @@ export default function StudentPanel({
               .page-container {
                 page-break-inside: avoid;
                 break-inside: avoid;
-                max-height: 289mm;
+                max-height: ${midMaxHeightMm}mm;
                 overflow: hidden;
               }
             }

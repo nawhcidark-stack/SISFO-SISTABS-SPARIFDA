@@ -58,7 +58,15 @@ import {
   RaporSubjectRow,
   buildCapaianTujuanPembelajaran,
   cleanSubjectDisplayName,
-  printRaporAkhirSemesterF4
+  printRaporAkhirSemesterF4,
+  DEFAULT_FINAL_MARGIN_TOP_CM,
+  DEFAULT_FINAL_MARGIN_BOTTOM_CM,
+  DEFAULT_FINAL_MARGIN_LEFT_CM,
+  DEFAULT_FINAL_MARGIN_RIGHT_CM,
+  DEFAULT_MIDTERM_MARGIN_TOP_CM,
+  DEFAULT_MIDTERM_MARGIN_BOTTOM_CM,
+  DEFAULT_MIDTERM_MARGIN_LEFT_CM,
+  DEFAULT_MIDTERM_MARGIN_RIGHT_CM
 } from '../utils/raporAkhirPrint';
 import { RaporAkhirF4Preview } from './RaporAkhirF4Preview';
 import { WakaExtracurricularView } from './WakaExtracurricularView';
@@ -943,7 +951,15 @@ export default function WakaKurikulumPanel({
       schoolAddress: schoolIdentity?.address || '',
       principalName: schoolIdentity?.principal || '',
       fase: 'D',
-      showHomeroomNameInSig: true
+      showHomeroomNameInSig: true,
+      midtermMarginTopCm: DEFAULT_MIDTERM_MARGIN_TOP_CM,
+      midtermMarginBottomCm: DEFAULT_MIDTERM_MARGIN_BOTTOM_CM,
+      midtermMarginLeftCm: DEFAULT_MIDTERM_MARGIN_LEFT_CM,
+      midtermMarginRightCm: DEFAULT_MIDTERM_MARGIN_RIGHT_CM,
+      finalMarginTopCm: DEFAULT_FINAL_MARGIN_TOP_CM,
+      finalMarginBottomCm: DEFAULT_FINAL_MARGIN_BOTTOM_CM,
+      finalMarginLeftCm: DEFAULT_FINAL_MARGIN_LEFT_CM,
+      finalMarginRightCm: DEFAULT_FINAL_MARGIN_RIGHT_CM
     },
     studentRecords: {}
   });
@@ -1635,6 +1651,25 @@ export default function WakaKurikulumPanel({
     const effectiveTitle = titleLabel || (selectedRaporClass.startsWith('ALL_GRADE_') ? `Tingkat Kelas ${selectedRaporClass.replace('ALL_GRADE_', '')}` : `Kelas ${selectedRaporClass}`);
     const docTitle = `${isAkhir ? 'Rapor Akhir Semester' : 'Rapor Tengah Semester'} - ${effectiveTitle}`;
 
+    const midTopCm = Number.isFinite(Number(raporSemesterData.settings?.midtermMarginTopCm)) && Number(raporSemesterData.settings?.midtermMarginTopCm) >= 0
+      ? Number(raporSemesterData.settings?.midtermMarginTopCm)
+      : DEFAULT_MIDTERM_MARGIN_TOP_CM;
+    const midBottomCm = Number.isFinite(Number(raporSemesterData.settings?.midtermMarginBottomCm)) && Number(raporSemesterData.settings?.midtermMarginBottomCm) >= 0
+      ? Number(raporSemesterData.settings?.midtermMarginBottomCm)
+      : DEFAULT_MIDTERM_MARGIN_BOTTOM_CM;
+    const midLeftCm = Number.isFinite(Number(raporSemesterData.settings?.midtermMarginLeftCm)) && Number(raporSemesterData.settings?.midtermMarginLeftCm) >= 0
+      ? Number(raporSemesterData.settings?.midtermMarginLeftCm)
+      : DEFAULT_MIDTERM_MARGIN_LEFT_CM;
+    const midRightCm = Number.isFinite(Number(raporSemesterData.settings?.midtermMarginRightCm)) && Number(raporSemesterData.settings?.midtermMarginRightCm) >= 0
+      ? Number(raporSemesterData.settings?.midtermMarginRightCm)
+      : DEFAULT_MIDTERM_MARGIN_RIGHT_CM;
+
+    const midTopMm = Number((midTopCm * 10).toFixed(2));
+    const midBottomMm = Number((midBottomCm * 10).toFixed(2));
+    const midLeftMm = Number((midLeftCm * 10).toFixed(2));
+    const midRightMm = Number((midRightCm * 10).toFixed(2));
+    const midMaxHeightMm = Number(Math.max(150, 297 - midTopMm - midBottomMm).toFixed(2));
+
     printWin.document.write(`
       <!DOCTYPE html>
       <html>
@@ -1644,7 +1679,7 @@ export default function WakaKurikulumPanel({
           <style>
             @page {
               size: A4 portrait;
-              margin: 4mm 6mm 4mm 6mm;
+              margin: ${midTopMm}mm ${midRightMm}mm ${midBottomMm}mm ${midLeftMm}mm;
             }
             * {
               box-sizing: border-box;
@@ -1663,7 +1698,7 @@ export default function WakaKurikulumPanel({
               padding: 0;
               margin: 0;
               width: 100%;
-              max-height: 289mm;
+              max-height: ${midMaxHeightMm}mm;
               page-break-inside: avoid;
               break-inside: avoid;
               page-break-after: always;
@@ -1689,7 +1724,7 @@ export default function WakaKurikulumPanel({
                 break-inside: avoid;
                 page-break-after: always;
                 break-after: page;
-                max-height: 289mm;
+                max-height: ${midMaxHeightMm}mm;
                 overflow: hidden;
               }
               .page-container:last-child {
@@ -6623,6 +6658,105 @@ export default function WakaKurikulumPanel({
                 />
               </div>
             </div>
+
+            {/* Pengaturan Margin Cetak Rapor Tengah Semester */}
+            <div className="mt-4 pt-3.5 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10.5px] font-black uppercase tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
+                    Pengaturan Margin Cetak Rapor Tengah Semester (cm)
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Kertas A4 Portrait &bull; Tersimpan otomatis ke MySQL
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    saveRaporSettingsToMysql({
+                      midtermMarginTopCm: DEFAULT_MIDTERM_MARGIN_TOP_CM,
+                      midtermMarginBottomCm: DEFAULT_MIDTERM_MARGIN_BOTTOM_CM,
+                      midtermMarginLeftCm: DEFAULT_MIDTERM_MARGIN_LEFT_CM,
+                      midtermMarginRightCm: DEFAULT_MIDTERM_MARGIN_RIGHT_CM
+                    })
+                  }
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10.5px] font-extrabold cursor-pointer transition-colors"
+                >
+                  Reset Default ({DEFAULT_MIDTERM_MARGIN_TOP_CM} / {DEFAULT_MIDTERM_MARGIN_BOTTOM_CM} / {DEFAULT_MIDTERM_MARGIN_LEFT_CM} / {DEFAULT_MIDTERM_MARGIN_RIGHT_CM} cm)
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                    Margin Atas (cm)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="10"
+                    value={raporSemesterData.settings?.midtermMarginTopCm ?? DEFAULT_MIDTERM_MARGIN_TOP_CM}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      saveRaporSettingsToMysql({ midtermMarginTopCm: Number.isFinite(val) ? val : 0 });
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                    Margin Bawah (cm)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="10"
+                    value={raporSemesterData.settings?.midtermMarginBottomCm ?? DEFAULT_MIDTERM_MARGIN_BOTTOM_CM}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      saveRaporSettingsToMysql({ midtermMarginBottomCm: Number.isFinite(val) ? val : 0 });
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                    Margin Kiri (cm)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="10"
+                    value={raporSemesterData.settings?.midtermMarginLeftCm ?? DEFAULT_MIDTERM_MARGIN_LEFT_CM}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      saveRaporSettingsToMysql({ midtermMarginLeftCm: Number.isFinite(val) ? val : 0 });
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                    Margin Kanan (cm)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="10"
+                    value={raporSemesterData.settings?.midtermMarginRightCm ?? DEFAULT_MIDTERM_MARGIN_RIGHT_CM}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      saveRaporSettingsToMysql({ midtermMarginRightCm: Number.isFinite(val) ? val : 0 });
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Main Grid: Student Selector (Left) & Report Preview (Right) */}
@@ -7327,6 +7461,105 @@ export default function WakaKurikulumPanel({
                       placeholder={schoolIdentity?.principal || 'Nama Kepala Sekolah'}
                       className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
                     />
+                  </div>
+                </div>
+
+                {/* Pengaturan Margin Cetak Rapor Akhir Semester */}
+                <div className="mt-4 pt-3.5 border-t border-slate-100">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10.5px] font-black uppercase tracking-wider text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-lg">
+                        Pengaturan Margin Cetak Rapor Akhir Semester (cm)
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        Kertas F4 Custom (21,59 &times; 32,04 cm) &bull; Tersimpan otomatis ke MySQL
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        saveRaporSettingsToMysql({
+                          finalMarginTopCm: DEFAULT_FINAL_MARGIN_TOP_CM,
+                          finalMarginBottomCm: DEFAULT_FINAL_MARGIN_BOTTOM_CM,
+                          finalMarginLeftCm: DEFAULT_FINAL_MARGIN_LEFT_CM,
+                          finalMarginRightCm: DEFAULT_FINAL_MARGIN_RIGHT_CM
+                        })
+                      }
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10.5px] font-extrabold cursor-pointer transition-colors"
+                    >
+                      Reset Default (Atas {DEFAULT_FINAL_MARGIN_TOP_CM} / Bawah {DEFAULT_FINAL_MARGIN_BOTTOM_CM} / Kiri {DEFAULT_FINAL_MARGIN_LEFT_CM} / Kanan {DEFAULT_FINAL_MARGIN_RIGHT_CM} cm)
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                        Margin Atas (cm)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="12"
+                        value={raporSemesterData.settings?.finalMarginTopCm ?? DEFAULT_FINAL_MARGIN_TOP_CM}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          saveRaporSettingsToMysql({ finalMarginTopCm: Number.isFinite(val) ? val : 0 });
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                        Margin Bawah (cm)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="12"
+                        value={raporSemesterData.settings?.finalMarginBottomCm ?? DEFAULT_FINAL_MARGIN_BOTTOM_CM}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          saveRaporSettingsToMysql({ finalMarginBottomCm: Number.isFinite(val) ? val : 0 });
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                        Margin Kiri (cm)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="10"
+                        value={raporSemesterData.settings?.finalMarginLeftCm ?? DEFAULT_FINAL_MARGIN_LEFT_CM}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          saveRaporSettingsToMysql({ finalMarginLeftCm: Number.isFinite(val) ? val : 0 });
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1">
+                        Margin Kanan (cm)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="10"
+                        value={raporSemesterData.settings?.finalMarginRightCm ?? DEFAULT_FINAL_MARGIN_RIGHT_CM}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          saveRaporSettingsToMysql({ finalMarginRightCm: Number.isFinite(val) ? val : 0 });
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 transition-colors"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

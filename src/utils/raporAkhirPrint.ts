@@ -30,6 +30,16 @@ export interface RaporStudentRecord {
   updatedAt?: string;
 }
 
+export const DEFAULT_FINAL_MARGIN_TOP_CM = 4.96; // Sebelumnya 3.96 cm (+1 cm)
+export const DEFAULT_FINAL_MARGIN_BOTTOM_CM = 1.22; // Sebelumnya 2.22 cm (-1 cm)
+export const DEFAULT_FINAL_MARGIN_LEFT_CM = 1.71;
+export const DEFAULT_FINAL_MARGIN_RIGHT_CM = 1.58;
+
+export const DEFAULT_MIDTERM_MARGIN_TOP_CM = 0.4;
+export const DEFAULT_MIDTERM_MARGIN_BOTTOM_CM = 0.4;
+export const DEFAULT_MIDTERM_MARGIN_LEFT_CM = 0.6;
+export const DEFAULT_MIDTERM_MARGIN_RIGHT_CM = 0.6;
+
 export interface RaporSemesterDataConfig {
   settings: {
     place: string;
@@ -40,6 +50,16 @@ export interface RaporSemesterDataConfig {
     principalName: string;
     fase: string;
     showHomeroomNameInSig?: boolean;
+    // Pengaturan Margin Cetak Rapor Tengah Semester (dalam cm)
+    midtermMarginTopCm?: number;
+    midtermMarginBottomCm?: number;
+    midtermMarginLeftCm?: number;
+    midtermMarginRightCm?: number;
+    // Pengaturan Margin Cetak Rapor Akhir Semester (dalam cm)
+    finalMarginTopCm?: number;
+    finalMarginBottomCm?: number;
+    finalMarginLeftCm?: number;
+    finalMarginRightCm?: number;
   };
   extracurricularMaster?: ExtracurricularMasterItem[];
   studentRecords: Record<string, RaporStudentRecord>;
@@ -921,6 +941,31 @@ export function printRaporAkhirSemesterF4(params: {
     `;
   }).join('');
 
+  const marginTopCm = Number.isFinite(Number(raporSettings?.finalMarginTopCm)) && Number(raporSettings?.finalMarginTopCm) >= 0
+    ? Number(raporSettings?.finalMarginTopCm)
+    : DEFAULT_FINAL_MARGIN_TOP_CM;
+  const marginBottomCm = Number.isFinite(Number(raporSettings?.finalMarginBottomCm)) && Number(raporSettings?.finalMarginBottomCm) >= 0
+    ? Number(raporSettings?.finalMarginBottomCm)
+    : DEFAULT_FINAL_MARGIN_BOTTOM_CM;
+  const marginLeftCm = Number.isFinite(Number(raporSettings?.finalMarginLeftCm)) && Number(raporSettings?.finalMarginLeftCm) >= 0
+    ? Number(raporSettings?.finalMarginLeftCm)
+    : DEFAULT_FINAL_MARGIN_LEFT_CM;
+  const marginRightCm = Number.isFinite(Number(raporSettings?.finalMarginRightCm)) && Number(raporSettings?.finalMarginRightCm) >= 0
+    ? Number(raporSettings?.finalMarginRightCm)
+    : DEFAULT_FINAL_MARGIN_RIGHT_CM;
+
+  const marginTopMm = Number((marginTopCm * 10).toFixed(2));
+  const marginBottomMm = Number((marginBottomCm * 10).toFixed(2));
+  const marginLeftMm = Number((marginLeftCm * 10).toFixed(2));
+  const marginRightMm = Number((marginRightCm * 10).toFixed(2));
+
+  const footerHeightMm = 4.0;
+  // Proporsikan jarak bawah halaman sampai footer dan jarak tabel ke footer berdasarkan total margin bawah
+  const availBelowTableMm = Math.max(0, Number((marginBottomMm - footerHeightMm).toFixed(2)));
+  const pagePaddingBottomMm = Number((availBelowTableMm * 0.65).toFixed(2));
+  const bodyGapToFooterMm = Number(Math.max(0, availBelowTableMm - pagePaddingBottomMm).toFixed(2));
+  const bodyHeightMm = Number(Math.max(120, 320.4 - marginTopMm - marginBottomMm).toFixed(2));
+
   printWin.document.open();
   printWin.document.write(`
     <!DOCTYPE html>
@@ -930,7 +975,7 @@ export function printRaporAkhirSemesterF4(params: {
       <title>Rapor Akhir Semester - F4 (21,59 cm x 32,04 cm)</title>
       <style>
         /* Kertas F4 Custom: Lebar 21,59 cm x Panjang 32,04 cm */
-        /* Margin: Atas 3,96 cm, Kanan 1,58 cm, Kiri 1,71 cm, Bawah sampai Tabel 2,22 cm, Bawah sampai batas Footer 1,26 cm */
+        /* Margin: Atas ${marginTopCm} cm (${marginTopMm}mm), Bawah ${marginBottomCm} cm (${marginBottomMm}mm), Kiri ${marginLeftCm} cm (${marginLeftMm}mm), Kanan ${marginRightCm} cm (${marginRightMm}mm) */
         @page {
           size: 215.9mm 320.4mm;
           margin: 0mm;
@@ -951,10 +996,10 @@ export function printRaporAkhirSemesterF4(params: {
         .rapor-f4-page {
           width: 215.9mm;
           height: 320.4mm;
-          padding-top: 39.6mm;
-          padding-left: 17.1mm;
-          padding-right: 15.8mm;
-          padding-bottom: 12.6mm;
+          padding-top: ${marginTopMm}mm;
+          padding-left: ${marginLeftMm}mm;
+          padding-right: ${marginRightMm}mm;
+          padding-bottom: ${pagePaddingBottomMm}mm;
           display: flex;
           flex-direction: column;
           justify-content: space-between;
@@ -968,15 +1013,11 @@ export function printRaporAkhirSemesterF4(params: {
           page-break-after: auto;
           break-after: auto;
         }
-        /* Margin bawah sampai Tabel = 2,22 cm (22.2mm).
-           Karena padding-bottom halaman = 1,26 cm (12.6mm) dan tinggi footer = 4.0mm,
-           maka jarak (margin-bottom) dari batas bawah Tabel/page-body ke atas Footer = 22.2mm - 12.6mm - 4.0mm = 5.6mm.
-           Tinggi bersih area konten/page-body = 320.4mm - 39.6mm - 22.2mm = 258.6mm. */
         .page-body {
           flex: 1 1 0%;
-          height: 258.6mm;
-          max-height: 258.6mm;
-          margin-bottom: 5.6mm;
+          height: ${bodyHeightMm}mm;
+          max-height: ${bodyHeightMm}mm;
+          margin-bottom: ${bodyGapToFooterMm}mm;
           display: flex;
           flex-direction: column;
           min-height: 0;
@@ -984,9 +1025,9 @@ export function printRaporAkhirSemesterF4(params: {
         }
         .page-body-p1 {
           flex: 1 1 0%;
-          height: 258.6mm;
-          max-height: 258.6mm;
-          margin-bottom: 5.6mm;
+          height: ${bodyHeightMm}mm;
+          max-height: ${bodyHeightMm}mm;
+          margin-bottom: ${bodyGapToFooterMm}mm;
           display: flex;
           flex-direction: column;
           min-height: 0;

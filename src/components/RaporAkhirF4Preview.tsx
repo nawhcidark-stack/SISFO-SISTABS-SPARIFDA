@@ -10,7 +10,11 @@ import {
   formatClassLabelForRapor,
   resolveSubjectCapaianTopBottom,
   getDisplayedExtracurricularRows,
-  buildExtracurricularDescription
+  buildExtracurricularDescription,
+  DEFAULT_FINAL_MARGIN_TOP_CM,
+  DEFAULT_FINAL_MARGIN_BOTTOM_CM,
+  DEFAULT_FINAL_MARGIN_LEFT_CM,
+  DEFAULT_FINAL_MARGIN_RIGHT_CM
 } from '../utils/raporAkhirPrint';
 import { Save, Edit2, Award, CheckCircle2, Plus, Trash2 } from 'lucide-react';
 
@@ -119,6 +123,20 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
     'Kepala Sekolah';
   const fase = raporSettings.fase || 'D';
   const classDisplay = formatClassLabelForRapor(student.class);
+
+  const marginTopCm = Number.isFinite(Number(raporSettings?.finalMarginTopCm)) && Number(raporSettings?.finalMarginTopCm) >= 0
+    ? Number(raporSettings?.finalMarginTopCm)
+    : DEFAULT_FINAL_MARGIN_TOP_CM;
+  const marginBottomCm = Number.isFinite(Number(raporSettings?.finalMarginBottomCm)) && Number(raporSettings?.finalMarginBottomCm) >= 0
+    ? Number(raporSettings?.finalMarginBottomCm)
+    : DEFAULT_FINAL_MARGIN_BOTTOM_CM;
+  const marginLeftCm = Number.isFinite(Number(raporSettings?.finalMarginLeftCm)) && Number(raporSettings?.finalMarginLeftCm) >= 0
+    ? Number(raporSettings?.finalMarginLeftCm)
+    : DEFAULT_FINAL_MARGIN_LEFT_CM;
+  const marginRightCm = Number.isFinite(Number(raporSettings?.finalMarginRightCm)) && Number(raporSettings?.finalMarginRightCm) >= 0
+    ? Number(raporSettings?.finalMarginRightCm)
+    : DEFAULT_FINAL_MARGIN_RIGHT_CM;
+  const fmtCm = (n: number) => n.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
   const renderIdentityBox = () => (
     <div className="border-t border-b border-black py-1.5 mb-2.5 text-[11pt] leading-snug text-black shrink-0">
@@ -372,7 +390,7 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
       <div className="bg-white border-2 border-slate-300 rounded-2xl pt-6 sm:pt-8 px-6 sm:px-8 pb-[12.6mm] shadow-sm text-black font-sans text-[11pt] select-text relative min-h-[1080px] flex flex-col justify-between overflow-hidden">
         <div className="flex-1 flex flex-col min-h-0 mb-[5.6mm]">
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-dashed border-slate-200 text-[10px] text-slate-400 font-mono shrink-0">
-            <span>LEMBAR 1 &bull; KERTAS F4 (21,59 &times; 32,04 cm) &bull; FONT 11pt &bull; MARGIN BAWAH TABEL 2,22 cm &bull; FOOTER 1,26 cm</span>
+            <span>LEMBAR 1 &bull; KERTAS F4 (21,59 &times; 32,04 cm) &bull; MARGIN ATAS {fmtCm(marginTopCm)} cm &bull; BAWAH {fmtCm(marginBottomCm)} cm &bull; KIRI {fmtCm(marginLeftCm)} cm &bull; KANAN {fmtCm(marginRightCm)} cm</span>
             <span className="font-bold text-purple-600">HALAMAN 1 (Mapel No. 1 - 9)</span>
           </div>
 
@@ -415,7 +433,7 @@ export const RaporAkhirF4Preview: React.FC<RaporAkhirF4PreviewProps> = ({
       <div className="bg-white border-2 border-slate-300 rounded-2xl pt-6 sm:pt-8 px-6 sm:px-8 pb-[12.6mm] shadow-sm text-black font-sans text-[11pt] select-text relative min-h-[1080px] flex flex-col justify-between">
         <div className="flex-1 flex flex-col">
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-dashed border-slate-200 text-[10px] text-slate-400 font-mono shrink-0">
-            <span>LEMBAR 2 &bull; KERTAS F4 (21,59 &times; 32,04 cm) &bull; FONT 11pt &bull; MARGIN BAWAH TABEL 2,22 cm &bull; FOOTER 1,26 cm</span>
+            <span>LEMBAR 2 &bull; KERTAS F4 (21,59 &times; 32,04 cm) &bull; MARGIN ATAS {fmtCm(marginTopCm)} cm &bull; BAWAH {fmtCm(marginBottomCm)} cm &bull; KIRI {fmtCm(marginLeftCm)} cm &bull; KANAN {fmtCm(marginRightCm)} cm</span>
             <span className="font-bold text-purple-600">HALAMAN 2 (Mapel No. 10, Mulok 11-12, Ekskul, Absensi &amp; TTD)</span>
           </div>
 

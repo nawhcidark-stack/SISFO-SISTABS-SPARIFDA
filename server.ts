@@ -573,6 +573,14 @@ export interface RaporSemesterDataConfig {
     principalName: string;
     fase: string;
     showHomeroomNameInSig?: boolean;
+    midtermMarginTopCm?: number;
+    midtermMarginBottomCm?: number;
+    midtermMarginLeftCm?: number;
+    midtermMarginRightCm?: number;
+    finalMarginTopCm?: number;
+    finalMarginBottomCm?: number;
+    finalMarginLeftCm?: number;
+    finalMarginRightCm?: number;
   };
   extracurricularMaster?: Array<{ id_ekstra: string; nama_ekstra: string }>;
   studentRecords: Record<string, RaporStudentRecord>;
@@ -587,7 +595,15 @@ let raporSemesterData: RaporSemesterDataConfig = {
     schoolAddress: "",
     principalName: "",
     fase: "D",
-    showHomeroomNameInSig: true
+    showHomeroomNameInSig: true,
+    midtermMarginTopCm: 0.4,
+    midtermMarginBottomCm: 0.4,
+    midtermMarginLeftCm: 0.6,
+    midtermMarginRightCm: 0.6,
+    finalMarginTopCm: 4.96,
+    finalMarginBottomCm: 1.22,
+    finalMarginLeftCm: 1.71,
+    finalMarginRightCm: 1.58
   },
   extracurricularMaster: [],
   studentRecords: {}

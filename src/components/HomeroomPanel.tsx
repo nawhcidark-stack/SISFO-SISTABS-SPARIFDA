@@ -23,7 +23,7 @@ import {
   Download, Copy, Search, Wallet, CreditCard, CheckCircle, CheckCircle2, Clock, User, Key, Lock, Unlock,
   Printer, FileText, Plus, Trash2, Edit, Award, Heart, Smile, Megaphone, AlertTriangle,
   LayoutGrid, Home, Smartphone, Apple, Filter, RotateCcw, ArrowUpDown,
-  FileSpreadsheet, Upload, X, PanelLeftClose, PanelLeftOpen
+  FileSpreadsheet, Upload, X, PanelLeftClose, PanelLeftOpen, Menu
 } from 'lucide-react';
 
 // Standalone Type-Safe Print Helper Functions (Isolated from JSX rendering context)
@@ -4260,124 +4260,175 @@ Wassalamualaikum Wr. Wb.
       </div>
 
       {/* Primary Workspace */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start relative">
-        {/* Tombol Mengambang di Sisi Kiri Layar Saat Side Menu Disembunyikan */}
-        {isSidebarCollapsed && (
-          <button
-            type="button"
-            onClick={() => setIsSidebarCollapsed(false)}
-            title="Tampilkan Side Menu Wali Kelas"
-            className="hidden md:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900 hover:bg-indigo-600 text-white py-3.5 px-2 rounded-r-2xl shadow-xl border border-l-0 border-slate-700 items-center gap-1.5 cursor-pointer transition-all group print:hidden"
-          >
-            <PanelLeftOpen size={16} className="text-emerald-400 group-hover:scale-110 transition-transform" />
-            <span className="[writing-mode:vertical-lr] rotate-180 text-[10px] font-black uppercase tracking-widest">
-              Buka Menu
-            </span>
-          </button>
-        )}
-
+      <div className="flex flex-col md:flex-row gap-6 items-start relative">
         {/* Left Control Column (Date and Subtabs selector) - Hidden on mobile, controlled via bottom nav */}
         <div
-          className={`${
-            isSidebarCollapsed ? "hidden" : "hidden md:flex md:col-span-3"
-          } flex-col gap-4 transition-all duration-200 print:hidden`}
+          className={`hidden md:flex flex-col gap-4 shrink-0 transition-all duration-300 ease-in-out print:hidden ${
+            isSidebarCollapsed ? "md:w-[68px]" : "md:w-72"
+          }`}
         >
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-inner flex flex-col gap-5 text-left">
-            <div className="flex items-start justify-between gap-2 pb-2 border-b border-slate-100">
-              <div>
-                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Atur Parameter</span>
-                <h3 className="text-slate-900 font-extrabold text-sm mt-1">Absensi Kelas {currentTeacher.className}</h3>
-              </div>
+          <div
+            className={`bg-white border border-slate-200 rounded-2xl shadow-inner flex flex-col text-left overflow-hidden transition-all duration-300 ease-in-out ${
+              isSidebarCollapsed ? "p-2.5 gap-2" : "p-4 gap-4"
+            }`}
+          >
+            <div className="flex items-center px-1 pb-2.5 border-b border-slate-100">
               <button
                 type="button"
-                onClick={() => setIsSidebarCollapsed(true)}
-                title="Sembunyikan Side Menu ke Sisi Kiri"
-                className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-extrabold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+                title={
+                  isSidebarCollapsed
+                    ? "Tampilkan Teks Side Menu"
+                    : "Sembunyikan Teks Side Menu"
+                }
+                aria-label="Toggle Teks Side Menu"
+                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-900 text-slate-700 hover:text-white flex items-center justify-center cursor-pointer transition-all duration-200 shrink-0 shadow-2xs"
               >
-                <PanelLeftClose size={13} />
-                <span>Sembunyikan</span>
+                <Menu size={17} />
               </button>
+              <div
+                className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                  isSidebarCollapsed
+                    ? "max-w-0 opacity-0 -translate-x-4 ml-0 pointer-events-none"
+                    : "max-w-[190px] opacity-100 translate-x-0 ml-2.5"
+                }`}
+              >
+                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  Atur Parameter
+                </span>
+                <h3 className="text-slate-900 font-extrabold text-xs mt-0.5 truncate">
+                  Absensi Kelas {currentTeacher.className}
+                </h3>
+              </div>
             </div>
 
             {/* Subtab selection */}
-            <div className="flex flex-col gap-1.5 p-1 bg-slate-50 border border-slate-200 rounded-xl">
+            <div className="flex flex-col gap-1.5 p-1 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
               <button
                 id="tab-btn-record"
                 onClick={() => setActiveSubTab('record')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'record'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
                 title="Pengisian Absensi"
               >
-                <span className="text-sm">📝</span>
-                <span className="inline">Pengisian Absensi</span>
+                <span className="text-sm shrink-0 w-5 text-center">📝</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Pengisian Absensi
+                </span>
               </button>
               <button
                 id="tab-btn-jadwal"
                 onClick={() => setActiveSubTab('jadwal')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'jadwal'
                     ? 'bg-indigo-600 text-white shadow-md'
                     : 'text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100/60'
                 }`}
                 title="Matriks Jadwal Pelajaran Kelas & Guru"
               >
-                <span className="text-sm">📅</span>
-                <span className="inline">Jadwal Pelajaran</span>
+                <span className="text-sm shrink-0 w-5 text-center">📅</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Jadwal Pelajaran
+                </span>
               </button>
               <button
                 id="tab-btn-history"
                 onClick={() => setActiveSubTab('history')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'history'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
                 title="Riwayat Jurnal Kelas"
               >
-                <span className="text-sm">📊</span>
-                <span className="inline">Riwayat Jurnal</span>
+                <span className="text-sm shrink-0 w-5 text-center">📊</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Riwayat Jurnal
+                </span>
               </button>
               <button
                 id="tab-btn-rekap"
                 onClick={() => setActiveSubTab('rekap_absensi')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'rekap_absensi'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
                 title="Rekap Absensi Kelas"
               >
-                <span className="text-sm">📉</span>
-                <span className="inline">Rekap Absensi</span>
+                <span className="text-sm shrink-0 w-5 text-center">📉</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Rekap Absensi
+                </span>
               </button>
               <button
                 id="tab-btn-finance"
                 onClick={() => setActiveSubTab('finance')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'finance'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
                 title="Tabungan & Tagihan SPP"
               >
-                <span className="text-sm">💳</span>
-                <span className="inline">Tabungan & SPP</span>
+                <span className="text-sm shrink-0 w-5 text-center">💳</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Tabungan &amp; SPP
+                </span>
               </button>
               <button
                 id="tab-btn-perkembangan"
                 onClick={() => setActiveSubTab('perkembangan')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'perkembangan'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
                 title="Jurnal Perkembangan Siswa"
               >
-                <span className="text-sm">📈</span>
-                <span className="inline">Jurnal Perkembangan</span>
+                <span className="text-sm shrink-0 w-5 text-center">📈</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Jurnal Perkembangan
+                </span>
               </button>
               <button
                 id="tab-btn-poin-pelanggaran"
@@ -4385,90 +4436,144 @@ Wassalamualaikum Wr. Wb.
                   setActiveSubTab('poin_pelanggaran');
                   fetchInfractions();
                 }}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'poin_pelanggaran'
                     ? 'bg-rose-600 text-white shadow-md'
                     : 'text-rose-700 bg-rose-50/70 hover:bg-rose-100'
                 }`}
                 title="Poin Pelanggaran Kelas"
               >
-                <span className="text-sm">⚠️</span>
-                <span className="inline">Poin Pelanggaran</span>
+                <span className="text-sm shrink-0 w-5 text-center">⚠️</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Poin Pelanggaran
+                </span>
               </button>
               <button
                 id="tab-btn-profile"
                 onClick={() => setActiveSubTab('profile')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'profile'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
                 title="Profil Wali Kelas & Ubah Sandi"
               >
-                <span className="text-sm">👤</span>
-                <span className="inline">Profil & Sandi</span>
+                <span className="text-sm shrink-0 w-5 text-center">👤</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Profil &amp; Sandi
+                </span>
               </button>
 
               <button
                 id="tab-btn-kokurikuler"
                 onClick={() => setActiveSubTab('kokurikuler')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'kokurikuler'
                     ? 'bg-purple-600 text-white shadow-md'
                     : 'text-purple-700 bg-purple-50 hover:bg-purple-100'
                 }`}
                 title="Input Nilai Kokurikuler Kelas Binaan"
               >
-                <span className="text-sm">⭐</span>
-                <span className="inline">Nilai Kokurikuler</span>
+                <span className="text-sm shrink-0 w-5 text-center">⭐</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Nilai Kokurikuler
+                </span>
               </button>
 
               <button
                 id="tab-btn-ujian-online"
                 onClick={() => setActiveSubTab('ujian_online')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'ujian_online'
                     ? 'bg-[#185abd] text-white shadow-md'
                     : 'text-[#185abd] bg-blue-50 hover:bg-blue-100'
                 }`}
                 title="Buat Soal Ujian Online (Lembar Kerja Microsoft Word)"
               >
-                <span className="text-sm">📝</span>
-                <span className="inline">Buat Soal Ujian (CBT)</span>
+                <span className="text-sm shrink-0 w-5 text-center">📝</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Buat Soal Ujian (CBT)
+                </span>
               </button>
 
               <button
                 id="tab-btn-pkg"
                 onClick={() => setActiveSubTab('pkg')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'pkg'
                     ? 'bg-amber-600 text-white shadow-md'
                     : 'text-amber-700 bg-amber-50 hover:bg-amber-100'
                 }`}
                 title="Evaluasi Penilaian Kinerja Guru oleh Kepala Sekolah"
               >
-                <span className="text-sm">🎖️</span>
-                <span className="inline">Kinerja (PKG)</span>
+                <span className="text-sm shrink-0 w-5 text-center">🎖️</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Kinerja (PKG)
+                </span>
               </button>
 
               <button
                 id="tab-btn-buku-induk"
                 onClick={() => setActiveSubTab('buku_induk')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'buku_induk'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-650 bg-slate-100 hover:bg-slate-200'
                 }`}
                 title="Buku Induk Kesiswaan Digital Kelas Binaan"
               >
-                <span className="text-sm">📗</span>
-                <span className="inline">Buku Induk Kelas</span>
+                <span className="text-sm shrink-0 w-5 text-center">📗</span>
+                <span
+                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                    isSidebarCollapsed
+                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
+                  }`}
+                >
+                  Buku Induk Kelas
+                </span>
               </button>
             </div>
 
             {/* Date Picker input widget */}
             {activeSubTab === 'record' && (
-              <div className="flex flex-col gap-1.5 pt-3 border-t border-slate-100">
+              <div
+                className={`flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
+                  isSidebarCollapsed
+                    ? 'max-h-0 opacity-0 pt-0 border-t-0 pointer-events-none'
+                    : 'max-h-32 opacity-100 gap-1.5 pt-3 border-t border-slate-100'
+                }`}
+              >
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tanggal Kalender</label>
                 <div className="relative">
                   <input
@@ -4486,9 +4591,15 @@ Wassalamualaikum Wr. Wb.
           </div>
 
           {/* Unduh Aplikasi Mobile Block */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-xs flex flex-col gap-2 text-left">
-            <h4 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-              <Smartphone size={14} className="text-emerald-700" /> Aplikasi Mobile Sekolah
+          <div
+            className={`bg-white rounded-xl border border-slate-200 shadow-sm text-xs flex flex-col text-left overflow-hidden transition-all duration-300 ease-in-out ${
+              isSidebarCollapsed
+                ? 'max-h-0 opacity-0 p-0 border-0 pointer-events-none'
+                : 'max-h-48 opacity-100 p-4 gap-2'
+            }`}
+          >
+            <h4 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
+              <Smartphone size={14} className="text-emerald-700 shrink-0" /> Aplikasi Mobile Sekolah
             </h4>
             <div className="grid grid-cols-2 gap-2 mt-1">
               <a
@@ -4534,26 +4645,7 @@ Wassalamualaikum Wr. Wb.
         </div>
 
         {/* Right Details/List/Form Column */}
-        <div
-          className={`${
-            isSidebarCollapsed ? "md:col-span-12" : "md:col-span-9"
-          } min-w-0 w-full font-sans flex flex-col gap-4 transition-all duration-200`}
-        >
-          {isSidebarCollapsed && (
-            <div className="hidden md:flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-2xs print:hidden">
-              <button
-                type="button"
-                onClick={() => setIsSidebarCollapsed(false)}
-                className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center gap-2 cursor-pointer shadow-xs transition-all"
-              >
-                <PanelLeftOpen size={14} className="text-emerald-400" />
-                <span>Tampilkan Side Menu Wali Kelas</span>
-              </button>
-              <span className="text-[11px] font-semibold text-slate-500">
-                Mode Layar Penuh Aktif • Side menu disembunyikan ke sisi kiri
-              </span>
-            </div>
-          )}
+        <div className="flex-1 min-w-0 w-full font-sans flex flex-col gap-4 transition-all duration-300 ease-in-out">
           {activeSubTab === 'record' && (
             <form onSubmit={handleSubmitAttendance} className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left flex flex-col">
               {/* Header */}

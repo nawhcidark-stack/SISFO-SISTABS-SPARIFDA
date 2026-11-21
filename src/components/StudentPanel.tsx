@@ -19,7 +19,7 @@ import {
   DEFAULT_MIDTERM_MARGIN_RIGHT_CM
 } from '../utils/raporAkhirPrint';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, Award, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { GraduationCap, Award, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone, LogOut, PanelLeftClose, PanelLeftOpen, Menu } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 import ScheduleView from './ScheduleView';
@@ -1898,44 +1898,87 @@ export default function StudentPanel({
   }
 
   return (
-    <div id="student-panel-root" className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-24 md:pb-0 relative">
-      {/* Tombol Mengambang di Sisi Kiri Layar Saat Side Menu Disembunyikan */}
-      {isSidebarCollapsed && (
-        <button
-          type="button"
-          onClick={() => setIsSidebarCollapsed(false)}
-          title="Tampilkan Panel Profil Sisi Kiri"
-          className="hidden md:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900 hover:bg-indigo-600 text-white py-3.5 px-2 rounded-r-2xl shadow-xl border border-l-0 border-slate-700 items-center gap-1.5 cursor-pointer transition-all group print:hidden"
-        >
-          <PanelLeftOpen size={16} className="text-emerald-400 group-hover:scale-110 transition-transform" />
-          <span className="[writing-mode:vertical-lr] rotate-180 text-[10px] font-black uppercase tracking-widest">
-            Buka Panel Kiri
-          </span>
-        </button>
-      )}
-
+    <div id="student-panel-root" className="flex flex-col md:flex-row gap-6 pb-24 md:pb-0 relative items-start">
       {/* Left Column: Account Selector and Profile Details */}
       <div
-        className={`${
-          isSidebarCollapsed
-            ? 'hidden'
-            : `md:col-span-4 flex flex-col gap-6 ${mobileTab === 'beranda' ? 'flex' : 'hidden md:flex'}`
-        }`}
+        className={`shrink-0 transition-all duration-300 ease-in-out flex-col gap-4 ${
+          mobileTab === 'beranda' ? 'flex w-full' : 'hidden md:flex'
+        } ${isSidebarCollapsed ? 'md:w-[64px]' : 'md:w-80 lg:w-88'}`}
       >
-        <div className="hidden md:flex items-center justify-between bg-white border border-slate-200 rounded-xl px-3.5 py-2 shadow-2xs">
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-            Panel Profil &amp; Saldo
-          </span>
-          <button
-            type="button"
-            onClick={() => setIsSidebarCollapsed(true)}
-            title="Sembunyikan Panel Kiri"
-            className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-extrabold flex items-center gap-1 cursor-pointer transition-colors"
-          >
-            <PanelLeftClose size={13} />
-            <span>Sembunyikan</span>
-          </button>
+        <div className="hidden md:flex flex-col gap-1.5 bg-white border border-slate-200 rounded-xl p-2.5 shadow-2xs overflow-hidden transition-all duration-300 ease-in-out">
+          <div className={`flex items-center px-1.5 ${isSidebarCollapsed ? '' : 'pb-2 border-b border-slate-100'}`}>
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              title={
+                isSidebarCollapsed
+                  ? 'Tampilkan Teks Panel Profil'
+                  : 'Sembunyikan Teks Panel Profil'
+              }
+              aria-label="Toggle Teks Panel Profil"
+              className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-900 text-slate-700 hover:text-white flex items-center justify-center cursor-pointer transition-all duration-200 shrink-0 shadow-2xs"
+            >
+              <Menu size={17} />
+            </button>
+            <span
+              className={`text-[10px] font-black uppercase tracking-wider text-slate-500 overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? 'max-w-0 opacity-0 -translate-x-4 ml-0 pointer-events-none'
+                  : 'max-w-[200px] opacity-100 translate-x-0 ml-2.5'
+              }`}
+            >
+              Panel Profil &amp; Saldo
+            </span>
+          </div>
+
+          {isSidebarCollapsed && currentStudent && (
+            <div className="flex flex-col items-center gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsSidebarCollapsed(false)}
+                title={`${currentStudent.name} (${currentStudent.nis}) - Kelas ${currentStudent.class}`}
+                className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center cursor-pointer hover:bg-indigo-600 transition-colors"
+              >
+                <User size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('tabungan')}
+                title={`Saldo Tabungan: Rp ${currentStudent.savingsBalance.toLocaleString('id-ID')}`}
+                className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center cursor-pointer hover:bg-emerald-100 transition-colors"
+              >
+                <Wallet size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('spp')}
+                title={`Tagihan SPP: ${unpaidBillsCount === 0 ? 'Lunas' : `${unpaidBillsCount} Bulan`}`}
+                className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center cursor-pointer hover:bg-indigo-100 transition-colors"
+              >
+                <CreditCard size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSidebarCollapsed(false);
+                  setIsChangingPassword(true);
+                }}
+                title="Keamanan Sandi Akun"
+                className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center cursor-pointer hover:bg-amber-100 transition-colors"
+              >
+                <Key size={16} />
+              </button>
+            </div>
+          )}
         </div>
+
+        <div
+          className={`flex flex-col gap-6 overflow-hidden transition-all duration-300 ease-in-out ${
+            isSidebarCollapsed
+              ? 'md:max-w-0 md:max-h-0 md:opacity-0 md:-translate-x-4 md:pointer-events-none'
+              : 'md:max-w-[400px] md:max-h-[2000px] md:opacity-100 md:translate-x-0'
+          }`}
+        >
         {/* Student Selector */}
         {isLoginLocked ? (
           <div className="bg-gradient-to-r from-blue-700 to-emerald-600 border-4 border-emerald-400 text-white p-5 rounded-xl shadow-lg relative overflow-hidden flex items-center gap-3">
@@ -2182,29 +2225,13 @@ export default function StudentPanel({
             </a>
           </div>
         </div>
+        </div>
       </div>
 
       {/* Right Column: SPP Checklist / Deposits Form & History */}
       <div
-        className={`${
-          isSidebarCollapsed ? 'md:col-span-12' : 'md:col-span-8'
-        } ${mobileTab === 'beranda' ? 'block' : 'hidden md:block'} flex flex-col gap-4`}
+        className={`flex-1 min-w-0 w-full transition-all duration-300 ease-in-out ${mobileTab === 'beranda' ? 'block' : 'hidden md:block'} flex flex-col gap-4`}
       >
-        {isSidebarCollapsed && (
-          <div className="hidden md:flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-2xs print:hidden">
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed(false)}
-              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center gap-2 cursor-pointer shadow-xs transition-all"
-            >
-              <PanelLeftOpen size={14} className="text-emerald-400" />
-              <span>Tampilkan Panel Profil Kiri</span>
-            </button>
-            <span className="text-[11px] font-semibold text-slate-500">
-              Mode Layar Penuh Aktif • Panel kiri disembunyikan
-            </span>
-          </div>
-        )}
         {currentStudent ? (
           <motion.div
             initial={{ opacity: 0, x: 20 }}

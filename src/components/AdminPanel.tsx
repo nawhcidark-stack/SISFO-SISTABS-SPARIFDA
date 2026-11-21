@@ -91,6 +91,7 @@ import {
   ChevronDown,
   PanelLeftClose,
   PanelLeftOpen,
+  Menu,
 } from "lucide-react";
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -5257,108 +5258,153 @@ export default function AdminPanel({
   return (
     <div
       id="admin-panel-root"
-      className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-24 md:pb-0 relative"
+      className="flex flex-col md:flex-row gap-6 pb-24 md:pb-0 relative items-start"
     >
-      {/* Tombol Mengambang di Sisi Kiri Layar Saat Side Menu Disembunyikan */}
-      {isSidebarCollapsed && (
-        <button
-          type="button"
-          onClick={() => setIsSidebarCollapsed(false)}
-          title="Tampilkan Side Menu Administrasi"
-          className="hidden md:flex fixed left-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900 hover:bg-indigo-600 text-white py-3.5 px-2 rounded-r-2xl shadow-xl border border-l-0 border-slate-700 items-center gap-1.5 cursor-pointer transition-all group print:hidden"
-        >
-          <PanelLeftOpen size={16} className="text-emerald-400 group-hover:scale-110 transition-transform" />
-          <span className="[writing-mode:vertical-lr] rotate-180 text-[10px] font-black uppercase tracking-widest">
-            Buka Menu
-          </span>
-        </button>
-      )}
-
       {/* Sidebar Command List */}
       <div
-        className={`${
-          isSidebarCollapsed ? "hidden" : "hidden md:flex md:col-span-3"
-        } flex-col gap-4 transition-all duration-200 print:hidden`}
+        className={`hidden md:flex flex-col gap-4 shrink-0 transition-all duration-300 ease-in-out print:hidden ${
+          isSidebarCollapsed ? "md:w-[64px]" : "md:w-72"
+        }`}
       >
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-1.5">
-          <div className="flex items-center justify-between pl-1 mb-2 pb-2 border-b border-slate-100">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Menu Administrasi
-            </span>
+        <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-1.5 overflow-hidden transition-all duration-300 ease-in-out">
+          <div className="flex items-center px-1.5 mb-1.5 pb-2 border-b border-slate-100">
             <button
               type="button"
-              onClick={() => setIsSidebarCollapsed(true)}
-              title="Sembunyikan Side Menu ke Sisi Kiri"
-              className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-[10px] font-extrabold flex items-center gap-1 cursor-pointer transition-colors"
+              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              title={
+                isSidebarCollapsed
+                  ? "Tampilkan Teks Side Menu"
+                  : "Sembunyikan Teks Side Menu"
+              }
+              aria-label="Toggle Teks Side Menu"
+              className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-900 text-slate-700 hover:text-white flex items-center justify-center cursor-pointer transition-all duration-200 shrink-0 shadow-2xs"
             >
-              <PanelLeftClose size={13} />
-              <span>Sembunyikan</span>
+              <Menu size={17} />
             </button>
+            <span
+              className={`text-[10px] font-bold text-slate-400 uppercase tracking-widest overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0 pointer-events-none"
+                  : "max-w-[180px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Menu Administrasi
+            </span>
           </div>
 
           <button
             id="admin-menu-roster"
             onClick={() => setAdminTab("roster")}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Daftar Siswa & SPP"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "roster"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <Users size={15} />
-            Daftar Siswa & SPP
+            <Users size={16} className="shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Daftar Siswa &amp; SPP
+            </span>
           </button>
 
           <button
             id="admin-menu-jadwal"
             onClick={() => setAdminTab("jadwal")}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Matriks Jadwal Pelajaran"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "jadwal"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-indigo-600 bg-indigo-50/50 hover:bg-indigo-100/50"
             }`}
           >
-            <Calendar size={15} className="text-indigo-600" />
-            Matriks Jadwal Pelajaran
+            <Calendar
+              size={16}
+              className={`shrink-0 ${
+                adminTab === "jadwal" ? "text-indigo-300" : "text-indigo-600"
+              }`}
+            />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Matriks Jadwal Pelajaran
+            </span>
           </button>
 
           <button
             id="admin-menu-subject-teacher-mgmt"
             onClick={() => setAdminTab("subject_teacher_mgmt")}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Akun Guru Mapel (Jurnal KBM)"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "subject_teacher_mgmt"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <Users size={15} className="text-teal-500" />
-            Akun Guru Mapel (Jurnal KBM)
+            <Users size={16} className="text-teal-500 shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Akun Guru Mapel (Jurnal KBM)
+            </span>
           </button>
 
           <button
             id="admin-menu-student-mgmt"
             onClick={() => setAdminTab("student_mgmt")}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Akun Siswa"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "student_mgmt"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <GraduationCap size={15} />
-            Akun Siswa
+            <GraduationCap size={16} className="shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Akun Siswa
+            </span>
           </button>
 
           <button
             id="admin-menu-homeroom-mgmt"
             onClick={() => setAdminTab("homeroom_mgmt")}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Akun Wali Kelas (Absensi)"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "homeroom_mgmt"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <ClipboardCheck size={15} className="text-amber-500" />
-            Akun Wali Kelas (Absensi)
+            <ClipboardCheck size={16} className="text-amber-500 shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Akun Wali Kelas (Absensi)
+            </span>
           </button>
 
           <button
@@ -5367,40 +5413,67 @@ export default function AdminPanel({
               setAdminTab("alumni");
               setSelectedStudent(null);
             }}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Alumni (Lulusan)"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "alumni"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <GraduationCap size={15} className="text-yellow-500" />
-            <span>Alumni (Lulusan)</span>
+            <GraduationCap size={16} className="text-yellow-500 shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Alumni (Lulusan)
+            </span>
           </button>
 
           <button
             id="admin-menu-student-qr"
             onClick={() => setAdminTab("student_qr")}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Kartu QR Pembayaran Siswa"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "student_qr"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <ImageIcon size={15} className="text-indigo-500" />
-            Kartu QR Pembayaran Siswa
+            <ImageIcon size={16} className="text-indigo-500 shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Kartu QR Pembayaran Siswa
+            </span>
           </button>
 
           <button
             id="admin-menu-broadcast"
             onClick={() => setAdminTab("broadcast")}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Kirim Notifikasi Real-time"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "broadcast"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <BellRing size={15} />
-            Kirim Notifikasi Real-time
+            <BellRing size={16} className="shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Kirim Notifikasi Real-time
+            </span>
           </button>
 
           <button
@@ -5409,27 +5482,45 @@ export default function AdminPanel({
               setAdminTab("pembayaran_lain");
               setSelectedStudent(null);
             }}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Pembayaran Lain-lain"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "pembayaran_lain"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <Banknote size={15} className="text-blue-500" />
-            Pembayaran Lain-lain
+            <Banknote size={16} className="text-blue-500 shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Pembayaran Lain-lain
+            </span>
           </button>
 
           <button
             id="admin-menu-reports"
             onClick={() => setAdminTab("laporan")}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Laporan & Rekap"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "laporan"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <FileText size={15} className="text-emerald-500" />
-            Laporan & Rekap
+            <FileText size={16} className="text-emerald-500 shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Laporan &amp; Rekap
+            </span>
           </button>
 
           <button
@@ -5438,14 +5529,23 @@ export default function AdminPanel({
               setAdminTab("mutasi");
               setSelectedStudent(null);
             }}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Siswa Mutasi"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "mutasi"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <RefreshCw size={15} className="text-orange-500" />
-            <span>Siswa Mutasi</span>
+            <RefreshCw size={16} className="text-orange-500 shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Siswa Mutasi
+            </span>
           </button>
 
           <button
@@ -5454,14 +5554,23 @@ export default function AdminPanel({
               setAdminTab("buku_induk");
               setSelectedStudent(null);
             }}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Buku Induk Kesiswaan"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "buku_induk"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <BookOpen size={15} className="text-indigo-600" />
-            <span>Buku Induk Kesiswaan</span>
+            <BookOpen size={16} className="text-indigo-600 shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Buku Induk Kesiswaan
+            </span>
           </button>
 
           <button
@@ -5470,25 +5579,39 @@ export default function AdminPanel({
               setAdminTab("surat_menyurat");
               setSelectedStudent(null);
             }}
-            className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Surat Masuk & Keluar (Scan HP)"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "surat_menyurat"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-indigo-800 bg-indigo-50/70 hover:bg-indigo-100/80 border border-indigo-200/70"
             }`}
           >
-            <div className="flex items-center gap-2.5">
-              <Camera size={15} className={adminTab === "surat_menyurat" ? "text-emerald-400" : "text-indigo-600"} />
-              <span>Surat Masuk &amp; Keluar</span>
-            </div>
-            <span
-              className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+            <Camera
+              size={16}
+              className={`shrink-0 ${
                 adminTab === "surat_menyurat"
-                  ? "bg-emerald-500 text-slate-950"
-                  : "bg-indigo-200 text-indigo-900"
+                  ? "text-emerald-400"
+                  : "text-indigo-600"
+              }`}
+            />
+            <div
+              className={`flex items-center justify-between flex-1 overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[210px] opacity-100 translate-x-0 ml-2.5"
               }`}
             >
-              Scan HP
-            </span>
+              <span>Surat Masuk &amp; Keluar</span>
+              <span
+                className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ml-1.5 ${
+                  adminTab === "surat_menyurat"
+                    ? "bg-emerald-500 text-slate-950"
+                    : "bg-indigo-200 text-indigo-900"
+                }`}
+              >
+                Scan HP
+              </span>
+            </div>
           </button>
 
           <button
@@ -5497,19 +5620,37 @@ export default function AdminPanel({
               setAdminTab("spmb");
               setSelectedStudent(null);
             }}
-            className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="SPMB 2027/2028"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "spmb"
                 ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-900/20"
                 : "text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100/70 border border-emerald-200/60"
             }`}
           >
-            <div className="flex items-center gap-2.5">
-              <Users size={15} className={adminTab === "spmb" ? "text-white" : "text-emerald-600"} />
+            <Users
+              size={16}
+              className={`shrink-0 ${
+                adminTab === "spmb" ? "text-white" : "text-emerald-600"
+              }`}
+            />
+            <div
+              className={`flex items-center justify-between flex-1 overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[210px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
               <span>SPMB 2027/2028</span>
+              <span
+                className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ml-1.5 ${
+                  adminTab === "spmb"
+                    ? "bg-white/20 text-white"
+                    : "bg-emerald-200 text-emerald-900"
+                }`}
+              >
+                Baru
+              </span>
             </div>
-            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${adminTab === "spmb" ? "bg-white/20 text-white" : "bg-emerald-200 text-emerald-900"}`}>
-              Baru
-            </span>
           </button>
 
           <button
@@ -5518,34 +5659,65 @@ export default function AdminPanel({
               setAdminTab("rekonsiliasi");
               setSelectedStudent(null);
             }}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Rekonsiliasi"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "rekonsiliasi"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <RefreshCw size={15} className={adminTab === "rekonsiliasi" ? "text-emerald-400" : "text-indigo-600"} />
-            <span>Rekonsiliasi</span>
+            <RefreshCw
+              size={16}
+              className={`shrink-0 ${
+                adminTab === "rekonsiliasi"
+                  ? "text-emerald-400"
+                  : "text-indigo-600"
+              }`}
+            />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Rekonsiliasi
+            </span>
           </button>
 
           <button
             id="admin-menu-config"
             onClick={() => setAdminTab("config")}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+            title="Pengaturan"
+            className={`flex items-center px-3 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all duration-300 ease-in-out overflow-hidden ${
               adminTab === "config"
                 ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
                 : "text-slate-600 hover:bg-slate-100"
             }`}
           >
-            <Settings size={15} />
-            Pengaturan
+            <Settings size={16} className="shrink-0" />
+            <span
+              className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                isSidebarCollapsed
+                  ? "max-w-0 opacity-0 -translate-x-4 ml-0"
+                  : "max-w-[200px] opacity-100 translate-x-0 ml-2.5"
+              }`}
+            >
+              Pengaturan
+            </span>
           </button>
         </div>
 
         {/* Integration Credentials Info Block */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-xs flex flex-col gap-2">
-          <h4 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-            <ShieldCheck size={14} className="text-indigo-600" /> Profil Sistem
+        <div
+          className={`bg-white rounded-xl border border-slate-200 shadow-sm text-xs flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
+            isSidebarCollapsed
+              ? "max-h-0 opacity-0 p-0 border-0 pointer-events-none"
+              : "max-h-48 opacity-100 p-4 gap-2"
+          }`}
+        >
+          <h4 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
+            <ShieldCheck size={14} className="text-indigo-600 shrink-0" /> Profil Sistem
           </h4>
           <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
             <div className="flex justify-between items-center text-[10px]">
@@ -5592,9 +5764,15 @@ export default function AdminPanel({
         </div>
 
         {/* Unduh Aplikasi Mobile Block */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-xs flex flex-col gap-2 text-left">
-          <h4 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-            <Smartphone size={14} className="text-emerald-600" /> Aplikasi
+        <div
+          className={`bg-white rounded-xl border border-slate-200 shadow-sm text-xs flex flex-col text-left overflow-hidden transition-all duration-300 ease-in-out ${
+            isSidebarCollapsed
+              ? "max-h-0 opacity-0 p-0 border-0 pointer-events-none"
+              : "max-h-56 opacity-100 p-4 gap-2"
+          }`}
+        >
+          <h4 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
+            <Smartphone size={14} className="text-emerald-600 shrink-0" /> Aplikasi
             Mobile Sekolah
           </h4>
           <p className="text-[10px] text-slate-500 leading-normal">
@@ -5653,26 +5831,7 @@ export default function AdminPanel({
       </div>
 
       {/* Main Action Stage */}
-      <div
-        className={`${
-          isSidebarCollapsed ? "md:col-span-12" : "md:col-span-9"
-        } flex flex-col gap-6 min-w-0 transition-all duration-200`}
-      >
-        {isSidebarCollapsed && (
-          <div className="hidden md:flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-2xs print:hidden">
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed(false)}
-              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center gap-2 cursor-pointer shadow-xs transition-all"
-            >
-              <PanelLeftOpen size={14} className="text-emerald-400" />
-              <span>Tampilkan Side Menu Administrasi</span>
-            </button>
-            <span className="text-[11px] font-semibold text-slate-500">
-              Mode Layar Penuh Aktif • Side menu disembunyikan ke sisi kiri
-            </span>
-          </div>
-        )}
+      <div className="flex-1 min-w-0 w-full flex flex-col gap-6 transition-all duration-300 ease-in-out">
         {/* Tab Jadwal Pelajaran */}
         {adminTab === "jadwal" && (
           <div className="flex flex-col gap-6 animate-fade-in text-left">

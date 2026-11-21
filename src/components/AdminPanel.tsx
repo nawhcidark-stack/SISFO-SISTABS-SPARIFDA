@@ -459,6 +459,14 @@ export default function AdminPanel({
   const [miscStudentSearchQuery, setMiscStudentSearchQuery] = useState("");
   const [isSubmittingMisc, setIsSubmittingMisc] = useState(false);
 
+  // State for Laporan Harian Pembayaran Lain-lain
+  const [miscDailyDateFilter, setMiscDailyDateFilter] = useState<string>(
+    () => new Date().toISOString().substring(0, 10)
+  );
+  const [miscDailyTitleFilter, setMiscDailyTitleFilter] = useState<string>("all");
+  const [miscDailyMethodFilter, setMiscDailyMethodFilter] = useState<"all" | "tunai" | "online">("all");
+  const [showMiscDailyReportPanel, setShowMiscDailyReportPanel] = useState<boolean>(true);
+
   // States for Pembayaran Massal (Bulk Payment) Pembayaran Lain-lain
   const [isPayMiscBulkOpen, setIsPayMiscBulkOpen] = useState(false);
   const [payMiscBulkTitleFilter, setPayMiscBulkTitleFilter] = useState<string>("all");
@@ -1238,6 +1246,379 @@ export default function AdminPanel({
       groupedList,
       bills: filteredList,
       students,
+    });
+  };
+
+  // Helper filter for Laporan Harian Pembayaran Lain-lain
+  const getDailyPaidMiscBills = (targetDate: string = miscDailyDateFilter) => {
+    return miscBills
+      .filter((bill) => {
+        if (bill.status !== "paid" || !bill.paidAt) return false;
+        if (getWIBDateString(bill.paidAt) !== targetDate) return false;
+
+        const s = students.find((st) => st.id === bill.studentId);
+        if (miscGradeFilter !== "all" && (!s || !s.class || !s.class.startsWith(miscGradeFilter))) return false;
+        if (miscClassFilter !== "all" && (!s || s.class !== miscClassFilter)) return false;
+        if (miscDailyTitleFilter !== "all" && bill.title !== miscDailyTitleFilter) return false;
+
+        const isCash =
+          !bill.paymentMethod ||
+          bill.paymentMethod === "cash" ||
+          bill.paymentMethod.toLowerCase().includes("tunai") ||
+          bill.paymentMethod.toLowerCase().includes("manual") ||
+          bill.paymentMethod.toLowerCase().includes("teller") ||
+          bill.paymentMethod.toLowerCase().includes("tabungan");
+        if (miscDailyMethodFilter === "tunai" && !isCash) return false;
+        if (miscDailyMethodFilter === "online" && isCash) return false;
+
+        if (miscSearch.trim()) {
+          const q = miscSearch.toLowerCase();
+          const matchText =
+            bill.title.toLowerCase().includes(q) ||
+            bill.id.toLowerCase().includes(q) ||
+            (s?.name || "").toLowerCase().includes(q) ||
+            (s?.nis || "").toLowerCase().includes(q) ||
+            (s?.class || "").toLowerCase().includes(q);
+          if (!matchText) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => new Date(a.paidAt || 0).getTime() - new Date(b.paidAt || 0).getTime());
+  };
+
+  const handlePrintPdfDailyMiscBills = (customDate?: string) => {
+    const activeDate = customDate || miscDailyDateFilter;
+    const dailyPaidList = getDailyPaidMiscBills(activeDate);
+
+    if (dailyPaidList.length === 0) {
+      alert(`Tidak ada transaksi pembayaran lain-lain yang lunas pada tanggal ${new Date(activeDate).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })} sesuai filter.`);
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Harap izinkan popup di browser Anda untuk mencetak laporan harian PDF.");
+      return;
+    }
+
+    const schoolNameStr = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const subHeader = schoolIdentity?.subheading || "Sistem Informasi Manajemen & Keuangan Madrasah";
+    const accreditation = schoolIdentity?.accreditation || "Terakreditasi A";
+    const address = schoolIdentity?.address || "Pasuruan, Jawa Timur";
+    const logoSrc = schoolIdentity?.logo || "";
+    const principalName = schoolIdentity?.principal || "Kepala Sekolah";
+    const treasurerName = schoolIdentity?.treasurer || "Bendahara Sekolah";
+
+    const isCashMethod = (m?: string) =>
+      !m ||
+      m === "cash" ||
+      m.toLowerCase().includes("tunai") ||
+      m.toLowerCase().includes("manual") ||
+      m.toLowerCase().includes("teller") ||
+      m.toLowerCase().includes("tabungan");
+
+    const tunaiList = dailyPaidList.filter((b) => isCashMethod(b.paymentMethod));
+    const onlineList = dailyPaidList.filter((b) => !isCashMethod(b.paymentMethod));
+
+    const totalAllNominal = dailyPaidList.reduce((sum, b) => sum + (b.amount || 0), 0);
+    const totalTunaiNominal = tunaiList.reduce((sum, b) => sum + (b.amount || 0), 0);
+    const totalOnlineNominal = onlineList.reduce((sum, b) => sum + (b.amount || 0), 0);
+
+    // Group by title for daily recap
+    const byTitleMap: Record<string, { count: number; tunai: number; online: number; total: number }> = {};
+    dailyPaidList.forEach((b) => {
+      const t = b.title || "Lain-lain";
+      if (!byTitleMap[t]) {
+        byTitleMap[t] = { count: 0, tunai: 0, online: 0, total: 0 };
+      }
+      byTitleMap[t].count += 1;
+      byTitleMap[t].total += b.amount || 0;
+      if (isCashMethod(b.paymentMethod)) {
+        byTitleMap[t].tunai += b.amount || 0;
+      } else {
+        byTitleMap[t].online += b.amount || 0;
+      }
+    });
+
+    const summaryByTitleRows = Object.entries(byTitleMap)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(
+        ([title, st], idx) => `
+        <tr>
+          <td style="text-align: center;">${idx + 1}</td>
+          <td style="font-weight: bold;">${title}</td>
+          <td style="text-align: center; font-family: monospace;">${st.count} Transaksi</td>
+          <td style="text-align: right; font-family: monospace; color: #047857;">Rp ${st.tunai.toLocaleString("id-ID")}</td>
+          <td style="text-align: right; font-family: monospace; color: #3730a3;">Rp ${st.online.toLocaleString("id-ID")}</td>
+          <td style="text-align: right; font-family: monospace; font-weight: bold;">Rp ${st.total.toLocaleString("id-ID")}</td>
+        </tr>
+      `
+      )
+      .join("");
+
+    const detailRowsHtml = dailyPaidList
+      .map((bill, idx) => {
+        const s = students.find((st) => st.id === bill.studentId);
+        const timeStr = bill.paidAt
+          ? new Date(bill.paidAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+          : "-";
+        const cash = isCashMethod(bill.paymentMethod);
+        return `
+        <tr>
+          <td style="text-align: center;">${idx + 1}</td>
+          <td style="text-align: center; font-family: monospace;">${timeStr}</td>
+          <td style="text-align: center; font-family: monospace; font-weight: 600;">${s?.nis || "-"}</td>
+          <td style="font-weight: bold;">${s?.name || "Siswa"}</td>
+          <td style="text-align: center;">${s?.class ? `Kelas ${s.class}` : "-"}</td>
+          <td style="font-weight: 600;">${bill.title}${bill.isMonthly && bill.month ? ` (${bill.month})` : ""}</td>
+          <td style="text-align: center;">
+            <span style="display: inline-block; padding: 1.5px 5px; border-radius: 4px; font-size: 8px; font-weight: 700; text-transform: uppercase; ${
+              cash ? "background: #ecfdf5; color: #047857;" : "background: #eef2ff; color: #3730a3;"
+            }">
+              ${bill.paymentMethod || "TUNAI / TELLER"}
+            </span>
+          </td>
+          <td style="text-align: center; font-family: monospace; font-size: 8px;">${bill.orderId || bill.id.toUpperCase()}</td>
+          <td style="text-align: right; font-family: monospace; font-weight: bold;">Rp ${(bill.amount || 0).toLocaleString("id-ID")}</td>
+        </tr>
+      `;
+      })
+      .join("");
+
+    const formattedTargetDate = new Date(activeDate).toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const printDateStr = new Date().toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Laporan Harian Pembayaran Lain-lain (${activeDate}) - ${schoolNameStr}</title>
+          <style>
+            @page { size: A4 portrait; margin: 10mm; }
+            * { box-sizing: border-box; }
+            body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; padding: 6px; color: #0f172a; background: white; line-height: 1.35; font-size: 10px; }
+            .header-table { width: 100%; border-collapse: collapse; border-bottom: 3px double #0f172a; margin-bottom: 10px; padding-bottom: 6px; }
+            .logo-cell { width: 60px; text-align: center; vertical-align: middle; }
+            .info-cell { text-align: center; vertical-align: middle; }
+            .school-name { font-size: 14px; font-weight: 800; text-transform: uppercase; margin: 0; color: #0f172a; }
+            .school-sub { font-size: 9.5px; margin: 2px 0 0 0; color: #334155; font-weight: 600; }
+            .school-meta { font-size: 8px; margin: 2px 0 0 0; color: #64748b; font-style: italic; }
+            .doc-title { text-align: center; font-size: 12px; font-weight: 800; text-transform: uppercase; margin: 8px 0 2px 0; color: #1e3a8a; }
+            .doc-sub { text-align: center; font-size: 9.5px; font-weight: 700; color: #334155; margin-bottom: 10px; }
+            .summary-cards { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+            .card { flex: 1; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 8px; text-align: center; background: #f8fafc; }
+            .card-lbl { font-size: 7.5px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+            .card-val { font-size: 11px; font-weight: 800; margin-top: 2px; font-family: monospace; }
+            .section-title { font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #0f172a; margin: 10px 0 4px 0; border-bottom: 1.5px solid #94a3b8; padding-bottom: 2px; }
+            .data-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+            .data-table th, .data-table td { border: 1px solid #cbd5e1; padding: 4px 5px; font-size: 8.5px; }
+            .data-table th { background-color: #f1f5f9; font-weight: bold; text-align: center; color: #0f172a; text-transform: uppercase; font-size: 8px; }
+            .data-table tr:nth-child(even) { background-color: #f8fafc; }
+            .signatures { display: flex; justify-content: space-between; margin-top: 20px; text-align: center; font-size: 9px; page-break-inside: avoid; }
+            .sig-block { width: 220px; }
+            .sig-space { height: 45px; }
+            .sig-name { font-weight: bold; text-decoration: underline; }
+          </style>
+        </head>
+        <body>
+          <table class="header-table">
+            <tr>
+              ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 48px; max-width: 48px; object-fit: contain;" /></td>` : ""}
+              <td class="info-cell">
+                <div class="school-name">${schoolNameStr}</div>
+                <div class="school-sub">${subHeader} &bull; Akreditasi: ${accreditation}</div>
+                <div class="school-meta">Alamat: ${address}</div>
+              </td>
+            </tr>
+          </table>
+
+          <div class="doc-title">LAPORAN HARIAN PEMBAYARAN &amp; IURAN LAIN-LAIN (NON-SPP)</div>
+          <div class="doc-sub">Tanggal Transaksi: ${formattedTargetDate}</div>
+
+          <div class="summary-cards">
+            <div class="card">
+              <div class="card-lbl">Total Transaksi Harian</div>
+              <div class="card-val" style="color: #0f172a;">${dailyPaidList.length} Transaksi</div>
+            </div>
+            <div class="card" style="background-color: #ecfdf5; border-color: #a7f3d0;">
+              <div class="card-lbl" style="color: #047857;">Penerimaan Tunai / Teller (${tunaiList.length})</div>
+              <div class="card-val" style="color: #047857;">Rp ${totalTunaiNominal.toLocaleString("id-ID")}</div>
+            </div>
+            <div class="card" style="background-color: #eef2ff; border-color: #c7d2fe;">
+              <div class="card-lbl" style="color: #3730a3;">Penerimaan Online / Midtrans (${onlineList.length})</div>
+              <div class="card-val" style="color: #3730a3;">Rp ${totalOnlineNominal.toLocaleString("id-ID")}</div>
+            </div>
+            <div class="card" style="background-color: #f8fafc; border-color: #94a3b8;">
+              <div class="card-lbl" style="color: #0f172a;">Total Penerimaan Hari Ini</div>
+              <div class="card-val" style="color: #0f172a;">Rp ${totalAllNominal.toLocaleString("id-ID")}</div>
+            </div>
+          </div>
+
+          <div class="section-title">I. Rekapitulasi Harian per Jenis Tagihan</div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 28px;">No</th>
+                <th>Nama Tagihan / Kegiatan</th>
+                <th style="width: 90px;">Jml Transaksi</th>
+                <th style="width: 105px;">Penerimaan Tunai</th>
+                <th style="width: 105px;">Penerimaan Online</th>
+                <th style="width: 115px;">Total Penerimaan</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${summaryByTitleRows}
+            </tbody>
+          </table>
+
+          <div class="section-title">II. Rincian Jurnal Pembayaran Lain-lain Harian</div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 24px;">No</th>
+                <th style="width: 42px;">Jam</th>
+                <th style="width: 55px;">NIS</th>
+                <th>Nama Siswa</th>
+                <th style="width: 52px;">Kelas</th>
+                <th>Jenis Tagihan</th>
+                <th style="width: 85px;">Metode</th>
+                <th style="width: 90px;">Ref / Order ID</th>
+                <th style="width: 85px;">Nominal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${detailRowsHtml}
+              <tr style="background: #f1f5f9; font-weight: bold;">
+                <td colspan="8" style="text-align: right; padding-right: 8px;">TOTAL PENERIMAAN HARIAN (${formattedTargetDate}):</td>
+                <td style="text-align: right; font-family: monospace; color: #047857;">Rp ${totalAllNominal.toLocaleString("id-ID")}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="signatures">
+            <div class="sig-block">
+              <div>Mengetahui,</div>
+              <div style="font-weight: bold; margin-top: 2px;">Kepala Sekolah</div>
+              <div class="sig-space"></div>
+              <div class="sig-name">( ${principalName} )</div>
+            </div>
+            <div class="sig-block">
+              <div>Pandaan, ${printDateStr}</div>
+              <div style="font-weight: bold; margin-top: 2px;">Bendahara / Teller Sekolah</div>
+              <div class="sig-space"></div>
+              <div class="sig-name">( ${treasurerName} )</div>
+            </div>
+          </div>
+
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handleExportExcelDailyMiscBills = (customDate?: string) => {
+    const activeDate = customDate || miscDailyDateFilter;
+    const dailyPaidList = getDailyPaidMiscBills(activeDate);
+
+    if (dailyPaidList.length === 0) {
+      alert(`Tidak ada transaksi pembayaran lain-lain yang lunas pada tanggal ${activeDate} untuk diekspor ke Excel.`);
+      return;
+    }
+
+    const isCashMethod = (m?: string) =>
+      !m ||
+      m === "cash" ||
+      m.toLowerCase().includes("tunai") ||
+      m.toLowerCase().includes("manual") ||
+      m.toLowerCase().includes("teller") ||
+      m.toLowerCase().includes("tabungan");
+
+    const tunaiList = dailyPaidList.filter((b) => isCashMethod(b.paymentMethod));
+    const onlineList = dailyPaidList.filter((b) => !isCashMethod(b.paymentMethod));
+
+    const totalAllNominal = dailyPaidList.reduce((sum, b) => sum + (b.amount || 0), 0);
+    const totalTunaiNominal = tunaiList.reduce((sum, b) => sum + (b.amount || 0), 0);
+    const totalOnlineNominal = onlineList.reduce((sum, b) => sum + (b.amount || 0), 0);
+
+    import("xlsx").then((XLSX) => {
+      const wb = XLSX.utils.book_new();
+
+      const byTitleMap: Record<string, { count: number; tunai: number; online: number; total: number }> = {};
+      dailyPaidList.forEach((b) => {
+        const t = b.title || "Lain-lain";
+        if (!byTitleMap[t]) {
+          byTitleMap[t] = { count: 0, tunai: 0, online: 0, total: 0 };
+        }
+        byTitleMap[t].count += 1;
+        byTitleMap[t].total += b.amount || 0;
+        if (isCashMethod(b.paymentMethod)) {
+          byTitleMap[t].tunai += b.amount || 0;
+        } else {
+          byTitleMap[t].online += b.amount || 0;
+        }
+      });
+
+      const summaryRows = Object.entries(byTitleMap)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([title, st], idx) => [idx + 1, title, st.count, st.tunai, st.online, st.total]);
+
+      const detailRows = dailyPaidList.map((bill, idx) => {
+        const s = students.find((st) => st.id === bill.studentId);
+        const timeStr = bill.paidAt
+          ? new Date(bill.paidAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+          : "-";
+        return [
+          idx + 1,
+          activeDate,
+          timeStr,
+          s?.nis || "-",
+          s?.name || "Siswa",
+          s?.class ? `Kelas ${s.class}` : "-",
+          bill.title,
+          bill.isMonthly ? `Bulanan (${bill.month || "-"})` : "Sekali Bayar",
+          bill.paymentMethod || "Tunai / Teller",
+          bill.orderId || bill.id.toUpperCase(),
+          bill.amount || 0,
+        ];
+      });
+
+      const sheetData = [
+        ["LAPORAN HARIAN PEMBAYARAN & IURAN LAIN-LAIN (NON-SPP)"],
+        [schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"],
+        [`Tanggal Transaksi: ${activeDate}`],
+        [],
+        ["I. RINGKASAN PENERIMAAN HARIAN"],
+        ["Kategori", "Jumlah Transaksi", "Total Nominal (IDR)"],
+        ["Penerimaan Tunai / Teller Manual", tunaiList.length, totalTunaiNominal],
+        ["Penerimaan Online / Midtrans", onlineList.length, totalOnlineNominal],
+        ["TOTAL PENERIMAAN HARIAN LAIN-LAIN", dailyPaidList.length, totalAllNominal],
+        [],
+        ["II. REKAPITULASI HARIAN PER JENIS TAGIHAN"],
+        ["No", "Nama Tagihan / Kegiatan", "Jumlah Transaksi", "Tunai (IDR)", "Online (IDR)", "Total (IDR)"],
+        ...summaryRows,
+        [],
+        ["III. RINCIAN JURNAL TRANSAKSI HARIAN PEMBAYARAN LAIN-LAIN"],
+        ["No", "Tanggal", "Jam", "NIS", "Nama Siswa", "Kelas", "Nama Tagihan", "Tipe Tagihan", "Metode Pembayaran", "Ref / Order ID", "Nominal (IDR)"],
+        ...detailRows,
+        [],
+        ["", "", "", "", "", "", "", "", "", "TOTAL PENERIMAAN:", totalAllNominal],
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
+      XLSX.utils.book_append_sheet(wb, ws, "Laporan Harian Lain-lain");
+      XLSX.writeFile(wb, `Laporan_Harian_Pembayaran_Lain_${activeDate}.xlsx`);
     });
   };
 
@@ -8184,6 +8565,352 @@ export default function AdminPanel({
                 </button>
               </div>
             </div>
+
+            {/* Panel Laporan Harian Pembayaran Lain-lain */}
+            {(() => {
+              const dailyPaidList = getDailyPaidMiscBills(miscDailyDateFilter);
+              const isCashMethod = (m?: string) =>
+                !m ||
+                m === "cash" ||
+                m.toLowerCase().includes("tunai") ||
+                m.toLowerCase().includes("manual") ||
+                m.toLowerCase().includes("teller") ||
+                m.toLowerCase().includes("tabungan");
+
+              const dailyTunaiList = dailyPaidList.filter((b) => isCashMethod(b.paymentMethod));
+              const dailyOnlineList = dailyPaidList.filter((b) => !isCashMethod(b.paymentMethod));
+
+              const totalDailyAll = dailyPaidList.reduce((sum, b) => sum + (b.amount || 0), 0);
+              const totalDailyTunai = dailyTunaiList.reduce((sum, b) => sum + (b.amount || 0), 0);
+              const totalDailyOnline = dailyOnlineList.reduce((sum, b) => sum + (b.amount || 0), 0);
+
+              const byTitleMap: Record<string, { count: number; tunai: number; online: number; total: number }> = {};
+              dailyPaidList.forEach((b) => {
+                const t = b.title || "Lain-lain";
+                if (!byTitleMap[t]) {
+                  byTitleMap[t] = { count: 0, tunai: 0, online: 0, total: 0 };
+                }
+                byTitleMap[t].count += 1;
+                byTitleMap[t].total += b.amount || 0;
+                if (isCashMethod(b.paymentMethod)) {
+                  byTitleMap[t].tunai += b.amount || 0;
+                } else {
+                  byTitleMap[t].online += b.amount || 0;
+                }
+              });
+              const dailyTitleSummary = Object.entries(byTitleMap).sort((a, b) => a[0].localeCompare(b[0]));
+              const distinctMiscTitles = Array.from(new Set(miscBills.map((b) => b.title))).filter(Boolean).sort();
+
+              return (
+                <div className="bg-white rounded-2xl border border-indigo-150 shadow-xs overflow-hidden">
+                  <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0 mt-0.5">
+                        <Calendar size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-extrabold text-sm sm:text-base tracking-tight text-white">
+                            Laporan Harian Pembayaran Lain-lain
+                          </h4>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-mono">
+                            {dailyPaidList.length} Transaksi Lunas
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 mt-0.5">
+                          Rekapitulasi &amp; rincian jurnal penerimaan harian pembayaran non-SPP (Tunai Teller &amp; Online Midtrans)
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                      <div className="flex items-center gap-1.5 bg-slate-800/90 border border-slate-700 rounded-xl px-2.5 py-1.5">
+                        <span className="text-[10px] font-bold text-slate-300 uppercase">Tanggal:</span>
+                        <input
+                          type="date"
+                          value={miscDailyDateFilter}
+                          onChange={(e) => setMiscDailyDateFilter(e.target.value)}
+                          className="bg-transparent text-white text-xs font-bold font-mono focus:outline-none cursor-pointer"
+                        />
+                      </div>
+
+                      <select
+                        value={miscDailyTitleFilter}
+                        onChange={(e) => setMiscDailyTitleFilter(e.target.value)}
+                        className="px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 text-white rounded-xl text-xs font-bold focus:outline-none cursor-pointer"
+                      >
+                        <option value="all">Semua Jenis Tagihan</option>
+                        {distinctMiscTitles.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={miscDailyMethodFilter}
+                        onChange={(e) => setMiscDailyMethodFilter(e.target.value as any)}
+                        className="px-2.5 py-1.5 bg-slate-800/90 border border-slate-700 text-white rounded-xl text-xs font-bold focus:outline-none cursor-pointer"
+                      >
+                        <option value="all">Semua Metode</option>
+                        <option value="tunai">Tunai / Teller</option>
+                        <option value="online">Online / Midtrans</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => handlePrintPdfDailyMiscBills(miscDailyDateFilter)}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                        title="Cetak PDF Laporan Harian Pembayaran Lain-lain"
+                      >
+                        <Printer size={13} />
+                        <span>Cetak Harian (PDF)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleExportExcelDailyMiscBills(miscDailyDateFilter)}
+                        className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                        title="Ekspor Excel Laporan Harian Pembayaran Lain-lain"
+                      >
+                        <Download size={13} />
+                        <span>Excel Harian</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowMiscDailyReportPanel((prev) => !prev)}
+                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold cursor-pointer transition-all"
+                      >
+                        {showMiscDailyReportPanel ? "Sembunyikan" : "Tampilkan"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {showMiscDailyReportPanel && (
+                    <div className="p-5 flex flex-col gap-5">
+                      {/* Summary Cards */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col gap-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            TANGGAL LAPORAN HARIAN
+                          </span>
+                          <span className="text-xs font-extrabold text-slate-800">
+                            {new Date(miscDailyDateFilter).toLocaleDateString("id-ID", {
+                              weekday: "long",
+                              day: "numeric",
+                              month: "long",
+                              year: "numeric",
+                            })}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            Total {dailyPaidList.length} transaksi tercatat
+                          </span>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200/80 flex flex-col gap-1">
+                          <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                            PENERIMAAN TUNAI / TELLER
+                          </span>
+                          <span className="text-base font-extrabold text-emerald-800 font-mono">
+                            Rp {totalDailyTunai.toLocaleString("id-ID")}
+                          </span>
+                          <span className="text-[10px] text-emerald-600 font-medium">
+                            {dailyTunaiList.length} Transaksi Tunai / Manual
+                          </span>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200/80 flex flex-col gap-1">
+                          <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">
+                            PENERIMAAN ONLINE / MIDTRANS
+                          </span>
+                          <span className="text-base font-extrabold text-indigo-900 font-mono">
+                            Rp {totalDailyOnline.toLocaleString("id-ID")}
+                          </span>
+                          <span className="text-[10px] text-indigo-600 font-medium">
+                            {dailyOnlineList.length} Transaksi Payment Gateway
+                          </span>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-slate-900 text-white flex flex-col gap-1">
+                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                            TOTAL PENERIMAAN HARI INI
+                          </span>
+                          <span className="text-base font-extrabold text-white font-mono">
+                            Rp {totalDailyAll.toLocaleString("id-ID")}
+                          </span>
+                          <span className="text-[10px] text-slate-300">
+                            Akumulasi Tunai + Online pada tanggal terpilih
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Ringkasan per Jenis Tagihan Hari Ini */}
+                      {dailyTitleSummary.length > 0 && (
+                        <div className="border border-slate-200 rounded-xl overflow-hidden">
+                          <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
+                            <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider">
+                              Rekapitulasi Harian per Jenis Tagihan ({dailyTitleSummary.length} Jenis)
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              Tanggal: {miscDailyDateFilter}
+                            </span>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs divide-y divide-slate-100">
+                              <thead>
+                                <tr className="bg-white text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                  <th className="px-4 py-2.5 w-10">No</th>
+                                  <th className="px-4 py-2.5">Nama Tagihan / Kegiatan</th>
+                                  <th className="px-4 py-2.5 text-center">Jumlah Transaksi</th>
+                                  <th className="px-4 py-2.5 text-right">Tunai / Teller</th>
+                                  <th className="px-4 py-2.5 text-right">Online / Midtrans</th>
+                                  <th className="px-4 py-2.5 text-right">Total Penerimaan</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {dailyTitleSummary.map(([title, st], idx) => (
+                                  <tr key={title} className="hover:bg-slate-50/70">
+                                    <td className="px-4 py-2.5 font-mono text-slate-400">{idx + 1}</td>
+                                    <td className="px-4 py-2.5 font-bold text-slate-800">{title}</td>
+                                    <td className="px-4 py-2.5 text-center font-mono font-bold text-slate-600">
+                                      {st.count} Siswa
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-semibold text-emerald-700">
+                                      Rp {st.tunai.toLocaleString("id-ID")}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-semibold text-indigo-700">
+                                      Rp {st.online.toLocaleString("id-ID")}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right font-mono font-extrabold text-slate-900">
+                                      Rp {st.total.toLocaleString("id-ID")}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Tabel Rincian Transaksi Harian Pembayaran Lain-lain */}
+                      <div className="border border-slate-200 rounded-xl overflow-hidden">
+                        <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
+                          <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider">
+                            Rincian Jurnal Pembayaran Lain-lain Hari Ini ({dailyPaidList.length} Transaksi)
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            Menampilkan pembayaran lunas pada tanggal terpilih
+                          </span>
+                        </div>
+                        <div className="overflow-x-auto max-h-96">
+                          <table className="w-full text-left text-xs divide-y divide-slate-100">
+                            <thead className="sticky top-0 bg-white shadow-2xs">
+                              <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                <th className="px-4 py-2.5 w-10">No</th>
+                                <th className="px-4 py-2.5">Jam</th>
+                                <th className="px-4 py-2.5">Siswa / NIS</th>
+                                <th className="px-4 py-2.5">Kelas</th>
+                                <th className="px-4 py-2.5">Nama Tagihan</th>
+                                <th className="px-4 py-2.5">Metode</th>
+                                <th className="px-4 py-2.5 text-right">Nominal</th>
+                                <th className="px-4 py-2.5 text-right">Kuitansi</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {dailyPaidList.length === 0 ? (
+                                <tr>
+                                  <td colSpan={8} className="text-center py-8 text-slate-400 italic text-xs">
+                                    Belum ada transaksi pembayaran lain-lain yang lunas pada tanggal{" "}
+                                    {new Date(miscDailyDateFilter).toLocaleDateString("id-ID", {
+                                      day: "numeric",
+                                      month: "long",
+                                      year: "numeric",
+                                    })}
+                                    .
+                                  </td>
+                                </tr>
+                              ) : (
+                                dailyPaidList.map((bill, idx) => {
+                                  const s = students.find((st) => st.id === bill.studentId);
+                                  const cash = isCashMethod(bill.paymentMethod);
+                                  return (
+                                    <tr key={bill.id} className="hover:bg-slate-50/80">
+                                      <td className="px-4 py-2.5 font-mono text-slate-400">{idx + 1}</td>
+                                      <td className="px-4 py-2.5 font-mono text-[11px] text-slate-500">
+                                        {bill.paidAt
+                                          ? new Date(bill.paidAt).toLocaleTimeString("id-ID", {
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })
+                                          : "-"}
+                                      </td>
+                                      <td className="px-4 py-2.5">
+                                        <div className="font-bold text-slate-800">{s?.name || "Siswa"}</div>
+                                        <div className="text-[10px] font-mono text-slate-400">NIS: {s?.nis || "-"}</div>
+                                      </td>
+                                      <td className="px-4 py-2.5 font-mono font-bold text-slate-600">
+                                        Kelas {s?.class || "-"}
+                                      </td>
+                                      <td className="px-4 py-2.5">
+                                        <div className="font-bold text-slate-800">{bill.title}</div>
+                                        <div className="text-[10px] text-slate-400 font-mono">
+                                          {bill.isMonthly ? `Bulanan • ${bill.month || "-"}` : "Sekali Bayar"} &bull; Ref:{" "}
+                                          {bill.orderId || bill.id.toUpperCase()}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-2.5">
+                                        <span
+                                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono border ${
+                                            cash
+                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                              : "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                          }`}
+                                        >
+                                          {bill.paymentMethod || "TUNAI"}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-2.5 text-right font-mono font-extrabold text-slate-900">
+                                        Rp {(bill.amount || 0).toLocaleString("id-ID")}
+                                      </td>
+                                      <td className="px-4 py-2.5 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setReceiptToPrint({
+                                              type: "misc",
+                                              detail: bill,
+                                              student: s || {
+                                                id: bill.studentId,
+                                                nis: "-",
+                                                name: "Siswa",
+                                                class: "-",
+                                                email: "",
+                                                phone: "",
+                                                savingsBalance: 0,
+                                              },
+                                            });
+                                            setPrintId("print-receipt-section");
+                                          }}
+                                          className="p-1.5 text-indigo-600 hover:text-indigo-800 border border-slate-200 hover:border-indigo-300 rounded-lg hover:bg-indigo-50 transition-all inline-flex items-center gap-1 cursor-pointer"
+                                          title="Cetak Kuitansi Pembayaran Lain-lain"
+                                        >
+                                          <Printer size={13} />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Filter and Search controls */}
             <div className="bg-white p-5 rounded-2xl border border-slate-150 flex flex-col gap-4 shadow-xs">
@@ -16116,6 +16843,12 @@ export default function AdminPanel({
                     t.createdAt &&
                     getWIBDateString(t.createdAt) === currentDateFilter,
                 );
+                const miscPaidToday = miscBills.filter(
+                  (b) =>
+                    b.status === "paid" &&
+                    b.paidAt &&
+                    getWIBDateString(b.paidAt) === currentDateFilter,
+                );
 
                 const totalSppTunai = sppPaidToday
                   .filter(
@@ -16137,6 +16870,26 @@ export default function AdminPanel({
                   )
                   .reduce((acc, c) => acc + c.amount, 0);
 
+                const totalMiscTunai = miscPaidToday
+                  .filter(
+                    (b) =>
+                      b.paymentMethod === "cash" ||
+                      !b.paymentMethod ||
+                      b.paymentMethod.toLowerCase().includes("tunai") ||
+                      b.paymentMethod.toLowerCase().includes("manual"),
+                  )
+                  .reduce((acc, c) => acc + c.amount, 0);
+
+                const totalMiscOnline = miscPaidToday
+                  .filter(
+                    (b) =>
+                      b.paymentMethod &&
+                      !b.paymentMethod.toLowerCase().includes("tunai") &&
+                      !b.paymentMethod.toLowerCase().includes("cash") &&
+                      !b.paymentMethod.toLowerCase().includes("manual"),
+                  )
+                  .reduce((acc, c) => acc + c.amount, 0);
+
                 const totalTabunganMasuk = savingsToday
                   .filter((t) => t.type === "deposit")
                   .reduce((acc, c) => acc + c.amount, 0);
@@ -16145,7 +16898,7 @@ export default function AdminPanel({
                   .filter((t) => t.type === "withdrawal")
                   .reduce((acc, c) => acc + c.amount, 0);
 
-                const totalKasMasukLokal = totalSppTunai + totalTabunganMasuk;
+                const totalKasMasukLokal = totalSppTunai + totalMiscTunai + totalTabunganMasuk;
                 const netKasLokal = totalKasMasukLokal - totalTabunganKeluar;
 
                 // Midtrans Special Calculations
@@ -16232,7 +16985,7 @@ export default function AdminPanel({
                 return (
                   <div className="flex flex-col gap-6">
                     {/* Daily Report Widgets */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5">
                       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-1.5">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                           SPP PAID (CASH/MANUAL)
@@ -16276,6 +17029,18 @@ export default function AdminPanel({
                             ).length
                           }{" "}
                           Transaksi Online
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider">
+                          LAIN-LAIN (TUNAI &amp; ONLINE)
+                        </span>
+                        <span className="text-sm font-bold text-purple-900 font-mono">
+                          Rp {(totalMiscTunai + totalMiscOnline).toLocaleString("id-ID")}
+                        </span>
+                        <span className="text-[9px] text-slate-500">
+                          Tunai: Rp {totalMiscTunai.toLocaleString("id-ID")} &bull; ({miscPaidToday.length} Trx)
                         </span>
                       </div>
 
@@ -16770,6 +17535,117 @@ export default function AdminPanel({
                             </tbody>
                           </table>
                         </div>
+                      </div>
+                    </div>
+
+                    {/* List 3: Pembayaran Lain-lain Today */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col gap-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                        <div>
+                          <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                            Buku Jurnal Pembayaran Lain-lain Hari Ini ({miscPaidToday.length} Transaksi)
+                          </h4>
+                          <span className="text-[10px] text-slate-400">
+                            Rincian pembayaran tagihan non-SPP (Wisuda, Seragam, Pramuka, Kegiatan, dll.) pada tanggal terpilih
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-mono text-[10px] font-bold">
+                            Tunai: Rp {totalMiscTunai.toLocaleString("id-ID")}
+                          </span>
+                          <span className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 font-mono text-[10px] font-bold">
+                            Online: Rp {totalMiscOnline.toLocaleString("id-ID")}
+                          </span>
+                          <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-white font-mono text-[10px] font-bold">
+                            Total: Rp {(totalMiscTunai + totalMiscOnline).toLocaleString("id-ID")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100">
+                          <thead>
+                            <tr className="text-slate-400 font-bold uppercase text-[9px] tracking-wider pb-2">
+                              <th className="pb-2">Waktu</th>
+                              <th className="pb-2">Siswa / Kelas</th>
+                              <th className="pb-2">Nama Tagihan / Kegiatan</th>
+                              <th className="pb-2">Tipe</th>
+                              <th className="pb-2">Metode</th>
+                              <th className="pb-2 text-right">Nominal</th>
+                              <th className="pb-2 text-right">Kuitansi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-105">
+                            {miscPaidToday.length === 0 ? (
+                              <tr>
+                                <td colSpan={7} className="text-center py-8 text-slate-400 text-[11px] italic">
+                                  Tidak ada transaksi pembayaran lain-lain hari ini.
+                                </td>
+                              </tr>
+                            ) : (
+                              miscPaidToday.map((b) => {
+                                const s = students.find((student) => student.id === b.studentId);
+                                return (
+                                  <tr key={b.id} className="hover:bg-slate-50/50">
+                                    <td className="py-2.5 text-slate-500 font-mono text-[10px]">
+                                      {b.paidAt
+                                        ? new Date(b.paidAt).toLocaleTimeString("id-ID", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })
+                                        : "-"}
+                                    </td>
+                                    <td className="py-2.5 font-bold text-slate-700">
+                                      <div>{s?.name || "Siswa dihapus"}</div>
+                                      <div className="text-[9px] text-slate-400 font-mono">
+                                        NIS: {s?.nis || "-"} &bull; Kelas {s?.class || "-"}
+                                      </div>
+                                    </td>
+                                    <td className="py-2.5 font-bold text-slate-800">
+                                      {b.title}
+                                    </td>
+                                    <td className="py-2.5 text-slate-600 text-[10px]">
+                                      {b.isMonthly ? `Bulanan (${b.month || "-"})` : "Sekali Bayar"}
+                                    </td>
+                                    <td className="py-2.5">
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-700 font-mono">
+                                        {b.paymentMethod || "cash"}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 text-right font-mono font-bold text-slate-800">
+                                      Rp {b.amount.toLocaleString("id-ID")}
+                                    </td>
+                                    <td className="py-2.5 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setReceiptToPrint({
+                                            type: "misc",
+                                            detail: b,
+                                            student: s || {
+                                              id: b.studentId,
+                                              nis: "-",
+                                              name: "Siswa",
+                                              class: "-",
+                                              email: "",
+                                              phone: "",
+                                              savingsBalance: 0,
+                                            },
+                                          });
+                                          setPrintId("print-receipt-section");
+                                        }}
+                                        className="p-1 text-indigo-600 hover:text-indigo-800 border border-slate-200 hover:border-indigo-300 rounded hover:bg-slate-100 transition-all inline-flex items-center gap-1 cursor-pointer"
+                                        title="Cetak Kuitansi Resmi"
+                                      >
+                                        <Printer size={12} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </div>
@@ -19990,6 +20866,12 @@ export default function AdminPanel({
                         t.createdAt &&
                         getWIBDateString(t.createdAt) === currentDateFilter,
                     );
+                    const miscPaidToday = miscBills.filter(
+                      (b) =>
+                        b.status === "paid" &&
+                        b.paidAt &&
+                        getWIBDateString(b.paidAt) === currentDateFilter,
+                    );
 
                     const totalSppTunai = sppPaidToday
                       .filter(
@@ -20011,6 +20893,26 @@ export default function AdminPanel({
                       )
                       .reduce((acc, c) => acc + c.amount, 0);
 
+                    const totalMiscTunai = miscPaidToday
+                      .filter(
+                        (b) =>
+                          b.paymentMethod === "cash" ||
+                          !b.paymentMethod ||
+                          b.paymentMethod.toLowerCase().includes("tunai") ||
+                          b.paymentMethod.toLowerCase().includes("manual"),
+                      )
+                      .reduce((acc, c) => acc + c.amount, 0);
+
+                    const totalMiscOnline = miscPaidToday
+                      .filter(
+                        (b) =>
+                          b.paymentMethod &&
+                          !b.paymentMethod.toLowerCase().includes("tunai") &&
+                          !b.paymentMethod.toLowerCase().includes("cash") &&
+                          !b.paymentMethod.toLowerCase().includes("manual"),
+                      )
+                      .reduce((acc, c) => acc + c.amount, 0);
+
                     const totalTabunganMasuk = savingsToday
                       .filter((t) => t.type === "deposit")
                       .reduce((acc, c) => acc + c.amount, 0);
@@ -20020,7 +20922,7 @@ export default function AdminPanel({
                       .reduce((acc, c) => acc + c.amount, 0);
 
                     const totalKasMasukLokal =
-                      totalSppTunai + totalTabunganMasuk;
+                      totalSppTunai + totalMiscTunai + totalTabunganMasuk;
                     const netKasLokal =
                       totalKasMasukLokal - totalTabunganKeluar;
 
@@ -20108,7 +21010,7 @@ export default function AdminPanel({
                     return (
                       <div className="flex flex-col gap-4 text-slate-900">
                         {/* Sub-Summary Cards */}
-                        <div className="grid grid-cols-3 lg:grid-cols-5 gap-2 text-[9px] border border-slate-355 p-2.5 rounded-lg text-slate-905">
+                        <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 text-[9px] border border-slate-355 p-2.5 rounded-lg text-slate-905">
                           <div className="flex flex-col">
                             <span className="font-bold text-slate-500">
                               Iuran SPP Tunai/Manual:
@@ -20123,6 +21025,14 @@ export default function AdminPanel({
                             </span>
                             <span className="font-bold font-mono text-slate-900">
                               Rp {totalSppOnline.toLocaleString("id-ID")}
+                            </span>
+                          </div>
+                          <div className="flex flex-col border-l border-slate-300 pl-2">
+                            <span className="font-bold text-slate-500">
+                              Lain-lain (Tunai / Online):
+                            </span>
+                            <span className="font-bold font-mono text-slate-900">
+                              Rp {(totalMiscTunai + totalMiscOnline).toLocaleString("id-ID")}
                             </span>
                           </div>
                           <div className="flex flex-col border-l border-slate-300 pl-2">
@@ -20416,6 +21326,81 @@ export default function AdminPanel({
                                       </td>
                                       <td className="p-1 px-2 border border-slate-300 text-right font-mono font-semibold">
                                         Rp {item.amount.toLocaleString("id-ID")}
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Pembayaran Lain-lain Print Section */}
+                        <div className="mt-2 text-slate-900">
+                          <h4 className="font-bold text-slate-950 uppercase text-[9px] mb-1.5 font-semibold">
+                            4. Rincian Pembayaran &amp; Iuran Lain-lain (Non-SPP) Hari Ini (
+                            {miscPaidToday.length} Transaksi)
+                          </h4>
+                          <table className="w-full text-left font-sans border-collapse text-[9px]">
+                            <thead>
+                              <tr className="bg-slate-200 border border-slate-400 text-slate-800 font-bold uppercase text-[8px]">
+                                <th className="p-1 px-2 border border-slate-300">Jam</th>
+                                <th className="p-1 px-2 border border-slate-300">Siswa / NIS</th>
+                                <th className="p-1 px-2 border border-slate-300">Kelas</th>
+                                <th className="p-1 px-2 border border-slate-300">Nama Tagihan</th>
+                                <th className="p-1 px-2 border border-slate-300">Tipe</th>
+                                <th className="p-1 px-2 border border-slate-300">Metode</th>
+                                <th className="p-1 px-2 border border-slate-300 text-right">Nominal</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {miscPaidToday.length === 0 ? (
+                                <tr>
+                                  <td
+                                    colSpan={7}
+                                    className="text-center py-3 border border-slate-300 italic text-slate-500"
+                                  >
+                                    Tidak ada penerimaan pembayaran lain-lain pada tanggal ini.
+                                  </td>
+                                </tr>
+                              ) : (
+                                miscPaidToday.map((b) => {
+                                  const s = students.find(
+                                    (student) => student.id === b.studentId,
+                                  );
+                                  return (
+                                    <tr
+                                      key={b.id}
+                                      className="border border-slate-300 text-slate-900"
+                                    >
+                                      <td className="p-1 px-2 border border-slate-300 font-mono text-[8px]">
+                                        {b.paidAt
+                                          ? new Date(
+                                              b.paidAt,
+                                            ).toLocaleTimeString("id-ID", {
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })
+                                          : "-"}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300 font-semibold">
+                                        {s?.name || "Siswa dihapus"} (
+                                        {s?.nis || "-"})
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300">
+                                        Kelas {s?.class || "-"}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300 font-medium">
+                                        {b.title}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300">
+                                        {b.isMonthly ? `Bulanan (${b.month || "-"})` : "Sekali Bayar"}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300 uppercase font-bold text-[8px]">
+                                        {b.paymentMethod || "cash"}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300 text-right font-mono font-semibold">
+                                        Rp {b.amount.toLocaleString("id-ID")}
                                       </td>
                                     </tr>
                                   );

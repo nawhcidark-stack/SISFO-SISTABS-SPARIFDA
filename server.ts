@@ -14958,6 +14958,8 @@ Petunjuk Ekstraksi:
       studentNis,
       studentName,
       studentClass,
+      teacherId,
+      teacherRole,
       buyerName,
       items,
       paymentMethod,
@@ -15068,17 +15070,21 @@ Petunjuk Ekstraksi:
     );
     const changeAmount = Math.max(0, parsedCashReceived - totalAmount);
     const resolvedPaymentMethod: "kas" | "bank" = paymentMethod === "bank" ? "bank" : "kas";
+    const resolvedBuyerType: "student" | "teacher" | "general" =
+      buyerType === "student" ? "student" : buyerType === "teacher" ? "teacher" : "general";
 
     const newSale: KoperasiSaleTransaction = {
       id: saleId,
       invoiceNumber,
       date: txDate,
       createdAt: new Date().toISOString(),
-      buyerType: buyerType === "student" ? "student" : "general",
+      buyerType: resolvedBuyerType,
       studentId: studentId ? String(studentId) : undefined,
       studentNis: studentNis ? String(studentNis) : undefined,
       studentName: studentName ? String(studentName) : undefined,
       studentClass: studentClass ? String(studentClass) : undefined,
+      teacherId: teacherId ? String(teacherId) : undefined,
+      teacherRole: teacherRole ? String(teacherRole) : undefined,
       buyerName: resolvedBuyerName,
       items: saleItems,
       totalQty,
@@ -15100,12 +15106,19 @@ Petunjuk Ekstraksi:
       .map(it => `${it.productName}${it.size && it.size !== "-" && it.size !== "All Size" ? ` (${it.size})` : ""} x${it.qty}`)
       .join(", ");
 
+    const buyerDetailSuffix =
+      resolvedBuyerType === "teacher"
+        ? ` (Guru${teacherRole ? `: ${teacherRole}` : ""})`
+        : studentClass
+        ? ` (Kelas ${studentClass})`
+        : "";
+
     const newTreasurerTx: TreasurerTransaction = {
       id: treasurerTxId,
       type: "incoming",
       category: "Koperasi Sekolah",
       amount: totalAmount,
-      description: `[Kasir Koperasi - ${invoiceNumber}] Penjualan Atribut (${itemSummary}) - Pembeli: ${resolvedBuyerName}${studentClass ? ` (Kelas ${studentClass})` : ""} | Modal/HPP: Rp ${totalBaseAmount.toLocaleString("id-ID")} | Laba: Rp ${totalProfit.toLocaleString("id-ID")}`,
+      description: `[Kasir Koperasi - ${invoiceNumber}] Penjualan Atribut (${itemSummary}) - Pembeli: ${resolvedBuyerName}${buyerDetailSuffix} | Modal/HPP: Rp ${totalBaseAmount.toLocaleString("id-ID")} | Laba: Rp ${totalProfit.toLocaleString("id-ID")}`,
       date: txDate,
       source: "custom",
       createdBy: newSale.cashierName,

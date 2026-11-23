@@ -163,9 +163,13 @@ export function printKoperasiReceiptInstant(
   const timeStr = sale.createdAt
     ? new Date(sale.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
     : '';
-  const buyerLabel = `${escapeHtml(sale.buyerName)}${
-    sale.studentClass ? ` (${escapeHtml(sale.studentClass)})` : ''
-  }`;
+  const buyerSuffix =
+    sale.buyerType === 'teacher'
+      ? ` (${escapeHtml(sale.teacherRole || 'Guru')})`
+      : sale.studentClass
+      ? ` (${escapeHtml(sale.studentClass)})`
+      : '';
+  const buyerLabel = `${escapeHtml(sale.buyerName)}${buyerSuffix}`;
   const paymentLabel = sale.paymentMethod === 'bank' ? 'TRANSFER / QRIS' : 'TUNAI / KAS';
   const barcodeSvg = generateCode128SvgString(sale.invoiceNumber, 24, true);
 

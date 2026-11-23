@@ -33,7 +33,9 @@ import {
   KoperasiSaleTransaction,
   TreasurerTransaction,
   SchoolIdentity,
-  Student
+  Student,
+  HomeroomTeacher,
+  SubjectTeacher
 } from '../types';
 import {
   Code128BarcodeSvg,
@@ -46,8 +48,18 @@ import {
 interface KoperasiAdminPanelProps {
   schoolIdentity?: SchoolIdentity | null;
   students?: Student[];
+  homerooms?: HomeroomTeacher[];
+  subjectTeachers?: SubjectTeacher[];
   treasurerTransactions?: TreasurerTransaction[];
   onRefreshTreasurerTransactions?: () => void;
+}
+
+interface UnifiedTeacherBuyer {
+  id: string;
+  name: string;
+  username: string;
+  roleLabel: string;
+  badgeText: string;
 }
 
 interface CartItem {
@@ -72,6 +84,8 @@ const UNITS = ['Pcs', 'Stel', 'Set', 'Paket', 'Potong'];
 export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   schoolIdentity,
   students = [],
+  homerooms = [],
+  subjectTeachers = [],
   treasurerTransactions = [],
   onRefreshTreasurerTransactions
 }) => {
@@ -80,6 +94,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   const [products, setProducts] = useState<KoperasiProduct[]>([]);
   const [sales, setSales] = useState<KoperasiSaleTransaction[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [fallbackHomerooms, setFallbackHomerooms] = useState<HomeroomTeacher[]>([]);
+  const [fallbackSubjectTeachers, setFallbackSubjectTeachers] = useState<SubjectTeacher[]>([]);
 
   // Toast feedback
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -90,10 +106,13 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   const [posSearchQuery, setPosSearchQuery] = useState<string>('');
   const [posCategory, setPosCategory] = useState<string>('Semua');
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [buyerType, setBuyerType] = useState<'student' | 'general'>('student');
+  const [buyerType, setBuyerType] = useState<'student' | 'teacher' | 'general'>('student');
   const [studentSearch, setStudentSearch] = useState<string>('');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [showStudentDropdown, setShowStudentDropdown] = useState<boolean>(false);
+  const [teacherSearch, setTeacherSearch] = useState<string>('');
+  const [selectedTeacher, setSelectedTeacher] = useState<UnifiedTeacherBuyer | null>(null);
+  const [showTeacherDropdown, setShowTeacherDropdown] = useState<boolean>(false);
   const [generalBuyerName, setGeneralBuyerName] = useState<string>('');
   const [generalBuyerClass, setGeneralBuyerClass] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<'kas' | 'bank'>('kas');
@@ -167,6 +186,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   const [startDate, setStartDate] = useState<string>(todayIso);
   const [endDate, setEndDate] = useState<string>(todayIso);
   const [dailyPaymentFilter, setDailyPaymentFilter] = useState<'all' | 'kas' | 'bank'>('all');
+  const [dailyCategoryFilter, setDailyCategoryFilter] = useState<string>('Semua');
+  const [dailySizeFilter, setDailySizeFilter] = useState<string>('Semua');
 
   // Financial Report Filter
   const [financialMonth, setFinancialMonth] = useState<string>(currentMonthIso);
@@ -193,6 +214,20 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       if (sRes.ok) {
         const sData = await sRes.json();
         if (Array.isArray(sData)) setSales(sData);
+      }
+      if (homerooms.length === 0 || subjectTeachers.length === 0) {
+        const [hrRes, stRes] = await Promise.all([
+          fetch('/api/homerooms'),
+          fetch('/api/subject-teachers')
+        ]);
+        if (hrRes.ok) {
+          const hrData = await hrRes.json();
+          if (Array.isArray(hrData)) setFallbackHomerooms(hrData);
+        }
+        if (stRes.ok) {
+          const stData = await stRes.json();
+          if (Array.isArray(stData)) setFallbackSubjectTeachers(stData);
+        }
       }
     } catch (e) {
       console.error('Error loading Koperasi data:', e);
@@ -412,6 +447,48 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     });
   }, [products, posCategory, posSearchQuery]);
 
+  const allTeachers = useMemo<UnifiedTeacherBuyer[]>(() => {
+    const hrList = homerooms.length > 0 ? homerooms : fallbackHomerooms;
+    const stList = subjectTeachers.length > 0 ? subjectTeachers : fallbackSubjectTeachers;
+    const map = new Map<string, UnifiedTeacherBuyer>();
+
+    for (const hr of hrList) {
+      if (!hr || !hr.name) continue;
+      const key = hr.name.trim().toLowerCase();
+      const subjPart = hr.subject ? ` • ${hr.subject}` : '';
+      const roleLabel = hr.className ? `Wali Kelas ${hr.className}${subjPart}` : `Guru${subjPart}`;
+      map.set(key, {
+        id: hr.id || hr.username || key,
+        name: hr.name.trim(),
+        username: hr.username || '',
+        roleLabel,
+        badgeText: hr.className ? `Wali Kelas ${hr.className}` : 'Wali Kelas'
+      });
+    }
+
+    for (const st of stList) {
+      if (!st || !st.name) continue;
+      const key = st.name.trim().toLowerCase();
+      const existing = map.get(key);
+      if (existing) {
+        if (st.subject && !existing.roleLabel.toLowerCase().includes(st.subject.toLowerCase())) {
+          existing.roleLabel = `${existing.roleLabel} • ${st.subject}`;
+        }
+      } else {
+        const roleLabel = st.subject ? `Guru ${st.subject}` : 'Guru Mapel';
+        map.set(key, {
+          id: st.id || st.username || key,
+          name: st.name.trim(),
+          username: st.username || '',
+          roleLabel,
+          badgeText: st.subject ? `Guru ${st.subject}` : 'Guru Mapel'
+        });
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'id'));
+  }, [homerooms, subjectTeachers, fallbackHomerooms, fallbackSubjectTeachers]);
+
   const filteredStudents = useMemo(() => {
     if (!studentSearch.trim()) return students.slice(0, 12);
     const q = studentSearch.toLowerCase();
@@ -424,6 +501,19 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       )
       .slice(0, 15);
   }, [students, studentSearch]);
+
+  const filteredTeachers = useMemo(() => {
+    const queryText = (buyerType === 'teacher' ? teacherSearch : studentSearch).trim().toLowerCase();
+    if (!queryText) return allTeachers.slice(0, 15);
+    return allTeachers
+      .filter(
+        t =>
+          t.name.toLowerCase().includes(queryText) ||
+          t.roleLabel.toLowerCase().includes(queryText) ||
+          t.username.toLowerCase().includes(queryText)
+      )
+      .slice(0, 15);
+  }, [allTeachers, teacherSearch, studentSearch, buyerType]);
 
   const cartSummary = useMemo(() => {
     let totalQty = 0;
@@ -487,6 +577,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     const buyerNameResolved =
       buyerType === 'student'
         ? selectedStudent?.name || studentSearch.trim() || 'Siswa SMP'
+        : buyerType === 'teacher'
+        ? selectedTeacher?.name || teacherSearch.trim() || 'Guru SMP'
         : generalBuyerName.trim() || 'Pembeli Umum / Siswa Baru';
 
     if (paymentMethod === 'kas' && parsedCashReceived < cartSummary.totalSelling) {
@@ -507,7 +599,14 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
         studentClass:
           buyerType === 'student'
             ? selectedStudent?.class
-            : generalBuyerClass.trim() || undefined,
+            : buyerType === 'general'
+            ? generalBuyerClass.trim() || undefined
+            : undefined,
+        teacherId: buyerType === 'teacher' ? selectedTeacher?.id : undefined,
+        teacherRole:
+          buyerType === 'teacher'
+            ? selectedTeacher?.roleLabel || 'Guru / Tendik'
+            : undefined,
         buyerName: buyerNameResolved,
         items: cart.map(c => ({
           productId: c.product.id,
@@ -552,6 +651,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
         clearCart();
         setSelectedStudent(null);
         setStudentSearch('');
+        setSelectedTeacher(null);
+        setTeacherSearch('');
         setGeneralBuyerName('');
         setGeneralBuyerClass('');
         await loadKoperasiData();
@@ -769,19 +870,91 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     };
   }, [products]);
 
-  // Filtered Daily Sales
+  const availableDailyCategories = useMemo(() => {
+    const set = new Set<string>(CATEGORIES);
+    for (const p of products) {
+      if (p.category) set.add(p.category);
+    }
+    for (const s of sales) {
+      for (const it of s.items || []) {
+        if (it.category) set.add(it.category);
+      }
+    }
+    return ['Semua', ...Array.from(set)];
+  }, [products, sales]);
+
+  const availableDailySizes = useMemo(() => {
+    const set = new Set<string>(SIZES);
+    for (const p of products) {
+      if (p.size) set.add(p.size);
+    }
+    for (const s of sales) {
+      for (const it of s.items || []) {
+        if (it.size) set.add(it.size);
+      }
+    }
+    return ['Semua', ...Array.from(set)];
+  }, [products, sales]);
+
+  // Filtered Daily Sales (supports date, payment method, category, and size filters)
   const filteredDailySales = useMemo(() => {
-    return sales.filter(s => {
-      if (dailyPaymentFilter !== 'all' && s.paymentMethod !== dailyPaymentFilter) return false;
-      if (dailyFilterMode === 'single_day') {
-        return s.date === selectedDate;
+    const hasItemFilter = dailyCategoryFilter !== 'Semua' || dailySizeFilter !== 'Semua';
+    const result: KoperasiSaleTransaction[] = [];
+
+    for (const s of sales) {
+      if (dailyPaymentFilter !== 'all' && s.paymentMethod !== dailyPaymentFilter) continue;
+      if (dailyFilterMode === 'single_day' && s.date !== selectedDate) continue;
+      if (dailyFilterMode === 'date_range' && (s.date < startDate || s.date > endDate)) continue;
+
+      if (!hasItemFilter) {
+        result.push(s);
+        continue;
       }
-      if (dailyFilterMode === 'date_range') {
-        return s.date >= startDate && s.date <= endDate;
+
+      const matchedItems = (s.items || []).filter(it => {
+        if (dailyCategoryFilter !== 'Semua' && it.category !== dailyCategoryFilter) return false;
+        if (dailySizeFilter !== 'Semua' && it.size !== dailySizeFilter) return false;
+        return true;
+      });
+
+      if (matchedItems.length === 0) continue;
+
+      // Recalculate totals for the matched items when category/size filter is active
+      let subQty = 0;
+      let subBase = 0;
+      let subSelling = 0;
+      let subProfit = 0;
+      for (const it of matchedItems) {
+        const qty = Number(it.qty) || 0;
+        const b = Number(it.subtotalBase) || qty * (Number(it.basePrice) || 0);
+        const sel = Number(it.subtotalSelling) || qty * (Number(it.sellingPrice) || 0);
+        subQty += qty;
+        subBase += b;
+        subSelling += sel;
+        subProfit += sel - b;
       }
-      return true;
-    });
-  }, [sales, dailyFilterMode, selectedDate, startDate, endDate, dailyPaymentFilter]);
+
+      result.push({
+        ...s,
+        items: matchedItems,
+        totalQty: subQty,
+        totalBaseAmount: subBase,
+        totalAmount: subSelling,
+        totalProfit: subProfit
+      });
+    }
+
+    return result;
+  }, [
+    sales,
+    dailyFilterMode,
+    selectedDate,
+    startDate,
+    endDate,
+    dailyPaymentFilter,
+    dailyCategoryFilter,
+    dailySizeFilter
+  ]);
 
   const dailyReportMetrics = useMemo(() => {
     let totalQty = 0;
@@ -880,15 +1053,22 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     const rows: Record<string, string | number>[] = [];
     filteredDailySales.forEach((sale, idx) => {
       const itemsDetail = sale.items
-        .map(it => `${it.productName} (${it.size}) x${it.qty}`)
+        .map(it => `[${it.category}] ${it.productName} (Uk: ${it.size}) x${it.qty}`)
         .join('; ');
+      const categoriesDetail = Array.from(new Set(sale.items.map(it => it.category))).join(', ');
+      const sizesDetail = Array.from(new Set(sale.items.map(it => it.size))).join(', ');
       rows.push({
         No: idx + 1,
         'No. Nota / Struk': sale.invoiceNumber,
         Tanggal: sale.date,
+        'Kategori Pembeli':
+          sale.buyerType === 'teacher' ? 'Guru / Tendik' : sale.buyerType === 'student' ? 'Siswa' : 'Umum',
         'Nama Pembeli': sale.buyerName,
-        Kelas: sale.studentClass || '-',
+        'Kelas / Jabatan Guru':
+          sale.buyerType === 'teacher' ? sale.teacherRole || 'Guru' : sale.studentClass || '-',
         NIS: sale.studentNis || '-',
+        'Kategori Atribut': categoriesDetail,
+        Ukuran: sizesDetail,
         'Rincian Atribut': itemsDetail,
         'Total Qty': sale.totalQty,
         'Total Harga Dasar / HPP (Rp)': sale.totalBaseAmount,
@@ -958,21 +1138,28 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
         : dailyFilterMode === 'date_range'
         ? `${startDate} s/d ${endDate}`
         : 'Semua Periode';
+    const filterMeta = `Kategori: ${dailyCategoryFilter} • Ukuran: ${dailySizeFilter}`;
 
     const rowsHtml = filteredDailySales
       .map((sale, idx) => {
         const itemsText = sale.items
           .map(
             it =>
-              `${it.productName} (${it.size}) x${it.qty} [HPP: Rp ${(it.basePrice || 0).toLocaleString('id-ID')} -> Jual: Rp ${(it.sellingPrice || 0).toLocaleString('id-ID')}]`
+              `[${it.category}] ${it.productName} (Uk: ${it.size}) x${it.qty} [HPP: Rp ${(it.basePrice || 0).toLocaleString('id-ID')} -> Jual: Rp ${(it.sellingPrice || 0).toLocaleString('id-ID')}]`
           )
           .join('<br/>');
+        const buyerSub =
+          sale.buyerType === 'teacher'
+            ? `<br/><small>${sale.teacherRole || 'Guru'}</small>`
+            : sale.studentClass
+            ? `<br/><small>Kelas ${sale.studentClass}</small>`
+            : '';
         return `
         <tr>
           <td style="text-align:center;">${idx + 1}</td>
           <td><strong>${sale.invoiceNumber}</strong></td>
           <td>${sale.date}</td>
-          <td><strong>${sale.buyerName}</strong>${sale.studentClass ? `<br/><small>Kelas ${sale.studentClass}</small>` : ''}</td>
+          <td><strong>${sale.buyerName}</strong>${buyerSub}</td>
           <td>${itemsText}</td>
           <td style="text-align:center;">${sale.paymentMethod === 'bank' ? 'Bank/QRIS' : 'Kas Tunai'}</td>
           <td style="text-align:right;">Rp ${(sale.totalBaseAmount || 0).toLocaleString('id-ID')}</td>
@@ -996,7 +1183,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       <div class="header">
         <div class="title">LAPORAN PENJUALAN HARIAN KOPERASI SEKOLAH — ${schoolName}</div>
         <div>${schoolAddress}</div>
-        <div style="margin-top:4px;font-weight:bold;">Periode: ${periodText} • Total Nota: ${dailyReportMetrics.txCount} (${dailyReportMetrics.totalQty} Atribut)</div>
+        <div style="margin-top:4px;font-weight:bold;">Periode: ${periodText} • ${filterMeta} • Total Nota: ${dailyReportMetrics.txCount} (${dailyReportMetrics.totalQty} Atribut)</div>
       </div>
       <table>
         <thead>
@@ -1542,23 +1729,34 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
             </div>
 
             <div className="p-4 sm:p-5 space-y-4">
-              {/* 1. Data Pembeli (Siswa / Umum) */}
+              {/* 1. Data Pembeli (Siswa / Guru / Umum) */}
               <div className="space-y-2.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="text-xs font-extrabold uppercase tracking-wider text-slate-600">
-                    Identitas Pembeli Atribut
+                    Identitas Pembeli
                   </label>
-                  <div className="flex rounded-lg bg-slate-200 p-0.5 text-xs font-bold">
+                  <div className="flex rounded-lg bg-slate-200 p-0.5 text-[11px] font-bold">
                     <button
                       type="button"
                       onClick={() => setBuyerType('student')}
                       className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
                         buyerType === 'student'
                           ? 'bg-white text-emerald-800 shadow-2xs'
-                          : 'text-slate-600'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      Siswa Sekolah
+                      Siswa
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBuyerType('teacher')}
+                      className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                        buyerType === 'teacher'
+                          ? 'bg-white text-indigo-800 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Guru ({allTeachers.length})
                     </button>
                     <button
                       type="button"
@@ -1566,10 +1764,10 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                       className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
                         buyerType === 'general'
                           ? 'bg-white text-emerald-800 shadow-2xs'
-                          : 'text-slate-600'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      Siswa Baru / Umum
+                      Umum / Baru
                     </button>
                   </div>
                 </div>
@@ -1609,29 +1807,126 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                               setStudentSearch(e.target.value);
                               setShowStudentDropdown(true);
                             }}
-                            placeholder="Ketik nama siswa, NIS, atau kelas..."
+                            placeholder="Cari nama siswa, NIS, kelas (atau nama guru)..."
                             className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm outline-none focus:border-emerald-600"
                           />
                         </div>
-                        {showStudentDropdown && filteredStudents.length > 0 && (
-                          <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
-                            {filteredStudents.map(st => (
+                        {showStudentDropdown &&
+                          (filteredStudents.length > 0 ||
+                            (studentSearch.trim().length >= 2 && filteredTeachers.length > 0)) && (
+                            <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                              {filteredStudents.map(st => (
+                                <button
+                                  key={st.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedStudent(st);
+                                    setStudentSearch(st.name);
+                                    setShowStudentDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3.5 py-2 hover:bg-emerald-50 border-b border-slate-100 last:border-none flex items-center justify-between cursor-pointer"
+                                >
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-800">{st.name}</div>
+                                    <div className="text-[11px] text-slate-500">NIS: {st.nis}</div>
+                                  </div>
+                                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-bold">
+                                    Kelas {st.class}
+                                  </span>
+                                </button>
+                              ))}
+
+                              {studentSearch.trim().length >= 2 && filteredTeachers.length > 0 && (
+                                <>
+                                  <div className="px-3 py-1 bg-indigo-50 text-[10px] font-extrabold uppercase tracking-wider text-indigo-800 border-y border-indigo-100">
+                                    Data Guru Ditemukan (Klik untuk Pilih Guru)
+                                  </div>
+                                  {filteredTeachers.slice(0, 6).map(tch => (
+                                    <button
+                                      key={`cross-tch-${tch.id}`}
+                                      type="button"
+                                      onClick={() => {
+                                        setBuyerType('teacher');
+                                        setSelectedTeacher(tch);
+                                        setTeacherSearch(tch.name);
+                                        setShowStudentDropdown(false);
+                                      }}
+                                      className="w-full text-left px-3.5 py-2 hover:bg-indigo-50 border-b border-slate-100 last:border-none flex items-center justify-between cursor-pointer"
+                                    >
+                                      <div>
+                                        <div className="text-xs font-bold text-indigo-950">{tch.name}</div>
+                                        <div className="text-[11px] text-indigo-700">{tch.roleLabel}</div>
+                                      </div>
+                                      <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[10px] font-bold">
+                                        Guru
+                                      </span>
+                                    </button>
+                                  ))}
+                                </>
+                              )}
+                            </div>
+                          )}
+                      </>
+                    )}
+                  </div>
+                ) : buyerType === 'teacher' ? (
+                  <div className="relative">
+                    {selectedTeacher ? (
+                      <div className="flex items-center justify-between bg-indigo-50 border border-indigo-300 rounded-xl px-3 py-2">
+                        <div>
+                          <div className="text-xs font-extrabold text-indigo-950">
+                            {selectedTeacher.name}
+                          </div>
+                          <div className="text-[11px] text-indigo-700 font-medium">
+                            {selectedTeacher.roleLabel}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedTeacher(null);
+                            setTeacherSearch('');
+                          }}
+                          className="p-1 text-indigo-700 hover:bg-indigo-100 rounded-lg cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="relative">
+                          <User className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={teacherSearch}
+                            onFocus={() => setShowTeacherDropdown(true)}
+                            onChange={e => {
+                              setTeacherSearch(e.target.value);
+                              setShowTeacherDropdown(true);
+                            }}
+                            placeholder="Ketik nama guru, wali kelas, atau mata pelajaran..."
+                            className="w-full pl-9 pr-3 py-2 rounded-xl border border-indigo-300 bg-white text-xs sm:text-sm outline-none focus:border-indigo-600"
+                          />
+                        </div>
+                        {showTeacherDropdown && filteredTeachers.length > 0 && (
+                          <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
+                            {filteredTeachers.map(tch => (
                               <button
-                                key={st.id}
+                                key={tch.id}
                                 type="button"
                                 onClick={() => {
-                                  setSelectedStudent(st);
-                                  setStudentSearch(st.name);
-                                  setShowStudentDropdown(false);
+                                  setSelectedTeacher(tch);
+                                  setTeacherSearch(tch.name);
+                                  setShowTeacherDropdown(false);
                                 }}
-                                className="w-full text-left px-3.5 py-2 hover:bg-emerald-50 border-b border-slate-100 last:border-none flex items-center justify-between cursor-pointer"
+                                className="w-full text-left px-3.5 py-2 hover:bg-indigo-50 border-b border-slate-100 last:border-none flex items-center justify-between gap-2 cursor-pointer"
                               >
-                                <div>
-                                  <div className="text-xs font-bold text-slate-800">{st.name}</div>
-                                  <div className="text-[11px] text-slate-500">NIS: {st.nis}</div>
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-slate-900 truncate">{tch.name}</div>
+                                  <div className="text-[11px] text-slate-500 truncate">{tch.roleLabel}</div>
                                 </div>
-                                <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-bold">
-                                  Kelas {st.class}
+                                <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 text-[10px] font-bold shrink-0">
+                                  {tch.badgeText}
                                 </span>
                               </button>
                             ))}
@@ -1653,7 +1948,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                       type="text"
                       value={generalBuyerClass}
                       onChange={e => setGeneralBuyerClass(e.target.value)}
-                      placeholder="Kelas (Opsional)"
+                      placeholder="Kelas/Ket (Opsional)"
                       className="px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm outline-none focus:border-emerald-600"
                     />
                   </div>
@@ -2227,6 +2522,32 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
               )}
 
               <select
+                value={dailyCategoryFilter}
+                onChange={e => setDailyCategoryFilter(e.target.value)}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white"
+                title="Filter Kategori Atribut"
+              >
+                {availableDailyCategories.map(cat => (
+                  <option key={cat} value={cat}>
+                    {cat === 'Semua' ? 'Semua Kategori Atribut' : `Kategori: ${cat}`}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={dailySizeFilter}
+                onChange={e => setDailySizeFilter(e.target.value)}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white"
+                title="Filter Ukuran Atribut"
+              >
+                {availableDailySizes.map(sz => (
+                  <option key={sz} value={sz}>
+                    {sz === 'Semua' ? 'Semua Ukuran' : `Ukuran: ${sz}`}
+                  </option>
+                ))}
+              </select>
+
+              <select
                 value={dailyPaymentFilter}
                 onChange={e => setDailyPaymentFilter(e.target.value as 'all' | 'kas' | 'bank')}
                 className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white"
@@ -2235,6 +2556,22 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                 <option value="kas">Tunai (Buku Kas)</option>
                 <option value="bank">Transfer / QRIS (Bank)</option>
               </select>
+
+              {(dailyCategoryFilter !== 'Semua' ||
+                dailySizeFilter !== 'Semua' ||
+                dailyPaymentFilter !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDailyCategoryFilter('Semua');
+                    setDailySizeFilter('Semua');
+                    setDailyPaymentFilter('all');
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200 cursor-pointer"
+                >
+                  Reset Filter
+                </button>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -2314,7 +2651,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
 
           {/* Daily Sales Table */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+            <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="font-black text-slate-900 text-sm sm:text-base">
                   RINCIAN LAPORAN PENJUALAN HARIAN KOPERASI — {schoolName}
@@ -2326,8 +2663,24 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                     : dailyFilterMode === 'date_range'
                     ? `${startDate} s/d ${endDate}`
                     : 'Semua Periode'}
+                  {' • '}Kategori: <strong className="text-slate-700">{dailyCategoryFilter}</strong>
+                  {' • '}Ukuran: <strong className="text-slate-700">{dailySizeFilter}</strong>
                 </p>
               </div>
+              {(dailyCategoryFilter !== 'Semua' || dailySizeFilter !== 'Semua') && (
+                <div className="flex items-center gap-1.5">
+                  {dailyCategoryFilter !== 'Semua' && (
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+                      Kategori: {dailyCategoryFilter}
+                    </span>
+                  )}
+                  {dailySizeFilter !== 'Semua' && (
+                    <span className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-bold">
+                      Ukuran: {dailySizeFilter}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {filteredDailySales.length === 0 ? (
@@ -2362,19 +2715,33 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                         <td className="p-3 text-slate-600">{sale.date}</td>
                         <td className="p-3">
                           <div className="font-bold text-slate-900">{sale.buyerName}</div>
-                          {sale.studentClass && (
-                            <div className="text-[11px] text-slate-500">
-                              Kelas {sale.studentClass}
+                          {sale.buyerType === 'teacher' ? (
+                            <div className="text-[11px] text-indigo-700 font-semibold">
+                              {sale.teacherRole || 'Guru / Tendik'}
                             </div>
+                          ) : (
+                            sale.studentClass && (
+                              <div className="text-[11px] text-slate-500">
+                                Kelas {sale.studentClass}
+                              </div>
+                            )
                           )}
                         </td>
                         <td className="p-3">
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             {sale.items.map((it, idx) => (
-                              <div key={idx} className="text-xs text-slate-700">
-                                <span className="font-semibold">{it.productName}</span> ({it.size}) ×{' '}
-                                <strong>{it.qty}</strong>
-                                <span className="text-[11px] text-slate-400 ml-1.5">
+                              <div key={idx} className="text-xs text-slate-700 flex flex-wrap items-center gap-1.5">
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-bold">
+                                  {it.category}
+                                </span>
+                                <span className="font-semibold text-slate-900">{it.productName}</span>
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 text-[10px] font-extrabold">
+                                  Uk: {it.size}
+                                </span>
+                                <span>
+                                  × <strong>{it.qty}</strong>
+                                </span>
+                                <span className="text-[11px] text-slate-400">
                                   [HPP: Rp {(it.basePrice || 0).toLocaleString('id-ID')} → Jual: Rp{' '}
                                   {(it.sellingPrice || 0).toLocaleString('id-ID')}]
                                 </span>
@@ -2775,9 +3142,13 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span>Pembeli:</span>
-                    <span className="font-bold">
+                    <span className="font-bold text-right">
                       {receiptSale.buyerName}
-                      {receiptSale.studentClass ? ` (${receiptSale.studentClass})` : ''}
+                      {receiptSale.buyerType === 'teacher'
+                        ? ` (${receiptSale.teacherRole || 'Guru'})`
+                        : receiptSale.studentClass
+                        ? ` (${receiptSale.studentClass})`
+                        : ''}
                     </span>
                   </div>
                   <div className="flex justify-between">

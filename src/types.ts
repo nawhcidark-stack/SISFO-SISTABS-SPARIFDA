@@ -1309,11 +1309,13 @@ export interface KoperasiSaleTransaction {
   invoiceNumber: string;
   date: string; // YYYY-MM-DD
   createdAt: string; // ISO timestamp
-  buyerType: 'student' | 'general';
+  buyerType: 'student' | 'teacher' | 'general';
   studentId?: string;
   studentNis?: string;
   studentName?: string;
   studentClass?: string;
+  teacherId?: string;
+  teacherRole?: string;
   buyerName: string;
   items: KoperasiSaleItem[];
   totalQty: number;

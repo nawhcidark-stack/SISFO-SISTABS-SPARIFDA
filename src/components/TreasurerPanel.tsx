@@ -3530,6 +3530,8 @@ export default function TreasurerPanel({
             <KoperasiAdminPanel
               schoolIdentity={schoolIdentity}
               students={students}
+              homerooms={homerooms}
+              subjectTeachers={subjectTeachers}
               treasurerTransactions={transactions}
               onRefreshTreasurerTransactions={fetchTransactions}
             />

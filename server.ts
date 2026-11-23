@@ -14705,6 +14705,21 @@ Petunjuk Ekstraksi:
       description: "Paket 10 buku tulis sampul khusus SMP Ma'arif NU Pandaan",
       isActive: true,
       updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-13",
+      code: "ATR-FC-01",
+      name: "Transaksi Foto Copy / Print Lembaran",
+      category: "Foto Copy",
+      size: "-",
+      basePrice: 150,
+      sellingPrice: 300,
+      stock: 0,
+      isNonStock: true,
+      unit: "Lembar",
+      description: "Layanan foto copy dan cetak dokumen koperasi (Tanpa Input Stok / Unlimit)",
+      isActive: true,
+      updatedAt: new Date().toISOString()
     }
   ];
 
@@ -14798,16 +14813,17 @@ Petunjuk Ekstraksi:
     res.json(koperasiProducts);
   });
 
-  // POST create new Koperasi product (with basePrice & sellingPrice)
+  // POST create new Koperasi product (with basePrice, sellingPrice & optional isNonStock)
   app.post("/api/koperasi/products", async (req, res) => {
     await ensureKoperasiHydrated();
-    const { code, name, category, size, basePrice, sellingPrice, stock, unit, description, isActive } = req.body || {};
+    const { code, name, category, size, basePrice, sellingPrice, stock, isNonStock, unit, description, isActive } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ error: "Nama atribut sekolah wajib diisi." });
     }
     const parsedBase = Math.max(0, Number(String(basePrice ?? 0).replace(/[^0-9]/g, "")) || 0);
     const parsedSelling = Math.max(0, Number(String(sellingPrice ?? 0).replace(/[^0-9]/g, "")) || 0);
-    const parsedStock = Math.max(0, Number(stock) || 0);
+    const nonStockFlag = Boolean(isNonStock);
+    const parsedStock = nonStockFlag ? 0 : Math.max(0, Number(stock) || 0);
 
     const newProduct: KoperasiProduct = {
       id: `kop-prd-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -14818,6 +14834,7 @@ Petunjuk Ekstraksi:
       basePrice: parsedBase,
       sellingPrice: parsedSelling,
       stock: parsedStock,
+      isNonStock: nonStockFlag,
       unit: String(unit || "Pcs").trim(),
       description: description ? String(description).trim() : "",
       isActive: isActive !== undefined ? Boolean(isActive) : true,
@@ -14829,7 +14846,7 @@ Petunjuk Ekstraksi:
     res.json({ success: true, product: newProduct });
   });
 
-  // PUT update existing Koperasi product (basePrice, sellingPrice, stock, etc.)
+  // PUT update existing Koperasi product (basePrice, sellingPrice, stock, isNonStock, etc.)
   app.put("/api/koperasi/products/:id", async (req, res) => {
     await ensureKoperasiHydrated();
     const { id } = req.params;
@@ -14838,7 +14855,7 @@ Petunjuk Ekstraksi:
       return res.status(404).json({ error: "Data atribut sekolah tidak ditemukan." });
     }
 
-    const { code, name, category, size, basePrice, sellingPrice, stock, unit, description, isActive } = req.body || {};
+    const { code, name, category, size, basePrice, sellingPrice, stock, isNonStock, unit, description, isActive } = req.body || {};
     const existing = koperasiProducts[idx];
 
     const parsedBase = basePrice !== undefined
@@ -14847,7 +14864,12 @@ Petunjuk Ekstraksi:
     const parsedSelling = sellingPrice !== undefined
       ? Math.max(0, Number(String(sellingPrice).replace(/[^0-9]/g, "")) || 0)
       : existing.sellingPrice;
-    const parsedStock = stock !== undefined ? Math.max(0, Number(stock) || 0) : existing.stock;
+    const nonStockFlag = isNonStock !== undefined ? Boolean(isNonStock) : Boolean(existing.isNonStock);
+    const parsedStock = nonStockFlag
+      ? 0
+      : stock !== undefined
+      ? Math.max(0, Number(stock) || 0)
+      : existing.stock;
 
     const updated: KoperasiProduct = {
       ...existing,
@@ -14858,6 +14880,7 @@ Petunjuk Ekstraksi:
       basePrice: parsedBase,
       sellingPrice: parsedSelling,
       stock: parsedStock,
+      isNonStock: nonStockFlag,
       unit: unit !== undefined ? String(unit).trim() : existing.unit,
       description: description !== undefined ? String(description).trim() : existing.description,
       isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive,
@@ -14891,6 +14914,7 @@ Petunjuk Ekstraksi:
     if (newSellingPrice !== undefined && Number(newSellingPrice) >= 0) {
       product.sellingPrice = Math.max(0, Number(String(newSellingPrice).replace(/[^0-9]/g, "")) || 0);
     }
+    product.isNonStock = false;
     product.stock = (Number(product.stock) || 0) + addedQty;
     product.updatedAt = new Date().toISOString();
 
@@ -14949,7 +14973,7 @@ Petunjuk Ekstraksi:
     res.json(koperasiSales);
   });
 
-  // POST checkout Koperasi sale -> deducts stock & automatically records incoming transaction in Bendahara's bookkeeping
+  // POST checkout Koperasi sale -> deducts stock (for stocked items) & automatically records incoming transaction in Bendahara's bookkeeping
   app.post("/api/koperasi/sales", async (req, res) => {
     await ensureKoperasiHydrated();
     const {
@@ -14984,7 +15008,7 @@ Petunjuk Ekstraksi:
       const qty = Math.max(1, Number(rawItem.qty) || 1);
 
       if (product) {
-        if (product.stock < qty) {
+        if (!product.isNonStock && product.stock < qty) {
           return res.status(400).json({
             error: `Stok "${product.name} (${product.size})" tidak mencukupi. Tersisa ${product.stock} ${product.unit}.`
           });
@@ -15041,10 +15065,10 @@ Petunjuk Ekstraksi:
       }
     }
 
-    // Deduct stock
+    // Deduct stock only for stocked products (skip if isNonStock is true)
     for (const sItem of saleItems) {
       const prod = koperasiProducts.find(p => p.id === sItem.productId);
-      if (prod) {
+      if (prod && !prod.isNonStock) {
         prod.stock = Math.max(0, (Number(prod.stock) || 0) - sItem.qty);
         prod.updatedAt = new Date().toISOString();
       }
@@ -15154,10 +15178,10 @@ Petunjuk Ekstraksi:
 
     const sale = koperasiSales[idx];
 
-    // Restore product stock
+    // Restore product stock (only for stocked items)
     for (const item of sale.items || []) {
       const prod = koperasiProducts.find(p => p.id === item.productId);
-      if (prod) {
+      if (prod && !prod.isNonStock) {
         prod.stock = (Number(prod.stock) || 0) + (Number(item.qty) || 0);
         prod.updatedAt = new Date().toISOString();
       }

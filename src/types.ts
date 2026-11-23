@@ -1278,12 +1278,13 @@ export interface KoperasiProduct {
   id: string;
   code: string;
   name: string;
-  category: string; // 'Seragam' | 'Atribut' | 'Kerudung & Jilbab' | 'Olahraga' | 'Buku & LKS' | 'Alat Tulis' | 'Lainnya'
+  category: string; // 'Seragam' | 'Atribut' | 'Kerudung & Jilbab' | 'Olahraga' | 'Buku & LKS' | 'Alat Tulis' | 'Fotocopy & Jasa' | 'Lainnya'
   size: string; // 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'All Size' | '-'
   basePrice: number; // Harga Dasar / HPP (Modal)
   sellingPrice: number; // Harga Jual Koperasi
   stock: number;
-  unit: string; // 'Pcs' | 'Stel' | 'Set' | 'Paket' | 'Potong'
+  isNonStock?: boolean; // Opsi barang/jasa tanpa input stok (Unlimit, misal: Foto Copy / Print)
+  unit: string; // 'Pcs' | 'Stel' | 'Set' | 'Paket' | 'Potong' | 'Lembar'
   description?: string;
   isActive: boolean;
   updatedAt: string;

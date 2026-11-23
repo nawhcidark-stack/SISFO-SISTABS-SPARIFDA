@@ -74,6 +74,7 @@ const CATEGORIES = [
   'Kerudung & Jilbab',
   'Buku & LKS',
   'Alat Tulis',
+  'Foto Copy',
   'Lainnya'
 ];
 
@@ -152,6 +153,20 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   const [formCode, setFormCode] = useState<string>('');
   const [formName, setFormName] = useState<string>('');
   const [formCategory, setFormCategory] = useState<string>('Atribut');
+  const [isCustomCategory, setIsCustomCategory] = useState<boolean>(false);
+  const [formCustomCategory, setFormCustomCategory] = useState<string>('');
+  const [customCategories, setCustomCategories] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('koperasi_custom_categories_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (_) {}
+    return [];
+  });
+  const [showCategoryManager, setShowCategoryManager] = useState<boolean>(false);
+  const [newCategoryInput, setNewCategoryInput] = useState<string>('');
   const [formSize, setFormSize] = useState<string>('All Size');
   const [formUnit, setFormUnit] = useState<string>('Pcs');
   const [isCustomUnit, setIsCustomUnit] = useState<boolean>(false);
@@ -159,6 +174,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   const [formBasePrice, setFormBasePrice] = useState<string>('');
   const [formSellingPrice, setFormSellingPrice] = useState<string>('');
   const [formStock, setFormStock] = useState<string>('50');
+  const [formIsNonStock, setFormIsNonStock] = useState<boolean>(false);
   const [formDescription, setFormDescription] = useState<string>('');
   const [savingProduct, setSavingProduct] = useState<boolean>(false);
 
@@ -189,11 +205,13 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   const [endDate, setEndDate] = useState<string>(todayIso);
   const [dailyPaymentFilter, setDailyPaymentFilter] = useState<'all' | 'kas' | 'bank'>('all');
   const [dailyCategoryFilter, setDailyCategoryFilter] = useState<string>('Semua');
+  const [excludedDailyCategories, setExcludedDailyCategories] = useState<string[]>([]);
   const [dailySizeFilter, setDailySizeFilter] = useState<string>('Semua');
 
   // Financial Report Filter
   const [financialMonth, setFinancialMonth] = useState<string>(currentMonthIso);
   const [financialAllPeriods, setFinancialAllPeriods] = useState<boolean>(false);
+  const [excludedFinancialCategories, setExcludedFinancialCategories] = useState<string[]>([]);
 
   const showMessage = useCallback((type: 'success' | 'error', text: string) => {
     setFeedback({ type, text });
@@ -247,7 +265,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   // =========================================================================
   const addToCart = useCallback(
     (product: KoperasiProduct, fromBarcode = false) => {
-      if (product.stock <= 0) {
+      if (!product.isNonStock && product.stock <= 0) {
         playScannerBeep(false);
         showMessage('error', `Stok "${product.name} (${product.size})" sudah habis!`);
         return;
@@ -257,7 +275,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
         const idx = prev.findIndex(item => item.product.id === product.id);
         if (idx > -1) {
           const currentQty = prev[idx].qty;
-          if (currentQty + 1 > product.stock) {
+          if (!product.isNonStock && currentQty + 1 > product.stock) {
             addedSuccess = false;
             return prev;
           }
@@ -550,7 +568,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
         .map(item => {
           if (item.product.id !== productId) return item;
           if (newQty <= 0) return null;
-          if (newQty > item.product.stock) {
+          if (!item.product.isNonStock && newQty > item.product.stock) {
             showMessage('error', `Stok "${item.product.name}" tersisa ${item.product.stock} ${item.product.unit}.`);
             return { ...item, qty: item.product.stock };
           }
@@ -672,8 +690,60 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   };
 
   // =========================================================================
-  // LOGIKA CRUD MASTER ATRIBUT & RESTOCK
+  // LOGIKA CRUD MASTER ATRIBUT, KATEGORI & RESTOCK
   // =========================================================================
+  const saveCustomCategoriesList = useCallback((nextList: string[]) => {
+    setCustomCategories(nextList);
+    try {
+      localStorage.setItem('koperasi_custom_categories_v1', JSON.stringify(nextList));
+    } catch (_) {}
+  }, []);
+
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>(CATEGORIES);
+    for (const c of customCategories) {
+      if (c && c.trim()) set.add(c.trim());
+    }
+    for (const p of products) {
+      if (p.category && p.category.trim()) {
+        set.add(p.category.trim());
+      }
+    }
+    return Array.from(set);
+  }, [customCategories, products]);
+
+  const allPosCategories = useMemo(() => {
+    return ['Semua', ...availableCategories];
+  }, [availableCategories]);
+
+  const handleAddNewCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = newCategoryInput.trim();
+    if (!cleaned) {
+      showMessage('error', 'Masukkan nama kategori baru terlebih dahulu.');
+      return;
+    }
+    const exists = availableCategories.some(c => c.toLowerCase() === cleaned.toLowerCase());
+    if (exists) {
+      showMessage('error', `Kategori "${cleaned}" sudah ada dalam daftar kategori koperasi.`);
+      return;
+    }
+    const next = [...customCategories, cleaned];
+    saveCustomCategoriesList(next);
+    setNewCategoryInput('');
+    setFormCategory(cleaned);
+    showMessage('success', `Kategori baru "${cleaned}" berhasil ditambahkan ke Koperasi Sekolah.`);
+  };
+
+  const handleRemoveCustomCategory = (catName: string) => {
+    const next = customCategories.filter(c => c !== catName);
+    saveCustomCategoriesList(next);
+    if (posCategory === catName) setPosCategory('Semua');
+    if (inventoryCategory === catName) setInventoryCategory('Semua');
+    if (dailyCategoryFilter === catName) setDailyCategoryFilter('Semua');
+    showMessage('success', `Kategori "${catName}" telah dihapus dari daftar kategori tambahan.`);
+  };
+
   const availableUnits = useMemo(() => {
     const set = new Set<string>(UNITS);
     for (const p of products) {
@@ -689,7 +759,9 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     const randomNum = String(products.length + 1).padStart(2, '0');
     setFormCode(`ATR-KOP-${randomNum}`);
     setFormName('');
-    setFormCategory('Atribut');
+    setFormCategory(availableCategories[0] || 'Atribut');
+    setIsCustomCategory(false);
+    setFormCustomCategory('');
     setFormSize('All Size');
     setFormUnit('Pcs');
     setIsCustomUnit(false);
@@ -697,7 +769,28 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     setFormBasePrice('');
     setFormSellingPrice('');
     setFormStock('50');
+    setFormIsNonStock(false);
     setFormDescription('');
+    setShowProductForm(true);
+  };
+
+  const openAddFotocopyNonStockForm = () => {
+    setEditingProduct(null);
+    const fcCount = products.filter(p => p.category.toLowerCase().includes('foto') || p.isNonStock).length + 1;
+    setFormCode(`ATR-FC-${String(fcCount).padStart(2, '0')}`);
+    setFormName('Transaksi Foto Copy / Print');
+    setFormCategory('Foto Copy');
+    setIsCustomCategory(false);
+    setFormCustomCategory('');
+    setFormSize('-');
+    setFormUnit('Lembar');
+    setIsCustomUnit(false);
+    setFormCustomUnit('');
+    setFormBasePrice('150');
+    setFormSellingPrice('300');
+    setFormStock('0');
+    setFormIsNonStock(true);
+    setFormDescription('Layanan Foto Copy / Print tanpa input stok (Unlimit)');
     setShowProductForm(true);
   };
 
@@ -705,7 +798,10 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     setEditingProduct(prod);
     setFormCode(prod.code);
     setFormName(prod.name);
-    setFormCategory(prod.category);
+    const catVal = (prod.category || 'Atribut').trim();
+    setFormCategory(catVal);
+    setIsCustomCategory(false);
+    setFormCustomCategory('');
     setFormSize(prod.size);
     const unitVal = (prod.unit || 'Pcs').trim();
     if (UNITS.includes(unitVal)) {
@@ -720,6 +816,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     setFormBasePrice(String(prod.basePrice || 0));
     setFormSellingPrice(String(prod.sellingPrice || 0));
     setFormStock(String(prod.stock || 0));
+    setFormIsNonStock(Boolean(prod.isNonStock));
     setFormDescription(prod.description || '');
     setShowProductForm(true);
   };
@@ -731,15 +828,28 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       return;
     }
 
+    const resolvedCategory = (isCustomCategory ? formCustomCategory : formCategory).trim();
+    if (!resolvedCategory) {
+      showMessage('error', 'Kategori atribut wajib dipilih atau diisi.');
+      return;
+    }
+
     const resolvedUnit = (isCustomUnit ? formCustomUnit : formUnit).trim();
     if (!resolvedUnit) {
       showMessage('error', 'Satuan barang wajib diisi atau dipilih.');
       return;
     }
 
+    if (
+      isCustomCategory &&
+      !availableCategories.some(c => c.toLowerCase() === resolvedCategory.toLowerCase())
+    ) {
+      saveCustomCategoriesList([...customCategories, resolvedCategory]);
+    }
+
     const parsedBase = Number(String(formBasePrice).replace(/[^0-9]/g, '')) || 0;
     const parsedSelling = Number(String(formSellingPrice).replace(/[^0-9]/g, '')) || 0;
-    const parsedStock = Number(formStock) || 0;
+    const parsedStock = formIsNonStock ? 0 : Number(formStock) || 0;
 
     setSavingProduct(true);
     try {
@@ -754,12 +864,13 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
         body: JSON.stringify({
           code: formCode.trim().toUpperCase(),
           name: formName.trim(),
-          category: formCategory,
+          category: resolvedCategory,
           size: formSize,
           unit: resolvedUnit,
           basePrice: parsedBase,
           sellingPrice: parsedSelling,
           stock: parsedStock,
+          isNonStock: formIsNonStock,
           description: formDescription.trim(),
           isActive: true
         })
@@ -774,8 +885,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       showMessage(
         'success',
         editingProduct
-          ? `Atribut "${formName}" berhasil diperbarui (Harga Dasar: Rp ${parsedBase.toLocaleString('id-ID')}, Harga Jual: Rp ${parsedSelling.toLocaleString('id-ID')}).`
-          : `Atribut baru "${formName}" berhasil ditambahkan.`
+          ? `Barang/Atribut "${formName}" berhasil diperbarui (${formIsNonStock ? 'Tanpa Stok / Unlimit' : `Stok: ${parsedStock} ${resolvedUnit}`}).`
+          : `Barang/Atribut baru "${formName}" (${formIsNonStock ? 'Tanpa Input Stok / Unlimit' : `Stok: ${parsedStock} ${resolvedUnit}`}) berhasil ditambahkan.`
       );
       setShowProductForm(false);
       await loadKoperasiData();
@@ -900,17 +1011,14 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   }, [products]);
 
   const availableDailyCategories = useMemo(() => {
-    const set = new Set<string>(CATEGORIES);
-    for (const p of products) {
-      if (p.category) set.add(p.category);
-    }
+    const set = new Set<string>(availableCategories);
     for (const s of sales) {
       for (const it of s.items || []) {
         if (it.category) set.add(it.category);
       }
     }
     return ['Semua', ...Array.from(set)];
-  }, [products, sales]);
+  }, [availableCategories, sales]);
 
   const availableDailySizes = useMemo(() => {
     const set = new Set<string>(SIZES);
@@ -925,9 +1033,24 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     return ['Semua', ...Array.from(set)];
   }, [products, sales]);
 
-  // Filtered Daily Sales (supports date, payment method, category, and size filters)
+  // Filtered Daily Sales (supports date, payment method, category, category exclusion checklist, and size filters)
+  const toggleExcludedDailyCategory = (catName: string) => {
+    setExcludedDailyCategories(prev =>
+      prev.includes(catName) ? prev.filter(c => c !== catName) : [...prev, catName]
+    );
+  };
+
+  const toggleExcludedFinancialCategory = (catName: string) => {
+    setExcludedFinancialCategories(prev =>
+      prev.includes(catName) ? prev.filter(c => c !== catName) : [...prev, catName]
+    );
+  };
+
   const filteredDailySales = useMemo(() => {
-    const hasItemFilter = dailyCategoryFilter !== 'Semua' || dailySizeFilter !== 'Semua';
+    const hasItemFilter =
+      dailyCategoryFilter !== 'Semua' ||
+      dailySizeFilter !== 'Semua' ||
+      excludedDailyCategories.length > 0;
     const result: KoperasiSaleTransaction[] = [];
 
     for (const s of sales) {
@@ -942,13 +1065,19 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
 
       const matchedItems = (s.items || []).filter(it => {
         if (dailyCategoryFilter !== 'Semua' && it.category !== dailyCategoryFilter) return false;
+        if (
+          excludedDailyCategories.length > 0 &&
+          excludedDailyCategories.some(ex => ex.toLowerCase() === String(it.category || '').toLowerCase())
+        ) {
+          return false;
+        }
         if (dailySizeFilter !== 'Semua' && it.size !== dailySizeFilter) return false;
         return true;
       });
 
       if (matchedItems.length === 0) continue;
 
-      // Recalculate totals for the matched items when category/size filter is active
+      // Recalculate totals for the matched items when category/exclusion/size filter is active
       let subQty = 0;
       let subBase = 0;
       let subSelling = 0;
@@ -982,6 +1111,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     endDate,
     dailyPaymentFilter,
     dailyCategoryFilter,
+    excludedDailyCategories,
     dailySizeFilter
   ]);
 
@@ -1016,13 +1146,53 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     };
   }, [filteredDailySales]);
 
-  // Financial Report Calculations (Sales + Bookkeeping Integration)
+  // Financial Report Calculations (Sales + Bookkeeping Integration + Category Exclusion Checklist)
   const financialSales = useMemo(() => {
-    if (financialAllPeriods) return sales;
-    return sales.filter(s => s.date.startsWith(financialMonth));
-  }, [sales, financialMonth, financialAllPeriods]);
+    const periodSales = financialAllPeriods
+      ? sales
+      : sales.filter(s => s.date.startsWith(financialMonth));
+
+    if (excludedFinancialCategories.length === 0) return periodSales;
+
+    const filtered: KoperasiSaleTransaction[] = [];
+    for (const s of periodSales) {
+      const matchedItems = (s.items || []).filter(
+        it =>
+          !excludedFinancialCategories.some(
+            ex => ex.toLowerCase() === String(it.category || '').toLowerCase()
+          )
+      );
+      if (matchedItems.length === 0) continue;
+
+      let subQty = 0;
+      let subBase = 0;
+      let subSelling = 0;
+      let subProfit = 0;
+      for (const it of matchedItems) {
+        const qty = Number(it.qty) || 0;
+        const b = Number(it.subtotalBase) || qty * (Number(it.basePrice) || 0);
+        const sel = Number(it.subtotalSelling) || qty * (Number(it.sellingPrice) || 0);
+        subQty += qty;
+        subBase += b;
+        subSelling += sel;
+        subProfit += sel - b;
+      }
+      filtered.push({
+        ...s,
+        items: matchedItems,
+        totalQty: subQty,
+        totalBaseAmount: subBase,
+        totalAmount: subSelling,
+        totalProfit: subProfit
+      });
+    }
+    return filtered;
+  }, [sales, financialMonth, financialAllPeriods, excludedFinancialCategories]);
 
   const koperasiLedgerTransactions = useMemo(() => {
+    const validInvoiceSet = new Set(financialSales.map(s => s.invoiceNumber));
+    const allSalesInvoiceSet = new Set(sales.map(s => s.invoiceNumber));
+
     return treasurerTransactions.filter(tx => {
       if (
         tx.id === 'tx-bnd-1793771771048' ||
@@ -1041,9 +1211,12 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       if (!financialAllPeriods && !String(tx.date || '').startsWith(financialMonth)) {
         return false;
       }
+      if (excludedFinancialCategories.length > 0 && tx.noBukti && allSalesInvoiceSet.has(tx.noBukti)) {
+        if (!validInvoiceSet.has(tx.noBukti)) return false;
+      }
       return true;
     });
-  }, [treasurerTransactions, financialMonth, financialAllPeriods]);
+  }, [treasurerTransactions, financialMonth, financialAllPeriods, excludedFinancialCategories, financialSales, sales]);
 
   const financialSummary = useMemo(() => {
     let omzetSelling = 0;
@@ -1176,7 +1349,11 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
         : dailyFilterMode === 'date_range'
         ? `${startDate} s/d ${endDate}`
         : 'Semua Periode';
-    const filterMeta = `Kategori: ${dailyCategoryFilter} • Ukuran: ${dailySizeFilter}`;
+    const excludeText =
+      excludedDailyCategories.length > 0
+        ? ` • Kecuali Kategori: ${excludedDailyCategories.join(', ')}`
+        : '';
+    const filterMeta = `Kategori: ${dailyCategoryFilter}${excludeText} • Ukuran: ${dailySizeFilter}`;
 
     const rowsHtml = filteredDailySales
       .map((sale, idx) => {
@@ -1588,7 +1765,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                {ALL_CATEGORIES.map(cat => {
+                {allPosCategories.map(cat => {
                   const isActive = posCategory === cat;
                   return (
                     <button
@@ -1605,6 +1782,15 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryManager(true)}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 cursor-pointer shrink-0"
+                  title="Tambah atau Kelola Kategori Koperasi"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Kategori</span>
+                </button>
               </div>
             </div>
 
@@ -1626,7 +1812,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
                 {activePosProducts.map(product => {
                   const inCartItem = cart.find(c => c.product.id === product.id);
-                  const outOfStock = product.stock <= 0;
+                  const isNonStock = Boolean(product.isNonStock);
+                  const outOfStock = !isNonStock && product.stock <= 0;
                   const unitProfit = (product.sellingPrice || 0) - (product.basePrice || 0);
                   return (
                     <div
@@ -1707,14 +1894,20 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                         <div className="flex flex-col items-end gap-1.5">
                           <span
                             className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
-                              outOfStock
+                              isNonStock
+                                ? 'bg-indigo-100 text-indigo-800'
+                                : outOfStock
                                 ? 'bg-rose-100 text-rose-700'
                                 : product.stock <= 10
                                 ? 'bg-amber-100 text-amber-800'
                                 : 'bg-slate-100 text-slate-700'
                             }`}
                           >
-                            {outOfStock ? 'Stok Habis' : `Stok: ${product.stock} ${product.unit}`}
+                            {isNonStock
+                              ? 'Tanpa Stok (Unlimit)'
+                              : outOfStock
+                              ? 'Stok Habis'
+                              : `Stok: ${product.stock} ${product.unit}`}
                           </span>
 
                           <button
@@ -2041,12 +2234,12 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                             <input
                               type="number"
                               min={1}
-                              max={item.product.stock}
+                              max={item.product.isNonStock ? undefined : item.product.stock}
                               value={item.qty}
                               onChange={e =>
                                 updateCartQty(item.product.id, parseInt(e.target.value, 10) || 1)
                               }
-                              className="w-10 text-center text-xs font-bold border border-slate-300 rounded-lg py-1"
+                              className="w-12 text-center text-xs font-bold border border-slate-300 rounded-lg py-1"
                             />
                             <button
                               type="button"
@@ -2320,7 +2513,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                 className="px-3 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-semibold bg-white"
               >
                 <option value="Semua">Semua Kategori</option>
-                {CATEGORIES.map(c => (
+                {availableCategories.map(c => (
                   <option key={c} value={c}>
                     {c}
                   </option>
@@ -2328,7 +2521,16 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
               </select>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCategoryManager(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-emerald-700" />
+                <span>Tambah Kategori</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -2339,6 +2541,16 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
               >
                 <Barcode className="w-4 h-4 text-emerald-700" />
                 <span>Cetak Massal Barcode</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={openAddFotocopyNonStockForm}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 text-xs font-extrabold shadow-2xs transition cursor-pointer"
+                title="Input Barang/Jasa Tanpa Input Stok untuk Transaksi Foto Copy"
+              >
+                <Plus className="w-4 h-4 text-indigo-700" />
+                <span>Input Foto Copy (Tanpa Stok)</span>
               </button>
 
               <button
@@ -2421,17 +2633,23 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                           </div>
                         </td>
                         <td className="p-3.5 text-center">
-                          <span
-                            className={`inline-block px-2.5 py-1 rounded-lg text-xs font-black ${
-                              prod.stock <= 0
-                                ? 'bg-rose-100 text-rose-800'
-                                : prod.stock <= 10
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-emerald-100 text-emerald-800'
-                            }`}
-                          >
-                            {prod.stock} {prod.unit}
-                          </span>
+                          {prod.isNonStock ? (
+                            <span className="inline-block px-2.5 py-1 rounded-lg text-xs font-black bg-indigo-100 text-indigo-800">
+                              Tanpa Stok (Unlimit)
+                            </span>
+                          ) : (
+                            <span
+                              className={`inline-block px-2.5 py-1 rounded-lg text-xs font-black ${
+                                prod.stock <= 0
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : prod.stock <= 10
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}
+                            >
+                              {prod.stock} {prod.unit}
+                            </span>
+                          )}
                         </td>
                         <td className="p-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -2446,20 +2664,22 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                             >
                               <Barcode className="w-4 h-4" />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRestockProduct(prod);
-                                setRestockQty('20');
-                                setRestockBasePrice(String(prod.basePrice || 0));
-                                setRestockSellingPrice(String(prod.sellingPrice || 0));
-                                setRestockRecordExpense(true);
-                              }}
-                              className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer"
-                              title="Tambah Stok / Kulakan Atribut"
-                            >
-                              <PackagePlus className="w-4 h-4" />
-                            </button>
+                            {!prod.isNonStock && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRestockProduct(prod);
+                                  setRestockQty('20');
+                                  setRestockBasePrice(String(prod.basePrice || 0));
+                                  setRestockSellingPrice(String(prod.sellingPrice || 0));
+                                  setRestockRecordExpense(true);
+                                }}
+                                className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer"
+                                title="Tambah Stok / Kulakan Atribut"
+                              >
+                                <PackagePlus className="w-4 h-4" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => openEditProductForm(prod)}
@@ -2494,141 +2714,207 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       {subTab === 'daily_report' && (
         <div className="space-y-5">
           {/* Filter Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 print:hidden">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setDailyFilterMode('single_day')}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                    dailyFilterMode === 'single_day'
-                      ? 'bg-white text-emerald-800 shadow-xs'
-                      : 'text-slate-600'
-                  }`}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3.5 print:hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex rounded-xl bg-slate-100 p-1 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setDailyFilterMode('single_day')}
+                    className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                      dailyFilterMode === 'single_day'
+                        ? 'bg-white text-emerald-800 shadow-xs'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    Per Tanggal Harian
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDailyFilterMode('date_range')}
+                    className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                      dailyFilterMode === 'date_range'
+                        ? 'bg-white text-emerald-800 shadow-xs'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    Rentang Tanggal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDailyFilterMode('all')}
+                    className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                      dailyFilterMode === 'all'
+                        ? 'bg-white text-emerald-800 shadow-xs'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    Semua Transaksi
+                  </button>
+                </div>
+
+                {dailyFilterMode === 'single_day' && (
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={e => setSelectedDate(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold"
+                  />
+                )}
+
+                {dailyFilterMode === 'date_range' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={e => setStartDate(e.target.value)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold"
+                    />
+                    <span className="text-xs text-slate-500">s/d</span>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={e => setEndDate(e.target.value)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold"
+                    />
+                  </div>
+                )}
+
+                <select
+                  value={dailyCategoryFilter}
+                  onChange={e => setDailyCategoryFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white"
+                  title="Filter Kategori Atribut"
                 >
-                  Per Tanggal Harian
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDailyFilterMode('date_range')}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                    dailyFilterMode === 'date_range'
-                      ? 'bg-white text-emerald-800 shadow-xs'
-                      : 'text-slate-600'
-                  }`}
+                  {availableDailyCategories.map(cat => (
+                    <option key={cat} value={cat}>
+                      {cat === 'Semua' ? 'Semua Kategori Atribut' : `Kategori: ${cat}`}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={dailySizeFilter}
+                  onChange={e => setDailySizeFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white"
+                  title="Filter Ukuran Atribut"
                 >
-                  Rentang Tanggal
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDailyFilterMode('all')}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                    dailyFilterMode === 'all'
-                      ? 'bg-white text-emerald-800 shadow-xs'
-                      : 'text-slate-600'
-                  }`}
+                  {availableDailySizes.map(sz => (
+                    <option key={sz} value={sz}>
+                      {sz === 'Semua' ? 'Semua Ukuran' : `Ukuran: ${sz}`}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={dailyPaymentFilter}
+                  onChange={e => setDailyPaymentFilter(e.target.value as 'all' | 'kas' | 'bank')}
+                  className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white"
                 >
-                  Semua Transaksi
-                </button>
+                  <option value="all">Semua Metode Bayar</option>
+                  <option value="kas">Tunai (Buku Kas)</option>
+                  <option value="bank">Transfer / QRIS (Bank)</option>
+                </select>
+
+                {(dailyCategoryFilter !== 'Semua' ||
+                  excludedDailyCategories.length > 0 ||
+                  dailySizeFilter !== 'Semua' ||
+                  dailyPaymentFilter !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDailyCategoryFilter('Semua');
+                      setExcludedDailyCategories([]);
+                      setDailySizeFilter('Semua');
+                      setDailyPaymentFilter('all');
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200 cursor-pointer"
+                  >
+                    Reset Filter
+                  </button>
+                )}
               </div>
 
-              {dailyFilterMode === 'single_day' && (
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={e => setSelectedDate(e.target.value)}
-                  className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold"
-                />
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportDailySalesExcel}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>Export Excel (.xlsx)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleInstantPrintDailyReport}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak Laporan Harian</span>
+                </button>
+              </div>
+            </div>
 
-              {dailyFilterMode === 'date_range' && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={e => setStartDate(e.target.value)}
-                    className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold"
-                  />
-                  <span className="text-xs text-slate-500">s/d</span>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={e => setEndDate(e.target.value)}
-                    className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold"
-                  />
-                </div>
-              )}
+            {/* FILTER PENGECUALIAN KATEGORI DENGAN CEK LIST (MISAL: SEMUA KATEGORI KECUALI FOTO COPY) */}
+            <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-slate-50/80 p-3 rounded-xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-extrabold uppercase text-slate-700">
+                  Filter Pengecualian Kategori (Cek List Kecuali):
+                </span>
+                {availableDailyCategories
+                  .filter(cat => cat !== 'Semua')
+                  .map(cat => {
+                    const isExcluded = excludedDailyCategories.includes(cat);
+                    return (
+                      <label
+                        key={`excl-daily-${cat}`}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer transition select-none ${
+                          isExcluded
+                            ? 'bg-rose-100 border-rose-400 text-rose-900 shadow-2xs'
+                            : 'bg-white border-slate-300 text-slate-700 hover:border-slate-400'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isExcluded}
+                          onChange={() => {
+                            if (!isExcluded && dailyCategoryFilter === cat) {
+                              setDailyCategoryFilter('Semua');
+                            }
+                            toggleExcludedDailyCategory(cat);
+                          }}
+                          className="rounded text-rose-600 focus:ring-rose-500"
+                        />
+                        <span>{isExcluded ? `Kecuali: ${cat}` : cat}</span>
+                      </label>
+                    );
+                  })}
+              </div>
 
-              <select
-                value={dailyCategoryFilter}
-                onChange={e => setDailyCategoryFilter(e.target.value)}
-                className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white"
-                title="Filter Kategori Atribut"
-              >
-                {availableDailyCategories.map(cat => (
-                  <option key={cat} value={cat}>
-                    {cat === 'Semua' ? 'Semua Kategori Atribut' : `Kategori: ${cat}`}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={dailySizeFilter}
-                onChange={e => setDailySizeFilter(e.target.value)}
-                className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white"
-                title="Filter Ukuran Atribut"
-              >
-                {availableDailySizes.map(sz => (
-                  <option key={sz} value={sz}>
-                    {sz === 'Semua' ? 'Semua Ukuran' : `Ukuran: ${sz}`}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={dailyPaymentFilter}
-                onChange={e => setDailyPaymentFilter(e.target.value as 'all' | 'kas' | 'bank')}
-                className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white"
-              >
-                <option value="all">Semua Metode Bayar</option>
-                <option value="kas">Tunai (Buku Kas)</option>
-                <option value="bank">Transfer / QRIS (Bank)</option>
-              </select>
-
-              {(dailyCategoryFilter !== 'Semua' ||
-                dailySizeFilter !== 'Semua' ||
-                dailyPaymentFilter !== 'all') && (
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
                     setDailyCategoryFilter('Semua');
-                    setDailySizeFilter('Semua');
-                    setDailyPaymentFilter('all');
+                    const fcCategories = availableDailyCategories.filter(
+                      c => c !== 'Semua' && (c.toLowerCase().includes('foto') || c.toLowerCase().includes('copy'))
+                    );
+                    setExcludedDailyCategories(fcCategories.length > 0 ? fcCategories : ['Foto Copy']);
                   }}
-                  className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200 cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[11px] font-extrabold cursor-pointer"
                 >
-                  Reset Filter
+                  Semua Kecuali Foto Copy
                 </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleExportDailySalesExcel}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer"
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>Export Excel (.xlsx)</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleInstantPrintDailyReport}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs cursor-pointer"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Cetak Laporan Harian</span>
-              </button>
+                {excludedDailyCategories.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setExcludedDailyCategories([])}
+                    className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-600 border border-slate-300 text-[11px] font-bold cursor-pointer"
+                  >
+                    Tampilkan Semua
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -2702,14 +2988,27 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                     ? `${startDate} s/d ${endDate}`
                     : 'Semua Periode'}
                   {' • '}Kategori: <strong className="text-slate-700">{dailyCategoryFilter}</strong>
+                  {excludedDailyCategories.length > 0 && (
+                    <>
+                      {' • '}Kecuali:{' '}
+                      <strong className="text-rose-700">{excludedDailyCategories.join(', ')}</strong>
+                    </>
+                  )}
                   {' • '}Ukuran: <strong className="text-slate-700">{dailySizeFilter}</strong>
                 </p>
               </div>
-              {(dailyCategoryFilter !== 'Semua' || dailySizeFilter !== 'Semua') && (
-                <div className="flex items-center gap-1.5">
+              {(dailyCategoryFilter !== 'Semua' ||
+                excludedDailyCategories.length > 0 ||
+                dailySizeFilter !== 'Semua') && (
+                <div className="flex flex-wrap items-center gap-1.5">
                   {dailyCategoryFilter !== 'Semua' && (
                     <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
                       Kategori: {dailyCategoryFilter}
+                    </span>
+                  )}
+                  {excludedDailyCategories.length > 0 && (
+                    <span className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold">
+                      Kecuali: {excludedDailyCategories.join(', ')}
                     </span>
                   )}
                   {dailySizeFilter !== 'Semua' && (
@@ -2876,47 +3175,105 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       {/* =================================================================== */}
       {subTab === 'financial_report' && (
         <div className="space-y-5">
-          {/* Top Period & Export Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 print:hidden">
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="text-xs font-extrabold uppercase text-slate-600">
-                Periode Laporan Keuangan:
-              </label>
-              <input
-                type="month"
-                disabled={financialAllPeriods}
-                value={financialMonth}
-                onChange={e => setFinancialMonth(e.target.value)}
-                className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold disabled:opacity-50"
-              />
-              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer">
+          {/* Top Period, Category Exclusion Checklist & Export Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3.5 print:hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-xs font-extrabold uppercase text-slate-600">
+                  Periode Laporan Keuangan:
+                </label>
                 <input
-                  type="checkbox"
-                  checked={financialAllPeriods}
-                  onChange={e => setFinancialAllPeriods(e.target.checked)}
-                  className="rounded text-emerald-600"
+                  type="month"
+                  disabled={financialAllPeriods}
+                  value={financialMonth}
+                  onChange={e => setFinancialMonth(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold disabled:opacity-50"
                 />
-                <span>Tampilkan Seluruh Periode</span>
-              </label>
+                <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={financialAllPeriods}
+                    onChange={e => setFinancialAllPeriods(e.target.checked)}
+                    className="rounded text-emerald-600"
+                  />
+                  <span>Tampilkan Seluruh Periode</span>
+                </label>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportFinancialExcel}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>Export Laporan Keuangan (.xlsx)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleInstantPrintFinancialReport}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak Laporan Keuangan</span>
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleExportFinancialExcel}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer"
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>Export Laporan Keuangan (.xlsx)</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleInstantPrintFinancialReport}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs cursor-pointer"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Cetak Laporan Keuangan</span>
-              </button>
+            {/* FILTER PENGECUALIAN KATEGORI DENGAN CEK LIST DI LAPORAN KEUANGAN */}
+            <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-slate-50/80 p-3 rounded-xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-extrabold uppercase text-slate-700">
+                  Filter Pengecualian Kategori (Cek List Kecuali):
+                </span>
+                {availableDailyCategories
+                  .filter(cat => cat !== 'Semua')
+                  .map(cat => {
+                    const isExcluded = excludedFinancialCategories.includes(cat);
+                    return (
+                      <label
+                        key={`excl-fin-${cat}`}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer transition select-none ${
+                          isExcluded
+                            ? 'bg-rose-100 border-rose-400 text-rose-900 shadow-2xs'
+                            : 'bg-white border-slate-300 text-slate-700 hover:border-slate-400'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isExcluded}
+                          onChange={() => toggleExcludedFinancialCategory(cat)}
+                          className="rounded text-rose-600 focus:ring-rose-500"
+                        />
+                        <span>{isExcluded ? `Kecuali: ${cat}` : cat}</span>
+                      </label>
+                    );
+                  })}
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const fcCategories = availableDailyCategories.filter(
+                      c => c !== 'Semua' && (c.toLowerCase().includes('foto') || c.toLowerCase().includes('copy'))
+                    );
+                    setExcludedFinancialCategories(fcCategories.length > 0 ? fcCategories : ['Foto Copy']);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[11px] font-extrabold cursor-pointer"
+                >
+                  Semua Kecuali Foto Copy
+                </button>
+                {excludedFinancialCategories.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setExcludedFinancialCategories([])}
+                    className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-600 border border-slate-300 text-[11px] font-bold cursor-pointer"
+                  >
+                    Tampilkan Semua
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -3346,20 +3703,56 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-extrabold uppercase text-slate-600 mb-1">
-                    Kategori Atribut
-                  </label>
-                  <select
-                    value={formCategory}
-                    onChange={e => setFormCategory(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-semibold bg-white"
-                  >
-                    {CATEGORIES.map(c => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-extrabold uppercase text-slate-600">
+                      Kategori Atribut
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isCustomCategory) {
+                          setIsCustomCategory(true);
+                          setFormCustomCategory('');
+                        } else {
+                          setIsCustomCategory(false);
+                        }
+                      }}
+                      className="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer"
+                    >
+                      {isCustomCategory ? 'Pilih Daftar' : '+ Kategori Baru'}
+                    </button>
+                  </div>
+
+                  {isCustomCategory ? (
+                    <input
+                      type="text"
+                      required
+                      value={formCustomCategory}
+                      onChange={e => setFormCustomCategory(e.target.value)}
+                      placeholder="Ketik kategori baru (mis: Pramuka, Kaos Kaki)..."
+                      className="w-full px-3 py-2 rounded-xl border border-emerald-500 bg-emerald-50/40 text-xs sm:text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  ) : (
+                    <select
+                      value={formCategory}
+                      onChange={e => {
+                        if (e.target.value === '__CUSTOM_CAT__') {
+                          setIsCustomCategory(true);
+                          setFormCustomCategory('');
+                        } else {
+                          setFormCategory(e.target.value);
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-semibold bg-white"
+                    >
+                      {availableCategories.map(c => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                      <option value="__CUSTOM_CAT__">+ Tambah Kategori Baru...</option>
+                    </select>
+                  )}
                 </div>
               </div>
 
@@ -3423,6 +3816,53 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                 </div>
               </div>
 
+              {/* OPSI BARANG TANPA INPUT STOK (UNTUK TRANSAKSI FOTO COPY / PRINT / JASA) */}
+              <div className="p-3.5 rounded-xl bg-indigo-50/80 border border-indigo-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formIsNonStock}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setFormIsNonStock(checked);
+                      if (checked) {
+                        setFormStock('0');
+                      } else if (formStock === '0') {
+                        setFormStock('50');
+                      }
+                    }}
+                    className="mt-0.5 w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div>
+                    <div className="text-xs font-extrabold text-indigo-950">
+                      Input Barang / Layanan Tanpa Input Stok (Unlimit — Contoh: Transaksi Foto Copy)
+                    </div>
+                    <div className="text-[11px] text-indigo-700">
+                      Jika dicentang, barang ini dapat ditransaksikan terus di Kasir tanpa batas stok &amp; tidak perlu mengisi jumlah stok.
+                    </div>
+                  </div>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormIsNonStock(true);
+                    setFormCategory('Foto Copy');
+                    setIsCustomCategory(false);
+                    setFormSize('-');
+                    setFormUnit('Lembar');
+                    setIsCustomUnit(false);
+                    if (!formName.trim()) setFormName('Transaksi Foto Copy / Print');
+                    if (!formBasePrice) setFormBasePrice('150');
+                    if (!formSellingPrice) setFormSellingPrice('300');
+                    setFormStock('0');
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold shrink-0 cursor-pointer shadow-2xs"
+                >
+                  Preset Foto Copy
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-extrabold uppercase text-slate-600 mb-1">
@@ -3445,13 +3885,19 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                   <label className="block text-xs font-extrabold uppercase text-slate-600 mb-1">
                     Stok Saat Ini
                   </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={formStock}
-                    onChange={e => setFormStock(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold"
-                  />
+                  {formIsNonStock ? (
+                    <div className="w-full px-3 py-2 rounded-xl border border-indigo-300 bg-indigo-50 text-indigo-900 text-xs font-extrabold flex items-center justify-between">
+                      <span>Tanpa Input Stok (Unlimit)</span>
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      min={0}
+                      value={formStock}
+                      onChange={e => setFormStock(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold"
+                    />
+                  )}
                 </div>
 
                 <div>
@@ -3683,6 +4129,110 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAMBAH & KELOLA KATEGORI KOPERASI */}
+      {showCategoryManager && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden">
+            <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-base">Tambah &amp; Kelola Kategori Koperasi</h3>
+                <p className="text-xs text-slate-300">
+                  Tambahkan kategori barang/atribut baru untuk katalog Kasir &amp; Laporan Koperasi
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCategoryManager(false)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <form onSubmit={handleAddNewCategory} className="space-y-2">
+                <label className="block text-xs font-extrabold uppercase text-slate-600">
+                  Nama Kategori Baru
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newCategoryInput}
+                    onChange={e => setNewCategoryInput(e.target.value)}
+                    placeholder="Contoh: Pramuka, Kaos Kaki, Makanan..."
+                    className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-semibold outline-none focus:border-emerald-600"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Tambah</span>
+                  </button>
+                </div>
+              </form>
+
+              <div className="space-y-2">
+                <div className="text-xs font-extrabold uppercase text-slate-500">
+                  Daftar Kategori Aktif ({availableCategories.length} Kategori)
+                </div>
+                <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl bg-slate-50">
+                  {availableCategories.map(cat => {
+                    const isDefault = CATEGORIES.includes(cat);
+                    const isCustomSaved = customCategories.includes(cat);
+                    const productCount = products.filter(p => p.category === cat).length;
+                    return (
+                      <div
+                        key={cat}
+                        className="px-3.5 py-2.5 flex items-center justify-between gap-2 bg-white"
+                      >
+                        <div>
+                          <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            <span>{cat}</span>
+                            {isDefault ? (
+                              <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-500 text-[10px] font-semibold">
+                                Standar
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">
+                                Custom
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400">
+                            {productCount} Jenis Atribut/Barang
+                          </div>
+                        </div>
+                        {!isDefault && isCustomSaved && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCustomCategory(cat)}
+                            className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold cursor-pointer"
+                            title="Hapus Kategori Custom"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryManager(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer"
+                >
+                  Selesai
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

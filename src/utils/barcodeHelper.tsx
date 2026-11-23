@@ -170,7 +170,15 @@ export function printKoperasiReceiptInstant(
       ? ` (${escapeHtml(sale.studentClass)})`
       : '';
   const buyerLabel = `${escapeHtml(sale.buyerName)}${buyerSuffix}`;
-  const paymentLabel = sale.paymentMethod === 'bank' ? 'TRANSFER / QRIS' : 'TUNAI / KAS';
+  const paymentLabel =
+    sale.paymentMethod === 'midtrans'
+      ? escapeHtml((sale.midtransPaymentType || 'MIDTRANS (QRIS/ONLINE)').toUpperCase())
+      : sale.paymentMethod === 'bank'
+      ? 'TRANSFER / BANK'
+      : 'TUNAI / KAS';
+  const midtransOrderRowHtml = sale.midtransOrderId
+    ? `<div class="meta-row flex-between"><span>Order Midtrans:</span><strong>${escapeHtml(sale.midtransOrderId)}</strong></div>`
+    : '';
   const barcodeSvg = generateCode128SvgString(sale.invoiceNumber, 24, true);
 
   if (!isA5) {
@@ -236,6 +244,7 @@ export function printKoperasiReceiptInstant(
       <div class="meta-row flex-between"><span>Pembeli:</span><strong>${buyerLabel}</strong></div>
       <div class="meta-row flex-between"><span>Kasir:</span><span>${escapeHtml(sale.cashierName)}</span></div>
       <div class="meta-row flex-between"><span>Bayar:</span><strong>${paymentLabel}</strong></div>
+      ${midtransOrderRowHtml}
       <div class="divider"></div>
       ${itemsHtml}
       <div class="divider"></div>

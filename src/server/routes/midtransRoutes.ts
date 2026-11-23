@@ -3073,6 +3073,27 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     const realTxId = transactionId || midtransStatus?.transaction_id || `sim-${Date.now()}`;
     const actualPaymentType = formatMidtransPaymentMethod(paymentType || midtransStatus?.payment_type);
 
+    if (cleanOrderId.toUpperCase().startsWith("KOP-MT-") || cleanOrderId.toUpperCase().startsWith("KOP-")) {
+      const existingTx = Array.isArray(midtransTransactions)
+        ? midtransTransactions.find((t: any) => t.orderId === realOrderId || t.orderId === cleanOrderId)
+        : null;
+      recordOrUpdateMidtransTransaction({
+        orderId: realOrderId,
+        transactionId: realTxId,
+        billType: existingTx?.billType || "other",
+        grossAmount: Number(midtransStatus?.gross_amount) || Number(existingTx?.grossAmount) || 0,
+        paymentType: actualPaymentType,
+        transactionStatus: "settlement",
+        settlementTime: new Date().toISOString()
+      });
+      return res.json({
+        success: true,
+        message: "Pembayaran Koperasi Sekolah via Midtrans berhasil diverifikasi.",
+        orderId: realOrderId,
+        paymentType: actualPaymentType
+      });
+    }
+
     // In production mode, NEVER allow simulation to mark bills settled if transaction doesn't exist in Midtrans
     if (midtransConfig?.isProduction) {
       if (!midtransStatus || midtransStatus.status_code === '404' || !midtransStatus.transaction_status) {

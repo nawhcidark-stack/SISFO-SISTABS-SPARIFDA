@@ -14779,20 +14779,27 @@ Petunjuk Ekstraksi:
       const itemSummary = sale.items
         .map(it => `${it.productName}${it.size && it.size !== '-' && it.size !== 'All Size' ? ` (${it.size})` : ''} x${it.qty}`)
         .join(", ");
+      const midtransNote =
+        sale.paymentMethod === "midtrans"
+          ? ` [${sale.midtransPaymentType || "Midtrans (QRIS)"}${sale.midtransOrderId ? ` #${sale.midtransOrderId}` : ""}]`
+          : "";
       const txObj: TreasurerTransaction = {
         id: txId,
         type: "incoming",
         category: "Koperasi Sekolah",
         amount: Number(sale.totalAmount) || 0,
-        description: `[Kasir Koperasi - ${sale.invoiceNumber}] Penjualan Atribut (${itemSummary}) - Pembeli: ${sale.buyerName}${sale.studentClass ? ` (${sale.studentClass})` : ""} | HPP: Rp ${(sale.totalBaseAmount || 0).toLocaleString("id-ID")} | Laba: Rp ${(sale.totalProfit || 0).toLocaleString("id-ID")}`,
+        description: `[Kasir Koperasi - ${sale.invoiceNumber}]${midtransNote} Penjualan Atribut (${itemSummary}) - Pembeli: ${sale.buyerName}${sale.studentClass ? ` (${sale.studentClass})` : ""} | HPP: Rp ${(sale.totalBaseAmount || 0).toLocaleString("id-ID")} | Laba: Rp ${(sale.totalProfit || 0).toLocaleString("id-ID")}`,
         date: sale.date,
         source: "custom",
         createdBy: sale.cashierName || "Kasir Koperasi",
         studentName: sale.studentName || sale.buyerName,
         nis: sale.studentNis,
         recipientName: sale.buyerName,
-        fundingSource: "Penjualan Atribut Koperasi Sekolah",
-        paymentMethod: sale.paymentMethod === "bank" ? "bank" : "kas",
+        fundingSource:
+          sale.paymentMethod === "midtrans"
+            ? "Pembayaran Online Midtrans Koperasi Sekolah"
+            : "Penjualan Atribut Koperasi Sekolah",
+        paymentMethod: sale.paymentMethod === "bank" || sale.paymentMethod === "midtrans" ? "bank" : "kas",
         kodeRekening: "4.1.02.01",
         noBukti: sale.invoiceNumber
       };
@@ -14973,6 +14980,165 @@ Petunjuk Ekstraksi:
     res.json(koperasiSales);
   });
 
+  // POST generate Midtrans Snap Token for Koperasi POS checkout
+  app.post("/api/koperasi/midtrans-snap", async (req, res) => {
+    await ensureKoperasiHydrated();
+    try {
+      const mysqlCfg = await getConfigFromMysql("midtransConfig");
+      if (mysqlCfg && typeof mysqlCfg === "object") {
+        Object.assign(midtransConfig, mysqlCfg);
+      }
+    } catch (_) {}
+
+    if (midtransConfig.isDisabled) {
+      return res.status(400).json({
+        error: "Pembayaran online via Midtrans sedang dinonaktifkan sementara oleh Administrator sekolah."
+      });
+    }
+
+    const {
+      buyerType,
+      studentId,
+      studentNis,
+      studentName,
+      buyerName,
+      items
+    } = req.body || {};
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Keranjang belanja koperasi masih kosong." });
+    }
+
+    let totalAmount = 0;
+    const midtransItemDetails: Array<{ id: string; price: number; quantity: number; name: string }> = [];
+
+    for (const rawItem of items) {
+      const product = koperasiProducts.find(p => p.id === rawItem.productId);
+      const qty = Math.max(1, Number(rawItem.qty) || 1);
+      if (product) {
+        if (!product.isNonStock && product.stock < qty) {
+          return res.status(400).json({
+            error: `Stok "${product.name} (${product.size})" tidak mencukupi. Tersisa ${product.stock} ${product.unit}.`
+          });
+        }
+        const price = Math.max(0, Number(product.sellingPrice) || 0);
+        totalAmount += price * qty;
+        midtransItemDetails.push({
+          id: String(product.code || product.id).slice(0, 45),
+          price,
+          quantity: qty,
+          name: `${product.name}${product.size && product.size !== "-" ? ` (${product.size})` : ""}`.slice(0, 48)
+        });
+      } else {
+        const price = Math.max(0, Number(rawItem.sellingPrice) || 0);
+        totalAmount += price * qty;
+        midtransItemDetails.push({
+          id: String(rawItem.productCode || rawItem.productId || "KOP-ITEM").slice(0, 45),
+          price,
+          quantity: qty,
+          name: String(rawItem.productName || "Atribut Koperasi").slice(0, 48)
+        });
+      }
+    }
+
+    if (totalAmount <= 0) {
+      return res.status(400).json({ error: "Total nominal transaksi Midtrans harus lebih dari Rp 0." });
+    }
+
+    const orderId = `KOP-MT-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const resolvedBuyerName = String(buyerName || studentName || "Pembeli Koperasi").trim();
+    const itemSummary = midtransItemDetails.map(i => `${i.name} x${i.quantity}`).join(", ");
+
+    const hasMidtransKeys = Boolean((midtransConfig.serverKey || "").trim() && (midtransConfig.clientKey || "").trim());
+    if (!hasMidtransKeys) {
+      recordOrUpdateMidtransTransaction({
+        orderId,
+        billType: "other",
+        studentId: buyerType === "student" ? studentId : undefined,
+        studentName: resolvedBuyerName,
+        studentNis: buyerType === "student" ? studentNis : undefined,
+        grossAmount: totalAmount,
+        description: `[Koperasi Sekolah] ${itemSummary}`.slice(0, 240),
+        transactionStatus: "pending",
+        paymentType: "Midtrans (QRIS)"
+      });
+      return res.json({
+        token: `mock-kop-snap-${Date.now()}`,
+        redirect_url: `https://app.sandbox.midtrans.com/snap/v2/vtweb/mock-kop-${Date.now()}`,
+        orderId,
+        totalAmount,
+        isProduction: Boolean(midtransConfig.isProduction),
+        clientKey: midtransConfig.clientKey || "",
+        isMock: true
+      });
+    }
+
+    try {
+      const authHeader = Buffer.from(`${midtransConfig.serverKey.trim()}:`).toString("base64");
+      const snapUrl = midtransConfig.isProduction
+        ? "https://app.midtrans.com/snap/v1/transactions"
+        : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+
+      const snapPayload = {
+        transaction_details: {
+          order_id: orderId,
+          gross_amount: totalAmount
+        },
+        item_details: midtransItemDetails,
+        customer_details: {
+          first_name: resolvedBuyerName.slice(0, 45),
+          email: `${String(studentNis || "koperasi").replace(/[^a-zA-Z0-9]/g, "") || "koperasi"}@smpmaarifnu.sch.id`,
+          phone: "081234567890"
+        }
+      };
+
+      const response = await fetch(snapUrl, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Basic ${authHeader}`
+        },
+        body: JSON.stringify(snapPayload)
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.token) {
+        throw new Error(
+          data.error_messages ? data.error_messages.join(", ") : "Gagal membuat token transaksi Midtrans Snap."
+        );
+      }
+
+      recordOrUpdateMidtransTransaction({
+        orderId,
+        billType: "other",
+        studentId: buyerType === "student" ? studentId : undefined,
+        studentName: resolvedBuyerName,
+        studentNis: buyerType === "student" ? studentNis : undefined,
+        grossAmount: totalAmount,
+        description: `[Koperasi Sekolah] ${itemSummary}`.slice(0, 240),
+        transactionStatus: "pending",
+        paymentType: "Midtrans Snap",
+        snapToken: data.token
+      });
+
+      return res.json({
+        token: data.token,
+        redirect_url: data.redirect_url,
+        orderId,
+        totalAmount,
+        isProduction: Boolean(midtransConfig.isProduction),
+        clientKey: midtransConfig.clientKey || "",
+        isMock: false
+      });
+    } catch (err: any) {
+      console.error("[Koperasi Midtrans Snap Error]:", err);
+      return res.status(500).json({
+        error: err?.message || "Gagal menghubungkan ke Gateway Midtrans."
+      });
+    }
+  });
+
   // POST checkout Koperasi sale -> deducts stock (for stocked items) & automatically records incoming transaction in Bendahara's bookkeeping
   app.post("/api/koperasi/sales", async (req, res) => {
     await ensureKoperasiHydrated();
@@ -14987,6 +15153,8 @@ Petunjuk Ekstraksi:
       buyerName,
       items,
       paymentMethod,
+      midtransOrderId,
+      midtransPaymentType,
       cashReceived,
       notes,
       cashierName,
@@ -15093,7 +15261,20 @@ Petunjuk Ekstraksi:
       Number(String(cashReceived ?? totalAmount).replace(/[^0-9]/g, "")) || totalAmount
     );
     const changeAmount = Math.max(0, parsedCashReceived - totalAmount);
-    const resolvedPaymentMethod: "kas" | "bank" = paymentMethod === "bank" ? "bank" : "kas";
+    const resolvedPaymentMethod: "kas" | "bank" | "midtrans" =
+      paymentMethod === "midtrans" || midtransOrderId
+        ? "midtrans"
+        : paymentMethod === "bank"
+        ? "bank"
+        : "kas";
+    const resolvedMidtransType =
+      resolvedPaymentMethod === "midtrans"
+        ? formatMidtransPaymentMethod(midtransPaymentType || "QRIS")
+        : undefined;
+    const resolvedMidtransOrderId =
+      resolvedPaymentMethod === "midtrans"
+        ? String(midtransOrderId || `KOP-MT-${Date.now()}`).trim()
+        : undefined;
     const resolvedBuyerType: "student" | "teacher" | "general" =
       buyerType === "student" ? "student" : buyerType === "teacher" ? "teacher" : "general";
 
@@ -15116,6 +15297,8 @@ Petunjuk Ekstraksi:
       totalAmount,
       totalProfit,
       paymentMethod: resolvedPaymentMethod,
+      midtransOrderId: resolvedMidtransOrderId,
+      midtransPaymentType: resolvedMidtransType,
       cashReceived: parsedCashReceived,
       changeAmount,
       notes: notes ? String(notes).trim() : "",
@@ -15130,11 +15313,30 @@ Petunjuk Ekstraksi:
       .map(it => `${it.productName}${it.size && it.size !== "-" && it.size !== "All Size" ? ` (${it.size})` : ""} x${it.qty}`)
       .join(", ");
 
+    if (resolvedPaymentMethod === "midtrans" && resolvedMidtransOrderId) {
+      recordOrUpdateMidtransTransaction({
+        orderId: resolvedMidtransOrderId,
+        billType: "other",
+        studentId: studentId ? String(studentId) : undefined,
+        studentName: resolvedBuyerName,
+        studentNis: studentNis ? String(studentNis) : undefined,
+        grossAmount: totalAmount,
+        description: `[Koperasi Sekolah - ${invoiceNumber}] ${itemSummary}`.slice(0, 240),
+        transactionStatus: "settlement",
+        settlementTime: new Date().toISOString(),
+        paymentType: resolvedMidtransType || "Midtrans (QRIS)"
+      });
+    }
+
     const buyerDetailSuffix =
       resolvedBuyerType === "teacher"
         ? ` (Guru${teacherRole ? `: ${teacherRole}` : ""})`
         : studentClass
         ? ` (Kelas ${studentClass})`
+        : "";
+    const midtransDescPrefix =
+      resolvedPaymentMethod === "midtrans"
+        ? ` [${resolvedMidtransType || "Midtrans (QRIS)"}${resolvedMidtransOrderId ? ` #${resolvedMidtransOrderId}` : ""}]`
         : "";
 
     const newTreasurerTx: TreasurerTransaction = {
@@ -15142,15 +15344,18 @@ Petunjuk Ekstraksi:
       type: "incoming",
       category: "Koperasi Sekolah",
       amount: totalAmount,
-      description: `[Kasir Koperasi - ${invoiceNumber}] Penjualan Atribut (${itemSummary}) - Pembeli: ${resolvedBuyerName}${buyerDetailSuffix} | Modal/HPP: Rp ${totalBaseAmount.toLocaleString("id-ID")} | Laba: Rp ${totalProfit.toLocaleString("id-ID")}`,
+      description: `[Kasir Koperasi - ${invoiceNumber}]${midtransDescPrefix} Penjualan Atribut (${itemSummary}) - Pembeli: ${resolvedBuyerName}${buyerDetailSuffix} | Modal/HPP: Rp ${totalBaseAmount.toLocaleString("id-ID")} | Laba: Rp ${totalProfit.toLocaleString("id-ID")}`,
       date: txDate,
       source: "custom",
       createdBy: newSale.cashierName,
       studentName: studentName || resolvedBuyerName,
       nis: studentNis ? String(studentNis) : undefined,
       recipientName: resolvedBuyerName,
-      fundingSource: "Penjualan Atribut Koperasi Sekolah",
-      paymentMethod: resolvedPaymentMethod,
+      fundingSource:
+        resolvedPaymentMethod === "midtrans"
+          ? "Pembayaran Online Midtrans Koperasi Sekolah"
+          : "Penjualan Atribut Koperasi Sekolah",
+      paymentMethod: resolvedPaymentMethod === "bank" || resolvedPaymentMethod === "midtrans" ? "bank" : "kas",
       kodeRekening: "4.1.02.01",
       noBukti: invoiceNumber
     };

@@ -1323,7 +1323,9 @@ export interface KoperasiSaleTransaction {
   totalBaseAmount: number; // Total Harga Dasar / HPP
   totalAmount: number; // Total Harga Jual / Omzet
   totalProfit: number; // Total Laba (totalAmount - totalBaseAmount)
-  paymentMethod: 'kas' | 'bank'; // Tunai (Kas) atau Transfer/QRIS (Bank)
+  paymentMethod: 'kas' | 'bank' | 'midtrans'; // Tunai (Kas), Transfer (Bank), atau Pembayaran Online via Midtrans
+  midtransOrderId?: string; // Order ID Gateway Midtrans
+  midtransPaymentType?: string; // Jenis Channel Midtrans (misal: Midtrans (QRIS), Midtrans (BCA VA))
   cashReceived: number;
   changeAmount: number;
   notes?: string;

@@ -24,7 +24,8 @@ import {
   User,
   Camera,
   CameraOff,
-  Zap
+  Zap,
+  QrCode
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
@@ -44,6 +45,7 @@ import {
   printKoperasiReceiptInstant,
   instantPrintHtmlDocument
 } from '../utils/barcodeHelper';
+import MidtransPayModal from './MidtransPayModal';
 
 interface KoperasiAdminPanelProps {
   schoolIdentity?: SchoolIdentity | null;
@@ -116,11 +118,32 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   const [showTeacherDropdown, setShowTeacherDropdown] = useState<boolean>(false);
   const [generalBuyerName, setGeneralBuyerName] = useState<string>('');
   const [generalBuyerClass, setGeneralBuyerClass] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState<'kas' | 'bank'>('kas');
+  const [paymentMethod, setPaymentMethod] = useState<'kas' | 'bank' | 'midtrans'>('kas');
   const [cashReceivedInput, setCashReceivedInput] = useState<string>('');
   const [cashierName, setCashierName] = useState<string>('Bendahara / Kasir Koperasi');
   const [notes, setNotes] = useState<string>('');
   const [submittingSale, setSubmittingSale] = useState<boolean>(false);
+  const [midtransPayState, setMidtransPayState] = useState<{
+    isOpen: boolean;
+    token: string | null;
+    orderId: string | null;
+    amount: number;
+    itemName: string;
+    isProduction: boolean;
+    clientKey: string;
+    redirectUrl?: string | null;
+    pendingPayload: any | null;
+  }>({
+    isOpen: false,
+    token: null,
+    orderId: null,
+    amount: 0,
+    itemName: '',
+    isProduction: false,
+    clientKey: '',
+    redirectUrl: null,
+    pendingPayload: null
+  });
 
   // Barcode Scanner States (USB Laser Gun + Camera Scanner)
   const [barcodeInput, setBarcodeInput] = useState<string>('');
@@ -203,7 +226,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(todayIso);
   const [startDate, setStartDate] = useState<string>(todayIso);
   const [endDate, setEndDate] = useState<string>(todayIso);
-  const [dailyPaymentFilter, setDailyPaymentFilter] = useState<'all' | 'kas' | 'bank'>('all');
+  const [dailyPaymentFilter, setDailyPaymentFilter] = useState<'all' | 'kas' | 'bank' | 'midtrans'>('all');
   const [dailyCategoryFilter, setDailyCategoryFilter] = useState<string>('Semua');
   const [excludedDailyCategories, setExcludedDailyCategories] = useState<string[]>([]);
   const [dailySizeFilter, setDailySizeFilter] = useState<string>('Semua');
@@ -553,12 +576,12 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   }, [cart]);
 
   const parsedCashReceived = useMemo(() => {
-    if (paymentMethod === 'bank') return cartSummary.totalSelling;
+    if (paymentMethod === 'bank' || paymentMethod === 'midtrans') return cartSummary.totalSelling;
     return Number(String(cashReceivedInput).replace(/[^0-9]/g, '')) || 0;
   }, [cashReceivedInput, paymentMethod, cartSummary.totalSelling]);
 
   const changeAmount = useMemo(() => {
-    if (paymentMethod === 'bank') return 0;
+    if (paymentMethod === 'bank' || paymentMethod === 'midtrans') return 0;
     return Math.max(0, parsedCashReceived - cartSummary.totalSelling);
   }, [parsedCashReceived, cartSummary.totalSelling, paymentMethod]);
 
@@ -588,68 +611,13 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     setNotes('');
   };
 
-  const handleCheckout = async () => {
-    if (cart.length === 0) {
-      showMessage('error', 'Pilih minimal 1 atribut sekolah ke dalam keranjang kasir.');
-      return;
-    }
-
-    const buyerNameResolved =
-      buyerType === 'student'
-        ? selectedStudent?.name || studentSearch.trim() || 'Siswa SMP'
-        : buyerType === 'teacher'
-        ? selectedTeacher?.name || teacherSearch.trim() || 'Guru SMP'
-        : generalBuyerName.trim() || 'Pembeli Umum / Siswa Baru';
-
-    if (paymentMethod === 'kas' && parsedCashReceived < cartSummary.totalSelling) {
-      showMessage(
-        'error',
-        `Nominal uang diterima (Rp ${parsedCashReceived.toLocaleString('id-ID')}) kurang dari total belanja (Rp ${cartSummary.totalSelling.toLocaleString('id-ID')}).`
-      );
-      return;
-    }
-
+  const finalizeKoperasiSale = async (salePayload: any) => {
     setSubmittingSale(true);
     try {
-      const payload = {
-        buyerType,
-        studentId: buyerType === 'student' ? selectedStudent?.id : undefined,
-        studentNis: buyerType === 'student' ? selectedStudent?.nis : undefined,
-        studentName: buyerType === 'student' ? selectedStudent?.name : undefined,
-        studentClass:
-          buyerType === 'student'
-            ? selectedStudent?.class
-            : buyerType === 'general'
-            ? generalBuyerClass.trim() || undefined
-            : undefined,
-        teacherId: buyerType === 'teacher' ? selectedTeacher?.id : undefined,
-        teacherRole:
-          buyerType === 'teacher'
-            ? selectedTeacher?.roleLabel || 'Guru / Tendik'
-            : undefined,
-        buyerName: buyerNameResolved,
-        items: cart.map(c => ({
-          productId: c.product.id,
-          productCode: c.product.code,
-          productName: c.product.name,
-          category: c.product.category,
-          size: c.product.size,
-          unit: c.product.unit,
-          qty: c.qty,
-          basePrice: c.product.basePrice,
-          sellingPrice: c.product.sellingPrice
-        })),
-        paymentMethod,
-        cashReceived: paymentMethod === 'bank' ? cartSummary.totalSelling : parsedCashReceived,
-        notes,
-        cashierName: cashierName.trim() || 'Bendahara Koperasi',
-        date: todayIso
-      };
-
       const res = await fetch('/api/koperasi/sales', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(salePayload)
       });
 
       const data = await res.json();
@@ -687,6 +655,110 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     } finally {
       setSubmittingSale(false);
     }
+  };
+
+  const handleCheckout = async () => {
+    if (cart.length === 0) {
+      showMessage('error', 'Pilih minimal 1 atribut sekolah ke dalam keranjang kasir.');
+      return;
+    }
+
+    const buyerNameResolved =
+      buyerType === 'student'
+        ? selectedStudent?.name || studentSearch.trim() || 'Siswa SMP'
+        : buyerType === 'teacher'
+        ? selectedTeacher?.name || teacherSearch.trim() || 'Guru SMP'
+        : generalBuyerName.trim() || 'Pembeli Umum / Siswa Baru';
+
+    if (paymentMethod === 'kas' && parsedCashReceived < cartSummary.totalSelling) {
+      showMessage(
+        'error',
+        `Nominal uang diterima (Rp ${parsedCashReceived.toLocaleString('id-ID')}) kurang dari total belanja (Rp ${cartSummary.totalSelling.toLocaleString('id-ID')}).`
+      );
+      return;
+    }
+
+    const payload = {
+      buyerType,
+      studentId: buyerType === 'student' ? selectedStudent?.id : undefined,
+      studentNis: buyerType === 'student' ? selectedStudent?.nis : undefined,
+      studentName: buyerType === 'student' ? selectedStudent?.name : undefined,
+      studentClass:
+        buyerType === 'student'
+          ? selectedStudent?.class
+          : buyerType === 'general'
+          ? generalBuyerClass.trim() || undefined
+          : undefined,
+      teacherId: buyerType === 'teacher' ? selectedTeacher?.id : undefined,
+      teacherRole:
+        buyerType === 'teacher'
+          ? selectedTeacher?.roleLabel || 'Guru / Tendik'
+          : undefined,
+      buyerName: buyerNameResolved,
+      items: cart.map(c => ({
+        productId: c.product.id,
+        productCode: c.product.code,
+        productName: c.product.name,
+        category: c.product.category,
+        size: c.product.size,
+        unit: c.product.unit,
+        qty: c.qty,
+        basePrice: c.product.basePrice,
+        sellingPrice: c.product.sellingPrice
+      })),
+      paymentMethod,
+      cashReceived:
+        paymentMethod === 'bank' || paymentMethod === 'midtrans'
+          ? cartSummary.totalSelling
+          : parsedCashReceived,
+      notes,
+      cashierName: cashierName.trim() || 'Bendahara Koperasi',
+      date: todayIso
+    };
+
+    if (paymentMethod === 'midtrans') {
+      setSubmittingSale(true);
+      try {
+        const snapRes = await fetch('/api/koperasi/midtrans-snap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const snapData = await snapRes.json();
+        if (!snapRes.ok || !snapData.token) {
+          showMessage('error', snapData.error || 'Gagal membuat sesi pembayaran Midtrans.');
+          return;
+        }
+        const itemSummaryText = cart
+          .map(c => `${c.product.name} x${c.qty}`)
+          .join(', ')
+          .slice(0, 80);
+
+        setMidtransPayState({
+          isOpen: true,
+          token: snapData.token,
+          orderId: snapData.orderId,
+          amount: cartSummary.totalSelling,
+          itemName: `Koperasi: ${itemSummaryText}`,
+          isProduction: Boolean(snapData.isProduction),
+          clientKey: snapData.clientKey || '',
+          redirectUrl: snapData.redirect_url || null,
+          pendingPayload: {
+            ...payload,
+            paymentMethod: 'midtrans',
+            midtransOrderId: snapData.orderId,
+            midtransPaymentType: 'Midtrans (QRIS)'
+          }
+        });
+      } catch (err: any) {
+        showMessage('error', err?.message || 'Gagal menghubungi server Midtrans.');
+      } finally {
+        setSubmittingSale(false);
+      }
+      return;
+    }
+
+    await finalizeKoperasiSale(payload);
   };
 
   // =========================================================================
@@ -1122,13 +1194,17 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     let totalProfit = 0;
     let totalKas = 0;
     let totalBank = 0;
+    let totalMidtrans = 0;
 
     for (const s of filteredDailySales) {
       totalQty += Number(s.totalQty) || 0;
       totalBase += Number(s.totalBaseAmount) || 0;
       totalSelling += Number(s.totalAmount) || 0;
       totalProfit += Number(s.totalProfit) || 0;
-      if (s.paymentMethod === 'bank') {
+      if (s.paymentMethod === 'midtrans') {
+        totalMidtrans += Number(s.totalAmount) || 0;
+        totalBank += Number(s.totalAmount) || 0;
+      } else if (s.paymentMethod === 'bank') {
         totalBank += Number(s.totalAmount) || 0;
       } else {
         totalKas += Number(s.totalAmount) || 0;
@@ -1142,7 +1218,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       totalSelling,
       totalProfit,
       totalKas,
-      totalBank
+      totalBank,
+      totalMidtrans
     };
   }, [filteredDailySales]);
 
@@ -1224,12 +1301,16 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     let grossProfit = 0;
     let kasSales = 0;
     let bankSales = 0;
+    let midtransSales = 0;
 
     for (const s of financialSales) {
       omzetSelling += Number(s.totalAmount) || 0;
       hppBase += Number(s.totalBaseAmount) || 0;
       grossProfit += Number(s.totalProfit) || 0;
-      if (s.paymentMethod === 'bank') {
+      if (s.paymentMethod === 'midtrans') {
+        midtransSales += Number(s.totalAmount) || 0;
+        bankSales += Number(s.totalAmount) || 0;
+      } else if (s.paymentMethod === 'bank') {
         bankSales += Number(s.totalAmount) || 0;
       } else {
         kasSales += Number(s.totalAmount) || 0;
@@ -1252,6 +1333,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       grossProfit,
       kasSales,
       bankSales,
+      midtransSales,
       bkuIncoming,
       bkuOutgoing,
       netCashBalance: bkuIncoming - bkuOutgoing,
@@ -1285,7 +1367,12 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
         'Total Harga Dasar / HPP (Rp)': sale.totalBaseAmount,
         'Total Harga Jual / Omzet (Rp)': sale.totalAmount,
         'Laba Bersih (Rp)': sale.totalProfit,
-        'Metode Pembayaran': sale.paymentMethod === 'bank' ? 'Transfer / QRIS (Bank)' : 'Tunai (Kas)',
+        'Metode Pembayaran':
+          sale.paymentMethod === 'midtrans'
+            ? `${sale.midtransPaymentType || 'Midtrans (QRIS)'}${sale.midtransOrderId ? ` [${sale.midtransOrderId}]` : ''}`
+            : sale.paymentMethod === 'bank'
+            ? 'Transfer (Bank)'
+            : 'Tunai (Kas)',
         'Petugas Kasir': sale.cashierName,
         'Status Pembukuan Bendahara': 'Tercatat Otomatis di BKU'
       });
@@ -2275,33 +2362,62 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                   <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">
                     Metode Pembayaran (Masuk Pembukuan Bendahara)
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-1.5">
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('kas')}
-                      className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                      className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
                         paymentMethod === 'kas'
                           ? 'bg-emerald-50 border-emerald-600 text-emerald-900 ring-2 ring-emerald-500/20'
                           : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      <Wallet className="w-4 h-4 text-emerald-600" />
-                      <span>Tunai (Buku Kas)</span>
+                      <Wallet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Tunai (Kas)</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('bank')}
-                      className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                      className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
                         paymentMethod === 'bank'
                           ? 'bg-blue-50 border-blue-600 text-blue-900 ring-2 ring-blue-500/20'
                           : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      <CreditCard className="w-4 h-4 text-blue-600" />
-                      <span>Transfer / QRIS (Bank)</span>
+                      <CreditCard className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>Transfer Bank</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('midtrans')}
+                      className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                        paymentMethod === 'midtrans'
+                          ? 'bg-indigo-50 border-indigo-600 text-indigo-950 ring-2 ring-indigo-500/20'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <QrCode className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span>Midtrans QRIS</span>
                     </button>
                   </div>
                 </div>
+
+                {paymentMethod === 'midtrans' && (
+                  <div className="p-3 rounded-xl bg-indigo-50/90 border border-indigo-200 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                        <QrCode className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Gateway Midtrans (QRIS / GoPay / VA Bank)</span>
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-indigo-600 text-white text-[10px] font-bold">
+                        Otomatis BKU Bank
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-indigo-800 leading-relaxed">
+                      Klik tombol bayar di bawah untuk menampilkan kode QRIS / Virtual Account Midtrans. Setelah pembayaran terkonfirmasi, struk otomatis tercetak &amp; masuk Buku Pembantu Bank Bendahara.
+                    </p>
+                  </div>
+                )}
 
                 {paymentMethod === 'kas' && (
                   <div className="space-y-2">
@@ -2421,13 +2537,21 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                 className={`w-full py-3.5 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 shadow-lg transition cursor-pointer ${
                   submittingSale || cart.length === 0
                     ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                    : paymentMethod === 'midtrans'
+                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
                     : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                 }`}
               >
-                <Printer className="w-4 h-4" />
+                {paymentMethod === 'midtrans' ? (
+                  <QrCode className="w-4 h-4" />
+                ) : (
+                  <Printer className="w-4 h-4" />
+                )}
                 <span>
                   {submittingSale
                     ? 'Memproses Transaksi...'
+                    : paymentMethod === 'midtrans'
+                    ? 'BAYAR VIA MIDTRANS (QRIS / VA) & CETAK STRUK'
                     : 'PROSES TRANSAKSI & CETAK STRUK'}
                 </span>
               </button>
@@ -2808,12 +2932,13 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
 
                 <select
                   value={dailyPaymentFilter}
-                  onChange={e => setDailyPaymentFilter(e.target.value as 'all' | 'kas' | 'bank')}
+                  onChange={e => setDailyPaymentFilter(e.target.value as 'all' | 'kas' | 'bank' | 'midtrans')}
                   className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white"
                 >
                   <option value="all">Semua Metode Bayar</option>
                   <option value="kas">Tunai (Buku Kas)</option>
-                  <option value="bank">Transfer / QRIS (Bank)</option>
+                  <option value="bank">Transfer Bank</option>
+                  <option value="midtrans">Midtrans (QRIS / Online)</option>
                 </select>
 
                 {(dailyCategoryFilter !== 'Semua' ||
@@ -3088,14 +3213,25 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                         </td>
                         <td className="p-3 text-center">
                           <span
-                            className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                              sale.paymentMethod === 'bank'
+                            className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
+                              sale.paymentMethod === 'midtrans'
+                                ? 'bg-indigo-100 text-indigo-800'
+                                : sale.paymentMethod === 'bank'
                                 ? 'bg-blue-100 text-blue-800'
                                 : 'bg-emerald-100 text-emerald-800'
                             }`}
                           >
-                            {sale.paymentMethod === 'bank' ? 'Bank/QRIS' : 'Kas Tunai'}
+                            {sale.paymentMethod === 'midtrans'
+                              ? sale.midtransPaymentType || 'Midtrans (QRIS)'
+                              : sale.paymentMethod === 'bank'
+                              ? 'Transfer Bank'
+                              : 'Kas Tunai'}
                           </span>
+                          {sale.midtransOrderId && (
+                            <div className="text-[10px] font-mono text-indigo-600 mt-0.5">
+                              {sale.midtransOrderId}
+                            </div>
+                          )}
                         </td>
                         <td className="p-3 text-right font-semibold text-slate-600">
                           Rp {(sale.totalBaseAmount || 0).toLocaleString('id-ID')}
@@ -3553,9 +3689,19 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                   <div className="flex justify-between">
                     <span>Pembayaran:</span>
                     <span className="uppercase font-bold">
-                      {receiptSale.paymentMethod === 'bank' ? 'Transfer / QRIS' : 'Tunai / Kas'}
+                      {receiptSale.paymentMethod === 'midtrans'
+                        ? receiptSale.midtransPaymentType || 'Midtrans (QRIS)'
+                        : receiptSale.paymentMethod === 'bank'
+                        ? 'Transfer / Bank'
+                        : 'Tunai / Kas'}
                     </span>
                   </div>
+                  {receiptSale.midtransOrderId && (
+                    <div className="flex justify-between">
+                      <span>Order Midtrans:</span>
+                      <span className="font-mono font-bold">{receiptSale.midtransOrderId}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2 border-b border-dashed border-slate-400 pb-3 mb-3">
@@ -4249,6 +4395,28 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
           }}
         />
       )}
+
+      {/* MODAL PEMBAYARAN MIDTRANS SNAP / QRIS KOPERASI */}
+      <MidtransPayModal
+        isOpen={midtransPayState.isOpen}
+        token={midtransPayState.token}
+        orderId={midtransPayState.orderId}
+        amount={midtransPayState.amount}
+        itemName={midtransPayState.itemName}
+        isProduction={midtransPayState.isProduction}
+        clientKey={midtransPayState.clientKey}
+        redirectUrl={midtransPayState.redirectUrl}
+        onSuccess={async () => {
+          const pending = midtransPayState.pendingPayload;
+          setMidtransPayState(prev => ({ ...prev, isOpen: false, pendingPayload: null }));
+          if (pending) {
+            await finalizeKoperasiSale(pending);
+          }
+        }}
+        onClose={() => {
+          setMidtransPayState(prev => ({ ...prev, isOpen: false }));
+        }}
+      />
     </div>
   );
 };

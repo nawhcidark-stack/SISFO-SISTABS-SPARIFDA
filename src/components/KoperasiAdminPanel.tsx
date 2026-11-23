@@ -38,7 +38,9 @@ import {
 import {
   Code128BarcodeSvg,
   BarcodeLabelPrintModal,
-  playScannerBeep
+  playScannerBeep,
+  printKoperasiReceiptInstant,
+  instantPrintHtmlDocument
 } from '../utils/barcodeHelper';
 
 interface KoperasiAdminPanelProps {
@@ -113,7 +115,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
 
   // Receipt Print Modal State
   const [receiptSale, setReceiptSale] = useState<KoperasiSaleTransaction | null>(null);
-  const [receiptFormat, setReceiptFormat] = useState<'thermal' | 'a5'>('thermal');
+  const [receiptFormat, setReceiptFormat] = useState<'thermal58' | 'thermal80' | 'a5'>('thermal80');
+  const [autoPrintOnCheckout, setAutoPrintOnCheckout] = useState<boolean>(true);
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const lastScanTimestampRef = useRef<{ code: string; time: number }>({ code: '', time: 0 });
@@ -539,6 +542,13 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       if (data.sale) {
         playScannerBeep(true);
         setReceiptSale(data.sale);
+        if (autoPrintOnCheckout) {
+          printKoperasiReceiptInstant(data.sale, {
+            format: receiptFormat,
+            schoolName: schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN",
+            schoolAddress: schoolIdentity?.address || 'Jl. Raya Pandaan, Kab. Pasuruan, Jawa Timur'
+          });
+        }
         clearCart();
         setSelectedStudent(null);
         setStudentSearch('');
@@ -940,6 +950,155 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
 
   const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
   const schoolAddress = schoolIdentity?.address || 'Jl. Raya Pandaan, Kab. Pasuruan, Jawa Timur';
+
+  const handleInstantPrintDailyReport = () => {
+    const periodText =
+      dailyFilterMode === 'single_day'
+        ? selectedDate
+        : dailyFilterMode === 'date_range'
+        ? `${startDate} s/d ${endDate}`
+        : 'Semua Periode';
+
+    const rowsHtml = filteredDailySales
+      .map((sale, idx) => {
+        const itemsText = sale.items
+          .map(
+            it =>
+              `${it.productName} (${it.size}) x${it.qty} [HPP: Rp ${(it.basePrice || 0).toLocaleString('id-ID')} -> Jual: Rp ${(it.sellingPrice || 0).toLocaleString('id-ID')}]`
+          )
+          .join('<br/>');
+        return `
+        <tr>
+          <td style="text-align:center;">${idx + 1}</td>
+          <td><strong>${sale.invoiceNumber}</strong></td>
+          <td>${sale.date}</td>
+          <td><strong>${sale.buyerName}</strong>${sale.studentClass ? `<br/><small>Kelas ${sale.studentClass}</small>` : ''}</td>
+          <td>${itemsText}</td>
+          <td style="text-align:center;">${sale.paymentMethod === 'bank' ? 'Bank/QRIS' : 'Kas Tunai'}</td>
+          <td style="text-align:right;">Rp ${(sale.totalBaseAmount || 0).toLocaleString('id-ID')}</td>
+          <td style="text-align:right;"><strong>Rp ${(sale.totalAmount || 0).toLocaleString('id-ID')}</strong></td>
+          <td style="text-align:right;">+Rp ${(sale.totalProfit || 0).toLocaleString('id-ID')}</td>
+        </tr>`;
+      })
+      .join('');
+
+    const css = `
+      @page { size: A4 landscape; margin: 10mm; }
+      body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000; }
+      .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+      .title { font-size: 15px; font-weight: bold; text-transform: uppercase; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th, td { border: 1px solid #000; padding: 5px 6px; font-size: 10.5px; vertical-align: top; }
+      th { background: #f0f0f0; text-transform: uppercase; }
+    `;
+
+    const html = `
+      <div class="header">
+        <div class="title">LAPORAN PENJUALAN HARIAN KOPERASI SEKOLAH — ${schoolName}</div>
+        <div>${schoolAddress}</div>
+        <div style="margin-top:4px;font-weight:bold;">Periode: ${periodText} • Total Nota: ${dailyReportMetrics.txCount} (${dailyReportMetrics.totalQty} Atribut)</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:28px;">No</th>
+            <th>No. Nota</th>
+            <th>Tanggal</th>
+            <th>Pembeli</th>
+            <th>Rincian Atribut (Harga Dasar vs Harga Jual)</th>
+            <th>Metode</th>
+            <th>Total HPP</th>
+            <th>Total Jual</th>
+            <th>Laba</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot>
+          <tr style="font-weight:bold;background:#f8f8f8;">
+            <td colspan="6" style="text-align:right;">TOTAL AKUMULASI (${dailyReportMetrics.txCount} Transaksi / ${dailyReportMetrics.totalQty} Item):</td>
+            <td style="text-align:right;">Rp ${dailyReportMetrics.totalBase.toLocaleString('id-ID')}</td>
+            <td style="text-align:right;">Rp ${dailyReportMetrics.totalSelling.toLocaleString('id-ID')}</td>
+            <td style="text-align:right;">+Rp ${dailyReportMetrics.totalProfit.toLocaleString('id-ID')}</td>
+          </tr>
+        </tfoot>
+      </table>
+    `;
+    instantPrintHtmlDocument(html, css, `Laporan_Harian_Koperasi_${periodText}`);
+  };
+
+  const handleInstantPrintFinancialReport = () => {
+    const periodLabel = financialAllPeriods ? 'Seluruh Periode' : financialMonth;
+    const rowsHtml = koperasiLedgerTransactions
+      .map(
+        (tx, idx) => `
+        <tr>
+          <td style="text-align:center;">${idx + 1}</td>
+          <td>${tx.date}</td>
+          <td><strong>${tx.noBukti || tx.id}</strong></td>
+          <td>${tx.category}</td>
+          <td>${tx.description}</td>
+          <td style="text-align:center;">${tx.paymentMethod === 'bank' ? 'Bank' : 'Kas Tunai'}</td>
+          <td style="text-align:right;">${tx.type === 'incoming' ? `Rp ${(tx.amount || 0).toLocaleString('id-ID')}` : '-'}</td>
+          <td style="text-align:right;">${tx.type === 'outgoing' ? `Rp ${(tx.amount || 0).toLocaleString('id-ID')}` : '-'}</td>
+        </tr>`
+      )
+      .join('');
+
+    const css = `
+      @page { size: A4 portrait; margin: 10mm; }
+      body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000; }
+      .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+      .title { font-size: 15px; font-weight: bold; text-transform: uppercase; }
+      .summary { display: table; width: 100%; border: 1px solid #000; margin-bottom: 10px; }
+      .summary-cell { display: table-cell; width: 33.3%; padding: 6px 8px; border-right: 1px solid #000; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #000; padding: 5px 6px; font-size: 10px; vertical-align: top; }
+      th { background: #f0f0f0; text-transform: uppercase; }
+    `;
+
+    const html = `
+      <div class="header">
+        <div class="title">LAPORAN KEUANGAN & BKU KOPERASI SEKOLAH — ${schoolName}</div>
+        <div>${schoolAddress}</div>
+        <div style="margin-top:4px;font-weight:bold;">Periode: ${periodLabel}</div>
+      </div>
+      <div class="summary">
+        <div class="summary-cell">
+          <div><strong>1. Laba Rugi Penjualan</strong></div>
+          <div>Omzet Jual: Rp ${financialSummary.omzetSelling.toLocaleString('id-ID')}</div>
+          <div>Modal HPP: Rp ${financialSummary.hppBase.toLocaleString('id-ID')}</div>
+          <div><strong>Laba Kotor: Rp ${financialSummary.grossProfit.toLocaleString('id-ID')}</strong></div>
+        </div>
+        <div class="summary-cell">
+          <div><strong>2. Posisi Kas vs Bank</strong></div>
+          <div>Kas Tunai: Rp ${financialSummary.kasSales.toLocaleString('id-ID')}</div>
+          <div>Bank/QRIS: Rp ${financialSummary.bankSales.toLocaleString('id-ID')}</div>
+        </div>
+        <div class="summary-cell" style="border-right:none;">
+          <div><strong>3. Mutasi BKU Bendahara</strong></div>
+          <div>Pemasukan BKU: +Rp ${financialSummary.bkuIncoming.toLocaleString('id-ID')}</div>
+          <div>Pengeluaran BKU: -Rp ${financialSummary.bkuOutgoing.toLocaleString('id-ID')}</div>
+          <div><strong>Saldo BKU: Rp ${financialSummary.netCashBalance.toLocaleString('id-ID')}</strong></div>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:28px;">No</th>
+            <th>Tanggal</th>
+            <th>No. Bukti</th>
+            <th>POS</th>
+            <th>Uraian Pembukuan</th>
+            <th>Buku Kas</th>
+            <th>Pemasukan</th>
+            <th>Pengeluaran</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    `;
+    instantPrintHtmlDocument(html, css, `Laporan_Keuangan_Koperasi_${periodLabel}`);
+  };
 
   return (
     <div className="space-y-6">
@@ -1708,6 +1867,27 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                 )}
               </div>
 
+              <div className="bg-slate-50 px-3 py-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoPrintOnCheckout}
+                    onChange={e => setAutoPrintOnCheckout(e.target.checked)}
+                    className="rounded text-emerald-600"
+                  />
+                  <span>Langsung Cetak Struk Thermal (Render Cepat)</span>
+                </label>
+                <select
+                  value={receiptFormat}
+                  onChange={e => setReceiptFormat(e.target.value as 'thermal58' | 'thermal80' | 'a5')}
+                  className="px-2 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-bold text-slate-800"
+                >
+                  <option value="thermal58">Thermal 58mm</option>
+                  <option value="thermal80">Thermal 80mm</option>
+                  <option value="a5">Nota A5</option>
+                </select>
+              </div>
+
               <button
                 type="button"
                 disabled={submittingSale || cart.length === 0}
@@ -2068,7 +2248,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={handleInstantPrintDailyReport}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
@@ -2226,11 +2406,26 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"
-                              onClick={() => setReceiptSale(sale)}
-                              className="p-1.5 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
-                              title="Cetak Struk Nota"
+                              onClick={() =>
+                                printKoperasiReceiptInstant(sale, {
+                                  format: receiptFormat,
+                                  schoolName,
+                                  schoolAddress
+                                })
+                              }
+                              className="p-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              title="Langsung Cetak Struk Thermal (Render Cepat)"
                             >
                               <Printer className="w-3.5 h-3.5" />
+                              <span>Cetak Cepat</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setReceiptSale(sale)}
+                              className="p-1.5 px-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              title="Pratinjau Struk Nota"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
                               <span>Struk</span>
                             </button>
                             <button
@@ -2311,7 +2506,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={handleInstantPrintFinancialReport}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
@@ -2483,56 +2678,49 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       )}
 
       {/* =================================================================== */}
-      {/* MODAL STRUK / NOTA KASIR KOPERASI SEKOLAH                           */}
+      {/* MODAL STRUK / NOTA KASIR KOPERASI SEKOLAH (INSTANT THERMAL PRINT)   */}
       {/* =================================================================== */}
       {receiptSale && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <style>{`
-            @media print {
-              body * {
-                visibility: hidden !important;
-              }
-              #koperasi-printable-receipt, #koperasi-printable-receipt * {
-                visibility: visible !important;
-              }
-              #koperasi-printable-receipt {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                box-shadow: none !important;
-                border: none !important;
-                margin: 0 !important;
-                padding: 8px !important;
-                background: white !important;
-              }
-            }
-          `}</style>
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
-            <div className="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between print:hidden">
+            <div className="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-emerald-400" />
-                <span className="font-black text-sm">STRUK PEMBAYARAN KOPERASI</span>
+                <div>
+                  <span className="font-black text-sm block leading-tight">STRUK PEMBAYARAN KOPERASI</span>
+                  <span className="text-[10px] text-emerald-300 font-semibold">
+                    Engine Cetak Thermal Instan (Tanpa Delay Render Windows Print)
+                  </span>
+                </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="flex bg-slate-800 p-0.5 rounded-lg text-xs font-bold">
+                <div className="flex bg-slate-800 p-0.5 rounded-lg text-[11px] font-bold">
                   <button
                     type="button"
-                    onClick={() => setReceiptFormat('thermal')}
-                    className={`px-2.5 py-1 rounded-md cursor-pointer ${
-                      receiptFormat === 'thermal' ? 'bg-emerald-600 text-white' : 'text-slate-300'
+                    onClick={() => setReceiptFormat('thermal58')}
+                    className={`px-2 py-1 rounded-md cursor-pointer ${
+                      receiptFormat === 'thermal58' ? 'bg-emerald-600 text-white' : 'text-slate-300'
                     }`}
                   >
-                    Thermal 58/80mm
+                    58mm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptFormat('thermal80')}
+                    className={`px-2 py-1 rounded-md cursor-pointer ${
+                      receiptFormat === 'thermal80' ? 'bg-emerald-600 text-white' : 'text-slate-300'
+                    }`}
+                  >
+                    80mm
                   </button>
                   <button
                     type="button"
                     onClick={() => setReceiptFormat('a5')}
-                    className={`px-2.5 py-1 rounded-md cursor-pointer ${
+                    className={`px-2 py-1 rounded-md cursor-pointer ${
                       receiptFormat === 'a5' ? 'bg-emerald-600 text-white' : 'text-slate-300'
                     }`}
                   >
-                    Nota Kuitansi
+                    Nota A5
                   </button>
                 </div>
                 <button
@@ -2545,7 +2733,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
               </div>
             </div>
 
-            <div className="bg-emerald-50 border-b border-emerald-200 px-5 py-2.5 flex items-center gap-2 text-xs text-emerald-900 font-semibold print:hidden">
+            <div className="bg-emerald-50 border-b border-emerald-200 px-5 py-2.5 flex items-center gap-2 text-xs text-emerald-900 font-semibold">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>
                 Tercatat otomatis pada Pembukuan Bendahara (POS Koperasi Sekolah •{' '}
@@ -2557,7 +2745,9 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
               <div
                 id="koperasi-printable-receipt"
                 className={`bg-white border border-slate-300 shadow-xs text-slate-900 ${
-                  receiptFormat === 'thermal'
+                  receiptFormat === 'thermal58'
+                    ? 'w-[250px] p-3.5 font-mono text-[11px]'
+                    : receiptFormat === 'thermal80'
                     ? 'w-[310px] p-4 font-mono text-xs'
                     : 'w-full p-6 font-sans text-xs sm:text-sm'
                 }`}
@@ -2645,8 +2835,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                 )}
 
                 <div className="mt-3 pt-2 border-t border-dashed border-slate-300 flex justify-center">
-                  <div className="w-44">
-                    <Code128BarcodeSvg value={receiptSale.invoiceNumber} height={26} showText={true} />
+                  <div className="w-40">
+                    <Code128BarcodeSvg value={receiptSale.invoiceNumber} height={24} showText={true} />
                   </div>
                 </div>
 
@@ -2658,22 +2848,34 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
               </div>
             </div>
 
-            <div className="px-5 py-3.5 bg-white border-t border-slate-200 flex items-center justify-end gap-2.5 print:hidden">
-              <button
-                type="button"
-                onClick={() => setReceiptSale(null)}
-                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 cursor-pointer"
-              >
-                Tutup
-              </button>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow cursor-pointer"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Cetak Struk Sekarang</span>
-              </button>
+            <div className="px-5 py-3.5 bg-white border-t border-slate-200 flex items-center justify-between gap-2.5">
+              <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Cetak terisolasi 1 halaman penuh (Instan)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReceiptSale(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    printKoperasiReceiptInstant(receiptSale, {
+                      format: receiptFormat,
+                      schoolName,
+                      schoolAddress
+                    })
+                  }
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak Struk Sekarang</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

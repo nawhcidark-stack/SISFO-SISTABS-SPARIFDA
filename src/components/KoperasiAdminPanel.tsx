@@ -79,7 +79,7 @@ const CATEGORIES = [
 
 const ALL_CATEGORIES = ['Semua', ...CATEGORIES];
 const SIZES = ['All Size', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '-'];
-const UNITS = ['Pcs', 'Stel', 'Set', 'Paket', 'Potong'];
+const UNITS = ['Pcs', 'Stel', 'Set', 'Paket', 'Potong', 'Pasang', 'Buku', 'Lembar', 'Lusin', 'Box'];
 
 export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   schoolIdentity,
@@ -154,6 +154,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   const [formCategory, setFormCategory] = useState<string>('Atribut');
   const [formSize, setFormSize] = useState<string>('All Size');
   const [formUnit, setFormUnit] = useState<string>('Pcs');
+  const [isCustomUnit, setIsCustomUnit] = useState<boolean>(false);
+  const [formCustomUnit, setFormCustomUnit] = useState<string>('');
   const [formBasePrice, setFormBasePrice] = useState<string>('');
   const [formSellingPrice, setFormSellingPrice] = useState<string>('');
   const [formStock, setFormStock] = useState<string>('50');
@@ -672,6 +674,16 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   // =========================================================================
   // LOGIKA CRUD MASTER ATRIBUT & RESTOCK
   // =========================================================================
+  const availableUnits = useMemo(() => {
+    const set = new Set<string>(UNITS);
+    for (const p of products) {
+      if (p.unit && p.unit.trim()) {
+        set.add(p.unit.trim());
+      }
+    }
+    return Array.from(set);
+  }, [products]);
+
   const openAddProductForm = () => {
     setEditingProduct(null);
     const randomNum = String(products.length + 1).padStart(2, '0');
@@ -680,6 +692,8 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     setFormCategory('Atribut');
     setFormSize('All Size');
     setFormUnit('Pcs');
+    setIsCustomUnit(false);
+    setFormCustomUnit('');
     setFormBasePrice('');
     setFormSellingPrice('');
     setFormStock('50');
@@ -693,7 +707,16 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     setFormName(prod.name);
     setFormCategory(prod.category);
     setFormSize(prod.size);
-    setFormUnit(prod.unit);
+    const unitVal = (prod.unit || 'Pcs').trim();
+    if (UNITS.includes(unitVal)) {
+      setFormUnit(unitVal);
+      setIsCustomUnit(false);
+      setFormCustomUnit('');
+    } else {
+      setFormUnit(unitVal);
+      setIsCustomUnit(true);
+      setFormCustomUnit(unitVal);
+    }
     setFormBasePrice(String(prod.basePrice || 0));
     setFormSellingPrice(String(prod.sellingPrice || 0));
     setFormStock(String(prod.stock || 0));
@@ -705,6 +728,12 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     e.preventDefault();
     if (!formName.trim()) {
       showMessage('error', 'Nama atribut sekolah wajib diisi.');
+      return;
+    }
+
+    const resolvedUnit = (isCustomUnit ? formCustomUnit : formUnit).trim();
+    if (!resolvedUnit) {
+      showMessage('error', 'Satuan barang wajib diisi atau dipilih.');
       return;
     }
 
@@ -727,7 +756,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
           name: formName.trim(),
           category: formCategory,
           size: formSize,
-          unit: formUnit,
+          unit: resolvedUnit,
           basePrice: parsedBase,
           sellingPrice: parsedSelling,
           stock: parsedStock,
@@ -3388,12 +3417,13 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                     className="w-full px-3.5 py-2.5 rounded-xl border border-emerald-400 bg-white font-black text-emerald-800 text-sm"
                   />
                   <span className="text-[11px] text-emerald-700 font-semibold">
-                    Laba / Margin Otomatis: Rp {formUnitProfit.toLocaleString('id-ID')} / {formUnit}
+                    Laba / Margin Otomatis: Rp {formUnitProfit.toLocaleString('id-ID')} /{' '}
+                    {(isCustomUnit ? formCustomUnit : formUnit).trim() || 'Unit'}
                   </span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-extrabold uppercase text-slate-600 mb-1">
                     Ukuran
@@ -3425,20 +3455,58 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-extrabold uppercase text-slate-600 mb-1">
-                    Satuan
-                  </label>
-                  <select
-                    value={formUnit}
-                    onChange={e => setFormUnit(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-semibold bg-white"
-                  >
-                    {UNITS.map(u => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-extrabold uppercase text-slate-600">
+                      Satuan Barang
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isCustomUnit) {
+                          setIsCustomUnit(true);
+                          setFormCustomUnit(formUnit);
+                        } else {
+                          setIsCustomUnit(false);
+                        }
+                      }}
+                      className="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer"
+                    >
+                      {isCustomUnit ? 'Pilih Daftar' : '+ Satuan Custom'}
+                    </button>
+                  </div>
+
+                  {isCustomUnit ? (
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        required
+                        value={formCustomUnit}
+                        onChange={e => setFormCustomUnit(e.target.value)}
+                        placeholder="Ketik satuan (mis: Rim, Meter, Roll)..."
+                        className="w-full px-3 py-2 rounded-xl border border-emerald-500 bg-emerald-50/40 text-xs sm:text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
+                  ) : (
+                    <select
+                      value={formUnit}
+                      onChange={e => {
+                        if (e.target.value === '__CUSTOM__') {
+                          setIsCustomUnit(true);
+                          setFormCustomUnit('');
+                        } else {
+                          setFormUnit(e.target.value);
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-semibold bg-white"
+                    >
+                      {availableUnits.map(u => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                      <option value="__CUSTOM__">+ Ketik Satuan Custom...</option>
+                    </select>
+                  )}
                 </div>
               </div>
 

@@ -5,18 +5,20 @@ import {
   LogOut, DollarSign, Calendar, Tag, FileText, Search, Printer, 
   Download, Building2, CheckCircle2, AlertTriangle, ArrowUpRight, 
   ArrowDownRight, Wallet, UserCheck, Percent, HelpCircle, Eye, Key,
-  LayoutGrid, Home, Smartphone, Apple, FileSpreadsheet, Database, X
+  LayoutGrid, Home, Smartphone, Apple, FileSpreadsheet, Database, X, Store
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
-import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig, HomeroomTeacher, SubjectTeacher } from '../types';
+import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig, HomeroomTeacher, SubjectTeacher, Student } from '../types';
 import { Pagination } from './Pagination';
 import TreasurerMysqlSettings from './TreasurerMysqlSettings';
+import KoperasiAdminPanel from './KoperasiAdminPanel';
 
 interface TreasurerPanelProps {
   schoolIdentity: SchoolIdentity;
+  students?: Student[];
   homerooms?: HomeroomTeacher[];
   subjectTeachers?: SubjectTeacher[];
   onLogout: () => void;
@@ -439,12 +441,13 @@ const TreasurerTransactionFormModal = React.memo(function TreasurerTransactionFo
 
 export default function TreasurerPanel({ 
   schoolIdentity, 
+  students = [],
   homerooms = [], 
   subjectTeachers = [], 
   onLogout,
   onRefresh
 }: TreasurerPanelProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'kas_ledger' | 'password' | 'gaji_guru' | 'database_mysql'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'kas_ledger' | 'koperasi' | 'password' | 'gaji_guru' | 'database_mysql'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [transactions, setTransactions] = useState<TreasurerTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -653,6 +656,9 @@ export default function TreasurerPanel({
           if (!cleaned.some(c => c.name.toLowerCase().trim() === 'spmb daftar ulang')) {
             cleaned.push({ name: 'SPMB DAFTAR ULANG', type: 'both' });
           }
+          if (!cleaned.some(c => c.name.toLowerCase().trim() === 'koperasi sekolah')) {
+            cleaned.push({ name: 'Koperasi Sekolah', type: 'both' });
+          }
           localStorage.setItem('treasurer_categories', JSON.stringify(cleaned));
           return cleaned;
         }
@@ -663,6 +669,7 @@ export default function TreasurerPanel({
     return [
       { name: 'Operasional', type: 'outgoing' },
       { name: 'Gaji Guru', type: 'outgoing' },
+      { name: 'Koperasi Sekolah', type: 'both' },
       { name: 'Token SPMB Formulir', type: 'both' },
       { name: 'SPMB DAFTAR ULANG', type: 'both' },
       { name: 'Pembangunan', type: 'outgoing' },
@@ -2062,6 +2069,18 @@ export default function TreasurerPanel({
               }`}
             >
               Buku Kas Terpadu
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('koperasi')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'koperasi'
+                  ? 'bg-emerald-700 text-white shadow-sm'
+                  : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100'
+              }`}
+            >
+              <Store size={14} />
+              <span>🛒 Kasir &amp; Koperasi Atribut</span>
             </button>
             <button
               type="button"
@@ -3507,6 +3526,15 @@ export default function TreasurerPanel({
             </div>
           )}
 
+          {activeTab === 'koperasi' && (
+            <KoperasiAdminPanel
+              schoolIdentity={schoolIdentity}
+              students={students}
+              treasurerTransactions={transactions}
+              onRefreshTreasurerTransactions={fetchTransactions}
+            />
+          )}
+
           {activeTab === 'database_mysql' && (
             <TreasurerMysqlSettings schoolIdentity={schoolIdentity} />
           )}
@@ -3662,6 +3690,23 @@ export default function TreasurerPanel({
                   </div>
                   <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
                     Gaji Guru
+                  </span>
+                </button>
+
+                {/* 3b. Kasir & Koperasi Sekolah */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('koperasi');
+                    setShowMoreMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-start text-center p-2 rounded-2xl active:scale-90 transition-transform cursor-pointer group"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 shadow-md shadow-emerald-600/20 flex items-center justify-center text-white text-2xl group-hover:scale-105 transition-transform">
+                    🛒
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-800 text-center leading-tight mt-1.5 line-clamp-2 max-w-[85px]">
+                    Kasir Koperasi
                   </span>
                 </button>
 

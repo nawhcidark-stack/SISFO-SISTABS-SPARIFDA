@@ -12,7 +12,7 @@ import compression from "compression";
 import { GoogleGenAI, Type } from "@google/genai";
 import Tesseract from "tesseract.js";
 import { parseIndonesianOfficialLetterText } from "./src/utils/letterScannerHelper";
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeacherAssignment, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription, SharedLearningObjective, CorrespondenceRecord } from "./src/types";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeacherAssignment, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription, SharedLearningObjective, CorrespondenceRecord, KoperasiProduct, KoperasiSaleItem, KoperasiSaleTransaction } from "./src/types";
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
@@ -14530,6 +14530,643 @@ Petunjuk Ekstraksi:
           "Gagal memindai data surat secara otomatis. Pastikan foto surat terlihat jelas dan pencahayaan cukup."
       });
     }
+  });
+
+  // ============================================================================
+  // KASIR KOPERASI SEKOLAH & MANAJEMEN ATRIBUT SEKOLAH (TERINTEGRASI BKU BENDAHARA)
+  // ============================================================================
+  const koperasiDataFilePath = path.join(process.cwd(), "koperasi_data.json");
+
+  const defaultKoperasiProducts: KoperasiProduct[] = [
+    {
+      id: "kop-prd-01",
+      code: "ATR-SRG-01",
+      name: "Kain Seragam Batik Khas SMP Ma'arif",
+      category: "Seragam",
+      size: "All Size",
+      basePrice: 75000,
+      sellingPrice: 95000,
+      stock: 60,
+      unit: "Potong",
+      description: "Kain batik resmi identitas SMP Ma'arif NU Pandaan",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-02",
+      code: "ATR-OLR-01",
+      name: "Seragam Olahraga Lengkap (Kaos & Training)",
+      category: "Olahraga",
+      size: "L",
+      basePrice: 110000,
+      sellingPrice: 135000,
+      stock: 45,
+      unit: "Stel",
+      description: "Setelan baju kaos dan celana training olahraga berlogo sekolah",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-03",
+      code: "ATR-OLR-02",
+      name: "Seragam Olahraga Lengkap (Kaos & Training)",
+      category: "Olahraga",
+      size: "XL",
+      basePrice: 115000,
+      sellingPrice: 140000,
+      stock: 40,
+      unit: "Stel",
+      description: "Setelan baju kaos dan celana training olahraga ukuran XL",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-04",
+      code: "ATR-ALM-01",
+      name: "Jas Almamater SMP Ma'arif NU Pandaan",
+      category: "Seragam",
+      size: "L",
+      basePrice: 120000,
+      sellingPrice: 150000,
+      stock: 35,
+      unit: "Pcs",
+      description: "Jas almamater hijau khas Ma'arif lengkap dengan bordir logo",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-05",
+      code: "ATR-TOP-01",
+      name: "Topi Sekolah SMP Bordir Logo Resmi",
+      category: "Atribut",
+      size: "All Size",
+      basePrice: 18000,
+      sellingPrice: 25000,
+      stock: 100,
+      unit: "Pcs",
+      description: "Topi biru putih SMP dengan bordir logo sekolah",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-06",
+      code: "ATR-DAS-01",
+      name: "Dasi Sekolah SMP Berlogo",
+      category: "Atribut",
+      size: "All Size",
+      basePrice: 12000,
+      sellingPrice: 18000,
+      stock: 110,
+      unit: "Pcs",
+      description: "Dasi biru SMP lengkap dengan bordir logo",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-07",
+      code: "ATR-SBK-01",
+      name: "Sabuk / Ikat Pinggang Logo Sekolah",
+      category: "Atribut",
+      size: "All Size",
+      basePrice: 20000,
+      sellingPrice: 28000,
+      stock: 85,
+      unit: "Pcs",
+      description: "Ikat pinggang hitam kepala gesper logo SMP Ma'arif",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-08",
+      code: "ATR-KSK-01",
+      name: "Kaos Kaki Hitam Putih Berlogo Sekolah",
+      category: "Atribut",
+      size: "All Size",
+      basePrice: 12000,
+      sellingPrice: 17000,
+      stock: 120,
+      unit: "Pcs",
+      description: "Kaos kaki sekolah tebal dengan rajutan nama/logo sekolah",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-09",
+      code: "ATR-BDG-01",
+      name: "Paket Badge, Lokasi & Bed Nama Bordir",
+      category: "Atribut",
+      size: "All Size",
+      basePrice: 15000,
+      sellingPrice: 22000,
+      stock: 150,
+      unit: "Set",
+      description: "1 Set badge OSIS, lokasi sekolah, badge Ma'arif & Pramuka",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-10",
+      code: "ATR-JLB-01",
+      name: "Jilbab / Kerudung Putih Bordir Logo",
+      category: "Kerudung & Jilbab",
+      size: "L",
+      basePrice: 32000,
+      sellingPrice: 42000,
+      stock: 70,
+      unit: "Pcs",
+      description: "Kerudung putih siswi dengan bordir identitas sekolah",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-11",
+      code: "ATR-JLB-02",
+      name: "Jilbab / Kerudung Coklat Pramuka Bordir",
+      category: "Kerudung & Jilbab",
+      size: "L",
+      basePrice: 32000,
+      sellingPrice: 42000,
+      stock: 65,
+      unit: "Pcs",
+      description: "Kerudung coklat pramuka siswi dengan bordir identitas sekolah",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "kop-prd-12",
+      code: "ATR-BUK-01",
+      name: "Buku Tulis Koperasi Berlogo Sekolah (1 Pak / 10 Buku)",
+      category: "Buku & LKS",
+      size: "-",
+      basePrice: 35000,
+      sellingPrice: 45000,
+      stock: 50,
+      unit: "Paket",
+      description: "Paket 10 buku tulis sampul khusus SMP Ma'arif NU Pandaan",
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    }
+  ];
+
+  let koperasiProducts: KoperasiProduct[] = [...defaultKoperasiProducts];
+  let koperasiSales: KoperasiSaleTransaction[] = [];
+  let isKoperasiHydrated = false;
+
+  // Load initial local fallback file if available
+  try {
+    if (fs.existsSync(koperasiDataFilePath)) {
+      const raw = JSON.parse(fs.readFileSync(koperasiDataFilePath, "utf-8"));
+      if (Array.isArray(raw.products) && raw.products.length > 0) {
+        koperasiProducts = raw.products;
+      }
+      if (Array.isArray(raw.sales)) {
+        koperasiSales = raw.sales;
+      }
+    }
+  } catch (e) {
+    console.warn("[Koperasi Local File Read Warning]:", e);
+  }
+
+  async function ensureKoperasiHydrated() {
+    if (isKoperasiHydrated) return;
+    try {
+      const mysqlProducts = await getConfigFromMysql("koperasiProducts");
+      if (Array.isArray(mysqlProducts) && mysqlProducts.length > 0) {
+        koperasiProducts = mysqlProducts;
+      }
+      const mysqlSales = await getConfigFromMysql("koperasiSales");
+      if (Array.isArray(mysqlSales)) {
+        koperasiSales = mysqlSales;
+      }
+      isKoperasiHydrated = true;
+    } catch (_) {}
+  }
+
+  async function persistKoperasiData() {
+    try {
+      fs.writeFileSync(
+        koperasiDataFilePath,
+        JSON.stringify({ products: koperasiProducts, sales: koperasiSales }, null, 2),
+        "utf-8"
+      );
+    } catch (_) {}
+    await saveConfigToMysql("koperasiProducts", koperasiProducts).catch(() => {});
+    await saveConfigToMysql("koperasiSales", koperasiSales).catch(() => {});
+  }
+
+  // Helper to ensure every Koperasi sale is reflected in treasurerTransactions (Buku Kas Bendahara)
+  function syncKoperasiSalesToTreasurerBookkeeping() {
+    let addedCount = 0;
+    for (const sale of koperasiSales) {
+      const txId = sale.treasurerTxId || `tx-kop-${sale.id}`;
+      sale.treasurerTxId = txId;
+      const existingIdx = treasurerTransactions.findIndex(t => t.id === txId);
+      const itemSummary = sale.items
+        .map(it => `${it.productName}${it.size && it.size !== '-' && it.size !== 'All Size' ? ` (${it.size})` : ''} x${it.qty}`)
+        .join(", ");
+      const txObj: TreasurerTransaction = {
+        id: txId,
+        type: "incoming",
+        category: "Koperasi Sekolah",
+        amount: Number(sale.totalAmount) || 0,
+        description: `[Kasir Koperasi - ${sale.invoiceNumber}] Penjualan Atribut (${itemSummary}) - Pembeli: ${sale.buyerName}${sale.studentClass ? ` (${sale.studentClass})` : ""} | HPP: Rp ${(sale.totalBaseAmount || 0).toLocaleString("id-ID")} | Laba: Rp ${(sale.totalProfit || 0).toLocaleString("id-ID")}`,
+        date: sale.date,
+        source: "custom",
+        createdBy: sale.cashierName || "Kasir Koperasi",
+        studentName: sale.studentName || sale.buyerName,
+        nis: sale.studentNis,
+        recipientName: sale.buyerName,
+        fundingSource: "Penjualan Atribut Koperasi Sekolah",
+        paymentMethod: sale.paymentMethod === "bank" ? "bank" : "kas",
+        kodeRekening: "4.1.02.01",
+        noBukti: sale.invoiceNumber
+      };
+      if (existingIdx === -1) {
+        treasurerTransactions.push(txObj);
+        persistEntity("treasurerTransactions", txObj).catch(() => {});
+        addedCount++;
+      }
+    }
+    if (addedCount > 0) {
+      saveState();
+    }
+  }
+
+  // GET all Koperasi products
+  app.get("/api/koperasi/products", async (_req, res) => {
+    await ensureKoperasiHydrated();
+    res.json(koperasiProducts);
+  });
+
+  // POST create new Koperasi product (with basePrice & sellingPrice)
+  app.post("/api/koperasi/products", async (req, res) => {
+    await ensureKoperasiHydrated();
+    const { code, name, category, size, basePrice, sellingPrice, stock, unit, description, isActive } = req.body || {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: "Nama atribut sekolah wajib diisi." });
+    }
+    const parsedBase = Math.max(0, Number(String(basePrice ?? 0).replace(/[^0-9]/g, "")) || 0);
+    const parsedSelling = Math.max(0, Number(String(sellingPrice ?? 0).replace(/[^0-9]/g, "")) || 0);
+    const parsedStock = Math.max(0, Number(stock) || 0);
+
+    const newProduct: KoperasiProduct = {
+      id: `kop-prd-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      code: String(code || `ATR-${Date.now().toString().slice(-4)}`).trim().toUpperCase(),
+      name: String(name).trim(),
+      category: String(category || "Atribut").trim(),
+      size: String(size || "All Size").trim(),
+      basePrice: parsedBase,
+      sellingPrice: parsedSelling,
+      stock: parsedStock,
+      unit: String(unit || "Pcs").trim(),
+      description: description ? String(description).trim() : "",
+      isActive: isActive !== undefined ? Boolean(isActive) : true,
+      updatedAt: new Date().toISOString()
+    };
+
+    koperasiProducts.unshift(newProduct);
+    await persistKoperasiData();
+    res.json({ success: true, product: newProduct });
+  });
+
+  // PUT update existing Koperasi product (basePrice, sellingPrice, stock, etc.)
+  app.put("/api/koperasi/products/:id", async (req, res) => {
+    await ensureKoperasiHydrated();
+    const { id } = req.params;
+    const idx = koperasiProducts.findIndex(p => p.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Data atribut sekolah tidak ditemukan." });
+    }
+
+    const { code, name, category, size, basePrice, sellingPrice, stock, unit, description, isActive } = req.body || {};
+    const existing = koperasiProducts[idx];
+
+    const parsedBase = basePrice !== undefined
+      ? Math.max(0, Number(String(basePrice).replace(/[^0-9]/g, "")) || 0)
+      : existing.basePrice;
+    const parsedSelling = sellingPrice !== undefined
+      ? Math.max(0, Number(String(sellingPrice).replace(/[^0-9]/g, "")) || 0)
+      : existing.sellingPrice;
+    const parsedStock = stock !== undefined ? Math.max(0, Number(stock) || 0) : existing.stock;
+
+    const updated: KoperasiProduct = {
+      ...existing,
+      code: code !== undefined ? String(code).trim().toUpperCase() : existing.code,
+      name: name !== undefined ? String(name).trim() : existing.name,
+      category: category !== undefined ? String(category).trim() : existing.category,
+      size: size !== undefined ? String(size).trim() : existing.size,
+      basePrice: parsedBase,
+      sellingPrice: parsedSelling,
+      stock: parsedStock,
+      unit: unit !== undefined ? String(unit).trim() : existing.unit,
+      description: description !== undefined ? String(description).trim() : existing.description,
+      isActive: isActive !== undefined ? Boolean(isActive) : existing.isActive,
+      updatedAt: new Date().toISOString()
+    };
+
+    koperasiProducts[idx] = updated;
+    await persistKoperasiData();
+    res.json({ success: true, product: updated });
+  });
+
+  // POST restock product (Tambah Stok / Kulakan Atribut & Opsional Catat Pengeluaran di Buku Kas Bendahara)
+  app.post("/api/koperasi/products/:id/restock", async (req, res) => {
+    await ensureKoperasiHydrated();
+    const { id } = req.params;
+    const idx = koperasiProducts.findIndex(p => p.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Produk atribut tidak ditemukan." });
+    }
+
+    const { addStock, newBasePrice, newSellingPrice, recordAsExpense, paymentMethod, supplierName, date } = req.body || {};
+    const addedQty = Math.max(0, Number(addStock) || 0);
+    if (addedQty <= 0) {
+      return res.status(400).json({ error: "Jumlah penambahan stok harus lebih dari 0." });
+    }
+
+    const product = koperasiProducts[idx];
+    if (newBasePrice !== undefined && Number(newBasePrice) >= 0) {
+      product.basePrice = Math.max(0, Number(String(newBasePrice).replace(/[^0-9]/g, "")) || 0);
+    }
+    if (newSellingPrice !== undefined && Number(newSellingPrice) >= 0) {
+      product.sellingPrice = Math.max(0, Number(String(newSellingPrice).replace(/[^0-9]/g, "")) || 0);
+    }
+    product.stock = (Number(product.stock) || 0) + addedQty;
+    product.updatedAt = new Date().toISOString();
+
+    let createdExpenseTx: TreasurerTransaction | null = null;
+    if (recordAsExpense) {
+      const totalCost = addedQty * (product.basePrice || 0);
+      if (totalCost > 0) {
+        const txDate = date || new Date().toISOString().split("T")[0];
+        const noBukti = `KULAK-${txDate.replace(/-/g, "")}-${Math.floor(100 + Math.random() * 900)}`;
+        createdExpenseTx = {
+          id: `tx-kop-exp-${Date.now()}`,
+          type: "outgoing",
+          category: "Koperasi Sekolah",
+          amount: totalCost,
+          description: `[Kulakan Stok Koperasi] Belanja Stok ${product.name} (${product.size}) sebanyak ${addedQty} ${product.unit} @ Rp ${product.basePrice.toLocaleString("id-ID")}${supplierName ? ` - Supplier: ${supplierName}` : ""}`,
+          date: txDate,
+          source: "custom",
+          createdBy: "bendahara",
+          recipientName: supplierName || "Supplier Atribut Koperasi",
+          fundingSource: "Kas Koperasi Sekolah",
+          paymentMethod: paymentMethod === "bank" ? "bank" : "kas",
+          kodeRekening: "5.1.02.05",
+          noBukti
+        };
+        treasurerTransactions.push(createdExpenseTx);
+        saveState();
+        persistEntity("treasurerTransactions", createdExpenseTx).catch(() => {});
+      }
+    }
+
+    await persistKoperasiData();
+    res.json({
+      success: true,
+      product,
+      treasurerTransaction: createdExpenseTx
+    });
+  });
+
+  // DELETE Koperasi product
+  app.delete("/api/koperasi/products/:id", async (req, res) => {
+    await ensureKoperasiHydrated();
+    const { id } = req.params;
+    const idx = koperasiProducts.findIndex(p => p.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Data atribut sekolah tidak ditemukan." });
+    }
+    koperasiProducts.splice(idx, 1);
+    await persistKoperasiData();
+    res.json({ success: true, message: "Atribut sekolah berhasil dihapus." });
+  });
+
+  // GET all Koperasi sales transactions
+  app.get("/api/koperasi/sales", async (_req, res) => {
+    await ensureKoperasiHydrated();
+    syncKoperasiSalesToTreasurerBookkeeping();
+    res.json(koperasiSales);
+  });
+
+  // POST checkout Koperasi sale -> deducts stock & automatically records incoming transaction in Bendahara's bookkeeping
+  app.post("/api/koperasi/sales", async (req, res) => {
+    await ensureKoperasiHydrated();
+    const {
+      buyerType,
+      studentId,
+      studentNis,
+      studentName,
+      studentClass,
+      buyerName,
+      items,
+      paymentMethod,
+      cashReceived,
+      notes,
+      cashierName,
+      date
+    } = req.body || {};
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Keranjang belanja atribut masih kosong." });
+    }
+
+    // Validate stock and build normalized sale items
+    const saleItems: KoperasiSaleItem[] = [];
+    let totalQty = 0;
+    let totalBaseAmount = 0;
+    let totalAmount = 0;
+
+    for (const rawItem of items) {
+      const product = koperasiProducts.find(p => p.id === rawItem.productId);
+      const qty = Math.max(1, Number(rawItem.qty) || 1);
+
+      if (product) {
+        if (product.stock < qty) {
+          return res.status(400).json({
+            error: `Stok "${product.name} (${product.size})" tidak mencukupi. Tersisa ${product.stock} ${product.unit}.`
+          });
+        }
+        const basePrice = Number(product.basePrice) || 0;
+        const sellingPrice = Number(product.sellingPrice) || 0;
+        const subtotalBase = basePrice * qty;
+        const subtotalSelling = sellingPrice * qty;
+        const profit = subtotalSelling - subtotalBase;
+
+        saleItems.push({
+          productId: product.id,
+          productCode: product.code,
+          productName: product.name,
+          category: product.category,
+          size: product.size,
+          unit: product.unit,
+          qty,
+          basePrice,
+          sellingPrice,
+          subtotalBase,
+          subtotalSelling,
+          profit
+        });
+
+        totalQty += qty;
+        totalBaseAmount += subtotalBase;
+        totalAmount += subtotalSelling;
+      } else {
+        const basePrice = Number(rawItem.basePrice) || 0;
+        const sellingPrice = Number(rawItem.sellingPrice) || 0;
+        const subtotalBase = basePrice * qty;
+        const subtotalSelling = sellingPrice * qty;
+        const profit = subtotalSelling - subtotalBase;
+
+        saleItems.push({
+          productId: String(rawItem.productId || `custom-${Date.now()}`),
+          productCode: String(rawItem.productCode || "ATR-CUSTOM"),
+          productName: String(rawItem.productName || "Atribut Sekolah"),
+          category: String(rawItem.category || "Atribut"),
+          size: String(rawItem.size || "All Size"),
+          unit: String(rawItem.unit || "Pcs"),
+          qty,
+          basePrice,
+          sellingPrice,
+          subtotalBase,
+          subtotalSelling,
+          profit
+        });
+
+        totalQty += qty;
+        totalBaseAmount += subtotalBase;
+        totalAmount += subtotalSelling;
+      }
+    }
+
+    // Deduct stock
+    for (const sItem of saleItems) {
+      const prod = koperasiProducts.find(p => p.id === sItem.productId);
+      if (prod) {
+        prod.stock = Math.max(0, (Number(prod.stock) || 0) - sItem.qty);
+        prod.updatedAt = new Date().toISOString();
+      }
+    }
+
+    const totalProfit = totalAmount - totalBaseAmount;
+    const txDate = date && /^\d{4}-\d{2}-\d{2}$/.test(String(date))
+      ? String(date)
+      : new Date().toISOString().split("T")[0];
+
+    const todaySalesCount = koperasiSales.filter(s => s.date === txDate).length + 1;
+    const invoiceNumber = `KOP-${txDate.replace(/-/g, "")}-${String(todaySalesCount).padStart(3, "0")}`;
+    const saleId = `kop-sale-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const treasurerTxId = `tx-kop-${saleId}`;
+
+    const resolvedBuyerName = String(
+      buyerName || studentName || "Siswa / Pembeli Umum"
+    ).trim();
+
+    const parsedCashReceived = Math.max(
+      totalAmount,
+      Number(String(cashReceived ?? totalAmount).replace(/[^0-9]/g, "")) || totalAmount
+    );
+    const changeAmount = Math.max(0, parsedCashReceived - totalAmount);
+    const resolvedPaymentMethod: "kas" | "bank" = paymentMethod === "bank" ? "bank" : "kas";
+
+    const newSale: KoperasiSaleTransaction = {
+      id: saleId,
+      invoiceNumber,
+      date: txDate,
+      createdAt: new Date().toISOString(),
+      buyerType: buyerType === "student" ? "student" : "general",
+      studentId: studentId ? String(studentId) : undefined,
+      studentNis: studentNis ? String(studentNis) : undefined,
+      studentName: studentName ? String(studentName) : undefined,
+      studentClass: studentClass ? String(studentClass) : undefined,
+      buyerName: resolvedBuyerName,
+      items: saleItems,
+      totalQty,
+      totalBaseAmount,
+      totalAmount,
+      totalProfit,
+      paymentMethod: resolvedPaymentMethod,
+      cashReceived: parsedCashReceived,
+      changeAmount,
+      notes: notes ? String(notes).trim() : "",
+      cashierName: String(cashierName || "Kasir Koperasi").trim(),
+      treasurerTxId
+    };
+
+    koperasiSales.unshift(newSale);
+
+    // Otomatis catat ke Pembukuan Bendahara (Buku Kas Terpadu / BKU)
+    const itemSummary = saleItems
+      .map(it => `${it.productName}${it.size && it.size !== "-" && it.size !== "All Size" ? ` (${it.size})` : ""} x${it.qty}`)
+      .join(", ");
+
+    const newTreasurerTx: TreasurerTransaction = {
+      id: treasurerTxId,
+      type: "incoming",
+      category: "Koperasi Sekolah",
+      amount: totalAmount,
+      description: `[Kasir Koperasi - ${invoiceNumber}] Penjualan Atribut (${itemSummary}) - Pembeli: ${resolvedBuyerName}${studentClass ? ` (Kelas ${studentClass})` : ""} | Modal/HPP: Rp ${totalBaseAmount.toLocaleString("id-ID")} | Laba: Rp ${totalProfit.toLocaleString("id-ID")}`,
+      date: txDate,
+      source: "custom",
+      createdBy: newSale.cashierName,
+      studentName: studentName || resolvedBuyerName,
+      nis: studentNis ? String(studentNis) : undefined,
+      recipientName: resolvedBuyerName,
+      fundingSource: "Penjualan Atribut Koperasi Sekolah",
+      paymentMethod: resolvedPaymentMethod,
+      kodeRekening: "4.1.02.01",
+      noBukti: invoiceNumber
+    };
+
+    treasurerTransactions.push(newTreasurerTx);
+    saveState();
+    persistEntity("treasurerTransactions", newTreasurerTx).catch(() => {});
+    await persistKoperasiData();
+
+    res.json({
+      success: true,
+      sale: newSale,
+      treasurerTransaction: newTreasurerTx
+    });
+  });
+
+  // DELETE / Void Koperasi sale -> restores product stock & removes linked transaction from Bendahara's bookkeeping
+  app.delete("/api/koperasi/sales/:id", async (req, res) => {
+    await ensureKoperasiHydrated();
+    const { id } = req.params;
+    const idx = koperasiSales.findIndex(s => s.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Data transaksi penjualan koperasi tidak ditemukan." });
+    }
+
+    const sale = koperasiSales[idx];
+
+    // Restore product stock
+    for (const item of sale.items || []) {
+      const prod = koperasiProducts.find(p => p.id === item.productId);
+      if (prod) {
+        prod.stock = (Number(prod.stock) || 0) + (Number(item.qty) || 0);
+        prod.updatedAt = new Date().toISOString();
+      }
+    }
+
+    // Remove linked TreasurerTransaction from Bendahara bookkeeping
+    const linkedTxId = sale.treasurerTxId || `tx-kop-${sale.id}`;
+    const txIdx = treasurerTransactions.findIndex(t => t.id === linkedTxId || t.noBukti === sale.invoiceNumber);
+    if (txIdx > -1) {
+      const removedTxId = treasurerTransactions[txIdx].id;
+      treasurerTransactions.splice(txIdx, 1);
+      saveState();
+      removeEntity("treasurerTransactions", removedTxId).catch(() => {});
+    }
+
+    koperasiSales.splice(idx, 1);
+    await persistKoperasiData();
+
+    res.json({
+      success: true,
+      message: "Transaksi penjualan koperasi dibatalkan, stok dikembalikan, dan pembukuan bendahara diperbarui."
+    });
   });
 
   // Vite development integration or client index serving

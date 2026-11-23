@@ -496,7 +496,7 @@ export default function CorrespondenceManagement({
       const payload = {
         id: editingId || undefined,
         type,
-        agendaNumber: agendaNumber.trim() || generateNextAgendaNumber(type, receivedOrSentDate || letterDate),
+        agendaNumber: letterNumber.trim() || "-",
         letterNumber: letterNumber.trim() || "-",
         letterDate: letterDate || todayStr,
         receivedOrSentDate: receivedOrSentDate || letterDate || todayStr,
@@ -640,7 +640,6 @@ export default function CorrespondenceManagement({
       const header = [
         "No",
         "Jenis Surat",
-        "No. Agenda",
         "Nomor Surat",
         "Tanggal Surat",
         "Tgl Diterima / Dikirim",
@@ -659,7 +658,6 @@ export default function CorrespondenceManagement({
         rows.push([
           idx + 1,
           r.type === "masuk" ? "SURAT MASUK" : "SURAT KELUAR",
-          r.agendaNumber || "-",
           r.letterNumber || "-",
           r.letterDate || "-",
           r.receivedOrSentDate || "-",
@@ -680,8 +678,7 @@ export default function CorrespondenceManagement({
     const colWidths = [
       { wch: 5 },
       { wch: 15 },
-      { wch: 24 },
-      { wch: 24 },
+      { wch: 26 },
       { wch: 14 },
       { wch: 18 },
       { wch: 28 },
@@ -1210,7 +1207,6 @@ export default function CorrespondenceManagement({
                   onClick={() => {
                     setType("masuk");
                     if (!editingId) {
-                      setAgendaNumber(generateNextAgendaNumber("masuk", receivedOrSentDate || letterDate));
                       setStatus("Diterima");
                     }
                   }}
@@ -1227,7 +1223,6 @@ export default function CorrespondenceManagement({
                   onClick={() => {
                     setType("keluar");
                     if (!editingId) {
-                      setAgendaNumber(generateNextAgendaNumber("keluar", receivedOrSentDate || letterDate));
                       setStatus("Terkirim");
                       if (!sender) setSender(schoolName);
                     }
@@ -1243,30 +1238,16 @@ export default function CorrespondenceManagement({
               </div>
             </div>
 
-            {/* Nomor Agenda */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10.5px] font-black uppercase text-slate-600">
-                Nomor Agenda Buku Surat
-              </label>
-              <input
-                type="text"
-                value={agendaNumber}
-                onChange={e => setAgendaNumber(e.target.value)}
-                placeholder="Otomatis: 001/SM/SMP-MNU/XI/2026"
-                className="border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-
             {/* Nomor Surat */}
             <div className="flex flex-col gap-1.5">
               <label className="text-[10.5px] font-black uppercase text-slate-600">
-                Nomor Surat (Sesuai Dokumen) *
+                Nomor Surat (Otomatis dari Foto Dokumen) *
               </label>
               <input
                 type="text"
                 value={letterNumber}
                 onChange={e => setLetterNumber(e.target.value)}
-                placeholder="Contoh: 005/128/424.071/2026"
+                placeholder="Terisi otomatis saat surat difoto / ketik manual"
                 required
                 className="border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
@@ -1381,6 +1362,20 @@ export default function CorrespondenceManagement({
               </div>
             </div>
 
+            {/* Pejabat Penandatangan */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10.5px] font-black uppercase text-slate-600">
+                Pejabat / Pihak Penandatangan
+              </label>
+              <input
+                type="text"
+                value={signatory}
+                onChange={e => setSignatory(e.target.value)}
+                placeholder="Nama & Jabatan Penandatangan"
+                className="border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
             {/* Perihal Surat */}
             <div className="flex flex-col gap-1.5 md:col-span-2">
               <label className="text-[10.5px] font-black uppercase text-slate-600">
@@ -1396,34 +1391,6 @@ export default function CorrespondenceManagement({
               />
             </div>
 
-            {/* Penandatangan Surat */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10.5px] font-black uppercase text-slate-600">
-                Pejabat / Pihak Penandatangan
-              </label>
-              <input
-                type="text"
-                value={signatory}
-                onChange={e => setSignatory(e.target.value)}
-                placeholder="Nama & Jabatan Penandatangan"
-                className="border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-
-            {/* Ringkasan Isi Surat */}
-            <div className="flex flex-col gap-1.5 md:col-span-2">
-              <label className="text-[10.5px] font-black uppercase text-slate-600">
-                Ringkasan Isi Pokok Surat (Terisi Otomatis Saat Scan)
-              </label>
-              <textarea
-                rows={2}
-                value={summary}
-                onChange={e => setSummary(e.target.value)}
-                placeholder="Ringkasan isi surat, jadwal kegiatan, tempat, atau poin penting..."
-                className="border border-slate-300 rounded-xl px-3 py-2 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-
             {/* Disposisi / Tindak Lanjut */}
             <div className="flex flex-col gap-1.5">
               <label className="text-[10.5px] font-black uppercase text-slate-600">
@@ -1435,6 +1402,20 @@ export default function CorrespondenceManagement({
                 onChange={e => setDispositionTo(e.target.value)}
                 placeholder="Contoh: Waka Kurikulum / Bendahara / Arsip TU"
                 className="border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            {/* Ringkasan Isi Surat */}
+            <div className="flex flex-col gap-1.5 md:col-span-3">
+              <label className="text-[10.5px] font-black uppercase text-slate-600">
+                Ringkasan Isi Pokok Surat (Terisi Otomatis Saat Scan)
+              </label>
+              <textarea
+                rows={2}
+                value={summary}
+                onChange={e => setSummary(e.target.value)}
+                placeholder="Ringkasan isi surat, jadwal kegiatan, tempat, atau poin penting..."
+                className="border border-slate-300 rounded-xl px-3 py-2 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
@@ -1583,7 +1564,7 @@ export default function CorrespondenceManagement({
             <thead>
               <tr className="bg-slate-100/90 border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-700">
                 <th className="py-3 px-3 font-black w-10">No</th>
-                <th className="py-3 px-3 font-black">Jenis &amp; No. Agenda</th>
+                <th className="py-3 px-3 font-black">Jenis Surat</th>
                 <th className="py-3 px-3 font-black">Nomor &amp; Tgl Surat</th>
                 <th className="py-3 px-3 font-black">Pengirim &amp; Tujuan</th>
                 <th className="py-3 px-3 font-black">Perihal &amp; Ringkasan Isi Surat</th>
@@ -1625,10 +1606,7 @@ export default function CorrespondenceManagement({
                           {isMasuk ? <ArrowDownLeft size={11} /> : <ArrowUpRight size={11} />}
                           {isMasuk ? "Surat Masuk" : "Surat Keluar"}
                         </span>
-                        <div className="font-mono text-[11px] font-bold text-slate-700 mt-1">
-                          {rec.agendaNumber || "-"}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] text-slate-500 font-semibold mt-1">
                           {isMasuk ? "Diterima:" : "Dikirim:"} {rec.receivedOrSentDate || "-"}
                         </div>
                       </td>
@@ -1761,20 +1739,22 @@ export default function CorrespondenceManagement({
 
               <div className="grid grid-cols-2 gap-3 border-b border-slate-200 pb-3">
                 <div>
-                  <span className="text-slate-500 font-bold">Nomor Agenda:</span>
-                  <div className="font-mono font-black text-slate-900">{detailModalRecord.agendaNumber || "-"}</div>
+                  <span className="text-slate-500 font-bold">Nomor Surat:</span>
+                  <div className="font-mono font-black text-slate-900">{detailModalRecord.letterNumber || "-"}</div>
                 </div>
                 <div>
                   <span className="text-slate-500 font-bold">Sifat / Klasifikasi:</span>
                   <div className="font-black text-slate-900">{detailModalRecord.category || "Biasa"}</div>
                 </div>
                 <div>
-                  <span className="text-slate-500 font-bold">Nomor Surat:</span>
-                  <div className="font-mono font-black text-slate-900">{detailModalRecord.letterNumber || "-"}</div>
-                </div>
-                <div>
                   <span className="text-slate-500 font-bold">Tanggal Surat:</span>
                   <div className="font-bold text-slate-900">{formatDateIndo(detailModalRecord.letterDate)}</div>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-bold">
+                    {detailModalRecord.type === "masuk" ? "Tanggal Diterima:" : "Tanggal Dikirim:"}
+                  </span>
+                  <div className="font-bold text-slate-900">{formatDateIndo(detailModalRecord.receivedOrSentDate)}</div>
                 </div>
                 <div>
                   <span className="text-slate-500 font-bold">Pengirim / Asal Surat:</span>
@@ -1915,7 +1895,6 @@ export default function CorrespondenceManagement({
                     <tr className="bg-slate-100 text-slate-900 font-black uppercase text-[10px]">
                       <th className="border border-slate-800 py-2 px-2 text-center w-8">No</th>
                       <th className="border border-slate-800 py-2 px-2 text-center w-20">Jenis</th>
-                      <th className="border border-slate-800 py-2 px-2">No. Agenda</th>
                       <th className="border border-slate-800 py-2 px-2">Nomor &amp; Tgl Surat</th>
                       <th className="border border-slate-800 py-2 px-2">Tgl Terima/Kirim</th>
                       <th className="border border-slate-800 py-2 px-2">Pengirim / Asal</th>
@@ -1931,7 +1910,6 @@ export default function CorrespondenceManagement({
                         <td className="border border-slate-800 py-1.5 px-2 text-center font-bold uppercase">
                           {r.type === "masuk" ? "Masuk" : "Keluar"}
                         </td>
-                        <td className="border border-slate-800 py-1.5 px-2 font-mono">{r.agendaNumber || "-"}</td>
                         <td className="border border-slate-800 py-1.5 px-2">
                           <div className="font-mono font-bold">{r.letterNumber || "-"}</div>
                           <div className="text-[10px] text-slate-600">{r.letterDate || "-"}</div>

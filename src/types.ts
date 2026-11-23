@@ -1273,3 +1273,58 @@ export interface CorrespondenceRecord {
   createdAt: string;
   updatedAt?: string;
 }
+
+export interface KoperasiProduct {
+  id: string;
+  code: string;
+  name: string;
+  category: string; // 'Seragam' | 'Atribut' | 'Kerudung & Jilbab' | 'Olahraga' | 'Buku & LKS' | 'Alat Tulis' | 'Lainnya'
+  size: string; // 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'All Size' | '-'
+  basePrice: number; // Harga Dasar / HPP (Modal)
+  sellingPrice: number; // Harga Jual Koperasi
+  stock: number;
+  unit: string; // 'Pcs' | 'Stel' | 'Set' | 'Paket' | 'Potong'
+  description?: string;
+  isActive: boolean;
+  updatedAt: string;
+}
+
+export interface KoperasiSaleItem {
+  productId: string;
+  productCode: string;
+  productName: string;
+  category: string;
+  size: string;
+  unit: string;
+  qty: number;
+  basePrice: number; // Harga Dasar per unit saat transaksi
+  sellingPrice: number; // Harga Jual per unit saat transaksi
+  subtotalBase: number; // qty * basePrice
+  subtotalSelling: number; // qty * sellingPrice
+  profit: number; // subtotalSelling - subtotalBase
+}
+
+export interface KoperasiSaleTransaction {
+  id: string;
+  invoiceNumber: string;
+  date: string; // YYYY-MM-DD
+  createdAt: string; // ISO timestamp
+  buyerType: 'student' | 'general';
+  studentId?: string;
+  studentNis?: string;
+  studentName?: string;
+  studentClass?: string;
+  buyerName: string;
+  items: KoperasiSaleItem[];
+  totalQty: number;
+  totalBaseAmount: number; // Total Harga Dasar / HPP
+  totalAmount: number; // Total Harga Jual / Omzet
+  totalProfit: number; // Total Laba (totalAmount - totalBaseAmount)
+  paymentMethod: 'kas' | 'bank'; // Tunai (Kas) atau Transfer/QRIS (Bank)
+  cashReceived: number;
+  changeAmount: number;
+  notes?: string;
+  cashierName: string;
+  treasurerTxId?: string; // ID Transaksi Otomatis di Buku Kas Bendahara
+}
+

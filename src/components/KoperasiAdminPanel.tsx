@@ -995,10 +995,19 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
 
   const koperasiLedgerTransactions = useMemo(() => {
     return treasurerTransactions.filter(tx => {
+      if (
+        tx.id === 'tx-bnd-1793771771048' ||
+        tx.noBukti === 'tx-bnd-1793771771048' ||
+        tx.category === 'SPARIFDA MART'
+      ) {
+        return false;
+      }
       const isKopCat =
         tx.category === 'Koperasi Sekolah' ||
-        tx.category === 'SPARIFDA MART' ||
-        (tx.description && tx.description.toLowerCase().includes('koperasi'));
+        String(tx.id || '').startsWith('tx-kop-') ||
+        (tx.description && tx.description.toLowerCase().includes('koperasi sekolah')) ||
+        (tx.description && tx.description.toLowerCase().includes('kasir koperasi')) ||
+        (tx.description && tx.description.toLowerCase().includes('kulakan koperasi'));
       if (!isKopCat) return false;
       if (!financialAllPeriods && !String(tx.date || '').startsWith(financialMonth)) {
         return false;

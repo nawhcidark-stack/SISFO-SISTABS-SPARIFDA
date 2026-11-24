@@ -69,7 +69,7 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
   const [submittingExam, setSubmittingExam] = useState<boolean>(false);
   const [savingProgress, setSavingProgress] = useState<boolean>(false);
   const [confirmSubmitModal, setConfirmSubmitModal] = useState<boolean>(false);
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(3600);
 
   // Locked Fullscreen Kiosk & Time-Up 10s Auto-Close States
   const [isFullscreenInterrupted, setIsFullscreenInterrupted] = useState<boolean>(false);
@@ -78,11 +78,16 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
   const [timeUpCountdown, setTimeUpCountdown] = useState<number>(10);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [autoSavedScoreSas, setAutoSavedScoreSas] = useState<number | null>(null);
+  const [isSubmittedWaitingTimeUp, setIsSubmittedWaitingTimeUp] = useState<boolean>(false);
 
   const saveProgressTimeoutRef = useRef<any>(null);
   const examContainerRef = useRef<HTMLDivElement | null>(null);
   const isExamLockedRef = useRef<boolean>(false);
   const timeUpTriggeredRef = useRef<boolean>(false);
+  const examSessionActiveAtRef = useRef<number>(0);
+  const serverRemainingSeedRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number>(0);
+  const touchStartScrollTopRef = useRef<number>(0);
   const wakeLockRef = useRef<any>(null);
   const answersRef = useRef<Record<string, any>>({});
   const coordsRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -109,37 +114,29 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
     }, 3500);
   }, []);
 
-  // Native Fullscreen + Keyboard Lock + Screen Wake Lock helpers
+  // Kiosk Fullscreen Viewport Lock + Keyboard Lock + Screen Wake Lock
+  // Note: Does NOT call W3C requestFullscreen({ navigationUI: 'hide' }) so browser NEVER displays
+  // the "Untuk keluar dari layar penuh, usap layar dari atas" prompt or top-swipe exit button.
   const enterNativeFullscreen = useCallback(async () => {
     try {
-      const targetEl: any = document.documentElement;
-      if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
-        if (targetEl.requestFullscreen) {
-          await targetEl.requestFullscreen({ navigationUI: 'hide' }).catch(() => {
-            return targetEl.requestFullscreen();
-          });
-        } else if (targetEl.webkitRequestFullscreen) {
-          targetEl.webkitRequestFullscreen();
-        } else if (targetEl.mozRequestFullScreen) {
-          targetEl.mozRequestFullScreen();
-        } else if (targetEl.msRequestFullscreen) {
-          targetEl.msRequestFullscreen();
-        }
-      }
-      // Lock Escape & system keys if supported by browser (Chrome Android / Desktop)
+      document.documentElement.style.overflow = 'hidden';
+      document.documentElement.style.overscrollBehavior = 'none';
+      document.body.style.overflow = 'hidden';
+      document.body.style.overscrollBehavior = 'none';
+
+      // Lock Escape & system keys if supported by browser
       const navAny = navigator as any;
       if (navAny.keyboard && typeof navAny.keyboard.lock === 'function') {
         navAny.keyboard
           .lock(['Escape', 'F11', 'MetaLeft', 'MetaRight', 'AltLeft', 'AltRight'])
           .catch(() => {});
       }
-      // Keep phone screen awake during exam
+      // Keep screen awake during exam
       if (navAny.wakeLock && typeof navAny.wakeLock.request === 'function' && !wakeLockRef.current) {
         wakeLockRef.current = await navAny.wakeLock.request('screen').catch(() => null);
       }
       setIsFullscreenInterrupted(false);
     } catch (_err) {
-      // Fallback: fixed z-[99999] overlay still locks the viewport
       setIsFullscreenInterrupted(false);
     }
   }, []);
@@ -147,6 +144,10 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
   const exitNativeFullscreenAndUnlock = useCallback(async () => {
     isExamLockedRef.current = false;
     setIsFullscreenInterrupted(false);
+    document.documentElement.style.overflow = '';
+    document.documentElement.style.overscrollBehavior = '';
+    document.body.style.overflow = '';
+    document.body.style.overscrollBehavior = '';
 
     try {
       const navAny = navigator as any;
@@ -173,10 +174,6 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
           await document.exitFullscreen().catch(() => {});
         } else if (docAny.webkitExitFullscreen) {
           docAny.webkitExitFullscreen();
-        } else if (docAny.mozCancelFullScreen) {
-          docAny.mozCancelFullScreen();
-        } else if (docAny.msExitFullscreen) {
-          docAny.msExitFullscreen();
         }
       }
     } catch (_e) {
@@ -217,7 +214,38 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
     [student.id, student.class, student.nis, student.name]
   );
 
-  const detectGpsLocation = useCallback(() => {
+  const acquireGpsCoordsWithFallback = useCallback((): Promise<{ lat: number; lng: number } | null> => {
+    return new Promise(resolve => {
+      if (!navigator.geolocation) {
+        resolve(null);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          resolve({
+            lat: Number(pos.coords.latitude.toFixed(6)),
+            lng: Number(pos.coords.longitude.toFixed(6))
+          });
+        },
+        () => {
+          // Fallback to fast Wi-Fi / Cellular network positioning for indoor classrooms
+          navigator.geolocation.getCurrentPosition(
+            pos2 => {
+              resolve({
+                lat: Number(pos2.coords.latitude.toFixed(6)),
+                lng: Number(pos2.coords.longitude.toFixed(6))
+              });
+            },
+            () => resolve(null),
+            { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 4500, maximumAge: 60000 }
+      );
+    });
+  }, []);
+
+  const detectGpsLocation = useCallback(async () => {
     if (!navigator.geolocation) {
       setGpsError('Browser tidak mendukung fitur GPS Geolocation.');
       fetchStudentSchedules(null);
@@ -225,26 +253,19 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
     }
     setGpsLoading(true);
     setGpsError(null);
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        const newCoords = {
-          lat: Number(pos.coords.latitude.toFixed(6)),
-          lng: Number(pos.coords.longitude.toFixed(6))
-        };
-        setCoords(newCoords);
-        setGpsLoading(false);
-        fetchStudentSchedules(newCoords);
-      },
-      err => {
-        setGpsLoading(false);
-        setGpsError(
-          `Izin GPS belum aktif (${err.message}). Aktifkan lokasi GPS perangkat untuk membuka kunci soal.`
-        );
-        fetchStudentSchedules(null);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 }
-    );
-  }, [fetchStudentSchedules]);
+    const detected = await acquireGpsCoordsWithFallback();
+    setGpsLoading(false);
+    if (detected) {
+      setCoords(detected);
+      coordsRef.current = detected;
+      fetchStudentSchedules(detected);
+    } else {
+      setGpsError(
+        'Lokasi GPS belum terkunci di dalam ruangan. Anda tetap dapat menekan tombol Mulai Ujian untuk memindai ulang lokasi otomatis.'
+      );
+      fetchStudentSchedules(coordsRef.current);
+    }
+  }, [acquireGpsCoordsWithFallback, fetchStudentSchedules]);
 
   useEffect(() => {
     detectGpsLocation();
@@ -263,16 +284,21 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
   }, []);
 
   // ============================================================================
-  // KIOSK FULLSCREEN LOCK: BLOCK BACK BUTTON, SWIPE GESTURES, ESCAPE, & EXIT
+  // KIOSK FULLSCREEN LOCK: BLOCK BACK BUTTON, TOP-DOWN SWIPE, ESCAPE, & EXIT
+  // Only closes automatically when exam time runs out (remainingSeconds <= 0)
   // ============================================================================
   useEffect(() => {
     if (!activeSchedule || !activePacket) {
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.overscrollBehavior = '';
       document.body.style.overflow = '';
       document.body.style.overscrollBehavior = '';
       return;
     }
 
     isExamLockedRef.current = true;
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehavior = 'none';
     document.body.style.overflow = 'hidden';
     document.body.style.overscrollBehavior = 'none';
 
@@ -294,24 +320,8 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
       }
       enterNativeFullscreen();
       showKioskWarning(
-        '🔒 Layar Ujian Terkunci! Tombol atau gestur Kembali dinonaktifkan selama ujian berlangsung.'
+        '🔒 Layar Penuh Ujian Terkunci! Layar penuh hanya menutup otomatis saat waktu ujian habis.'
       );
-    };
-
-    const handleFullscreenChange = () => {
-      if (!isExamLockedRef.current) return;
-      const docAny = document as any;
-      const inFs = Boolean(document.fullscreenElement || docAny.webkitFullscreenElement);
-      if (!inFs && !timeUpTriggeredRef.current) {
-        setIsFullscreenInterrupted(true);
-        showKioskWarning(
-          '🔒 Mode Layar Penuh Terkunci! Tidak dapat keluar dari layar penuh sebelum ujian selesai.'
-        );
-        // Attempt immediate re-entry
-        enterNativeFullscreen();
-      } else {
-        setIsFullscreenInterrupted(false);
-      }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -327,7 +337,7 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
         e.preventDefault();
         e.stopPropagation();
         enterNativeFullscreen();
-        showKioskWarning('🔒 Tombol sistem dikunci selama pengerjaan ujian berlangsung.');
+        showKioskWarning('🔒 Tombol sistem dikunci. Layar penuh hanya menutup otomatis saat waktu habis.');
       }
     };
 
@@ -336,89 +346,89 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
       e.preventDefault();
     };
 
+    const handleTouchStart = (e: TouchEvent) => {
+      if (!isExamLockedRef.current) return;
+      if (e.touches && e.touches.length > 1) {
+        e.preventDefault();
+        return;
+      }
+      const firstTouch = e.touches?.[0];
+      if (firstTouch) {
+        touchStartYRef.current = firstTouch.clientY;
+        touchStartScrollTopRef.current = examContainerRef.current?.scrollTop ?? 0;
+        // Block any touch gesture originating from the top edge of the screen (0..75px)
+        if (firstTouch.clientY <= 75) {
+          const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+          if (targetTag !== 'button' && targetTag !== 'select' && targetTag !== 'input') {
+            e.preventDefault();
+          }
+        }
+      }
+    };
+
     const handleTouchMove = (e: TouchEvent) => {
       if (!isExamLockedRef.current) return;
       // Block multi-finger gestures (2+ fingers pinch/three-finger swipe)
       if (e.touches && e.touches.length > 1) {
         e.preventDefault();
+        return;
       }
-    };
+      const touch = e.touches?.[0];
+      if (!touch) return;
 
-    const handleAnyInteractionReEnterFs = () => {
-      if (!isExamLockedRef.current) return;
-      const docAny = document as any;
-      if (!document.fullscreenElement && !docAny.webkitFullscreenElement) {
-        enterNativeFullscreen();
+      const deltaY = touch.clientY - touchStartYRef.current;
+      const currentScrollTop = examContainerRef.current?.scrollTop ?? 0;
+
+      // Disable top-down swipe ("usap layar dari atas ke bawah"):
+      // 1) Any downward swipe starting from the top 140px of the screen is blocked
+      // 2) Any downward pull when scroll container is at top (scrollTop <= 0) is blocked
+      if (deltaY > 0 && (touchStartYRef.current <= 140 || currentScrollTop <= 0)) {
+        e.preventDefault();
+        e.stopPropagation();
       }
     };
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!isExamLockedRef.current) return;
       e.preventDefault();
-      e.returnValue = 'Ujian sedang berlangsung dan terkunci.';
+      e.returnValue = 'Ujian sedang berlangsung dan terkunci sampai waktu habis.';
       return e.returnValue;
     };
 
     window.addEventListener('popstate', handlePopState);
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange as any);
     window.addEventListener('keydown', handleKeyDown, { capture: true });
-    document.addEventListener('contextmenu', handleContextMenu, { capture: true });
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchstart', handleAnyInteractionReEnterFs, { capture: true });
-    document.addEventListener('click', handleAnyInteractionReEnterFs, { capture: true });
+    window.addEventListener('contextmenu', handleContextMenu, { capture: true });
+    document.addEventListener('touchstart', handleTouchStart, { capture: true, passive: false });
+    document.addEventListener('touchmove', handleTouchMove, { capture: true, passive: false });
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.overscrollBehavior = '';
       document.body.style.overflow = '';
       document.body.style.overscrollBehavior = '';
       window.removeEventListener('popstate', handlePopState);
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange as any);
       window.removeEventListener('keydown', handleKeyDown, { capture: true } as any);
-      document.removeEventListener('contextmenu', handleContextMenu, { capture: true } as any);
-      document.removeEventListener('touchmove', handleTouchMove as any);
-      document.removeEventListener('touchstart', handleAnyInteractionReEnterFs, { capture: true } as any);
-      document.removeEventListener('click', handleAnyInteractionReEnterFs, { capture: true } as any);
+      window.removeEventListener('contextmenu', handleContextMenu, { capture: true } as any);
+      document.removeEventListener('touchstart', handleTouchStart, { capture: true } as any);
+      document.removeEventListener('touchmove', handleTouchMove, { capture: true } as any);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [activeSchedule, activePacket, enterNativeFullscreen, showKioskWarning]);
 
   // ============================================================================
-  // EXAM COUNTDOWN TIMER (DURATION + SCHEDULE WIB END TIME)
+  // EXAM COUNTDOWN TIMER (SERVER-AUTHORITATIVE REMAINING SECONDS)
   // ============================================================================
   useEffect(() => {
     if (!activeSchedule) return;
 
     const durationSec = (Number(activeSchedule.durationMinutes) || 90) * 60;
-    let computedRemaining = durationSec;
+    const initialRemaining =
+      serverRemainingSeedRef.current !== null && serverRemainingSeedRef.current > 0
+        ? serverRemainingSeedRef.current
+        : durationSec;
 
-    if (activeSubmission?.startedAt) {
-      const startedMs = new Date(activeSubmission.startedAt).getTime();
-      if (!Number.isNaN(startedMs)) {
-        const elapsedSec = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
-        const remDuration = Math.max(0, durationSec - elapsedSec);
-        if (remDuration > 0) {
-          computedRemaining = remDuration;
-        }
-      }
-    }
-
-    if (activeSchedule.examDate && activeSchedule.endTimeWib) {
-      const endWibMs = new Date(
-        `${activeSchedule.examDate}T${activeSchedule.endTimeWib}:59+07:00`
-      ).getTime();
-      if (!Number.isNaN(endWibMs)) {
-        const remUntilScheduleEnd = Math.floor((endWibMs - Date.now()) / 1000);
-        if (remUntilScheduleEnd > 0) {
-          computedRemaining = Math.min(computedRemaining, remUntilScheduleEnd);
-        } else if (remUntilScheduleEnd <= 0) {
-          computedRemaining = 0;
-        }
-      }
-    }
-
-    setRemainingSeconds(computedRemaining);
+    setRemainingSeconds(initialRemaining);
 
     const interval = setInterval(() => {
       setRemainingSeconds(prev => {
@@ -431,7 +441,7 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [activeSchedule?.id, activeSubmission?.startedAt, activeSchedule?.durationMinutes, activeSchedule?.examDate, activeSchedule?.endTimeWib]);
+  }, [activeSchedule?.id, activeSchedule?.durationMinutes]);
 
   // ============================================================================
   // AUTOMATIC TIME-UP HANDLER:
@@ -475,7 +485,14 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
 
   useEffect(() => {
     if (!activeSchedule || !activePacket) return;
-    if (remainingSeconds === 0 && !timeUpTriggeredRef.current) {
+    const activeDurationMs =
+      examSessionActiveAtRef.current > 0 ? Date.now() - examSessionActiveAtRef.current : 0;
+    if (
+      remainingSeconds <= 0 &&
+      !timeUpTriggeredRef.current &&
+      examSessionActiveAtRef.current > 0 &&
+      activeDurationMs >= 3000
+    ) {
       timeUpTriggeredRef.current = true;
       setConfirmSubmitModal(false);
       setIsTimeUpModalOpen(true);
@@ -538,6 +555,8 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
     if (saveProgressTimeoutRef.current) {
       clearTimeout(saveProgressTimeoutRef.current);
     }
+    // Jittered debounce (2500ms + 0..1500ms random jitter) so 500-1000 concurrent students never spike the server at the same millisecond
+    const jitteredDelay = 2500 + Math.floor(Math.random() * 1500);
     saveProgressTimeoutRef.current = setTimeout(async () => {
       setSavingProgress(true);
       try {
@@ -547,6 +566,9 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
           body: JSON.stringify({
             scheduleId: activeSchedule.id,
             studentId: student.id,
+            studentNis: student.nis,
+            studentName: student.name,
+            className: student.class,
             answers: nextAnswers,
             latitude: coords?.lat,
             longitude: coords?.lng
@@ -557,7 +579,7 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
       } finally {
         setSavingProgress(false);
       }
-    }, 1000);
+    }, jitteredDelay);
   };
 
   const handleUpdateAnswer = (questionId: string, value: any) => {
@@ -571,10 +593,19 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
   };
 
   const handleStartExam = async (sch: EnrichedStudentSchedule) => {
-    // Request hardware fullscreen immediately on user gesture so mobile browsers enter fullscreen
     enterNativeFullscreen();
     setStartingExam(true);
     try {
+      let activeCoords = coordsRef.current || coords;
+      if (sch.gpsLockEnabled && !activeCoords) {
+        const freshCoords = await acquireGpsCoordsWithFallback();
+        if (freshCoords) {
+          setCoords(freshCoords);
+          coordsRef.current = freshCoords;
+          activeCoords = freshCoords;
+        }
+      }
+
       const res = await fetch('/api/online-exams/verify-gps-and-start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -584,8 +615,8 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
           studentNis: student.nis,
           studentName: student.name,
           className: student.class,
-          latitude: coords?.lat,
-          longitude: coords?.lng,
+          latitude: activeCoords?.lat,
+          longitude: activeCoords?.lng,
           tokenCode: tokenInputs[sch.id] || ''
         })
       });
@@ -595,19 +626,27 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
         showToast('error', data.message || 'Tidak dapat memulai ujian.');
         return;
       }
+
+      const authoritativeRemaining = Math.max(
+        60,
+        Number(data.remainingSeconds) || (Number(data.schedule?.durationMinutes) || 90) * 60
+      );
+      serverRemainingSeedRef.current = authoritativeRemaining;
+      examSessionActiveAtRef.current = Date.now();
       timeUpTriggeredRef.current = false;
+      setRemainingSeconds(authoritativeRemaining);
       setIsTimeUpModalOpen(false);
       setTimeUpCountdown(10);
       setAutoSaveStatus('idle');
       setAutoSavedScoreSas(null);
-      setActiveSchedule(data.schedule);
-      setActivePacket(data.packet);
-      setActiveSubmission(data.submission);
+      setIsSubmittedWaitingTimeUp(false);
       const initialAnswers = data.submission?.answers || {};
       setAnswers(initialAnswers);
       answersRef.current = initialAnswers;
       setCurrentQIndex(0);
-      // Ensure fullscreen is locked after state mount
+      setActiveSubmission(data.submission);
+      setActiveSchedule(data.schedule);
+      setActivePacket(data.packet);
       setTimeout(() => {
         enterNativeFullscreen();
       }, 100);
@@ -639,22 +678,18 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
       });
       const data = await res.json();
       if (data.success) {
-        await exitNativeFullscreenAndUnlock();
         setConfirmSubmitModal(false);
-        setActiveSchedule(null);
-        setActivePacket(null);
-        setActiveSubmission(null);
-        showToast(
-          'success',
-          data.message || `Ujian selesai! Nilai Anda (${data.submission?.finalScoreSas}) telah disimpan langsung ke MySQL.`
+        setIsSubmittedWaitingTimeUp(true);
+        setAutoSavedScoreSas(data.submission?.finalScoreSas ?? null);
+        // Fullscreen ONLY closes automatically when time runs out (remainingSeconds <= 0)
+        showKioskWarning(
+          `✓ Jawaban & Nilai (${data.submission?.finalScoreSas ?? 0}) Tersimpan di MySQL! Layar penuh tetap terkunci dan hanya akan menutup otomatis saat waktu ujian habis.`
         );
-        fetchStudentSchedules();
-        if (onExamSubmitted) onExamSubmitted();
       } else {
-        showToast('error', data.message || 'Gagal mengumpulkan jawaban ujian.');
+        showKioskWarning(data.message || 'Gagal mengumpulkan jawaban ujian.');
       }
     } catch (err: any) {
-      showToast('error', err.message || 'Gagal menghubungi server MySQL.');
+      showKioskWarning(err.message || 'Gagal menghubungi server MySQL.');
     } finally {
       setSubmittingExam(false);
     }
@@ -688,15 +723,50 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
     return (
       <div
         ref={examContainerRef}
-        style={{ touchAction: 'pan-y', WebkitUserSelect: 'none', userSelect: 'none' }}
-        className="fixed inset-0 z-[99999] bg-slate-100 overflow-y-auto overscroll-none select-none p-3 sm:p-6 flex flex-col gap-4"
+        style={{
+          touchAction: 'pan-y',
+          overscrollBehavior: 'none',
+          WebkitOverflowScrolling: 'touch',
+          WebkitUserSelect: 'none',
+          userSelect: 'none'
+        }}
+        className="fixed inset-0 w-screen h-[100dvh] z-[99999] bg-slate-100 overflow-y-auto overscroll-none select-none p-3 sm:p-6 flex flex-col gap-4"
       >
-        {/* Kiosk Lock Warning Toast (When user tries back button / gesture / escape) */}
+        {/* Top-Edge Anti-Swipe Touch Shield (Disables top-down swipe gesture during fullscreen exam) */}
+        <div
+          style={{ touchAction: 'none' }}
+          onTouchStart={e => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onTouchMove={e => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          className="fixed top-0 left-0 right-0 h-4 z-[100003] bg-transparent"
+        />
+
+        {/* Kiosk Lock Warning Toast */}
         {kioskLockWarning && (
           <div className="bg-rose-600 text-white px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between shadow-lg animate-pulse">
             <span>{kioskLockWarning}</span>
             <span className="text-[10px] uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded">
-              Mode Terkunci
+              Terkunci Sampai Waktu Habis
+            </span>
+          </div>
+        )}
+
+        {/* Saved & Waiting Time-Up Banner (When student saves answers early, fullscreen stays locked until timer ends) */}
+        {isSubmittedWaitingTimeUp && (
+          <div className="bg-emerald-700 text-white px-4 py-3 rounded-xl text-xs font-bold flex flex-wrap items-center justify-between gap-2 shadow">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-200 shrink-0" />
+              <span>
+                Jawaban & Nilai Ujian Anda{autoSavedScoreSas !== null ? ` (${autoSavedScoreSas})` : ''} telah tersimpan di MySQL. Layar penuh tetap terkunci dan hanya akan menutup otomatis saat waktu ujian habis ({formatTimer(remainingSeconds)}).
+              </span>
+            </div>
+            <span className="px-2.5 py-0.5 rounded bg-emerald-900/60 text-emerald-200 text-[11px] font-extrabold">
+              Menunggu Waktu Habis
             </span>
           </div>
         )}
@@ -706,13 +776,18 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-0.5 rounded bg-rose-500/25 text-rose-200 border border-rose-400/40 text-[11px] font-extrabold flex items-center gap-1">
-                <Lock className="w-3 h-3" /> FULLSCREEN TERKUNCI (ANTI-KELUAR)
+                <Lock className="w-3 h-3" /> LAYAR PENUH TERKUNCI (TUTUP OTOMATIS SAAT WAKTU HABIS)
               </span>
               <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[11px] font-bold">
-                DIRECT MYSQL
+                KAPASITAS 1000 SISWA • DIRECT MYSQL
               </span>
               <span className="px-2 py-0.5 rounded bg-indigo-500/25 text-indigo-200 border border-indigo-400/30 text-[11px] font-bold">
-                🔀 Nomor Soal Acak Otomatis
+                {(activeSchedule.randomizeQuestions ??
+                  activeSchedule.scoringConfig?.randomizeQuestions ??
+                  activePacket.randomizeQuestions ??
+                  true) !== false
+                  ? '🔀 Nomor Soal Diacak Otomatis'
+                  : '🔢 Nomor Soal Berurutan (Tidak Diacak)'}
               </span>
               {activeSubmission?.isSickHomeMode && (
                 <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-400/30 text-[11px] font-bold flex items-center gap-1">
@@ -748,7 +823,9 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
               className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
-              Selesai & Kumpulkan ({answeredCount}/{totalQ})
+              {isSubmittedWaitingTimeUp
+                ? `Perbarui Simpanan (${answeredCount}/${totalQ})`
+                : `Simpan Jawaban Final (${answeredCount}/${totalQ})`}
             </button>
           </div>
         </div>
@@ -773,7 +850,12 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
                     : 'Uraian'}
                 </span>
                 <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg">
-                  🔀 Urutan Soal Acak Siswa
+                  {(activeSchedule.randomizeQuestions ??
+                    activeSchedule.scoringConfig?.randomizeQuestions ??
+                    activePacket.randomizeQuestions ??
+                    true) !== false
+                    ? '🔀 Urutan Soal Acak Siswa'
+                    : '🔢 Urutan Soal Sesuai Nomor Asli'}
                 </span>
               </div>
               <span className="text-xs font-bold text-slate-500">
@@ -1067,7 +1149,7 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
                 <Lock className="w-3 h-3 text-rose-600" /> Keamanan Layar Penuh Aktif
               </p>
               <p>
-                Layar ujian terkunci otomatis. Saat waktu habis, jawaban otomatis tersimpan dan layar tertutup setelah hitungan mundur 10 detik.
+                Layar penuh ujian terkunci penuh dan hanya menutup otomatis saat waktu ujian habis (setelah hitungan mundur 10 detik).
               </p>
             </div>
           </div>
@@ -1090,7 +1172,7 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
                 LAYAR UJIAN TERKUNCI (MODE KIOSK CBT)
               </h4>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Anda tidak dapat keluar dari mode layar penuh menggunakan tombol atau gestur ponsel selama waktu ujian masih berlangsung. Layar penuh hanya akan keluar otomatis ketika waktu ujian habis atau ujian selesai dikumpulkan.
+                Layar penuh ujian hanya akan menutup secara otomatis ketika waktu ujian telah habis.
               </p>
               <button
                 type="button"
@@ -1098,7 +1180,7 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
                 className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg"
               >
                 <Maximize2 className="w-4 h-4" />
-                Ketuk di Sini untuk Kembali ke Layar Penuh Ujian
+                Lanjutkan Pengerjaan Soal Ujian
               </button>
             </div>
           </div>
@@ -1176,15 +1258,15 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
           </div>
         )}
 
-        {/* Confirm Submit Modal (Manual finish before time runs out) */}
+        {/* Confirm Submit Modal (Saves answers to MySQL immediately, while fullscreen stays locked until time is up) */}
         {confirmSubmitModal && !isTimeUpModalOpen && (
           <div className="fixed inset-0 z-[100000] bg-slate-900/60 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
               <h4 className="text-base font-extrabold text-slate-900">
-                Konfirmasi Kumpulkan Ujian Online
+                Konfirmasi Simpan Jawaban Final ke MySQL
               </h4>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Anda telah menjawab <b>{answeredCount}</b> dari <b>{totalQ}</b> butir soal. Setelah dikumpulkan, jawaban akan langsung dinilai, dimasukkan ke <b>Nilai SAS MySQL</b>, dan kunci layar penuh akan ditutup otomatis.
+                Anda telah menjawab <b>{answeredCount}</b> dari <b>{totalQ}</b> butir soal. Jawaban dan nilai Anda akan langsung disimpan ke <b>MySQL</b> sekarang. Sesuai aturan keamanan CBT, <b>layar penuh ujian tetap terkunci dan hanya akan menutup secara otomatis saat waktu ujian habis</b>.
               </p>
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
@@ -1200,7 +1282,7 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
                   onClick={handleFinalSubmitExam}
                   className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
                 >
-                  {submittingExam ? 'Menyimpan Nilai SAS ke MySQL...' : 'Ya, Kumpulkan Sekarang'}
+                  {submittingExam ? 'Menyimpan Nilai ke MySQL...' : 'Ya, Simpan Jawaban Sekarang'}
                 </button>
               </div>
             </div>
@@ -1304,10 +1386,31 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {schedules.map(sch => {
             const sub = sch.studentSubmission;
-            const isDone = sub && (sub.status === 'submitted' || sub.status === 'graded');
+            const hasAnsweredAny =
+              sub && sub.answers && typeof sub.answers === 'object'
+                ? Object.values(sub.answers).some(val => {
+                    if (val === undefined || val === null || val === '') return false;
+                    if (Array.isArray(val)) return val.length > 0;
+                    if (typeof val === 'object') return Object.keys(val).length > 0;
+                    return true;
+                  })
+                : false;
+            const isZeroUnansweredDone =
+              Boolean(sub) &&
+              (sub?.status === 'submitted' || sub?.status === 'graded') &&
+              Number(sub?.finalScoreSas || 0) === 0 &&
+              !hasAnsweredAny;
+            const isDone =
+              Boolean(sub) &&
+              (sub?.status === 'submitted' || sub?.status === 'graded') &&
+              !isZeroUnansweredDone;
             const gps = sch.gpsEvaluation;
             const canOpenByTime = sch.isCurrentlyOpenWib;
-            const canOpenByGps = gps ? gps.gpsAllowed : !sch.gpsLockEnabled;
+            const canOpenByGps = gps
+              ? gps.gpsAllowed || gps.distanceMeters === null
+              : true;
+            const isScheduleRandomized =
+              (sch.randomizeQuestions ?? sch.scoringConfig?.randomizeQuestions ?? true) !== false;
 
             return (
               <div
@@ -1369,8 +1472,12 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
 
                   <div className="px-2.5 py-1.5 rounded-lg bg-indigo-50/70 border border-indigo-200 text-[11px] font-semibold text-indigo-800 flex flex-col gap-0.5">
                     <div className="flex items-center gap-1.5">
-                      <span>🔀</span>
-                      <span>Urutan nomor soal diacak otomatis (berbeda tiap siswa)</span>
+                      <span>{isScheduleRandomized ? '🔀' : '🔢'}</span>
+                      <span>
+                        {isScheduleRandomized
+                          ? 'Urutan nomor soal diacak otomatis (berbeda tiap siswa)'
+                          : 'Urutan nomor soal berurutan (tidak diacak)'}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5 text-rose-700">
                       <Lock className="w-3 h-3 shrink-0" />
@@ -1378,12 +1485,20 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
                     </div>
                   </div>
 
+                  {isZeroUnansweredDone && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold">
+                      ⚠️ Sesi ujian sebelumnya tertutup dengan 0 jawaban (Nilai 0). Anda dapat langsung mengerjakan ulang ujian ini selama jadwal aktif.
+                    </div>
+                  )}
+
                   {/* GPS Radius Verification Box */}
                   {sch.gpsLockEnabled && gps && (
                     <div
                       className={`p-2.5 rounded-xl border text-xs space-y-1 ${
                         gps.gpsAllowed
                           ? 'bg-emerald-50/80 border-emerald-300 text-emerald-900'
+                          : gps.distanceMeters === null
+                          ? 'bg-amber-50/80 border-amber-300 text-amber-900'
                           : 'bg-rose-50/80 border-rose-300 text-rose-900'
                       }`}
                     >
@@ -1464,7 +1579,11 @@ export const OnlineExamStudentPortal: React.FC<OnlineExamStudentPortalProps> = (
                       ) : (
                         <>
                           <Maximize2 className="w-4 h-4" />
-                          {sub?.status === 'in_progress'
+                          {startingExam
+                            ? 'Membuka Soal Ujian...'
+                            : isZeroUnansweredDone
+                            ? 'Kerjakan Ulang Ujian (Layar Penuh Terkunci)'
+                            : sub?.status === 'in_progress'
                             ? 'Lanjutkan Ujian (Mode Layar Penuh Terkunci)'
                             : 'Mulai Kerjakan Ujian (Layar Penuh Terkunci)'}
                         </>

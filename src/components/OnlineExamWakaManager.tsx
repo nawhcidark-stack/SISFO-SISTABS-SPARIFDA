@@ -92,6 +92,7 @@ export const OnlineExamWakaManager: React.FC<OnlineExamWakaManagerProps> = ({
     schoolRadiusMeters: 150,
     sickStudentDefaultRadiusMeters: 15000,
     sickStudentsHomeOverrides: [],
+    randomizeQuestions: true,
     scoringConfig: {
       pgWeight: 1,
       pgKompleksWeight: 2,
@@ -100,7 +101,8 @@ export const OnlineExamWakaManager: React.FC<OnlineExamWakaManagerProps> = ({
       uraianWeight: 4,
       maxScaleScore: 100,
       useQuestionCustomScore: true,
-      autoSyncToSas: true
+      autoSyncToSas: true,
+      randomizeQuestions: true
     },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -199,6 +201,7 @@ export const OnlineExamWakaManager: React.FC<OnlineExamWakaManagerProps> = ({
       setScheduleForm(prev => ({ ...prev, packetId: '' }));
       return;
     }
+    const pktRand = found.randomizeQuestions !== false;
     setScheduleForm(prev => ({
       ...prev,
       packetId: found.id,
@@ -208,7 +211,12 @@ export const OnlineExamWakaManager: React.FC<OnlineExamWakaManagerProps> = ({
       gradeLevel: found.gradeLevel,
       targetClasses: found.targetClasses || [],
       semester: found.semester,
-      academicYear: found.academicYear
+      academicYear: found.academicYear,
+      randomizeQuestions: pktRand,
+      scoringConfig: {
+        ...prev.scoringConfig,
+        randomizeQuestions: pktRand
+      }
     }));
   };
 
@@ -342,6 +350,32 @@ export const OnlineExamWakaManager: React.FC<OnlineExamWakaManagerProps> = ({
         if (onSasScoreSynced) onSasScoreSynced();
       } else {
         showToast('error', data.message || 'Gagal menyinkronkan nilai SAS.');
+      }
+    } catch (_err) {
+      showToast('error', 'Gagal menghubungi server MySQL.');
+    }
+  };
+
+  const handleResetStudentSubmission = async (sub: OnlineExamSubmission) => {
+    try {
+      const res = await fetch('/api/online-exams/reset-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          submissionId: sub.id,
+          scheduleId: sub.scheduleId,
+          studentId: sub.studentId
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(
+          'success',
+          `Sesi ujian siswa ${sub.studentName} berhasil direset! Siswa dapat mengerjakan ulang.`
+        );
+        fetchAllData();
+      } else {
+        showToast('error', data.message || 'Gagal mereset sesi ujian siswa.');
       }
     } catch (_err) {
       showToast('error', 'Gagal menghubungi server MySQL.');
@@ -767,6 +801,40 @@ export const OnlineExamWakaManager: React.FC<OnlineExamWakaManagerProps> = ({
                   />
                 </div>
               </div>
+
+              <div className="pt-1">
+                <label className="block font-bold text-indigo-900 mb-1">
+                  Pengaturan Urutan Soal Saat Ujian:
+                </label>
+                <select
+                  value={
+                    (scheduleForm.randomizeQuestions ??
+                      scheduleForm.scoringConfig?.randomizeQuestions ??
+                      true) !== false
+                      ? 'random'
+                      : 'sequential'
+                  }
+                  onChange={e => {
+                    const isRand = e.target.value === 'random';
+                    setScheduleForm(prev => ({
+                      ...prev,
+                      randomizeQuestions: isRand,
+                      scoringConfig: {
+                        ...prev.scoringConfig,
+                        randomizeQuestions: isRand
+                      }
+                    }));
+                  }}
+                  className="w-full border border-indigo-300 rounded-lg px-2.5 py-1.5 bg-indigo-50/70 font-bold text-indigo-950"
+                >
+                  <option value="random">
+                    🔀 Soal Diacak Otomatis Tiap Siswa (Urutan nomor soal berbeda per siswa)
+                  </option>
+                  <option value="sequential">
+                    🔢 Soal Tidak Diacak (Urutan nomor soal tetap berurutan 1, 2, 3...)
+                  </option>
+                </select>
+              </div>
             </div>
 
             {/* Section 2: Fitur Kunci Lokasi / GPS & Radius Khusus Siswa Sakit di Rumah */}
@@ -1183,8 +1251,10 @@ export const OnlineExamWakaManager: React.FC<OnlineExamWakaManagerProps> = ({
                           {sch.gpsLockEnabled ? `${sch.schoolRadiusMeters}m` : 'Tanpa Kunci GPS'}
                         </div>
                         <div>
-                          <b>Radius Sakit Rumah:</b> {sch.sickStudentDefaultRadiusMeters}m (
-                          {(sch.sickStudentsHomeOverrides || []).length} siswa khusus)
+                          <b>Urutan Soal:</b>{' '}
+                          {(sch.randomizeQuestions ?? sch.scoringConfig?.randomizeQuestions ?? true) !== false
+                            ? '🔀 Diacak Otomatis'
+                            : '🔢 Tidak Diacak (Urut)'}
                         </div>
                       </div>
                     </div>
@@ -1290,13 +1360,23 @@ export const OnlineExamWakaManager: React.FC<OnlineExamWakaManagerProps> = ({
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleResyncSubmissionToSas(sub)}
-                          className="px-2.5 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-semibold text-[11px]"
-                        >
-                          Sinkron Ulang SAS
-                        </button>
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleResyncSubmissionToSas(sub)}
+                            className="px-2.5 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-semibold text-[11px] cursor-pointer"
+                          >
+                            Sinkron Ulang SAS
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleResetStudentSubmission(sub)}
+                            className="px-2.5 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-[11px] cursor-pointer"
+                            title="Reset pengerjaan ujian siswa ini agar dapat mengerjakan ulang"
+                          >
+                            Reset / Ulangi
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

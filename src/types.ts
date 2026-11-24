@@ -1152,6 +1152,7 @@ export interface OnlineExamPacket {
   academicYear: string;
   examCategory: 'SAS' | 'SAT' | 'STS' | 'UH' | 'TryOut';
   packetPurpose?: OnlineExamPacketPurpose;
+  randomizeQuestions?: boolean;
   creatorId: string;
   creatorName: string;
   creatorRole: 'Guru Mapel' | 'Wali Kelas' | 'Waka Kurikulum' | 'subject_teacher' | 'homeroom' | 'waka_kurikulum';
@@ -1185,6 +1186,7 @@ export interface OnlineExamScoringConfig {
   useQuestionCustomScore: boolean;
   useCustomQuestionWeights?: boolean;
   autoSyncToSas: boolean;
+  randomizeQuestions?: boolean;
   scoreTargetMode?: OnlineExamScoreTargetMode;
   scheduleType?: 'waka_sas' | 'teacher_uh';
   creatorId?: string;
@@ -1208,6 +1210,7 @@ export interface OnlineExamSchedule {
   durationMinutes: number;
   isActive: boolean;
   tokenCode?: string;
+  randomizeQuestions?: boolean;
   gpsLockEnabled: boolean;
   schoolLatitude: number;
   schoolLongitude: number;

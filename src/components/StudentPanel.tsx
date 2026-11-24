@@ -2768,7 +2768,9 @@ export default function StudentPanel({
                 <OnlineExamStudentPortal
                   student={currentStudent}
                   onExamSubmitted={() => {
-                    onRefresh();
+                    setTimeout(() => {
+                      onRefresh();
+                    }, 3500);
                   }}
                 />
               )}

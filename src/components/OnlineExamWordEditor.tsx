@@ -565,6 +565,7 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
       creatorName,
       creatorRole,
       status: 'published',
+      randomizeQuestions: true,
       questions: [createDefaultQuestion(1, 'pg')],
       questionCount: 1,
       createdAt: new Date().toISOString(),
@@ -610,6 +611,7 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
       creatorId,
       creatorName,
       creatorRole,
+      randomizeQuestions: true,
       scoringConfig: {
         pgWeight: 1,
         pgKompleksWeight: 2,
@@ -623,7 +625,8 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
         scoreTargetMode: 'uh_tp1',
         creatorId,
         creatorName,
-        creatorRole
+        creatorRole,
+        randomizeQuestions: true
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -1148,11 +1151,19 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
         ...existingSchedule,
         scheduleType: 'teacher_uh',
         scoreTargetMode: slotMode,
+        randomizeQuestions:
+          existingSchedule.randomizeQuestions ??
+          existingSchedule.scoringConfig?.randomizeQuestions ??
+          true,
         scoringConfig: {
           ...existingSchedule.scoringConfig,
           scheduleType: 'teacher_uh',
           scoreTargetMode: slotMode,
-          autoSyncToSas: true
+          autoSyncToSas: true,
+          randomizeQuestions:
+            existingSchedule.randomizeQuestions ??
+            existingSchedule.scoringConfig?.randomizeQuestions ??
+            true
         }
       });
       return;
@@ -1165,6 +1176,7 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
     const defaultPkt = matchingPackets[0] || uhAvailablePackets[0];
     const gradeMatch = selectedQuotaClass.match(/^([789])/);
     const grade = (gradeMatch ? gradeMatch[1] : defaultGrade) as '7' | '8' | '9';
+    const pktRandomize = defaultPkt?.randomizeQuestions !== false;
 
     setUhScheduleForm(prev => ({
       ...prev,
@@ -1180,6 +1192,7 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
       creatorId,
       creatorName,
       creatorRole,
+      randomizeQuestions: pktRandomize,
       scoringConfig: {
         ...prev.scoringConfig,
         scheduleType: 'teacher_uh',
@@ -1187,7 +1200,8 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
         autoSyncToSas: true,
         creatorId,
         creatorName,
-        creatorRole
+        creatorRole,
+        randomizeQuestions: pktRandomize
       }
     }));
   };
@@ -1213,6 +1227,11 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
       ['uh_tp1', 'uh_tp2', 'uh_tp3', 'uh_tp4'].includes(uhScheduleForm.scoreTargetMode)
         ? uhScheduleForm.scoreTargetMode
         : 'uh_tp1';
+    const isRandomized =
+      (uhScheduleForm.randomizeQuestions ??
+        uhScheduleForm.scoringConfig?.randomizeQuestions ??
+        selectedPkt?.randomizeQuestions ??
+        true) !== false;
 
     setSavingUhSchedule(true);
     try {
@@ -1227,6 +1246,7 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
         creatorId,
         creatorName,
         creatorRole,
+        randomizeQuestions: isRandomized,
         scoringConfig: {
           ...uhScheduleForm.scoringConfig,
           autoSyncToSas: true,
@@ -1234,7 +1254,8 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
           scoreTargetMode: targetMode,
           creatorId,
           creatorName,
-          creatorRole
+          creatorRole,
+          randomizeQuestions: isRandomized
         }
       };
 
@@ -1310,6 +1331,25 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
       showToast('error', err.message || 'Gagal menghubungi server MySQL.');
     } finally {
       setSyncingUhId(null);
+    }
+  };
+
+  const handleResetStudentSubmission = async (subId: string, scheduleId: string, studentId: string, studentName: string) => {
+    try {
+      const res = await fetch('/api/online-exams/reset-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submissionId: subId, scheduleId, studentId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('success', `Sesi ujian siswa ${studentName} berhasil direset! Siswa dapat mengerjakan ulang.`);
+        fetchTeacherUhData();
+      } else {
+        showToast('error', data.message || 'Gagal mereset sesi ujian siswa.');
+      }
+    } catch (err: any) {
+      showToast('error', err.message || 'Gagal mereset sesi ujian siswa.');
     }
   };
 
@@ -1831,6 +1871,37 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
                   </div>
                 </div>
 
+                {/* Opsi Pengacakan Urutan Soal */}
+                <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-200 space-y-1.5">
+                  <label className="block font-bold text-indigo-950 text-xs">
+                    Pengaturan Urutan Soal Saat Ujian:
+                  </label>
+                  <select
+                    value={
+                      (uhScheduleForm.randomizeQuestions ??
+                        uhScheduleForm.scoringConfig?.randomizeQuestions ??
+                        true) !== false
+                        ? 'random'
+                        : 'sequential'
+                    }
+                    onChange={e => {
+                      const isRand = e.target.value === 'random';
+                      setUhScheduleForm(prev => ({
+                        ...prev,
+                        randomizeQuestions: isRand,
+                        scoringConfig: {
+                          ...prev.scoringConfig,
+                          randomizeQuestions: isRand
+                        }
+                      }));
+                    }}
+                    className="w-full border border-indigo-300 rounded-lg px-2.5 py-1.5 font-bold text-indigo-950 bg-white text-xs"
+                  >
+                    <option value="random">🔀 Soal Diacak Otomatis Tiap Siswa (Rekomendasi Anti-Nyontek)</option>
+                    <option value="sequential">🔢 Soal Tidak Diacak (Berurutan Sesuai Nomor Asli 1, 2, 3...)</option>
+                  </select>
+                </div>
+
                 {/* Opsi Kunci Lokasi GPS */}
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
                   <label className="flex items-center justify-between cursor-pointer">
@@ -2143,14 +2214,31 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
                               </span>
                             </td>
                             <td className="py-2.5 px-3">
-                              {sub.status !== 'in_progress' ? (
-                                <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  Tersimpan di {tpBadge} (MySQL)
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 text-[11px]">Menunggu selesai</span>
-                              )}
+                              <div className="flex flex-wrap items-center gap-2">
+                                {sub.status !== 'in_progress' ? (
+                                  <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    Tersimpan di {tpBadge} (MySQL)
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">Menunggu selesai</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleResetStudentSubmission(
+                                      sub.id,
+                                      sub.scheduleId,
+                                      sub.studentId,
+                                      sub.studentName
+                                    )
+                                  }
+                                  className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[10px] cursor-pointer"
+                                  title="Reset ujian siswa ini agar dapat mengerjakan ulang"
+                                >
+                                  Reset / Ulangi
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -3374,7 +3462,7 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 min-w-0">
                           <div className="min-w-0">
                             <label className="block text-[11px] font-bold text-slate-600 mb-1">Tahun Ajaran:</label>
                             <input
@@ -3400,6 +3488,22 @@ export const OnlineExamWordEditor: React.FC<OnlineExamWordEditorProps> = ({
                             >
                               <option value="published">Siap Digunakan (Published)</option>
                               <option value="draft">Draft Sementara</option>
+                            </select>
+                          </div>
+                          <div className="min-w-0">
+                            <label className="block text-[11px] font-bold text-indigo-700 mb-1">Pengaturan Urutan Soal:</label>
+                            <select
+                              value={currentPacket.randomizeQuestions !== false ? 'random' : 'sequential'}
+                              onChange={e =>
+                                setCurrentPacket(prev => ({
+                                  ...prev,
+                                  randomizeQuestions: e.target.value === 'random'
+                                }))
+                              }
+                              className="w-full min-w-0 border border-indigo-300 rounded px-2 py-1.5 font-bold text-indigo-950 bg-indigo-50/60"
+                            >
+                              <option value="random">🔀 Soal Diacak Otomatis</option>
+                              <option value="sequential">🔢 Soal Tidak Diacak (Urut)</option>
                             </select>
                           </div>
                         </div>

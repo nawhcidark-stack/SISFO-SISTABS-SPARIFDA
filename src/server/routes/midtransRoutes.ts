@@ -1333,7 +1333,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               };
               treasurerTransactions.unshift(newKas);
               if (persistEntity) {
-                await persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting SPP Kas:", err));
+                persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting SPP Kas:", err));
               }
             }
 
@@ -1353,7 +1353,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             }
 
             if (persistEntity) {
-              await persistEntity("sppBills", bill).catch(err => console.error("Error persisting settled SPP to MySQL:", err));
+              persistEntity("sppBills", bill).catch(err => console.error("Error persisting settled SPP to MySQL:", err));
             }
 
             detailMessage = `Tagihan SPP ${bill.month} ${bill.year} (${student?.name || "Siswa"}) berhasil di-settle LUNAS.`;
@@ -1367,7 +1367,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           bill.orderId = undefined;
           actionTaken = true;
           if (persistEntity) {
-            await persistEntity("sppBills", bill).catch(err => console.error("Error persisting reset SPP to MySQL:", err));
+            persistEntity("sppBills", bill).catch(err => console.error("Error persisting reset SPP to MySQL:", err));
           }
           detailMessage = `Tagihan SPP ${bill.month} ${bill.year} direset menjadi belum bayar karena expired/cancel.`;
         }
@@ -1429,12 +1429,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               };
               treasurerTransactions.unshift(newKas);
               if (persistEntity) {
-                await persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting Misc Kas:", err));
+                persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting Misc Kas:", err));
               }
             }
 
             if (persistEntity) {
-              await persistEntity("miscBills", bill).catch(err => console.error("Error persisting settled Misc to MySQL:", err));
+              persistEntity("miscBills", bill).catch(err => console.error("Error persisting settled Misc to MySQL:", err));
             }
 
             detailMessage = `Tagihan Non-SPP "${bill.title}" berhasil di-settle LUNAS.`;
@@ -1447,7 +1447,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           bill.orderId = undefined;
           actionTaken = true;
           if (persistEntity) {
-            await persistEntity("miscBills", bill).catch(err => console.error("Error persisting reset Misc to MySQL:", err));
+            persistEntity("miscBills", bill).catch(err => console.error("Error persisting reset Misc to MySQL:", err));
           }
           detailMessage = `Tagihan Non-SPP "${bill.title}" direset menjadi belum bayar karena expired.`;
         }
@@ -1491,9 +1491,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           });
 
           if (persistEntity) {
-            await persistEntity("savingsTransactions", trans).catch(err => console.error("Error persisting settled Savings tx to MySQL:", err));
+            persistEntity("savingsTransactions", trans).catch(err => console.error("Error persisting settled Savings tx to MySQL:", err));
             if (student) {
-              await persistEntity("students", student).catch(err => console.error("Error persisting student savings balance to MySQL:", err));
+              persistEntity("students", student).catch(err => console.error("Error persisting student savings balance to MySQL:", err));
             }
           }
 
@@ -1502,7 +1502,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           trans.status = "failed";
           actionTaken = true;
           if (persistEntity) {
-            await persistEntity("savingsTransactions", trans).catch(err => console.error("Error persisting expired Savings tx to MySQL:", err));
+            persistEntity("savingsTransactions", trans).catch(err => console.error("Error persisting expired Savings tx to MySQL:", err));
           }
           detailMessage = `Setoran tabungan dibatalkan karena expired.`;
         }
@@ -1605,12 +1605,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             }
 
             if (persistEntities) {
-              if (matchedSpp.length > 0) await persistEntities("sppBills", matchedSpp).catch(err => console.error("Error persisting cart SPP to MySQL:", err));
-              if (matchedMisc.length > 0) await persistEntities("miscBills", matchedMisc).catch(err => console.error("Error persisting cart Misc to MySQL:", err));
-              if (matchedSavings.length > 0) await persistEntities("savingsTransactions", matchedSavings).catch(err => console.error("Error persisting cart Savings to MySQL:", err));
+              if (matchedSpp.length > 0) persistEntities("sppBills", matchedSpp).catch(err => console.error("Error persisting cart SPP to MySQL:", err));
+              if (matchedMisc.length > 0) persistEntities("miscBills", matchedMisc).catch(err => console.error("Error persisting cart Misc to MySQL:", err));
+              if (matchedSavings.length > 0) persistEntities("savingsTransactions", matchedSavings).catch(err => console.error("Error persisting cart Savings to MySQL:", err));
             }
             if (persistEntity && student) {
-              await persistEntity("students", student).catch(err => console.error("Error persisting cart student balance to MySQL:", err));
+              persistEntity("students", student).catch(err => console.error("Error persisting cart student balance to MySQL:", err));
             }
 
             detailMessage = `Keranjang pembayaran (${matchedSpp.length} SPP, ${matchedMisc.length} Non-SPP, ${matchedSavings.length} Tabungan) berhasil di-settle LUNAS.`;
@@ -1620,9 +1620,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           matchedMisc.forEach(m => { if (m.status === "pending") { m.status = "unpaid"; m.orderId = undefined; actionTaken = true; } });
           matchedSavings.forEach(t => { if (t.status === "pending") { t.status = "failed"; actionTaken = true; } });
           if (persistEntities) {
-            if (matchedSpp.length > 0) await persistEntities("sppBills", matchedSpp).catch(err => console.error("Error persisting expired cart SPP to MySQL:", err));
-            if (matchedMisc.length > 0) await persistEntities("miscBills", matchedMisc).catch(err => console.error("Error persisting expired cart Misc to MySQL:", err));
-            if (matchedSavings.length > 0) await persistEntities("savingsTransactions", matchedSavings).catch(err => console.error("Error persisting expired cart Savings to MySQL:", err));
+            if (matchedSpp.length > 0) persistEntities("sppBills", matchedSpp).catch(err => console.error("Error persisting expired cart SPP to MySQL:", err));
+            if (matchedMisc.length > 0) persistEntities("miscBills", matchedMisc).catch(err => console.error("Error persisting expired cart Misc to MySQL:", err));
+            if (matchedSavings.length > 0) persistEntities("savingsTransactions", matchedSavings).catch(err => console.error("Error persisting expired cart Savings to MySQL:", err));
           }
           detailMessage = `Keranjang pembayaran direset karena expired/cancel.`;
         }
@@ -1698,7 +1698,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 };
                 treasurerTransactions.unshift(newKas);
                 if (persistEntity) {
-                  await persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting cart Kas:", err));
+                  persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting cart Kas:", err));
                 }
               }
 
@@ -1720,17 +1720,17 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
               if (persistEntities) {
                 if (alloc.affectedSppBills.length > 0) {
-                  await persistEntities("sppBills", alloc.affectedSppBills).catch(err => console.error("Error persisting cart SPP to MySQL:", err));
+                  persistEntities("sppBills", alloc.affectedSppBills).catch(err => console.error("Error persisting cart SPP to MySQL:", err));
                 }
                 if (alloc.affectedMiscBills.length > 0) {
-                  await persistEntities("miscBills", alloc.affectedMiscBills).catch(err => console.error("Error persisting cart Misc to MySQL:", err));
+                  persistEntities("miscBills", alloc.affectedMiscBills).catch(err => console.error("Error persisting cart Misc to MySQL:", err));
                 }
                 if (alloc.affectedSavingsTxs.length > 0) {
-                  await persistEntities("savingsTransactions", alloc.affectedSavingsTxs).catch(err => console.error("Error persisting cart Savings to MySQL:", err));
+                  persistEntities("savingsTransactions", alloc.affectedSavingsTxs).catch(err => console.error("Error persisting cart Savings to MySQL:", err));
                 }
               }
               if (persistEntity && targetStudent) {
-                await persistEntity("students", targetStudent).catch(err => console.error("Error persisting cart student balance to MySQL:", err));
+                persistEntity("students", targetStudent).catch(err => console.error("Error persisting cart student balance to MySQL:", err));
               }
 
               detailMessage = alloc.message;
@@ -2018,23 +2018,23 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               };
               treasurerTransactions.unshift(newKas);
               if (persistEntity) {
-                await persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting fallback Kas to MySQL:", err));
+                persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting fallback Kas to MySQL:", err));
               }
             }
 
             if (persistEntities) {
               if (alloc.affectedSppBills.length > 0) {
-                await persistEntities("sppBills", alloc.affectedSppBills).catch(err => console.error("Error persisting fallback SPP to MySQL:", err));
+                persistEntities("sppBills", alloc.affectedSppBills).catch(err => console.error("Error persisting fallback SPP to MySQL:", err));
               }
               if (alloc.affectedMiscBills.length > 0) {
-                await persistEntities("miscBills", alloc.affectedMiscBills).catch(err => console.error("Error persisting fallback Misc to MySQL:", err));
+                persistEntities("miscBills", alloc.affectedMiscBills).catch(err => console.error("Error persisting fallback Misc to MySQL:", err));
               }
               if (alloc.affectedSavingsTxs.length > 0) {
-                await persistEntities("savingsTransactions", alloc.affectedSavingsTxs).catch(err => console.error("Error persisting fallback Savings to MySQL:", err));
+                persistEntities("savingsTransactions", alloc.affectedSavingsTxs).catch(err => console.error("Error persisting fallback Savings to MySQL:", err));
               }
             }
             if (persistEntity) {
-              await persistEntity("students", targetStudent).catch(err => console.error("Error persisting fallback student balance to MySQL:", err));
+              persistEntity("students", targetStudent).catch(err => console.error("Error persisting fallback student balance to MySQL:", err));
             }
           }
         }
@@ -3065,9 +3065,11 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     const cleanOrderId = String(orderId).trim().replace(/^#+/, "").replace(/^["']|["']$/g, "").trim();
 
     let midtransStatus: any = null;
-    try {
-      midtransStatus = await getMidtransStatus(cleanOrderId);
-    } catch (e) {}
+    if (midtransConfig?.isProduction && midtransConfig?.serverKey) {
+      try {
+        midtransStatus = await getMidtransStatus(cleanOrderId);
+      } catch (e) {}
+    }
 
     const realOrderId = midtransStatus?.order_id || cleanOrderId;
     const realTxId = transactionId || midtransStatus?.transaction_id || `sim-${Date.now()}`;

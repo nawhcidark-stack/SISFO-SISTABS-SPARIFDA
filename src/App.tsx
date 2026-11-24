@@ -58,6 +58,28 @@ export async function fetchNoCache(input: RequestInfo | URL, init?: RequestInit)
   return fetch(finalUrl, finalInit);
 }
 
+const LiveClockBadge = React.memo(function LiveClockBadge() {
+  const [clockText, setClockText] = useState<string>(() =>
+    new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB'
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setClockText(
+        new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB'
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="bg-blue-950/40 border border-teal-500/30 px-3 py-1 rounded-lg text-right font-mono text-[11px] text-teal-100 flex items-center gap-1.5 shadow-inner">
+      <Activity size={10} className="text-teal-300 animate-pulse" />
+      <span>{clockText}</span>
+    </div>
+  );
+});
+
 export default function App() {
   // Authed state persistence
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
@@ -610,9 +632,11 @@ export default function App() {
   };
 
   // 1. Optimized parallel load of essential data
-  const initSystemData = async () => {
+  const initSystemData = async (silent: boolean = false) => {
     try {
-      setIsLoading(true);
+      if (!silent && studentsList.length === 0) {
+        setIsLoading(true);
+      }
       const isUserLoggedIn = localStorage.getItem('smp_maarif_logged_in') === 'true';
       const userRole = (localStorage.getItem('smp_maarif_role') as any) || 'student';
       const storedStudentId = localStorage.getItem('smp_maarif_student_id');
@@ -839,13 +863,123 @@ export default function App() {
     }
   };
 
-  // Reload current views
-  const handleReload = () => {
-    initSystemData();
-    const targetId = currentStudent?.id || loggedStudentId || (studentsList.length > 0 ? studentsList[0].id : '');
-    if (targetId) {
-      fetchStudentFullData(targetId, role === 'admin' || role === 'homeroom');
+  const lastLocalAdminPaymentAtRef = useRef<number>(0);
+  const financialRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sseRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fast financial-only refresh for payment operations
+  const refreshFinancialData = async () => {
+    try {
+      const checkIsAdmin = roleRef.current === 'admin' || roleRef.current === 'homeroom';
+      const targetId = currentStudentRef.current?.id || loggedStudentId || (studentsList.length > 0 ? studentsList[0].id : '');
+      await Promise.allSettled([
+        fetchNoCache('/api/students').then(async (res) => {
+          if (res.ok) {
+            const stdData = await res.json();
+            setStudentsList(stdData);
+          }
+        }),
+        fetchStudentFullData(targetId, checkIsAdmin, false)
+      ]);
+    } catch (e) {
+      console.error('Failed to refresh financial data', e);
     }
+  };
+
+  const scheduleFinancialRefresh = (delayMs: number = 3000) => {
+    if (financialRefreshTimerRef.current) {
+      clearTimeout(financialRefreshTimerRef.current);
+    }
+    financialRefreshTimerRef.current = setTimeout(() => {
+      financialRefreshTimerRef.current = null;
+      refreshFinancialData();
+    }, delayMs);
+  };
+
+  useEffect(() => {
+    const handleAdminLocalPayment = (e: Event) => {
+      lastLocalAdminPaymentAtRef.current = Date.now();
+      const customEvt = e as CustomEvent;
+      const detail = customEvt.detail || {};
+      const nowIso = detail.paidAt || new Date().toISOString();
+
+      if (Array.isArray(detail.sppBillIds) && detail.sppBillIds.length > 0) {
+        const idSet = new Set(detail.sppBillIds);
+        setStudentBills(prev =>
+          prev.map(b =>
+            idSet.has(b.id)
+              ? {
+                  ...b,
+                  status: 'paid',
+                  paidAt: nowIso,
+                  paymentMethod: detail.paymentMethod || 'Manual Teller (Kolektif)',
+                  orderId: detail.orderId || b.orderId
+                }
+              : b
+          )
+        );
+      }
+
+      if (Array.isArray(detail.miscBillIds) && detail.miscBillIds.length > 0) {
+        const idSet = new Set(detail.miscBillIds);
+        setMiscBillsList(prev =>
+          prev.map(m =>
+            idSet.has(m.id)
+              ? {
+                  ...m,
+                  status: 'paid',
+                  paidAt: nowIso,
+                  paymentMethod: detail.paymentMethod || 'Manual Teller (Sekolah)',
+                  orderId: detail.orderId || m.orderId
+                }
+              : m
+          )
+        );
+      }
+
+      if (Array.isArray(detail.savingsDeposits) && detail.savingsDeposits.length > 0) {
+        const balanceDeltaByStudent = new Map<string, number>();
+        const newTxs: SavingsTransaction[] = [];
+        detail.savingsDeposits.forEach((dep: any, idx: number) => {
+          const amt = Number(dep.amount) || 0;
+          if (dep.studentId && amt > 0) {
+            balanceDeltaByStudent.set(dep.studentId, (balanceDeltaByStudent.get(dep.studentId) || 0) + amt);
+            newTxs.push({
+              id: detail.orderId ? `${detail.orderId}-sav-${idx}` : `sav-${Date.now()}-${idx}`,
+              studentId: dep.studentId,
+              type: 'deposit',
+              amount: amt,
+              status: 'success',
+              createdAt: nowIso,
+              paymentMethod: detail.paymentMethod || 'Manual Teller (Kolektif)',
+              notes: dep.notes || 'Setoran Tabungan'
+            });
+          }
+        });
+        if (balanceDeltaByStudent.size > 0) {
+          setStudentsList(prev =>
+            prev.map(s =>
+              balanceDeltaByStudent.has(s.id)
+                ? { ...s, savingsBalance: (s.savingsBalance || 0) + (balanceDeltaByStudent.get(s.id) || 0) }
+                : s
+            )
+          );
+        }
+        if (newTxs.length > 0) {
+          setStudentTransactions(prev => [...newTxs, ...prev]);
+        }
+      }
+
+      scheduleFinancialRefresh(3500);
+    };
+
+    window.addEventListener('admin-local-payment', handleAdminLocalPayment);
+    return () => window.removeEventListener('admin-local-payment', handleAdminLocalPayment);
+  }, []);
+
+  // Reload current views without blocking UI or duplicating requests
+  const handleReload = () => {
+    initSystemData(true);
   };
 
   const handleLoginSuccess = (
@@ -1010,31 +1144,52 @@ export default function App() {
         const relatedToActiveStud = activeStud && (rawNotification.studentId === undefined || rawNotification.studentId === activeStud.id);
         
         // Update general catalog (student balances/bills might have shifted)
-        fetch('/api/students')
-          .then(res => res.json())
-          .then(dataList => {
-            setStudentsList(prev => {
-              if (JSON.stringify(prev) === JSON.stringify(dataList)) return prev;
-              return dataList;
-            });
-            // Also sync active student's specific sub-cards
-            const freshActiveStud = currentStudentRef.current;
-            if (freshActiveStud) {
-              const freshActive = dataList.find((s: any) => s.id === freshActiveStud.id);
-              if (freshActive) {
-                // Fetch bills and transactions
-                fetchStudentFullData(freshActive.id);
-              }
-            }
-          });
+        const isFinancialNotif =
+          rawNotification.id.startsWith('notif-spp') ||
+          rawNotification.id.startsWith('notif-misc') ||
+          rawNotification.id.startsWith('notif-sav') ||
+          rawNotification.id.startsWith('notif-cart') ||
+          rawNotification.type === 'payment';
 
-        // Always keep curriculum schedules, assessments, homerooms, and bills synchronized in real-time across all devices/views
-        fetchSchedules();
-        fetchMerdekaAssessments();
-        fetchMiscBills();
-        fetchAttendance();
-        fetchHomerooms();
-        fetchSubjectTeachers();
+        // If this financial notification came from an admin payment processed locally within the last 6 seconds,
+        // skip the immediate heavy re-download of all 10,000+ bills so the receipt print modal stays instant and smooth.
+        if (currentRole === 'admin' && isFinancialNotif && Date.now() - lastLocalAdminPaymentAtRef.current < 6000) {
+          return;
+        }
+
+        // Debounce SSE background re-sync so bursts of notifications do not trigger multiple parallel downloads
+        if (sseRefreshTimerRef.current) {
+          clearTimeout(sseRefreshTimerRef.current);
+        }
+        sseRefreshTimerRef.current = setTimeout(() => {
+          sseRefreshTimerRef.current = null;
+          fetch('/api/students')
+            .then(res => res.json())
+            .then(dataList => {
+              setStudentsList(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(dataList)) return prev;
+                return dataList;
+              });
+              const freshActiveStud = currentStudentRef.current;
+              if (freshActiveStud) {
+                const freshActive = dataList.find((s: any) => s.id === freshActiveStud.id);
+                if (freshActive) {
+                  fetchStudentFullData(freshActive.id);
+                }
+              }
+            })
+            .catch(() => {});
+
+          fetchMiscBills();
+
+          if (!isFinancialNotif) {
+            fetchSchedules();
+            fetchMerdekaAssessments();
+            fetchAttendance();
+            fetchHomerooms();
+            fetchSubjectTeachers();
+          }
+        }, currentRole === 'admin' ? 1800 : 300);
 
       } catch (err) {
         console.error('Error handling push SSE message', err);
@@ -1044,12 +1199,6 @@ export default function App() {
     sse.onerror = (err) => {
       console.error('SSE connection lost. Reconnecting in background...', err);
     };
-
-    // Live Clock timer
-    const clockInterval = setInterval(() => {
-      const now = new Date();
-      setTimeStr(now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB');
-    }, 1000);
 
     // Window focus re-synchronization: When returning from public web or another tab, automatically refresh state
     const onWindowFocus = () => {
@@ -1067,7 +1216,8 @@ export default function App() {
 
     return () => {
       sse.close();
-      clearInterval(clockInterval);
+      if (sseRefreshTimerRef.current) clearTimeout(sseRefreshTimerRef.current);
+      if (financialRefreshTimerRef.current) clearTimeout(financialRefreshTimerRef.current);
       window.removeEventListener('focus', onWindowFocus);
       clearInterval(liveClientSyncInterval);
     };
@@ -1393,6 +1543,16 @@ export default function App() {
   // Admin Manual SPP Verification (Cash clearance)
   const handlePaySppManual = async (billId: string): Promise<any> => {
     try {
+      lastLocalAdminPaymentAtRef.current = Date.now();
+      const nowIso = new Date().toISOString();
+      const tempOrderId = `ORD-MANUAL-${Date.now()}`;
+      setStudentBills(prev =>
+        prev.map(b =>
+          b.id === billId
+            ? { ...b, status: 'paid', paidAt: nowIso, paymentMethod: 'Manual Teller (Sekolah)', orderId: b.orderId || tempOrderId }
+            : b
+        )
+      );
       const res = await fetch('/api/admin/pay-spp-manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1400,9 +1560,13 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        initSystemData();
+        if (data.bill) {
+          setStudentBills(prev => prev.map(b => b.id === billId ? data.bill : b));
+        }
+        scheduleFinancialRefresh(3500);
         return data.bill || true;
       }
+      scheduleFinancialRefresh(500);
       return null;
     } catch (err) {
       console.error(err);
@@ -1413,6 +1577,7 @@ export default function App() {
   // Admin Cancel/Void Manual SPP
   const handleCancelSppManual = async (billId: string): Promise<any> => {
     try {
+      lastLocalAdminPaymentAtRef.current = Date.now();
       const res = await fetch('/api/admin/cancel-spp-manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1420,7 +1585,10 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        handleReload();
+        if (data.bill) {
+          setStudentBills(prev => prev.map(b => b.id === billId ? data.bill : b));
+        }
+        scheduleFinancialRefresh(2500);
         return { success: true, bill: data.bill };
       } else {
         const errData = await res.json();
@@ -1435,6 +1603,7 @@ export default function App() {
   // Admin Manual Savings ledger deposit/withdrawal
   const handleSavingsManual = async (studentId: string, type: 'deposit' | 'withdrawal', amount: number, notes: string): Promise<any> => {
     try {
+      lastLocalAdminPaymentAtRef.current = Date.now();
       const res = await fetch('/api/admin/savings-manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1447,7 +1616,13 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        initSystemData();
+        if (data.student) {
+          setStudentsList(prev => prev.map(s => s.id === studentId ? data.student : s));
+        }
+        if (data.transaction) {
+          setStudentTransactions(prev => [data.transaction, ...prev]);
+        }
+        scheduleFinancialRefresh(3500);
         return data.transaction || true;
       }
       return null;
@@ -1828,6 +2003,7 @@ export default function App() {
 
   // Success handler once a payment is fully captured
   const handlePaymentSuccess = () => {
+    lastLocalAdminPaymentAtRef.current = Date.now();
     setIsPayModalOpen(false);
     setPayToken(null);
     // Keep setPayOrderId intact so the success page has access to the ID. It will be cleared upon dismissal.
@@ -1843,30 +2019,64 @@ export default function App() {
     setActiveToasts(prev => [successNotif, ...prev]);
     triggerBeep();
 
-    // Trigger success checklist screen & countdown
-    setShowPaymentSuccessScreen(true);
-
-    // Refresh student records & trigger auto-reconciliation retry in background
-    if (currentStudent) {
-      const targetOrderId = payOrderId;
-      fetch('/api/student/auto-reconcile-retry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId: currentStudent.id, orderId: targetOrderId || undefined })
-      }).catch(console.error);
-      fetchStudentFullData(currentStudent.id);
+    // Only show the student countdown digital receipt screen for non-admin roles.
+    // For Admin Panel, immediately open AdminPanel's official Receipt Print Preview modal (Standar / Thermal)!
+    if (role !== 'admin') {
+      setShowPaymentSuccessScreen(true);
     }
-    initSystemData();
 
     if (role === 'admin' && adminSppBillToPrintCandidate) {
+      const paidAtNow = new Date().toISOString();
+      setStudentBills(prev =>
+        prev.map(b =>
+          b.id === adminSppBillToPrintCandidate
+            ? { ...b, status: 'paid', paidAt: paidAtNow, paymentMethod: 'Midtrans (Online / QRIS)', orderId: payOrderId || b.orderId }
+            : b
+        )
+      );
       setAdminSppBillToPrint(adminSppBillToPrintCandidate);
       setAdminSppBillToPrintCandidate(null);
     }
 
     if (role === 'admin' && adminSavingsToPrintCandidate) {
+      const { studentId, orderId, amount } = adminSavingsToPrintCandidate;
+      setStudentsList(prev =>
+        prev.map(s =>
+          s.id === studentId
+            ? { ...s, savingsBalance: (s.savingsBalance || 0) + Number(amount || 0) }
+            : s
+        )
+      );
+      setStudentTransactions(prev => [
+        {
+          id: orderId || `sav-${Date.now()}`,
+          orderId,
+          studentId,
+          type: 'deposit',
+          amount,
+          status: 'success',
+          paymentMethod: 'Midtrans (Online / QRIS)',
+          notes: 'Setoran Tabungan via Midtrans',
+          createdAt: new Date().toISOString()
+        },
+        ...prev
+      ]);
       setAdminSavingsToPrint(adminSavingsToPrintCandidate);
       setAdminSavingsToPrintCandidate(null);
     }
+
+    // Refresh records in background without blocking the receipt preview modal
+    if (currentStudent) {
+      const targetOrderId = payOrderId;
+      setTimeout(() => {
+        fetch('/api/student/auto-reconcile-retry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentId: currentStudent.id, orderId: targetOrderId || undefined })
+        }).catch(console.error);
+      }, 300);
+    }
+    scheduleFinancialRefresh(role === 'admin' ? 3500 : 300);
   };
 
   useEffect(() => {
@@ -2648,10 +2858,7 @@ export default function App() {
             <PWAInstallButton variant="pill" label="Pasang Aplikasi" />
 
             {/* Live UTC time converted to WIB */}
-            <div className="bg-blue-950/40 border border-teal-500/30 px-3 py-1 rounded-lg text-right font-mono text-[11px] text-teal-100 flex items-center gap-1.5 shadow-inner">
-              <Activity size={10} className="text-teal-300 animate-pulse" />
-              <span>{timeStr || 'Memuat Jam...'}</span>
-            </div>
+            <LiveClockBadge />
 
             {/* Toggle audio */}
             <button

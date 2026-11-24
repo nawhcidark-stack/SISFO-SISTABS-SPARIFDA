@@ -667,6 +667,39 @@ export default function AdminPanel({
     const confirmPay = window.confirm("Apakah Anda yakin ingin memproses pembayaran TUNAI manual (Teller) untuk tagihan ini?");
     if (!confirmPay) return;
 
+    const targetBill = miscBills.find((b) => b.id === billId);
+    const nowIso = new Date().toISOString();
+    const tempOrderId = `MISC-MANUAL-${Date.now()}`;
+    const targetStudent = targetBill
+      ? studentsById.get(targetBill.studentId) || students.find((st) => st.id === targetBill.studentId)
+      : undefined;
+
+    if (targetBill && targetStudent) {
+      setReceiptToPrint({
+        type: "misc",
+        detail: {
+          ...targetBill,
+          status: "paid",
+          paidAt: nowIso,
+          paymentMethod: "Manual Teller (Sekolah)",
+          orderId: targetBill.orderId || tempOrderId,
+        },
+        student: targetStudent,
+      });
+      setPrintId("print-receipt-section");
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("admin-local-payment", {
+        detail: {
+          miscBillIds: [billId],
+          paidAt: nowIso,
+          orderId: tempOrderId,
+          paymentMethod: "Manual Teller (Sekolah)",
+        },
+      }),
+    );
+
     try {
       const res = await fetch("/api/admin/pay-misc-manual", {
         method: "POST",
@@ -677,21 +710,18 @@ export default function AdminPanel({
       if (!res.ok) {
         throw new Error(data.error || "Gagal memproses pembayaran manual.");
       }
-      notifyFinancialUpdateLocally();
-      onRefresh();
-      
       const paidBill = data.bill;
-      const s = students.find((st) => st.id === paidBill.studentId);
-      if (s) {
-        setReceiptToPrint({
-          type: "misc",
-          detail: paidBill,
-          student: s
-        });
-        setPrintId("print-receipt-section");
+      if (paidBill) {
+        setReceiptToPrint((prev) =>
+          prev && prev.type === "misc" && prev.detail?.id === billId
+            ? { ...prev, detail: paidBill }
+            : prev
+        );
       }
+      notifyFinancialUpdateLocally();
     } catch (err: any) {
       console.error(err);
+      setReceiptToPrint(null);
       alert(err.message || "Gagal memproses pembayaran manual.");
     }
   };
@@ -2978,16 +3008,67 @@ export default function AdminPanel({
   >([]);
   const [processingCart, setProcessingCart] = useState(false);
 
+  // O(1) Lookup Maps to avoid scanning 10,000+ bills/transactions on every render
+  const studentsById = useMemo(() => {
+    const map = new Map<string, Student>();
+    for (let i = 0; i < students.length; i++) {
+      map.set(students[i].id, students[i]);
+    }
+    return map;
+  }, [students]);
+
+  const billsByStudentId = useMemo(() => {
+    const map = new Map<string, SppBill[]>();
+    for (let i = 0; i < bills.length; i++) {
+      const b = bills[i];
+      let arr = map.get(b.studentId);
+      if (!arr) {
+        arr = [];
+        map.set(b.studentId, arr);
+      }
+      arr.push(b);
+    }
+    return map;
+  }, [bills]);
+
+  const miscBillsByStudentId = useMemo(() => {
+    const map = new Map<string, MiscBill[]>();
+    for (let i = 0; i < miscBills.length; i++) {
+      const b = miscBills[i];
+      let arr = map.get(b.studentId);
+      if (!arr) {
+        arr = [];
+        map.set(b.studentId, arr);
+      }
+      arr.push(b);
+    }
+    return map;
+  }, [miscBills]);
+
+  const transactionsByStudentId = useMemo(() => {
+    const map = new Map<string, SavingsTransaction[]>();
+    for (let i = 0; i < transactions.length; i++) {
+      const t = transactions[i];
+      let arr = map.get(t.studentId);
+      if (!arr) {
+        arr = [];
+        map.set(t.studentId, arr);
+      }
+      arr.push(t);
+    }
+    return map;
+  }, [transactions]);
+
   const isMutationStudent = (studentOrId: Student | string | null | undefined) => {
     if (!studentOrId) return false;
-    const student = typeof studentOrId === "string" ? students.find(s => s.id === studentOrId) : studentOrId;
+    const student = typeof studentOrId === "string" ? studentsById.get(studentOrId) : studentOrId;
     if (!student) return false;
     return !!student.mutationDate || (student.class && (student.class.toLowerCase() === "mutasi" || student.class.toLowerCase() === "mutasi keluar"));
   };
 
-  // Helper to determine active / inactive state of an SPP bill (for Admin/Cashier)
+  // Helper to determine active / inactive state of an SPP bill (for Admin/Cashier) in O(1) via billsByStudentId
   const checkIsBillActive = (bill: SppBill, studentId: string, tempCartIds: string[] = []) => {
-    const student = students.find((s) => s.id === studentId);
+    const student = studentsById.get(studentId);
     const MONTH_MAP: Record<string, number> = {
       Januari: 0,
       Februari: 1,
@@ -3035,7 +3116,7 @@ export default function AdminPanel({
       }
     }
 
-    const studentBills = bills.filter((b) => b.studentId === studentId);
+    const studentBills = billsByStudentId.get(studentId) || [];
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonthIdx = now.getMonth();
@@ -3060,6 +3141,48 @@ export default function AdminPanel({
       paymentCart.some(item => item.type === "spp" && item.billId === b.id) ||
       tempCartIds.includes(b.id)
     );
+  };
+
+  // Instant 0ms optimistic SPP manual payment handler (opens receipt modal immediately while saving in background)
+  const handleInstantPaySppManual = (
+    bill: SppBill,
+    student: Student,
+    paymentMethodLabel: string = "Manual Teller (Sekolah)"
+  ) => {
+    const nowIso = new Date().toISOString();
+    const tempOrderId = bill.orderId || `ORD-MANUAL-${Date.now()}`;
+    setReceiptToPrint({
+      type: "spp",
+      detail: {
+        ...bill,
+        status: "paid",
+        paidAt: nowIso,
+        paymentMethod: paymentMethodLabel,
+        orderId: tempOrderId,
+      },
+      student,
+    });
+    setPrintId("print-receipt-section");
+
+    onPaySppManual(bill.id)
+      .then((resBill) => {
+        if (!resBill) {
+          setReceiptToPrint(null);
+          alert("Gagal memproses pembayaran SPP manual.");
+          return;
+        }
+        if (typeof resBill === "object" && resBill.orderId) {
+          setReceiptToPrint((prev) =>
+            prev && prev.type === "spp" && prev.detail?.id === bill.id
+              ? { ...prev, detail: { ...prev.detail, orderId: resBill.orderId } }
+              : prev
+          );
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        setReceiptToPrint(null);
+      });
   };
 
   const addToCartSpp = (bill: SppBill, student: Student) => {
@@ -3245,8 +3368,9 @@ export default function AdminPanel({
   };
 
   const handleCartMidtransSuccess = () => {
-    const printStudentBase = paymentCart[0]?.student || selectedStudent;
-    const savingsInCart = paymentCart
+    const cartSnapshot = [...paymentCart];
+    const printStudentBase = cartSnapshot[0]?.student || selectedStudent;
+    const savingsInCart = cartSnapshot
       .filter(
         (item) =>
           item.type === "savings_deposit" &&
@@ -3261,7 +3385,7 @@ export default function AdminPanel({
         }
       : printStudentBase;
 
-    const executedItems = paymentCart.map((item) => ({
+    const executedItems = cartSnapshot.map((item) => ({
       name:
         item.type === "spp"
           ? `SPP Bulanan (${item.month} ${item.year})`
@@ -3283,15 +3407,17 @@ export default function AdminPanel({
           : undefined,
     }));
 
-    const totalAmount = paymentCart.reduce((sum, item) => sum + item.amount, 0);
+    const totalAmount = cartSnapshot.reduce((sum, item) => sum + item.amount, 0);
+    const nowIso = new Date().toISOString();
+    const orderId = cartSnapOrderId || `CART-MIDTRANS-${Date.now()}`;
 
     setReceiptToPrint({
       type: "consolidated",
       detail: {
-        id: cartSnapOrderId || `CART-MIDTRANS-${Date.now()}`,
+        id: orderId,
         amount: totalAmount,
         items: executedItems,
-        paidAt: new Date().toISOString(),
+        paidAt: nowIso,
         paymentMethod: "Midtrans (Online / QRIS)",
         student: updatedStudent,
       },
@@ -3300,43 +3426,127 @@ export default function AdminPanel({
     setPrintId("print-receipt-section");
     setPaymentCart([]);
     setIsCartMidtransModalOpen(false);
-    if (onRefresh) onRefresh();
+
+    window.dispatchEvent(
+      new CustomEvent("admin-local-payment", {
+        detail: {
+          sppBillIds: cartSnapshot.filter((i) => i.type === "spp" && i.billId).map((i) => i.billId!),
+          miscBillIds: cartSnapshot.filter((i) => i.type === "misc" && i.billId).map((i) => i.billId!),
+          savingsDeposits: cartSnapshot
+            .filter((i) => i.type === "savings_deposit")
+            .map((i) => ({ studentId: i.student.id, amount: i.amount, notes: i.notes || "Setoran Tabungan" })),
+          paidAt: nowIso,
+          orderId,
+          paymentMethod: "Midtrans (Online / QRIS)",
+        },
+      }),
+    );
   };
 
   const handleProcessCartCheckout = async () => {
     if (paymentCart.length === 0) return;
-    setProcessingCart(true);
+    const cartSnapshot = [...paymentCart];
+
+    const sppBillIds = cartSnapshot
+      .filter((item) => item.type === "spp" && item.billId)
+      .map((item) => item.billId!);
+
+    const miscBillIds = cartSnapshot
+      .filter((item) => item.type === "misc" && item.billId)
+      .map((item) => item.billId!);
+
+    const savingsDeposits = cartSnapshot
+      .filter((item) => item.type === "savings_deposit")
+      .map((item) => ({
+        studentId: item.student.id,
+        amount: item.amount,
+        notes: item.notes || "Setoran Tabungan",
+      }));
+
+    // Build optimistic items & student balance immediately so receipt preview opens in 0ms
+    const runningBalanceByStudent = new Map<string, number>();
+    const optimisticExecutedItems = cartSnapshot.map((item) => {
+      let balanceAfter: number | undefined = undefined;
+      if (item.type === "savings_deposit") {
+        const baseBal = runningBalanceByStudent.has(item.student.id)
+          ? runningBalanceByStudent.get(item.student.id)!
+          : (item.student.savingsBalance || 0);
+        balanceAfter = baseBal + item.amount;
+        runningBalanceByStudent.set(item.student.id, balanceAfter);
+      }
+      return {
+        name:
+          item.type === "spp"
+            ? `SPP Bulanan (${item.month} ${item.year})`
+            : item.type === "misc"
+            ? `Lain-lain (${item.notes})`
+            : `Setoran Tabungan (${item.notes || "Setoran"})`,
+        amount: item.amount,
+        desc: `Siswa: ${item.student.name} (${item.student.nis} - Kelas ${item.student.class})`,
+        type: item.type,
+        billId: item.billId,
+        month: item.month,
+        year: item.year,
+        studentId: item.student.id,
+        studentNis: item.student.nis,
+        notes: item.notes,
+        balanceAfter,
+      };
+    });
+
+    const totalAmount = optimisticExecutedItems.reduce((sum, item) => sum + item.amount, 0);
+    const tempOrderId = `CART-BULK-${Date.now()}`;
+    const nowIso = new Date().toISOString();
+    const firstStudent = cartSnapshot[0].student;
+    const savingsInCart = cartSnapshot
+      .filter(
+        (item) =>
+          item.type === "savings_deposit" &&
+          (item.student.id === firstStudent.id || item.student.nis === firstStudent.nis),
+      )
+      .reduce((sum, item) => sum + item.amount, 0);
+
+    const optimisticPrintStudent = {
+      ...firstStudent,
+      savingsBalance: (firstStudent.savingsBalance || 0) + savingsInCart,
+    };
+
+    if (selectedStudent && selectedStudent.id === firstStudent.id && savingsInCart > 0) {
+      setSelectedStudent(optimisticPrintStudent);
+    }
+
+    // 1. Open Receipt Print Preview Modal immediately (0ms)!
+    setReceiptToPrint({
+      type: "consolidated",
+      detail: {
+        id: tempOrderId,
+        amount: totalAmount,
+        items: optimisticExecutedItems,
+        paidAt: nowIso,
+        paymentMethod: "Manual Teller (Kolektif)",
+        student: optimisticPrintStudent,
+      },
+      student: optimisticPrintStudent,
+    });
+    setPrintId("print-receipt-section");
+    setPaymentCart([]);
+
+    // 2. Update App.tsx state optimistically in memory without full 10,000-bill network download
+    window.dispatchEvent(
+      new CustomEvent("admin-local-payment", {
+        detail: {
+          sppBillIds,
+          miscBillIds,
+          savingsDeposits,
+          paidAt: nowIso,
+          orderId: tempOrderId,
+          paymentMethod: "Manual Teller (Kolektif)",
+        },
+      }),
+    );
+
+    // 3. Persist on backend in background
     try {
-      const executedItems: Array<{
-        name: string;
-        amount: number;
-        desc: string;
-        type?: string;
-        billId?: string;
-        month?: string;
-        year?: number;
-        studentId?: string;
-        studentNis?: string;
-        notes?: string;
-        balanceAfter?: number;
-      }> = [];
-
-      const sppBillIds = paymentCart
-        .filter((item) => item.type === "spp" && item.billId)
-        .map((item) => item.billId!);
-
-      const miscBillIds = paymentCart
-        .filter((item) => item.type === "misc" && item.billId)
-        .map((item) => item.billId!);
-
-      const savingsDeposits = paymentCart
-        .filter((item) => item.type === "savings_deposit")
-        .map((item) => ({
-          studentId: item.student.id,
-          amount: item.amount,
-          notes: item.notes || "Setoran Tabungan",
-        }));
-
       const res = await fetch("/api/admin/pay-cart-bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3344,82 +3554,26 @@ export default function AdminPanel({
       });
 
       const data = await res.json();
-
-      if (res.ok && data.executedItems && data.executedItems.length > 0) {
-        executedItems.push(...data.executedItems);
-      } else if (res.ok) {
-        paymentCart.forEach((item) => {
-          executedItems.push({
-            name:
-              item.type === "spp"
-                ? `SPP Bulanan (${item.month} ${item.year})`
-                : item.type === "misc"
-                ? `Lain-lain (${item.notes})`
-                : `Setoran Tabungan (${item.notes || "Setoran"})`,
-            amount: item.amount,
-            desc: `Siswa: ${item.student.name} (${item.student.nis} - Kelas ${item.student.class})`,
-            type: item.type,
-            billId: item.billId,
-            month: item.month,
-            year: item.year,
-            studentId: item.student.id,
-            studentNis: item.student.nis,
-            notes: item.notes,
-            balanceAfter:
-              item.type === "savings_deposit"
-                ? (item.student.savingsBalance || 0) + item.amount
-                : undefined,
-          });
-        });
-      }
-
-      if (executedItems.length > 0) {
-        const totalAmount = executedItems.reduce(
-          (sum, item) => sum + item.amount,
-          0,
+      if (res.ok && data.orderId) {
+        setReceiptToPrint((prev) =>
+          prev && prev.type === "consolidated" && prev.detail?.id === tempOrderId
+            ? {
+                ...prev,
+                detail: {
+                  ...prev.detail,
+                  id: data.orderId,
+                },
+              }
+            : prev
         );
-        const orderId = data.orderId || `COLLECTIVE-CART-${Date.now()}`;
-
-        const firstStudent = paymentCart[0].student;
-        const matchingAffected = data.affectedStudents && data.affectedStudents.find(
-          (s: any) => s.id === firstStudent.id || s.nis === firstStudent.nis
-        );
-        const savingsInCart = paymentCart
-          .filter(
-            (item) =>
-              item.type === "savings_deposit" &&
-              (item.student.id === firstStudent.id || item.student.nis === firstStudent.nis)
-          )
-          .reduce((sum, item) => sum + item.amount, 0);
-
-        const finalPrintStudent = matchingAffected || {
-          ...firstStudent,
-          savingsBalance: (firstStudent.savingsBalance || 0) + savingsInCart,
-        };
-
-        setReceiptToPrint({
-          type: "consolidated",
-          detail: {
-            id: orderId,
-            amount: totalAmount,
-            items: executedItems,
-            paidAt: new Date().toISOString(),
-            paymentMethod: "Manual Teller (Kolektif)",
-            student: finalPrintStudent,
-          },
-          student: finalPrintStudent,
-        });
-        setPrintId("print-receipt-section");
-        setPaymentCart([]);
-        onRefresh();
-      } else {
-        alert("Gagal memproses pembayaran keranjang belanja kolektif.");
+      } else if (!res.ok) {
+        setReceiptToPrint(null);
+        alert(data.error || "Gagal memproses pembayaran keranjang belanja kolektif.");
       }
     } catch (error) {
       console.error("Error processing cart payment:", error);
+      setReceiptToPrint(null);
       alert("Terjadi kesalahan teknis saat memproses pembayaran kolektif.");
-    } finally {
-      setProcessingCart(false);
     }
   };
 
@@ -3839,51 +3993,74 @@ export default function AdminPanel({
     const amount = Number(txAmount);
     if (isNaN(amount) || amount <= 0) return;
 
-    setTxProcessing(true);
-    const resultTx = await onSavingsManual(
-      selectedStudent.id,
-      txType,
-      amount,
-      txNotes,
-    );
-    setTxProcessing(false);
-
-    if (resultTx) {
-      setTxAmount("");
-      setTxNotes("");
-      setShowTxNotes(false);
-      // Update selectedStudent balance locally for instantaneous visual update
-      const updatedS = { ...selectedStudent };
-      if (txType === "deposit") {
-        updatedS.savingsBalance += amount;
-      } else {
-        updatedS.savingsBalance -= amount;
-      }
-      setSelectedStudent(updatedS);
-
-      // Create a complete transaction description to print
-      const printTx = {
-        id: resultTx.id || `sav-${Date.now()}`,
-        studentId: selectedStudent.id,
-        type: txType,
-        amount: amount,
-        status: "success",
-        createdAt: new Date().toISOString(),
-        paymentMethod: "Manual Teller",
-        notes:
-          txNotes ||
-          (txType === "deposit"
-            ? "Setoran manual pihak sekolah"
-            : "Tarik tunai manual"),
-      };
-
-      setReceiptToPrint({
-        type: "savings",
-        detail: printTx,
-        student: updatedS,
-      });
-      setPrintId("print-receipt-section");
+    if (txType === "withdrawal" && selectedStudent.savingsBalance < amount) {
+      alert("Saldo tabungan siswa tidak mencukupi untuk penarikan ini.");
+      return;
     }
+
+    const targetStudent = selectedStudent;
+    const currentType = txType;
+    const currentNotes = txNotes;
+    const tempTxId = `sav-${Date.now()}`;
+    const nowIso = new Date().toISOString();
+
+    // 1. Update selectedStudent and open receipt modal immediately (0ms)!
+    const updatedS = {
+      ...targetStudent,
+      savingsBalance:
+        currentType === "deposit"
+          ? targetStudent.savingsBalance + amount
+          : targetStudent.savingsBalance - amount,
+    };
+    setTxAmount("");
+    setTxNotes("");
+    setShowTxNotes(false);
+    setSelectedStudent(updatedS);
+
+    const printTx = {
+      id: tempTxId,
+      studentId: targetStudent.id,
+      type: currentType,
+      amount: amount,
+      status: "success",
+      createdAt: nowIso,
+      paymentMethod: "Manual Teller",
+      notes:
+        currentNotes ||
+        (currentType === "deposit"
+          ? "Setoran manual pihak sekolah"
+          : "Tarik tunai manual"),
+    };
+
+    setReceiptToPrint({
+      type: "savings",
+      detail: printTx,
+      student: updatedS,
+    });
+    setPrintId("print-receipt-section");
+
+    // 2. Persist in background
+    onSavingsManual(targetStudent.id, currentType, amount, currentNotes)
+      .then((resultTx) => {
+        if (!resultTx) {
+          setReceiptToPrint(null);
+          setSelectedStudent(targetStudent);
+          alert("Gagal menyimpan transaksi tabungan.");
+          return;
+        }
+        if (typeof resultTx === "object" && resultTx.id) {
+          setReceiptToPrint((prev) =>
+            prev && prev.type === "savings" && prev.detail?.id === tempTxId
+              ? { ...prev, detail: { ...prev.detail, id: resultTx.id } }
+              : prev
+          );
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        setReceiptToPrint(null);
+        setSelectedStudent(targetStudent);
+      });
   };
 
   const handleBroadcastSubmit = async (e: React.FormEvent) => {
@@ -6194,7 +6371,7 @@ export default function AdminPanel({
                       <BookOpen size={14} />
                       Iuran SPP Bulanan (
                       {
-                        bills.filter((b) => b.studentId === selectedStudent.id)
+                        (billsByStudentId.get(selectedStudent.id) || [])
                           .length
                       }{" "}
                       Bulan)
@@ -6211,10 +6388,8 @@ export default function AdminPanel({
                       <Banknote size={14} />
                       Histori Tabungan (
                       {
-                        transactions.filter(
-                          (t) =>
-                            t.studentId === selectedStudent.id &&
-                            t.status === "success",
+                        (transactionsByStudentId.get(selectedStudent.id) || []).filter(
+                          (t) => t.status === "success",
                         ).length
                       }{" "}
                       Transaksi)
@@ -6231,7 +6406,7 @@ export default function AdminPanel({
                       <CreditCard size={14} />
                       Iuran Lain-lain (
                       {
-                        miscBills.filter((b) => b.studentId === selectedStudent.id)
+                        (miscBillsByStudentId.get(selectedStudent.id) || [])
                           .length
                       }{" "}
                       Tagihan)
@@ -6254,10 +6429,8 @@ export default function AdminPanel({
                               </span>
                               <span className="text-lg md:text-xl font-bold font-mono block mt-1">
                                 {
-                                  bills.filter(
-                                    (b) =>
-                                      b.studentId === selectedStudent.id &&
-                                      isSppBillOverdue(b),
+                                  (billsByStudentId.get(selectedStudent.id) || []).filter(
+                                    (b) => isSppBillOverdue(b),
                                   ).length
                                 }{" "}
                                 Bulan Tunggakan
@@ -6322,7 +6495,7 @@ export default function AdminPanel({
                           </div>
 
                           {/* Bayar SPP Multi-Bulan Sekaligus Section */}
-                          {bills.filter(b => b.studentId === selectedStudent.id && b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id))).length > 0 && (
+                          {(billsByStudentId.get(selectedStudent.id) || []).filter(b => b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id))).length > 0 && (
                             <div className="bg-amber-50/60 p-4 border border-amber-200/80 rounded-xl flex flex-col gap-3 text-xs text-slate-700 shadow-sm">
                               <h5 className="font-extrabold text-amber-900 flex items-center gap-1.5 uppercase text-[10px] tracking-wider">
                                 <ShoppingCart size={13} className="text-amber-600" />
@@ -6333,8 +6506,8 @@ export default function AdminPanel({
                               </p>
 
                               <div className="max-h-[140px] overflow-y-auto border border-amber-200/50 rounded-lg p-2 bg-white/80 flex flex-col gap-1.5">
-                                {bills
-                                  .filter(b => b.studentId === selectedStudent.id && b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id)))
+                                {(billsByStudentId.get(selectedStudent.id) || [])
+                                  .filter(b => b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id)))
                                   .sort((a, b) => {
                                     const MONTH_MAP: Record<string, number> = {
                                       Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
@@ -6391,8 +6564,8 @@ export default function AdminPanel({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const unpaidSpp = bills
-                                      .filter(b => b.studentId === selectedStudent.id && b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id)))
+                                    const unpaidSpp = (billsByStudentId.get(selectedStudent.id) || [])
+                                      .filter(b => b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id)))
                                       .map(b => b.id);
                                     setSelectedSppBills(unpaidSpp);
                                   }}
@@ -6413,7 +6586,7 @@ export default function AdminPanel({
                                 type="button"
                                 disabled={selectedSppBills.length === 0}
                                 onClick={() => {
-                                  const selectedBillsObj = bills.filter(b => selectedSppBills.includes(b.id));
+                                  const selectedBillsObj = (billsByStudentId.get(selectedStudent.id) || []).filter(b => selectedSppBills.includes(b.id));
                                   addBatchToCartSpp(selectedBillsObj, selectedStudent);
                                   setSelectedSppBills([]);
                                 }}
@@ -6440,9 +6613,7 @@ export default function AdminPanel({
                             <span className="text-[10px] font-bold text-slate-600 bg-slate-200 px-2 py-0.5 rounded font-mono">
                               Total{" "}
                               {
-                                bills.filter(
-                                  (b) => b.studentId === selectedStudent.id,
-                                ).length
+                                (billsByStudentId.get(selectedStudent.id) || []).length
                               }{" "}
                               Tagihan
                             </span>
@@ -6450,9 +6621,7 @@ export default function AdminPanel({
 
                           <div className="p-3 max-h-[350px] overflow-y-auto">
                             <div className="flex flex-col gap-2">
-                              {bills.filter(
-                                (b) => b.studentId === selectedStudent.id,
-                              ).length === 0 ? (
+                              {(billsByStudentId.get(selectedStudent.id) || []).length === 0 ? (
                                 <div className="text-center py-6 text-[11px] text-slate-400">
                                   Tidak ada tagihan SPP bagi siswa ini.
                                 </div>
@@ -6472,11 +6641,7 @@ export default function AdminPanel({
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                      {bills
-                                        .filter(
-                                          (b) =>
-                                            b.studentId === selectedStudent.id,
-                                        )
+                                      {[...(billsByStudentId.get(selectedStudent.id) || [])]
                                         .sort((a, b) => {
                                           if (b.year !== a.year)
                                             return b.year - a.year;
@@ -6649,36 +6814,9 @@ export default function AdminPanel({
                                                     disabled={
                                                       processingBillId !== null || reconcilingBillId !== null
                                                     }
-                                                    onClick={async (e) => {
+                                                    onClick={(e) => {
                                                       e.stopPropagation();
-                                                      setProcessingBillId(b.id);
-                                                      const resBill =
-                                                        await onPaySppManual(
-                                                          b.id,
-                                                        );
-                                                      setProcessingBillId(null);
-                                                      if (resBill) {
-                                                        onRefresh();
-                                                        setReceiptToPrint({
-                                                          type: "spp",
-                                                          detail: {
-                                                            ...b,
-                                                            status: "paid",
-                                                            paidAt:
-                                                              new Date().toISOString(),
-                                                            paymentMethod:
-                                                              "Manual Teller (Sekolah)",
-                                                            orderId:
-                                                              resBill.orderId ||
-                                                              `ORD-MANUAL-${Date.now()}`,
-                                                          },
-                                                          student:
-                                                            selectedStudent,
-                                                        });
-                                                        setPrintId(
-                                                          "print-receipt-section",
-                                                        );
-                                                      }
+                                                      handleInstantPaySppManual(b, selectedStudent);
                                                     }}
                                                     className="px-1.5 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-300 disabled:bg-slate-50 text-slate-600 font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center cursor-pointer transition-colors"
                                                     title="Bayar Manual Tunai langsung"
@@ -6700,8 +6838,8 @@ export default function AdminPanel({
 
                         {/* FORM APRESIASI BEBAS SPP BEASISWA PRESTASI */}
                           {(() => {
-                            const unpaidBillsForWaiver = bills.filter(
-                              (b) => b.studentId === selectedStudent.id && b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id))
+                            const unpaidBillsForWaiver = (billsByStudentId.get(selectedStudent.id) || []).filter(
+                              (b) => b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id))
                             );
 
                             return (
@@ -7043,10 +7181,8 @@ export default function AdminPanel({
                               </button>
                               <span className="text-[10px] font-bold text-slate-600 bg-slate-200 px-2 py-0.5 rounded font-mono">
                                 {
-                                  transactions.filter(
-                                    (t) =>
-                                      t.studentId === selectedStudent.id &&
-                                      t.status !== "failed",
+                                  (transactionsByStudentId.get(selectedStudent.id) || []).filter(
+                                    (t) => t.status !== "failed",
                                   ).length
                                 }{" "}
                                 Transaksi
@@ -7056,9 +7192,7 @@ export default function AdminPanel({
 
                           <div className="p-3 max-h-[350px] overflow-y-auto">
                             <div className="flex flex-col gap-2">
-                              {transactions.filter(
-                                (t) => t.studentId === selectedStudent.id,
-                              ).length === 0 ? (
+                              {(transactionsByStudentId.get(selectedStudent.id) || []).length === 0 ? (
                                 <div className="text-center py-6 text-[11px] text-slate-400">
                                   Belum ada riwayat mutasi tabungan siswa ini.
                                 </div>
@@ -7077,9 +7211,7 @@ export default function AdminPanel({
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                       {[
-                                        ...transactions.filter(
-                                          (t) => t.studentId === selectedStudent.id,
-                                        ),
+                                        ...(transactionsByStudentId.get(selectedStudent.id) || []),
                                       ]
                                         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
                                         .map((t) => (
@@ -7221,7 +7353,7 @@ export default function AdminPanel({
                       <>
                         {/* TAMPILAN IURAN LAIN-LAIN */}
                         {(() => {
-                          const studentMiscBills = miscBills.filter(b => b.studentId === selectedStudent.id);
+                          const studentMiscBills = miscBillsByStudentId.get(selectedStudent.id) || [];
                           const unpaidMisc = studentMiscBills.filter(b => b.status !== "paid");
                           const totalOutstandingMisc = unpaidMisc.reduce((sum, b) => sum + b.amount, 0);
 
@@ -8238,8 +8370,7 @@ export default function AdminPanel({
                       </tr>
                     ) : (
                       paginatedStudents.map((student) => {
-                        const sBills = bills
-                          .filter((b) => b.studentId === student.id)
+                        const sBills = [...(billsByStudentId.get(student.id) || [])]
                           .sort((a, b) => {
                             const MONTH_MAP: Record<string, number> = {
                               Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
@@ -8300,30 +8431,9 @@ export default function AdminPanel({
                                     <button
                                       id={`admin-pay-manual-${student.id}`}
                                       disabled={processingBillId !== null}
-                                      onClick={async (e) => {
+                                      onClick={(e) => {
                                         e.stopPropagation();
-                                        setProcessingBillId(nextUnpaidBill.id);
-                                        const resBill = await onPaySppManual(
-                                          nextUnpaidBill.id,
-                                        );
-                                        setProcessingBillId(null);
-                                        if (resBill) {
-                                          setReceiptToPrint({
-                                            type: "spp",
-                                            detail: {
-                                              ...nextUnpaidBill,
-                                              status: "paid",
-                                              paidAt: new Date().toISOString(),
-                                              paymentMethod:
-                                                "Manual Teller (Sekolah)",
-                                              orderId:
-                                                resBill.orderId ||
-                                                `ORD-MANUAL-${Date.now()}`,
-                                            },
-                                            student: student,
-                                          });
-                                          setPrintId("print-receipt-section");
-                                        }
+                                        handleInstantPaySppManual(nextUnpaidBill, student);
                                       }}
                                       className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded font-bold text-[10px] uppercase tracking-wider transition-colors shadow-sm shadow-emerald-100 cursor-pointer flex items-center justify-center gap-1 min-w-[110px]"
                                       title="Selesaikan pembayaran dengan pembayaran tunai manual ke Teller"
@@ -14122,46 +14232,16 @@ export default function AdminPanel({
                                                 disabled={
                                                   processingBillId !== null
                                                 }
-                                                onClick={async () => {
-                                                  setProcessingBillId(bill.id);
-                                                  const resB =
-                                                    await onPaySppManual(
-                                                      bill.id,
-                                                    );
-                                                  setProcessingBillId(null);
-                                                  if (resB) {
-                                                    onRefresh();
-                                                    setReceiptToPrint({
-                                                      type: "spp",
-                                                      detail: {
-                                                        ...bill,
-                                                        status: "paid",
-                                                        paidAt:
-                                                          new Date().toISOString(),
-                                                        paymentMethod:
-                                                          "Manual Teller (Sekolah) Alumni",
-                                                        orderId:
-                                                          resB.orderId ||
-                                                          `ORD-MANUAL-${Date.now()}`,
-                                                      },
-                                                      student: selectedStudent,
-                                                    });
-                                                    setPrintId(
-                                                      "print-receipt-section",
-                                                    );
-                                                  }
+                                                onClick={() => {
+                                                  handleInstantPaySppManual(
+                                                    bill,
+                                                    selectedStudent,
+                                                    "Manual Teller (Sekolah) Alumni"
+                                                  );
                                                 }}
                                                 className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-extrabold text-[9px] uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer shadow-3xs inline-flex items-center gap-1"
                                               >
-                                                {processingBillId ===
-                                                bill.id ? (
-                                                  <RefreshCw
-                                                    size={9}
-                                                    className="animate-spin"
-                                                  />
-                                                ) : (
-                                                  <span>Bayar Manual</span>
-                                                )}
+                                                <span>Bayar Manual</span>
                                               </button>
                                             </div>
                                           )}
@@ -15025,28 +15105,8 @@ export default function AdminPanel({
                                           <button
                                             type="button"
                                             disabled={processingBillId !== null}
-                                            onClick={async () => {
-                                              setProcessingBillId(b.id);
-                                              const success =
-                                                await onPaySppManual(b.id);
-                                              setProcessingBillId(null);
-                                              if (success) {
-                                                onRefresh();
-                                                setReceiptToPrint({
-                                                  type: "spp",
-                                                  detail: {
-                                                    ...b,
-                                                    status: "paid",
-                                                    paidAt: new Date().toISOString(),
-                                                    paymentMethod: "Manual Teller (Sekolah)",
-                                                    orderId: (typeof success === 'object' && success?.orderId) ? success.orderId : `ORD-MANUAL-${Date.now()}`,
-                                                  },
-                                                  student: selectedStudent,
-                                                });
-                                                setPrintId(
-                                                  "print-receipt-section",
-                                                );
-                                              }
+                                            onClick={() => {
+                                              handleInstantPaySppManual(b, selectedStudent);
                                             }}
                                             className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[9px] uppercase tracking-wider rounded transition-all cursor-pointer"
                                           >
@@ -20443,8 +20503,8 @@ export default function AdminPanel({
                   {/* Ringkasan Status Keuangan Siswa & QR Code NIS */}
                   <ReceiptFinancialFooter
                     student={receiptToPrint.student}
-                    bills={bills}
-                    miscBills={miscBills}
+                    bills={billsByStudentId.get(receiptToPrint.student.id) || []}
+                    miscBills={miscBillsByStudentId.get(receiptToPrint.student.id) || []}
                     allStudents={students}
                     currentReceipt={receiptToPrint}
                     format="thermal"
@@ -20781,8 +20841,8 @@ export default function AdminPanel({
                   {/* Ringkasan Status Keuangan Siswa & QR Code NIS */}
                   <ReceiptFinancialFooter
                     student={receiptToPrint.student}
-                    bills={bills}
-                    miscBills={miscBills}
+                    bills={billsByStudentId.get(receiptToPrint.student.id) || []}
+                    miscBills={miscBillsByStudentId.get(receiptToPrint.student.id) || []}
                     allStudents={students}
                     currentReceipt={receiptToPrint}
                     format="standard"

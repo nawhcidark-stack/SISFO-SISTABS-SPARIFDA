@@ -11723,10 +11723,8 @@ async function startServer() {
     }
 
     saveState();
-    await Promise.all([
-      persistEntity("students", student),
-      persistEntity("savingsTransactions", transaction)
-    ]);
+    persistEntity("students", student).catch(err => console.error("Error persisting student savings to MySQL:", err));
+    persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting savings tx to MySQL:", err));
     res.json({ success: true, student, transaction });
   });
 
@@ -14983,12 +14981,15 @@ Petunjuk Ekstraksi:
   // POST generate Midtrans Snap Token for Koperasi POS checkout
   app.post("/api/koperasi/midtrans-snap", async (req, res) => {
     await ensureKoperasiHydrated();
-    try {
-      const mysqlCfg = await getConfigFromMysql("midtransConfig");
-      if (mysqlCfg && typeof mysqlCfg === "object") {
-        Object.assign(midtransConfig, mysqlCfg);
-      }
-    } catch (_) {}
+    if (!midtransConfig.serverKey && !midtransConfig.clientKey) {
+      getConfigFromMysql("midtransConfig")
+        .then((mysqlCfg) => {
+          if (mysqlCfg && typeof mysqlCfg === "object") {
+            Object.assign(midtransConfig, mysqlCfg);
+          }
+        })
+        .catch(() => {});
+    }
 
     if (midtransConfig.isDisabled) {
       return res.status(400).json({
@@ -15363,7 +15364,7 @@ Petunjuk Ekstraksi:
     treasurerTransactions.push(newTreasurerTx);
     saveState();
     persistEntity("treasurerTransactions", newTreasurerTx).catch(() => {});
-    await persistKoperasiData();
+    persistKoperasiData().catch(() => {});
 
     res.json({
       success: true,

@@ -68,15 +68,11 @@ export default function MidtransPayModal({
               body: JSON.stringify({ orderId, paymentType: result?.payment_type || 'Midtrans Snap' })
             })
               .then(() => {
-                setTimeout(() => {
-                  onSuccess();
-                }, 1200);
+                onSuccess();
               })
               .catch((err) => {
                 console.error('Local verification sync failed:', err);
-                setTimeout(() => {
-                  onSuccess();
-                }, 1200);
+                onSuccess();
               });
           },
           onPending: function (result: any) {
@@ -188,9 +184,7 @@ export default function MidtransPayModal({
         throw new Error(d.error || 'Gagal memproses pembayaran');
       }
       setStatus('success');
-      setTimeout(() => {
-        onSuccess();
-      }, 1000);
+      onSuccess();
     } catch (err: any) {
       console.error(err);
       setStatus('error');

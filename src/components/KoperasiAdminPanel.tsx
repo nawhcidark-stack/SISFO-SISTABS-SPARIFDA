@@ -628,9 +628,18 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
 
       if (data.sale) {
         playScannerBeep(true);
-        setReceiptSale(data.sale);
+        const createdSale: KoperasiSaleTransaction = data.sale;
+        setSales(prev => [createdSale, ...prev]);
+        setProducts(prev =>
+          prev.map(p => {
+            const soldItem = createdSale.items.find(it => it.productId === p.id);
+            if (!soldItem || p.isNonStock) return p;
+            return { ...p, stock: Math.max(0, (Number(p.stock) || 0) - soldItem.qty) };
+          })
+        );
+        setReceiptSale(createdSale);
         if (autoPrintOnCheckout) {
-          printKoperasiReceiptInstant(data.sale, {
+          printKoperasiReceiptInstant(createdSale, {
             format: receiptFormat,
             schoolName: schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN",
             schoolAddress: schoolIdentity?.address || 'Jl. Raya Pandaan, Kab. Pasuruan, Jawa Timur'
@@ -643,12 +652,14 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
         setTeacherSearch('');
         setGeneralBuyerName('');
         setGeneralBuyerClass('');
-        await loadKoperasiData();
-        if (onRefreshTreasurerTransactions) onRefreshTreasurerTransactions();
         showMessage(
           'success',
-          `Transaksi ${data.sale.invoiceNumber} berhasil! Keuangan (Rp ${data.sale.totalAmount.toLocaleString('id-ID')}) otomatis tercatat pada Pembukuan BKU Bendahara.`
+          `Transaksi ${createdSale.invoiceNumber} berhasil! Keuangan (Rp ${createdSale.totalAmount.toLocaleString('id-ID')}) otomatis tercatat pada Pembukuan BKU Bendahara.`
         );
+        setTimeout(() => {
+          loadKoperasiData();
+          if (onRefreshTreasurerTransactions) onRefreshTreasurerTransactions();
+        }, 150);
       }
     } catch (err: any) {
       showMessage('error', err?.message || 'Terjadi kesalahan jaringan saat memproses transaksi.');

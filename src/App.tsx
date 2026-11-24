@@ -20,6 +20,8 @@ import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
 import PWAInstallButton from './components/PWAInstallButton';
+import PushNotificationToggleBanner from './components/PushNotificationToggleBanner';
+import { isNotificationForAccount, isFinancialPushNotification, triggerBrowserAndPwaPushNotification } from './utils/pwaPushNotifications';
 import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar, BookOpen, ShieldAlert, Megaphone, Loader2 } from 'lucide-react';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from './utils/notificationUtils';
 import AcademicYearDropdown from './components/AcademicYearDropdown';
@@ -1098,19 +1100,11 @@ export default function App() {
         const currentRole = roleRef.current;
         const activeStud = currentStudentRef.current;
 
-        const isBKNotif = rawNotification.id.includes('-scl-') || rawNotification.id.includes('-bk-') || rawNotification.id.includes('-sil-') || rawNotification.id.includes('-sdl-') ||
-                          rawNotification.title.toLowerCase().includes('bimbingan') || rawNotification.title.toLowerCase().includes('konseling') ||
-                          (rawNotification.message || '').toLowerCase().includes('bimbingan') || (rawNotification.message || '').toLowerCase().includes('konseling');
-
-        // Target audience check for student role
-        if (currentRole === 'student') {
-          if (isBKNotif && (!activeStud || rawNotification.studentId !== activeStud.id)) {
-            // Do NOT notify or pop up toast to a student who is NOT the target of this BK counseling session
-            return;
-          }
-          if (rawNotification.studentId && activeStud && rawNotification.studentId !== activeStud.id) {
-            return;
-          }
+        // Strictly filter notification by account:
+        // - Student A ONLY receives Student A's Lunas/Tabungan/BK notifications + Broadcast Tagihan Terbit
+        // - Student A NEVER receives Student B's Lunas/Tabungan notifications
+        if (!isNotificationForAccount(rawNotification, currentRole, activeStud)) {
+          return;
         }
 
         // Push to top of notifications array
@@ -1126,6 +1120,13 @@ export default function App() {
         
         // Play notification ding chime!
         triggerBeep();
+
+        // Trigger native Browser & Installed PWA Push Notification (especially for SPP, Tabungan, Pembayaran Lain-lain: Tagihan Terbit & Lunas)
+        if (isFinancialPushNotification(rawNotification) || currentRole === 'student') {
+          triggerBrowserAndPwaPushNotification(rawNotification, {
+            schoolLogo: schoolIdentity?.logo
+          }).catch(() => {});
+        }
 
         // If Midtrans payment modal is open and we receive a success notification, auto-close it after a short delay
         if (isPayModalOpenRef.current && rawNotification.type === 'payment') {
@@ -2204,6 +2205,13 @@ export default function App() {
 
               {/* Toolbar & Filter */}
               <div className="p-4 border-b border-slate-100 flex flex-col gap-2.5 bg-white">
+                <PushNotificationToggleBanner
+                  variant="card"
+                  accountName={role === 'student' ? currentStudent?.name : undefined}
+                  studentId={role === 'student' ? currentStudent?.id : undefined}
+                  schoolLogo={schoolIdentity?.logo}
+                />
+
                 <div className="relative">
                   <input
                     type="text"
@@ -2221,18 +2229,9 @@ export default function App() {
 
                 {/* Category Filter Tabs */}
                 {(() => {
-                  const roleFilteredNotifs = globalNotifications.filter(n => {
-                    if (role === 'student') {
-                      const isBKNotif = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
-                                        n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
-                                        (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
-                      if (isBKNotif) {
-                        return Boolean(currentStudent && n.studentId === currentStudent.id);
-                      }
-                      return !n.studentId || (currentStudent && n.studentId === currentStudent.id);
-                    }
-                    return true;
-                  });
+                  const roleFilteredNotifs = globalNotifications.filter(n =>
+                    isNotificationForAccount(n, role, currentStudent)
+                  );
 
                   const counts = getCategoryCounts(roleFilteredNotifs, notifSearchQuery);
 
@@ -2269,18 +2268,9 @@ export default function App() {
                   <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-50">
                     <span className="text-slate-500 font-semibold">Total: {
                       (() => {
-                        const roleFilteredNotifs = globalNotifications.filter(n => {
-                          if (role === 'student') {
-                            const isBKNotif = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
-                                              n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
-                                              (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
-                            if (isBKNotif) {
-                              return Boolean(currentStudent && n.studentId === currentStudent.id);
-                            }
-                            return !n.studentId || (currentStudent && n.studentId === currentStudent.id);
-                          }
-                          return true;
-                        });
+                        const roleFilteredNotifs = globalNotifications.filter(n =>
+                          isNotificationForAccount(n, role, currentStudent)
+                        );
                         return filterNotificationsByCategory(roleFilteredNotifs, activeNotifCategory, notifSearchQuery).length;
                       })()
                     } pesan</span>
@@ -2297,18 +2287,9 @@ export default function App() {
               {/* Message Feed */}
               <div className="flex-grow overflow-y-auto p-4 flex flex-col gap-3 min-h-0">
                 {(() => {
-                  const roleFilteredNotifs = globalNotifications.filter(n => {
-                    if (role === 'student') {
-                      const isBKNotif = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
-                                        n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
-                                        (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
-                      if (isBKNotif) {
-                        return Boolean(currentStudent && n.studentId === currentStudent.id);
-                      }
-                      return !n.studentId || (currentStudent && n.studentId === currentStudent.id);
-                    }
-                    return true;
-                  });
+                  const roleFilteredNotifs = globalNotifications.filter(n =>
+                    isNotificationForAccount(n, role, currentStudent)
+                  );
 
                   const filtered = filterNotificationsByCategory(roleFilteredNotifs, activeNotifCategory, notifSearchQuery);
 
@@ -2857,6 +2838,14 @@ export default function App() {
             {/* PWA Install Button */}
             <PWAInstallButton variant="pill" label="Pasang Aplikasi" />
 
+            {/* Browser & PWA Push Notification Toggle */}
+            <PushNotificationToggleBanner
+              variant="header"
+              accountName={role === 'student' ? currentStudent?.name : undefined}
+              studentId={role === 'student' ? currentStudent?.id : undefined}
+              schoolLogo={schoolIdentity?.logo}
+            />
+
             {/* Live UTC time converted to WIB */}
             <LiveClockBadge />
 
@@ -2958,8 +2947,9 @@ export default function App() {
                 id="btn-trigger-notification-log"
                 onClick={() => {
                   setIsNotifHistoryOpen(true);
-                  if (globalNotifications.length > 0) {
-                    const allIds = globalNotifications.map(n => n.id);
+                  const accountNotifs = globalNotifications.filter(n => isNotificationForAccount(n, role, currentStudent));
+                  if (accountNotifs.length > 0) {
+                    const allIds = accountNotifs.map(n => n.id);
                     setReadNotifIds(prev => {
                       const merged = Array.from(new Set([...prev, ...allIds]));
                       localStorage.setItem('school_read_notif_ids', JSON.stringify(merged));
@@ -2972,9 +2962,9 @@ export default function App() {
               >
                 <span className="relative flex h-4 w-4 items-center justify-center shrink-0">
                   <Bell size={13} className="animate-pulse text-indigo-600" />
-                  {globalNotifications.filter(n => !readNotifIds.includes(n.id)).length > 0 && (
+                  {globalNotifications.filter(n => isNotificationForAccount(n, role, currentStudent) && !readNotifIds.includes(n.id)).length > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-650 bg-rose-600 text-[8px] font-extrabold text-white leading-none animate-pulse">
-                      {globalNotifications.filter(n => !readNotifIds.includes(n.id)).length}
+                      {globalNotifications.filter(n => isNotificationForAccount(n, role, currentStudent) && !readNotifIds.includes(n.id)).length}
                     </span>
                   )}
                 </span>
@@ -3054,7 +3044,7 @@ export default function App() {
             isLoginLocked={true}
             schoolIdentity={schoolIdentity}
             attendanceLogs={attendanceList.filter(l => l.studentId === currentStudent?.id)}
-            notifications={globalNotifications}
+            notifications={globalNotifications.filter(n => isNotificationForAccount(n, 'student', currentStudent))}
             onLogout={handleLogout}
             midtransStatus={sysStatus}
             miscBills={periodicMiscBills}

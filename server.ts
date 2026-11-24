@@ -9483,13 +9483,14 @@ async function startServer() {
 
   // Manual trigger broadcast notification
   app.post("/api/notifications/broadcast", (req, res) => {
-    const { title, message, type, category } = req.body;
+    const { title, message, type, category, studentId } = req.body;
     const notif: RealtimeNotification = {
-      id: `notif-${Date.now()}`,
-      title: title || "Pemberitahuan Sekolah",
-      message: message || "Tidak ada pesan",
-      type: type || "info",
-      category: category || "admin",
+      id: `notif-bill-pub-${Date.now()}`,
+      studentId: studentId ? String(studentId).trim() : undefined,
+      title: title || "Tagihan Pembayaran Terbit 📢",
+      message: message || "Tagihan pembayaran baru telah diterbitkan.",
+      type: type || "payment",
+      category: category || "pembayaran",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notif);
@@ -10462,18 +10463,28 @@ async function startServer() {
           };
           miscBills.push(bill);
           newBills.push(bill);
-
-          const notification: RealtimeNotification = {
-            id: `notif-misc-${timestampStr}-${sIdx}-${mIdx}`,
-            studentId: s.id,
-            title: "Tagihan Bulanan Baru",
-            message: `Telah terbit tagihan bulanan baru "${fullTitle}" (${m}) sebesar Rp ${Number(amount).toLocaleString("id-ID")}.`,
-            type: "payment",
-            createdAt: new Date().toISOString()
-          };
-          broadcastNotification(notification);
         });
       });
+
+      const targetLabel =
+        targetType === "single" && targets[0]
+          ? `Siswa ${targets[0].name} (Kelas ${targets[0].class})`
+          : targetType === "class"
+          ? `Kelas ${targetClass || targetValue}`
+          : targetType === "grade"
+          ? `Tingkat Kelas ${targetValue}`
+          : "Seluruh Siswa";
+
+      // Tagihan Terbit: Notifikasi disiarkan untuk semuanya
+      const notification: RealtimeNotification = {
+        id: `notif-misc-pub-${timestampStr}`,
+        title: `Tagihan Pembayaran Lain-lain Terbit 📢`,
+        message: `Telah terbit tagihan bulanan baru "${title.trim()}" (${monthList.join(", ")}) sebesar Rp ${Number(amount).toLocaleString("id-ID")} per bulan (${targetLabel}). Silakan cek menu Tagihan Lain-lain.`,
+        type: "payment",
+        category: "pembayaran",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
     } else {
       targets.forEach((s, idx) => {
         const bill: MiscBill = {
@@ -10488,17 +10499,27 @@ async function startServer() {
         };
         miscBills.push(bill);
         newBills.push(bill);
-
-        const notification: RealtimeNotification = {
-          id: `notif-misc-${timestampStr}-${idx}`,
-          studentId: s.id,
-          title: "Tagihan Pembayaran Baru",
-          message: `Telah terbit tagihan baru "${title.trim()}" sebesar Rp ${Number(amount).toLocaleString("id-ID")}.`,
-          type: "payment",
-          createdAt: new Date().toISOString()
-        };
-        broadcastNotification(notification);
       });
+
+      const targetLabel =
+        targetType === "single" && targets[0]
+          ? `Siswa ${targets[0].name} (Kelas ${targets[0].class})`
+          : targetType === "class"
+          ? `Kelas ${targetClass || targetValue}`
+          : targetType === "grade"
+          ? `Tingkat Kelas ${targetValue}`
+          : "Seluruh Siswa";
+
+      // Tagihan Terbit: Notifikasi disiarkan untuk semuanya
+      const notification: RealtimeNotification = {
+        id: `notif-misc-pub-${timestampStr}`,
+        title: `Tagihan Pembayaran Lain-lain Terbit 📢`,
+        message: `Telah terbit tagihan pembayaran baru "${title.trim()}" sebesar Rp ${Number(amount).toLocaleString("id-ID")} (${targetLabel}). Silakan cek menu Tagihan Lain-lain.`,
+        type: "payment",
+        category: "pembayaran",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
     }
 
     saveState();
@@ -10698,13 +10719,14 @@ async function startServer() {
     // Do not push to treasurerTransactions to avoid double counting under Operasional
     // treasurerTransactions.push(newTx);
 
-    // Broadcast SSE notification
+    // Broadcast SSE notification (Khusus akun siswa yang bersangkutan)
     const notification: RealtimeNotification = {
       id: `notif-misc-paid-${Date.now()}`,
       studentId: bill.studentId,
-      title: `Pembayaran ${bill.title} Lunas`,
-      message: `Pembayaran ${bill.title} ${student?.name || ""} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah DIVERIFIKASI oleh Admin Sekolah.`,
-      type: "success",
+      title: `Pembayaran Lain-lain Lunas ✅ (${bill.title})`,
+      message: `Pembayaran ${bill.title} a.n. ${student?.name || "Siswa"} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah LUNAS diverifikasi oleh Admin Sekolah.`,
+      type: "payment",
+      category: "pembayaran",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notification);
@@ -10748,13 +10770,14 @@ async function startServer() {
       bill.paymentMethod = "Manual Teller (Sekolah)";
       bill.orderId = `MISC-MANUAL-BULK-${batchTimestamp}-${idx + 1}`;
 
-      // Broadcast SSE notification
+      // Broadcast SSE notification (Khusus akun siswa yang bersangkutan)
       const notification: RealtimeNotification = {
         id: `notif-misc-paid-${batchTimestamp}-${idx + 1}`,
         studentId: bill.studentId,
-        title: `Pembayaran ${bill.title} Lunas`,
-        message: `Pembayaran ${bill.title} ${student?.name || ""} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah DIVERIFIKASI oleh Admin Sekolah (Massal).`,
-        type: "success",
+        title: `Pembayaran Lain-lain Lunas ✅ (${bill.title})`,
+        message: `Pembayaran ${bill.title} a.n. ${student?.name || "Siswa"} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah LUNAS diverifikasi oleh Admin Sekolah.`,
+        type: "payment",
+        category: "pembayaran",
         createdAt: nowISO
       };
       broadcastNotification(notification);
@@ -10956,6 +10979,18 @@ async function startServer() {
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending auto payment WA:", err));
     }
 
+    // Broadcast SSE notification khusus untuk akun siswa tersebut
+    const notification: RealtimeNotification = {
+      id: `notif-misc-paid-sav-${Date.now()}`,
+      studentId: student.id,
+      title: `Pembayaran Lain-lain Lunas ✅ (${bill.title})`,
+      message: `Pembayaran ${bill.title} a.n. ${student.name} sebesar Rp ${bill.amount.toLocaleString("id-ID")} via Potong Tabungan telah LUNAS. Sisa saldo tabungan: Rp ${student.savingsBalance.toLocaleString("id-ID")}.`,
+      type: "payment",
+      category: "pembayaran",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
     saveState();
     persistEntity("miscBills", bill).catch(err => console.error("Error persisting paid miscBill to MySQL:", err));
     persistEntity("students", student).catch(err => console.error("Error persisting student savings to MySQL:", err));
@@ -11050,13 +11085,14 @@ async function startServer() {
     bill.paymentMethod = "Manual Teller (Sekolah)";
     bill.orderId = `ORD-MANUAL-${Date.now()}`;
 
-    // Broadcast SSE notification
+    // Broadcast SSE notification khusus akun siswa yang bersangkutan
     const notification: RealtimeNotification = {
       id: `notif-spp-${Date.now()}`,
       studentId: bill.studentId,
-      title: "Pembayaran SPP Lunas (Manual)",
-      message: `Pembayaran SPP ${student?.name || ""} bulan ${bill.month} ${bill.year} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah DIVERIFIKASI oleh Admin Sekolah.`,
-      type: "success",
+      title: `Pembayaran SPP Lunas ✅ (${bill.month} ${bill.year})`,
+      message: `Pembayaran SPP ${student?.name || ""} bulan ${bill.month} ${bill.year} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah LUNAS diverifikasi oleh Admin Sekolah.`,
+      type: "payment",
+      category: "pembayaran",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notification);
@@ -11122,13 +11158,14 @@ async function startServer() {
       const totalAmount = paidBills.reduce((sum, b) => sum + b.amount, 0);
       const monthList = paidBills.map(b => `${b.month} ${b.year}`).join(", ");
 
-      // Broadcast single consolidated SSE notification
+      // Broadcast single consolidated SSE notification khusus akun siswa yang bersangkutan
       const notification: RealtimeNotification = {
         id: `notif-spp-bulk-${Date.now()}`,
         studentId: firstBill.studentId,
-        title: "Pembayaran Paket SPP Lunas (Kolektif)",
-        message: `Pembayaran ${paidBills.length} bulan SPP (${monthList}) a.n. ${student?.name || ""} total Rp ${totalAmount.toLocaleString("id-ID")} telah DIVERIFIKASI oleh Teller Sekolah.`,
-        type: "success",
+        title: `Pembayaran SPP Lunas ✅ (${paidBills.length} Bulan)`,
+        message: `Pembayaran ${paidBills.length} bulan SPP (${monthList}) a.n. ${student?.name || ""} total Rp ${totalAmount.toLocaleString("id-ID")} telah LUNAS diverifikasi oleh Teller Sekolah.`,
+        type: "payment",
+        category: "pembayaran",
         createdAt: nowIso
       };
       broadcastNotification(notification);
@@ -11277,16 +11314,40 @@ async function startServer() {
     if (executedItems.length > 0) {
       const totalAmount = executedItems.reduce((sum, item) => sum + item.amount, 0);
 
-      // Broadcast single consolidated notification
-      const notification: RealtimeNotification = {
-        id: `notif-cart-bulk-${Date.now()}`,
-        studentId: "",
-        title: "Pembayaran Keranjang Transaksi Berhasil",
-        message: `Transaksi kolektif teller (${executedItems.length} item) total Rp ${totalAmount.toLocaleString("id-ID")} telah DIVERIFIKASI LUNAS.`,
-        type: "success",
-        createdAt: nowIso
-      };
-      broadcastNotification(notification);
+      // Broadcast per-student notification so ONLY the specific student(s) receive their Lunas notification
+      const itemsByStudent = new Map<string, typeof executedItems>();
+      for (const item of executedItems) {
+        const sid = item.studentId ? String(item.studentId).trim() : "";
+        if (!sid) continue;
+        const list = itemsByStudent.get(sid) || [];
+        list.push(item);
+        itemsByStudent.set(sid, list);
+      }
+
+      itemsByStudent.forEach((studentItems, sid) => {
+        const st = students.find(s => s.id === sid);
+        const stTotal = studentItems.reduce((sum, it) => sum + it.amount, 0);
+        const hasSpp = studentItems.some(it => it.type === "spp");
+        const hasMisc = studentItems.some(it => it.type === "misc");
+        const hasSav = studentItems.some(it => it.type === "savings_deposit");
+        const typeLabels: string[] = [];
+        if (hasSpp) typeLabels.push("SPP");
+        if (hasMisc) typeLabels.push("Pembayaran Lain-lain");
+        if (hasSav) typeLabels.push("Tabungan");
+        const titleLabel = typeLabels.length > 0 ? typeLabels.join(" & ") : "Tagihan";
+        const itemNames = studentItems.map(it => it.name).join(", ");
+
+        const notification: RealtimeNotification = {
+          id: `notif-cart-bulk-${Date.now()}-${sid}`,
+          studentId: sid,
+          title: `Pembayaran ${titleLabel} Lunas ✅`,
+          message: `Pembayaran (${itemNames}) a.n. ${st?.name || "Siswa"} total Rp ${stTotal.toLocaleString("id-ID")} telah LUNAS diverifikasi.`,
+          type: "payment",
+          category: "pembayaran",
+          createdAt: nowIso
+        };
+        broadcastNotification(notification);
+      });
 
       saveState();
       if (paidSppBills.length > 0) {
@@ -11613,13 +11674,14 @@ async function startServer() {
       student.savingsBalance -= transaction.amount;
       transaction.status = "success";
 
-      // Broadcast success notification
+      // Broadcast success notification khusus akun siswa yang bersangkutan
       const notification: RealtimeNotification = {
         id: `notif-sav-appr-${Date.now()}`,
         studentId: student.id,
-        title: "Penarikan Tabungan Disetujui",
+        title: "Penarikan Tabungan Disetujui ✅",
         message: `Pengajuan tarik tunai Rp ${transaction.amount.toLocaleString("id-ID")} untuk ${student.name} telah disetujui admin. Saldo saat ini: Rp ${student.savingsBalance.toLocaleString("id-ID")}.`,
-        type: "success",
+        type: "payment",
+        category: "pembayaran",
         createdAt: new Date().toISOString()
       };
       broadcastNotification(notification);
@@ -11697,13 +11759,14 @@ async function startServer() {
     };
     savingsTransactions.push(transaction);
 
-    // Broadcast SSE notification
+    // Broadcast SSE notification khusus akun siswa yang bersangkutan
     const notification: RealtimeNotification = {
       id: `notif-sav-${Date.now()}`,
       studentId,
-      title: type === "deposit" ? "Setoran Tabungan Berhasil" : "Tenggat Tarik Tabungan",
-      message: `Operasi tabungan ${type === "deposit" ? "Setor" : "Tarik"} sebesar Rp ${valAmount.toLocaleString("id-ID")} untuk ${student.name} telah selesai. Saldo saat ini: Rp ${student.savingsBalance.toLocaleString("id-ID")}.`,
-      type: type === "deposit" ? "success" : "warning",
+      title: type === "deposit" ? "Setoran Tabungan Lunas / Berhasil ✅" : "Penarikan Tabungan Berhasil ✅",
+      message: `Transaksi tabungan (${type === "deposit" ? "Setoran" : "Penarikan"}) sebesar Rp ${valAmount.toLocaleString("id-ID")} a.n. ${student.name} telah berhasil dicatat. Saldo tabungan saat ini: Rp ${student.savingsBalance.toLocaleString("id-ID")}.`,
+      type: "payment",
+      category: "pembayaran",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notification);
@@ -12595,10 +12658,13 @@ async function startServer() {
     }
 
     const notification: RealtimeNotification = {
-      id: `notif-promote-std-${Date.now()}`,
-      title: "Kenaikan Kelas Selesai",
+      id: `notif-spp-pub-promote-${Date.now()}`,
+      title: shouldGenerate
+        ? `Tagihan SPP Terbit (Tahun Ajaran ${nextStartYear}/${nextStartYear + 1}) 📢`
+        : "Kenaikan Kelas Selesai",
       message: sseMsg,
-      type: "success",
+      type: "payment",
+      category: "pembayaran",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notification);
@@ -12738,10 +12804,11 @@ async function startServer() {
     }
 
     const notification: RealtimeNotification = {
-      id: `notif-new-year-${Date.now()}`,
-      title: `Tahun Ajaran Baru ${yearNum}/${yearNum + 1} Aktif`,
+      id: `notif-spp-pub-year-${Date.now()}`,
+      title: `Tagihan SPP Terbit (Tahun Ajaran ${yearNum}/${yearNum + 1}) 📢`,
       message: sseMsg,
-      type: "success",
+      type: "payment",
+      category: "pembayaran",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notification);

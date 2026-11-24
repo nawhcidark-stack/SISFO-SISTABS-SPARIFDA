@@ -1338,10 +1338,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             }
 
             broadcastNotification({
-              id: `notif-${Date.now()}`,
-              title: "Pembayaran SPP Lunas ✅",
-              message: `Pembayaran SPP ${bill.month} oleh ${student?.name || "Siswa"} sebesar Rp ${bill.amount.toLocaleString("id-ID")} berhasil diverifikasi.`,
-              type: "success",
+              id: `notif-spp-mt-${Date.now()}-${bill.studentId}`,
+              studentId: bill.studentId,
+              title: `Pembayaran SPP Lunas ✅ (${bill.month} ${bill.year})`,
+              message: `Pembayaran SPP ${bill.month} ${bill.year} a.n. ${student?.name || "Siswa"} sebesar Rp ${bill.amount.toLocaleString("id-ID")} via ${actualPaymentType} telah LUNAS terverifikasi.`,
+              type: "payment",
+              category: "pembayaran",
               createdAt: new Date().toISOString()
             });
 
@@ -1437,6 +1439,16 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               persistEntity("miscBills", bill).catch(err => console.error("Error persisting settled Misc to MySQL:", err));
             }
 
+            broadcastNotification({
+              id: `notif-misc-paid-mt-${Date.now()}-${bill.studentId}`,
+              studentId: bill.studentId,
+              title: `Pembayaran Lain-lain Lunas ✅ (${bill.title})`,
+              message: `Pembayaran ${bill.title} a.n. ${student?.name || "Siswa"} sebesar Rp ${bill.amount.toLocaleString("id-ID")} via ${actualPaymentType} telah LUNAS terverifikasi.`,
+              type: "payment",
+              category: "pembayaran",
+              createdAt: new Date().toISOString()
+            });
+
             detailMessage = `Tagihan Non-SPP "${bill.title}" berhasil di-settle LUNAS.`;
           } else {
             actionTaken = true;
@@ -1496,6 +1508,16 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               persistEntity("students", student).catch(err => console.error("Error persisting student savings balance to MySQL:", err));
             }
           }
+
+          broadcastNotification({
+            id: `notif-sav-mt-${Date.now()}-${trans.studentId}`,
+            studentId: trans.studentId,
+            title: "Setoran Tabungan Lunas ✅",
+            message: `Setoran tabungan a.n. ${student?.name || "Siswa"} sebesar Rp ${trans.amount.toLocaleString("id-ID")} via ${actualPaymentType} telah LUNAS. Saldo tabungan: Rp ${(student?.savingsBalance || 0).toLocaleString("id-ID")}.`,
+            type: "payment",
+            category: "pembayaran",
+            createdAt: new Date().toISOString()
+          });
 
           detailMessage = `Setoran tabungan sebesar Rp ${trans.amount.toLocaleString("id-ID")} berhasil masuk ke saldo siswa.`;
         } else if (isExpired && trans.status === "pending") {
@@ -1588,14 +1610,17 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               settlementTime: resolvedPaidAt
             });
 
-            broadcastNotification({
-              id: `notif-cart-${Date.now()}`,
-              title: "Pembayaran Keranjang Lunas ✅",
-              message: `Pembayaran keranjang (${matchedSpp.length} SPP, ${matchedMisc.length} Non-SPP, ${matchedSavings.length} Tabungan) oleh ${student?.name || "Siswa"} sebesar Rp ${totalCartAmount.toLocaleString("id-ID")} berhasil diverifikasi.`,
-              type: "success",
-              studentId: student?.id,
-              createdAt: new Date().toISOString()
-            });
+            if (student?.id) {
+              broadcastNotification({
+                id: `notif-cart-${Date.now()}-${student.id}`,
+                title: "Pembayaran Keranjang Lunas ✅",
+                message: `Pembayaran keranjang (${matchedSpp.length} SPP, ${matchedMisc.length} Lain-lain, ${matchedSavings.length} Tabungan) a.n. ${student?.name || "Siswa"} sebesar Rp ${totalCartAmount.toLocaleString("id-ID")} berhasil diverifikasi LUNAS.`,
+                type: "payment",
+                category: "pembayaran",
+                studentId: student.id,
+                createdAt: new Date().toISOString()
+              });
+            }
 
             if (student?.phone) {
               sendWhatsappNotification(
@@ -1703,10 +1728,11 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               }
 
               broadcastNotification({
-                id: `notif-cart-${Date.now()}`,
+                id: `notif-cart-${Date.now()}-${targetStudent.id}`,
                 title: "Pembayaran Keranjang Lunas ✅",
-                message: `Pembayaran ${alloc.category} oleh ${targetStudent.name} sebesar Rp ${grossAmt.toLocaleString("id-ID")} berhasil diverifikasi.`,
-                type: "success",
+                message: `Pembayaran ${alloc.category} a.n. ${targetStudent.name} sebesar Rp ${grossAmt.toLocaleString("id-ID")} berhasil diverifikasi LUNAS.`,
+                type: "payment",
+                category: "pembayaran",
                 studentId: targetStudent.id,
                 createdAt: new Date().toISOString()
               });
@@ -1908,6 +1934,15 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               persistEntity("treasurerTransactions", newKas).catch(() => {});
             }
           }
+          broadcastNotification({
+            id: `notif-spp-fb-${Date.now()}-${fallbackBill.studentId}`,
+            studentId: fallbackBill.studentId,
+            title: `Pembayaran SPP Lunas ✅ (${fallbackBill.month} ${fallbackBill.year})`,
+            message: `Pembayaran SPP ${fallbackBill.month} ${fallbackBill.year} a.n. ${student?.name || "Siswa"} sebesar Rp ${fallbackBill.amount.toLocaleString("id-ID")} via ${actualPaymentType} telah LUNAS terverifikasi.`,
+            type: "payment",
+            category: "pembayaran",
+            createdAt: new Date().toISOString()
+          });
           detailMessage = `Tagihan SPP ${fallbackBill.month} ${fallbackBill.year} (${student?.name || "Siswa"}) berhasil di-settle LUNAS.`;
         } else {
           actionTaken = true;
@@ -1948,6 +1983,15 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             if (persistEntity) {
               persistEntity("miscBills", fallbackMisc).catch(err => console.error("Error persisting settled fallback Misc:", err));
             }
+            broadcastNotification({
+              id: `notif-misc-paid-fb-${Date.now()}-${fallbackMisc.studentId}`,
+              studentId: fallbackMisc.studentId,
+              title: `Pembayaran Lain-lain Lunas ✅ (${fallbackMisc.title})`,
+              message: `Pembayaran ${fallbackMisc.title} a.n. ${student?.name || "Siswa"} sebesar Rp ${fallbackMisc.amount.toLocaleString("id-ID")} via ${actualPaymentType} telah LUNAS terverifikasi.`,
+              type: "payment",
+              category: "pembayaran",
+              createdAt: new Date().toISOString()
+            });
             detailMessage = `Tagihan Non-SPP "${fallbackMisc.title}" berhasil di-settle LUNAS.`;
           } else {
             actionTaken = true;
@@ -2323,10 +2367,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       saveState();
 
       broadcastNotification({
-        id: `auto-recon-${Date.now()}`,
+        id: `auto-recon-${Date.now()}-${studentId}`,
+        studentId,
         title: "Pembayaran Terverifikasi Lunas ✅",
-        message: `Status transaksi Midtrans siswa berhasil diverifikasi otomatis di latar belakang.`,
-        type: "success",
+        message: `Status transaksi Midtrans Anda berhasil diverifikasi otomatis LUNAS.`,
+        type: "payment",
+        category: "pembayaran",
         createdAt: new Date().toISOString()
       });
     } else if (state.attempts >= 3) {
@@ -5548,6 +5594,16 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           }
         }
 
+        broadcastNotification({
+          id: `notif-sav-manrec-${Date.now()}-${targetStudent.id}`,
+          studentId: targetStudent.id,
+          title: "Setoran Tabungan Lunas ✅",
+          message: `Setoran tabungan a.n. ${targetStudent.name} sebesar Rp ${netSavingsAmount.toLocaleString("id-ID")} telah LUNAS terverifikasi. Saldo tabungan: Rp ${targetStudent.savingsBalance.toLocaleString("id-ID")}.`,
+          type: "payment",
+          category: "pembayaran",
+          createdAt: new Date().toISOString()
+        });
+
         return res.json({
           success: true,
           message: adminFeeDeducted > 0
@@ -5611,6 +5667,16 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               await persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting SPP Kas to MySQL:", err));
             }
 
+            broadcastNotification({
+              id: `notif-spp-manrec-${Date.now()}-${targetStudent.id}`,
+              studentId: targetStudent.id,
+              title: `Pembayaran SPP Lunas ✅ (${bill.month} ${bill.year})`,
+              message: `Pembayaran SPP ${bill.month} ${bill.year} a.n. ${targetStudent.name} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah LUNAS terverifikasi.`,
+              type: "payment",
+              category: "pembayaran",
+              createdAt: new Date().toISOString()
+            });
+
             return res.json({
               success: true,
               message: `Tagihan SPP ${bill.month} ${bill.year} a.n ${targetStudent.name} berhasil dilunasi.`,
@@ -5666,6 +5732,16 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               await persistEntity("miscBills", mBill).catch(err => console.error("Error persisting Misc to MySQL:", err));
               await persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting Misc Kas to MySQL:", err));
             }
+
+            broadcastNotification({
+              id: `notif-misc-paid-manrec-${Date.now()}-${targetStudent.id}`,
+              studentId: targetStudent.id,
+              title: `Pembayaran Lain-lain Lunas ✅ (${mBill.title})`,
+              message: `Pembayaran ${mBill.title} a.n. ${targetStudent.name} sebesar Rp ${mBill.amount.toLocaleString("id-ID")} telah LUNAS terverifikasi.`,
+              type: "payment",
+              category: "pembayaran",
+              createdAt: new Date().toISOString()
+            });
 
             return res.json({
               success: true,
@@ -5734,6 +5810,18 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       if (persistEntity) {
         await persistEntity("students", targetStudent).catch(err => console.error("Error persisting student balance to MySQL:", err));
         await persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting Kas to MySQL:", err));
+      }
+
+      if (allocResult.reconciled) {
+        broadcastNotification({
+          id: `notif-auto-manrec-${Date.now()}-${targetStudent.id}`,
+          studentId: targetStudent.id,
+          title: `Pembayaran ${allocResult.category} Lunas ✅`,
+          message: `Pembayaran ${allocResult.itemsDetail.join(" + ")} a.n. ${targetStudent.name} sebesar Rp ${amountVal.toLocaleString("id-ID")} telah LUNAS terverifikasi.`,
+          type: "payment",
+          category: "pembayaran",
+          createdAt: new Date().toISOString()
+        });
       }
 
       return res.json({

@@ -27,6 +27,8 @@ import { SavingsPassbookModal } from './SavingsPassbookModal';
 import { Pagination } from './Pagination';
 import ReceiptFinancialFooter, { getStudentFinancialSummary } from './ReceiptFinancialFooter';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from '../utils/notificationUtils';
+import { isNotificationForAccount } from '../utils/pwaPushNotifications';
+import PushNotificationToggleBanner from './PushNotificationToggleBanner';
 import { OnlineExamStudentPortal } from './OnlineExamStudentPortal';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency
@@ -212,13 +214,13 @@ export default function StudentPanel({
   const [mobileLogFilter, setMobileLogFilter] = useState<'all' | 'savings' | 'spp'>('all');
 
   const isNotificationForThisStudent = (n: RealtimeNotification, studentId?: string) => {
-    const isBK = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
-                 n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
-                 (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
-    if (isBK) {
-      return Boolean(studentId && n.studentId === studentId);
-    }
-    return !n.studentId || n.studentId === studentId;
+    const targetStudent =
+      currentStudent && (!studentId || currentStudent.id === studentId)
+        ? currentStudent
+        : studentId
+        ? students.find(s => s.id === studentId) || { id: studentId }
+        : null;
+    return isNotificationForAccount(n, 'student', targetStudent);
   };
 
   // Helpers for Rapor matching WakaKurikulumPanel exactly
@@ -5873,7 +5875,17 @@ export default function StudentPanel({
                     </span>
                     Notifikasi Sekolah
                   </h3>
-                  <p className="text-slate-400 text-xs text-left">Pemberitahuan resmi iuran SPP, mutasi tabungan, KBM, bimbingan konseling (BK), dan informasi sekolah.</p>
+                  <p className="text-slate-400 text-xs text-left">Pemberitahuan resmi iuran SPP, mutasi tabungan, pembayaran lain-lain, KBM, bimbingan konseling (BK), dan informasi sekolah.</p>
+                </div>
+
+                {/* Pengaturan Push Notifikasi Browser & Aplikasi PWA */}
+                <div className="mb-3.5">
+                  <PushNotificationToggleBanner
+                    variant="card"
+                    accountName={currentStudent?.name}
+                    studentId={currentStudent?.id}
+                    schoolLogo={schoolIdentity?.logo}
+                  />
                 </div>
 
                 {/* Filter Cari Notifikasi */}

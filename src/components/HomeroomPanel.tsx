@@ -2499,6 +2499,12 @@ export default function HomeroomPanel({
   }, [currentTeacher.className]);
 
   useEffect(() => {
+    if (activeSubTab === 'record' || activeSubTab === 'history') {
+      fetchTeachingJournals();
+    }
+  }, [selectedDate, attendanceLogs.length, activeSubTab]);
+
+  useEffect(() => {
     if (activeSubTab === 'history') {
       fetchTeachingJournals();
     } else if (activeSubTab === 'perkembangan') {
@@ -3285,6 +3291,19 @@ export default function HomeroomPanel({
   const [showGradeSuccessModal, setShowGradeSuccessModal] = useState<boolean>(false);
   const [gradeSuccessSummary, setGradeSuccessSummary] = useState<{ className: string; subject: string; count: number } | null>(null);
 
+  const isHomeroomAttendanceRecorded = (log?: AttendanceLog) => {
+    if (!log) return false;
+    if (log.homeroomRecorded === false) return false;
+    if (
+      Array.isArray(log.subjectNotes) &&
+      log.subjectNotes.length > 0 &&
+      log.subjectNotes.every((sn: any) => sn && sn.homeroomRecorded === false)
+    ) {
+      return false;
+    }
+    return true;
+  };
+
   // Sync state when date changes or logs/students change
   useEffect(() => {
     const statusMap: Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }> = {};
@@ -3295,13 +3314,13 @@ export default function HomeroomPanel({
         (log) => (log.studentId === student.id || (student.nis && log.studentId === student.nis)) &&
           ((log.date || '').substring(0, 10) === normDate)
       );
-      if (existing) {
+      if (existing && isHomeroomAttendanceRecorded(existing)) {
         statusMap[student.id] = {
           status: existing.status,
           notes: existing.notes || ''
         };
       } else {
-        // default status is "Hadir"
+        // default status is "Hadir" when Wali Kelas has not recorded daily attendance yet
         statusMap[student.id] = {
           status: 'Hadir',
           notes: ''
@@ -3397,8 +3416,9 @@ export default function HomeroomPanel({
     }
   };
 
-  // Pre-calculate today's statistics
+  // Pre-calculate today's statistics (only counting Wali Kelas daily attendance records)
   const currentFilteredLogs = attendanceLogs.filter(l => {
+    if (!isHomeroomAttendanceRecorded(l)) return false;
     const logDate = l.date ? l.date.substring(0, 10) : '';
     if (logDate !== selectedDate) return false;
     return classStudents.some(s => 
@@ -3429,14 +3449,259 @@ export default function HomeroomPanel({
     };
   }, [dailyStatusMap, classStudents]);
 
-  // All time class stats
+  // All time class stats (only Wali Kelas daily attendance records)
   const classLogs = attendanceLogs.filter(l => 
+    isHomeroomAttendanceRecorded(l) &&
     classStudents.some(s => 
       s.id === l.studentId || 
       (s.nis && s.nis === l.studentId) || 
       (l.studentId && l.studentId.toLowerCase() === s.id.toLowerCase())
     )
   );
+
+  // Status Absensi Wali Kelas & Semua Guru Mapel yang Mengajar di Kelas Ini pada Tanggal Terpilih
+  const classTeacherAttendanceStatuses = useMemo(() => {
+    const normDate = (selectedDate || '').substring(0, 10);
+    const targetClassNorm = (currentTeacher.className || '').trim().toLowerCase();
+    const selectedDayName = getIndonesianDay(normDate);
+
+    // 1. Logs pada tanggal terpilih untuk siswa kelas ini (termasuk yang baru diisi guru mapel)
+    const rawDateClassLogs = attendanceLogs.filter(l => {
+      const logDate = l.date ? l.date.substring(0, 10) : '';
+      if (logDate !== normDate) return false;
+      return classStudents.some(s =>
+        s.id === l.studentId ||
+        (s.nis && s.nis === l.studentId) ||
+        (l.studentId && l.studentId.toLowerCase() === s.id.toLowerCase())
+      );
+    });
+
+    // 2. Jurnal KBM pada tanggal terpilih untuk kelas ini
+    const dateClassJournals = (allTeachingJournalsList || []).filter((j: any) => {
+      const jDate = (j.date || '').substring(0, 10);
+      const jClass = (j.className || '').trim().toLowerCase();
+      return jDate === normDate && jClass === targetClassNorm;
+    });
+
+    // Apakah Wali Kelas sudah mengisi Lembar Absensi Harian Kelas pada tanggal ini?
+    const isHomeroomDone = currentFilteredLogs.length > 0;
+
+    type SubjectTeacherStatusItem = {
+      key: string;
+      roleLabel: string;
+      subject: string;
+      teacherName: string;
+      scheduleDays: string[];
+      jamKeToday: string[];
+      isScheduledToday: boolean;
+      hasAttended: boolean;
+      isHomeroomRole?: boolean;
+    };
+
+    const subjectEntriesMap = new Map<string, {
+      subject: string;
+      teacherNames: Set<string>;
+      scheduleDays: Set<string>;
+      jamKeToday: Set<string>;
+    }>();
+
+    const isIgnoredActivity = (subRaw?: string) => {
+      if (!subRaw || !subRaw.trim()) return true;
+      const lower = subRaw.trim().toLowerCase();
+      return (
+        lower === 'upacara' ||
+        lower === 'upacara bendera' ||
+        lower === 'senam' ||
+        lower === 'apel' ||
+        lower === 'istirahat' ||
+        lower === 'bimbingan wali kelas'
+      );
+    };
+
+    const registerSubjectTeacher = (rawSubj?: string, rawTeacherName?: string, day?: string, jamKe?: string) => {
+      if (!rawSubj || isIgnoredActivity(rawSubj)) return;
+      const canonicalSubj = toMasterSubjectName(rawSubj.trim(), masterCurriculumSubjects);
+      const normKey = normalizeSubject(canonicalSubj).toLowerCase();
+      if (!normKey) return;
+
+      if (!subjectEntriesMap.has(normKey)) {
+        subjectEntriesMap.set(normKey, {
+          subject: canonicalSubj,
+          teacherNames: new Set<string>(),
+          scheduleDays: new Set<string>(),
+          jamKeToday: new Set<string>()
+        });
+      }
+      const entry = subjectEntriesMap.get(normKey)!;
+      if (rawTeacherName && rawTeacherName.trim()) {
+        entry.teacherNames.add(rawTeacherName.trim());
+      }
+      if (day && day.trim()) {
+        entry.scheduleDays.add(day.trim());
+        if (day.trim().toLowerCase() === selectedDayName.toLowerCase() && jamKe && jamKe.trim()) {
+          entry.jamKeToday.add(jamKe.trim());
+        }
+      }
+    };
+
+    // A. Ambil semua guru yang mengajar di kelas ini dari Jadwal Pelajaran (Waka Kurikulum)
+    (classSchedules || []).forEach(sched => {
+      if ((sched.className || '').trim().toLowerCase() === targetClassNorm) {
+        registerSubjectTeacher(sched.subject, sched.teacherName, sched.day, sched.jamKe);
+      }
+    });
+
+    // B. Jika ada guru mapel / wali kelas yang ditugaskan mengajar di kelas ini atau tercatat pada jurnal kelas ini
+    (allTeachingJournalsList || []).forEach((j: any) => {
+      if ((j.className || '').trim().toLowerCase() === targetClassNorm) {
+        registerSubjectTeacher(j.subject, j.teacherName);
+      }
+    });
+
+    rawDateClassLogs.forEach(l => {
+      if (Array.isArray(l.subjectNotes)) {
+        l.subjectNotes.forEach((sn: any) => {
+          registerSubjectTeacher(sn?.subject, sn?.teacherName);
+        });
+      }
+    });
+
+    // C. Lengkapi dari daftar Guru Mapel & Wali Kelas jika mapel di kelas ini belum ada di jadwal atau belum memiliki nama guru
+    const allTeachersPool = [
+      ...(subjectTeachers || []),
+      ...(homerooms || [])
+    ];
+
+    allTeachersPool.forEach((t: any) => {
+      if (!t) return;
+      const tName = (t.name || '').trim();
+      const tSubjects: string[] = [];
+      if (t.subject && typeof t.subject === 'string') tSubjects.push(t.subject);
+      if (Array.isArray(t.subjects)) tSubjects.push(...t.subjects);
+
+      // Cek apakah guru ini mengajar di kelas ini (via classSchedules, className, atau SEMUA KELAS)
+      const tClass = (t.className || '').trim().toLowerCase();
+      const teachesInThisClass =
+        tClass === targetClassNorm ||
+        tClass === 'semua kelas' ||
+        (Array.isArray(t.assignments) && t.assignments.some((a: any) => (a.className || '').trim().toLowerCase() === targetClassNorm));
+
+      if (teachesInThisClass) {
+        tSubjects.forEach(sub => registerSubjectTeacher(sub, tName));
+      }
+
+      // Isi nama guru jika mapelnya sudah terdaftar namun belum ada nama gurunya
+      tSubjects.forEach(sub => {
+        if (!sub || isIgnoredActivity(sub)) return;
+        const canonicalSubj = toMasterSubjectName(sub.trim(), masterCurriculumSubjects);
+        const normKey = normalizeSubject(canonicalSubj).toLowerCase();
+        const existingEntry = subjectEntriesMap.get(normKey);
+        if (existingEntry && existingEntry.teacherNames.size === 0 && tName) {
+          existingEntry.teacherNames.add(tName);
+        }
+      });
+    });
+
+    // D. Pastikan seluruh mata pelajaran kurikulum yang memiliki guru pengampu di sekolah ikut tampil jika belum ada di jadwal kelas
+    (masterCurriculumSubjects || []).forEach((sub: any) => {
+      const subName = typeof sub === 'string' ? sub : (sub?.name || '');
+      if (!subName || isIgnoredActivity(subName)) return;
+      const canonicalSubj = toMasterSubjectName(subName.trim(), masterCurriculumSubjects);
+      const normKey = normalizeSubject(canonicalSubj).toLowerCase();
+      if (!subjectEntriesMap.has(normKey)) {
+        // Cari guru yang mengampu mapel ini
+        const matchingTeachers = allTeachersPool.filter((t: any) => {
+          const subs: string[] = [];
+          if (t?.subject) subs.push(t.subject);
+          if (Array.isArray(t?.subjects)) subs.push(...t.subjects);
+          return subs.some(s => isSameSubject(s, canonicalSubj));
+        });
+        if (matchingTeachers.length > 0) {
+          registerSubjectTeacher(
+            canonicalSubj,
+            matchingTeachers.map((t: any) => t.name).filter(Boolean).join(', ')
+          );
+        }
+      }
+    });
+
+    // E. Evaluasi status Sudah/Belum absen pada selectedDate untuk masing-masing guru mapel
+    const subjectItems: SubjectTeacherStatusItem[] = Array.from(subjectEntriesMap.entries()).map(([normKey, info]) => {
+      const teacherList = Array.from(info.teacherNames);
+      const teacherDisplay = teacherList.length > 0 ? teacherList.join(', ') : 'Belum Ditentukan';
+      const scheduleDays = Array.from(info.scheduleDays);
+      const jamKeToday = Array.from(info.jamKeToday);
+      const isScheduledToday = scheduleDays.some(d => d.toLowerCase() === selectedDayName.toLowerCase());
+
+      // Cek apakah guru mapel sudah melakukan absensi pada tanggal terpilih (via subjectNotes atau teachingJournals)
+      const hasSubjectNoteOnDate = rawDateClassLogs.some(l =>
+        Array.isArray(l.subjectNotes) &&
+        l.subjectNotes.some((sn: any) => sn?.subject && isSameSubject(sn.subject, info.subject))
+      );
+
+      const hasJournalOnDate = dateClassJournals.some((j: any) =>
+        j?.subject && isSameSubject(j.subject, info.subject)
+      );
+
+      return {
+        key: `mapel-${normKey}`,
+        roleLabel: `Guru ${info.subject}`,
+        subject: info.subject,
+        teacherName: teacherDisplay,
+        scheduleDays,
+        jamKeToday,
+        isScheduledToday,
+        hasAttended: hasSubjectNoteOnDate || hasJournalOnDate,
+        isHomeroomRole: false
+      };
+    });
+
+    // Urutkan: yang ada jadwal hari ini di atas, lalu berdasarkan nama mapel
+    subjectItems.sort((a, b) => {
+      if (a.isScheduledToday !== b.isScheduledToday) {
+        return a.isScheduledToday ? -1 : 1;
+      }
+      return a.subject.localeCompare(b.subject, 'id');
+    });
+
+    const homeroomItem: SubjectTeacherStatusItem = {
+      key: 'homeroom-daily',
+      roleLabel: `Wali Kelas (${currentTeacher.className})`,
+      subject: 'Absensi Harian Kelas',
+      teacherName: currentTeacher.name,
+      scheduleDays: ['Setiap Hari'],
+      jamKeToday: [],
+      isScheduledToday: true,
+      hasAttended: isHomeroomDone,
+      isHomeroomRole: true
+    };
+
+    const allItems = [homeroomItem, ...subjectItems];
+    const attendedCount = allItems.filter(i => i.hasAttended).length;
+    const pendingCount = allItems.length - attendedCount;
+
+    return {
+      selectedDayName,
+      isHomeroomDone,
+      homeroomItem,
+      subjectItems,
+      allItems,
+      attendedCount,
+      pendingCount
+    };
+  }, [
+    selectedDate,
+    currentTeacher.className,
+    currentTeacher.name,
+    attendanceLogs,
+    classStudents,
+    currentFilteredLogs.length,
+    allTeachingJournalsList,
+    classSchedules,
+    subjectTeachers,
+    homerooms,
+    masterCurriculumSubjects
+  ]);
 
   // Filtered Student Development Logs
   const filteredDevLogs = useMemo(() => {
@@ -3628,9 +3893,9 @@ Wassalamualaikum Wr. Wb.
     const endDate = rekapEndDate || todayStr;
 
     return (classStudents || []).filter(Boolean).map((student, idx) => {
-      // Filter logs for this student within date range
+      // Filter logs for this student within date range (only Wali Kelas daily attendance logs)
       const sLogs = (attendanceLogs || []).filter(l => {
-        if (!l) return false;
+        if (!l || !isHomeroomAttendanceRecorded(l)) return false;
         const isStudentMatch = 
           (student.id && l.studentId === student.id) || 
           (student.nis && l.studentId === student.nis) || 
@@ -4647,6 +4912,95 @@ Wassalamualaikum Wr. Wb.
         {/* Right Details/List/Form Column */}
         <div className="flex-1 min-w-0 w-full font-sans flex flex-col gap-4 transition-all duration-300 ease-in-out">
           {activeSubTab === 'record' && (
+            <>
+              {/* Dashboard Status Absensi Wali Kelas & Guru Mata Pelajaran di Kelas Ini */}
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left">
+                <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-slate-800 text-xs md:text-sm">
+                        Status Absensi Wali Kelas &amp; Guru Mata Pelajaran — Kelas {currentTeacher.className}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black">
+                        {classTeacherAttendanceStatuses.selectedDayName}, {selectedDate}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Pantauan pengisian absensi harian antara Wali Kelas dan seluruh Guru Mapel yang mengajar di Kelas {currentTeacher.className}. Absensi Guru Mapel tidak mengubah posisi tombol default absensi Wali Kelas.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] font-extrabold">
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Sudah Absen: {classTeacherAttendanceStatuses.attendedCount}
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
+                      Belum Absen: {classTeacherAttendanceStatuses.pendingCount}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {classTeacherAttendanceStatuses.allItems.map((item) => (
+                    <div
+                      key={item.key}
+                      className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-all ${
+                        item.isHomeroomRole
+                          ? item.hasAttended
+                            ? 'bg-emerald-50/70 border-emerald-300 shadow-2xs'
+                            : 'bg-indigo-50/60 border-indigo-200 shadow-2xs'
+                          : item.hasAttended
+                            ? 'bg-emerald-50/40 border-emerald-200'
+                            : item.isScheduledToday
+                              ? 'bg-amber-50/40 border-amber-200'
+                              : 'bg-slate-50/60 border-slate-200'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-[11px] font-extrabold truncate ${
+                            item.isHomeroomRole ? 'text-indigo-950' : 'text-slate-800'
+                          }`}>
+                            {item.roleLabel}
+                          </span>
+                          {item.isHomeroomRole && (
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[8.5px] font-black uppercase tracking-wider shrink-0">
+                              Utama
+                            </span>
+                          )}
+                          {!item.isHomeroomRole && item.isScheduledToday && (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 border border-purple-200 text-[8.5px] font-bold shrink-0">
+                              Jadwal Hari Ini{item.jamKeToday.length > 0 ? ` (Jam ${item.jamKeToday.join(', ')})` : ''}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-semibold truncate mt-0.5">
+                          {item.teacherName}
+                        </div>
+                        {!item.isHomeroomRole && item.scheduleDays.length > 0 && (
+                          <div className="text-[9px] text-slate-400 truncate mt-0.5">
+                            Hari Mengajar: {item.scheduleDays.join(', ')}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="shrink-0">
+                        {item.hasAttended ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-black shadow-2xs">
+                            <CheckCircle size={12} className="stroke-[2.5]" />
+                            Sudah
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-200 text-slate-700 text-[10px] font-extrabold">
+                            <Clock size={12} className="stroke-[2.2]" />
+                            Belum
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
             <form onSubmit={handleSubmitAttendance} className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left flex flex-col">
               {/* Header */}
               <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-2 select-none">
@@ -4894,6 +5248,7 @@ Wassalamualaikum Wr. Wb.
                 </div>
               )}
             </form>
+            </>
           )}
 
           {activeSubTab === 'history' && (

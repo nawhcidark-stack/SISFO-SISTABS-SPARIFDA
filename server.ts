@@ -4874,6 +4874,13 @@ async function startServer() {
       attendanceLogs[index].status = status;
       attendanceLogs[index].notes = notes || "";
       attendanceLogs[index].date = normDate;
+      attendanceLogs[index].homeroomRecorded = true;
+      if (Array.isArray(attendanceLogs[index].subjectNotes)) {
+        attendanceLogs[index].subjectNotes = attendanceLogs[index].subjectNotes!.map((sn: any) => ({
+          ...sn,
+          homeroomRecorded: true
+        }));
+      }
       if (resolvedName) attendanceLogs[index].studentName = resolvedName;
       if (resolvedClass) attendanceLogs[index].className = resolvedClass;
       savedLog = attendanceLogs[index];
@@ -4885,7 +4892,8 @@ async function startServer() {
         className: resolvedClass,
         date: normDate,
         status,
-        notes: notes || ""
+        notes: notes || "",
+        homeroomRecorded: true
       };
       attendanceLogs.push(savedLog);
     }
@@ -4926,6 +4934,13 @@ async function startServer() {
         attendanceLogs[index].status = status;
         attendanceLogs[index].notes = notes || "";
         attendanceLogs[index].date = normDate;
+        attendanceLogs[index].homeroomRecorded = true;
+        if (Array.isArray(attendanceLogs[index].subjectNotes)) {
+          attendanceLogs[index].subjectNotes = attendanceLogs[index].subjectNotes!.map((sn: any) => ({
+            ...sn,
+            homeroomRecorded: true
+          }));
+        }
         if (resolvedName) attendanceLogs[index].studentName = resolvedName;
         if (resolvedClass) attendanceLogs[index].className = resolvedClass;
         affectedLogs.push(attendanceLogs[index]);
@@ -4937,7 +4952,8 @@ async function startServer() {
           className: resolvedClass,
           date: normDate,
           status,
-          notes: notes || ""
+          notes: notes || "",
+          homeroomRecorded: true
         };
         attendanceLogs.push(newLog);
         affectedLogs.push(newLog);
@@ -5666,42 +5682,48 @@ async function startServer() {
       };
 
       if (existingLogIndex !== -1) {
-        // Update existing daily attendance status ONLY if we are not erasing a special non-Hadir status (Terlambat, Sakit, Izin, Alpa) with a default 'Hadir' from subject teacher
-        const currentDailyStatus = attendanceLogs[existingLogIndex].status;
-        const nonPresentStatuses = ['Terlambat', 'Sakit', 'Izin', 'Alpa'];
+        const existingLog = attendanceLogs[existingLogIndex];
+        const wasHomeroomRecorded = !(
+          existingLog.homeroomRecorded === false ||
+          (Array.isArray(existingLog.subjectNotes) &&
+            existingLog.subjectNotes.length > 0 &&
+            existingLog.subjectNotes.every((sn: any) => sn && sn.homeroomRecorded === false))
+        );
+        existingLog.homeroomRecorded = wasHomeroomRecorded;
 
-        if (!nonPresentStatuses.includes(currentDailyStatus) || (status && status !== 'Hadir')) {
-          attendanceLogs[existingLogIndex].status = status || 'Hadir';
-        }
-
-        if (nameToSet && (!attendanceLogs[existingLogIndex].studentName || attendanceLogs[existingLogIndex].studentName.startsWith("Siswa (std-"))) {
-          attendanceLogs[existingLogIndex].studentName = nameToSet;
+        if (nameToSet && (!existingLog.studentName || existingLog.studentName.startsWith("Siswa (std-"))) {
+          existingLog.studentName = nameToSet;
         }
         if (classToSet) {
-          attendanceLogs[existingLogIndex].className = classToSet;
+          existingLog.className = classToSet;
         }
 
-        if (!attendanceLogs[existingLogIndex].subjectNotes) {
-          attendanceLogs[existingLogIndex].subjectNotes = [];
+        if (!existingLog.subjectNotes) {
+          existingLog.subjectNotes = [];
         }
-        const existingSubNotesIndex = attendanceLogs[existingLogIndex].subjectNotes!.findIndex((sn: any) => sn.subject === resolvedSubject);
+        const subNoteWithFlag = {
+          ...newSubNote,
+          homeroomRecorded: wasHomeroomRecorded
+        };
+        const existingSubNotesIndex = existingLog.subjectNotes!.findIndex((sn: any) => sn.subject === resolvedSubject);
         if (existingSubNotesIndex !== -1) {
-          attendanceLogs[existingLogIndex].subjectNotes![existingSubNotesIndex] = newSubNote;
+          existingLog.subjectNotes![existingSubNotesIndex] = subNoteWithFlag;
         } else {
-          attendanceLogs[existingLogIndex].subjectNotes!.push(newSubNote);
+          existingLog.subjectNotes!.push(subNoteWithFlag);
         }
-        syncedAttendanceLogs.push(attendanceLogs[existingLogIndex]);
+        syncedAttendanceLogs.push(existingLog);
       } else {
-        // Create new daily attendance
+        // Create container log for subjectNotes without marking Wali Kelas daily attendance as recorded
         const createdLog: AttendanceLog = {
           id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           studentId,
           studentName: nameToSet,
           className: classToSet,
           date: resolvedDate,
-          status: status || 'Hadir',
+          status: 'Hadir',
           notes: "",
-          subjectNotes: [newSubNote]
+          homeroomRecorded: false,
+          subjectNotes: [{ ...newSubNote, homeroomRecorded: false }]
         };
         attendanceLogs.push(createdLog);
         syncedAttendanceLogs.push(createdLog);
@@ -5811,30 +5833,36 @@ async function startServer() {
         };
 
         if (existingLogIndex !== -1) {
-          const currentDailyStatus = attendanceLogs[existingLogIndex].status;
-          const nonPresentStatuses = ['Terlambat', 'Sakit', 'Izin', 'Alpa'];
+          const existingLog = attendanceLogs[existingLogIndex];
+          const wasHomeroomRecorded = !(
+            existingLog.homeroomRecorded === false ||
+            (Array.isArray(existingLog.subjectNotes) &&
+              existingLog.subjectNotes.length > 0 &&
+              existingLog.subjectNotes.every((sn: any) => sn && sn.homeroomRecorded === false))
+          );
+          existingLog.homeroomRecorded = wasHomeroomRecorded;
 
-          if (!nonPresentStatuses.includes(currentDailyStatus) || (status && status !== 'Hadir')) {
-            attendanceLogs[existingLogIndex].status = status || 'Hadir';
-          }
-
-          if (nameToSet && (!attendanceLogs[existingLogIndex].studentName || attendanceLogs[existingLogIndex].studentName.startsWith("Siswa (std-"))) {
-            attendanceLogs[existingLogIndex].studentName = nameToSet;
+          if (nameToSet && (!existingLog.studentName || existingLog.studentName.startsWith("Siswa (std-"))) {
+            existingLog.studentName = nameToSet;
           }
           if (classToSet) {
-            attendanceLogs[existingLogIndex].className = classToSet;
+            existingLog.className = classToSet;
           }
 
-          if (!attendanceLogs[existingLogIndex].subjectNotes) {
-            attendanceLogs[existingLogIndex].subjectNotes = [];
+          if (!existingLog.subjectNotes) {
+            existingLog.subjectNotes = [];
           }
-          const existingSubNotesIndex = attendanceLogs[existingLogIndex].subjectNotes!.findIndex((sn: any) => sn.subject === (subject || journal.subject));
+          const subNoteWithFlag = {
+            ...newSubNote,
+            homeroomRecorded: wasHomeroomRecorded
+          };
+          const existingSubNotesIndex = existingLog.subjectNotes!.findIndex((sn: any) => sn.subject === (subject || journal.subject));
           if (existingSubNotesIndex !== -1) {
-            attendanceLogs[existingLogIndex].subjectNotes![existingSubNotesIndex] = newSubNote;
+            existingLog.subjectNotes![existingSubNotesIndex] = subNoteWithFlag;
           } else {
-            attendanceLogs[existingLogIndex].subjectNotes!.push(newSubNote);
+            existingLog.subjectNotes!.push(subNoteWithFlag);
           }
-          syncedAttendanceLogs.push(attendanceLogs[existingLogIndex]);
+          syncedAttendanceLogs.push(existingLog);
         } else {
           const createdLog: AttendanceLog = {
             id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -5842,9 +5870,10 @@ async function startServer() {
             studentName: nameToSet,
             className: classToSet,
             date: targetDate,
-            status: status || 'Hadir',
+            status: 'Hadir',
             notes: "",
-            subjectNotes: [newSubNote]
+            homeroomRecorded: false,
+            subjectNotes: [{ ...newSubNote, homeroomRecorded: false }]
           };
           attendanceLogs.push(createdLog);
           syncedAttendanceLogs.push(createdLog);

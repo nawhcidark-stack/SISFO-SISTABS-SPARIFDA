@@ -275,11 +275,13 @@ export interface AttendanceLog {
   date: string; // "YYYY-MM-DD"
   status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat';
   notes?: string;
+  homeroomRecorded?: boolean;
   subjectNotes?: {
     subject: string;
     teacherName: string;
     status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat';
     notes: string;
+    homeroomRecorded?: boolean;
   }[];
 }
 

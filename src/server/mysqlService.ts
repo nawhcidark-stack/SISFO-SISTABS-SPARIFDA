@@ -2246,6 +2246,11 @@ export async function pullDataFromMysql(): Promise<{
             subjectNotes = typeof r.subject_notes === 'string' ? JSON.parse(r.subject_notes) : r.subject_notes;
           } catch {}
         }
+        const homeroomRecorded = !(
+          Array.isArray(subjectNotes) &&
+          subjectNotes.length > 0 &&
+          subjectNotes.every((sn: any) => sn && sn.homeroomRecorded === false)
+        );
         return {
           id: r.id,
           studentId: r.student_id,
@@ -2254,6 +2259,7 @@ export async function pullDataFromMysql(): Promise<{
           date: r.date,
           status: r.status,
           notes: r.notes || undefined,
+          homeroomRecorded,
           subjectNotes
         };
       });

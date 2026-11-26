@@ -3243,8 +3243,9 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
           \`funding_source\`, \`payment_method\`, \`kode_rekening\`, \`no_bukti\`, \`order_id\`, \`transaction_id\`
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`amount\`=VALUES(\`amount\`), \`description\`=VALUES(\`description\`), \`category\`=VALUES(\`category\`),
-          \`date\`=VALUES(\`date\`), \`payment_method\`=VALUES(\`payment_method\`), \`no_bukti\`=VALUES(\`no_bukti\`),
+          \`type\`=VALUES(\`type\`), \`amount\`=VALUES(\`amount\`), \`description\`=VALUES(\`description\`), \`category\`=VALUES(\`category\`),
+          \`date\`=VALUES(\`date\`), \`recipient_name\`=VALUES(\`recipient_name\`), \`payment_method\`=VALUES(\`payment_method\`),
+          \`kode_rekening\`=VALUES(\`kode_rekening\`), \`no_bukti\`=VALUES(\`no_bukti\`),
           \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`funding_source\`=VALUES(\`funding_source\`)
       `, [
         t.id, t.type || 'incoming', t.category || 'Lain-lain', Number(t.amount) || 0, t.description || '',
@@ -4326,8 +4327,9 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
               \`funding_source\`, \`payment_method\`, \`kode_rekening\`, \`no_bukti\`, \`order_id\`, \`transaction_id\`
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
-              \`amount\`=VALUES(\`amount\`), \`description\`=VALUES(\`description\`), \`category\`=VALUES(\`category\`),
-              \`date\`=VALUES(\`date\`), \`payment_method\`=VALUES(\`payment_method\`), \`no_bukti\`=VALUES(\`no_bukti\`),
+              \`type\`=VALUES(\`type\`), \`amount\`=VALUES(\`amount\`), \`description\`=VALUES(\`description\`), \`category\`=VALUES(\`category\`),
+              \`date\`=VALUES(\`date\`), \`recipient_name\`=VALUES(\`recipient_name\`), \`payment_method\`=VALUES(\`payment_method\`),
+              \`kode_rekening\`=VALUES(\`kode_rekening\`), \`no_bukti\`=VALUES(\`no_bukti\`),
               \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`funding_source\`=VALUES(\`funding_source\`)
           `, [
             t.id, t.type || 'incoming', t.category ? String(t.category).slice(0, 100) : 'Lain-lain', Number(t.amount) || 0, t.description || '',

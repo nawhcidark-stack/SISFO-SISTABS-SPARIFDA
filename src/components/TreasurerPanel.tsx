@@ -1089,7 +1089,13 @@ export default function TreasurerPanel({
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/treasurer/transactions');
+      const res = await fetch(`/api/treasurer/transactions?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         const rawData = Array.isArray(data) ? data : [];
@@ -1218,10 +1224,18 @@ export default function TreasurerPanel({
       if (res.ok) {
         const data = await res.json();
         setShowFormModal(false);
-        fetchTransactions();
         if (data.transaction) {
-          setActivePrintTransaction(data.transaction);
+          const savedTx: TreasurerTransaction = data.transaction;
+          setTransactions(prev => {
+            const exists = prev.some(t => t.id === savedTx.id);
+            const updated = exists
+              ? prev.map(t => (t.id === savedTx.id ? savedTx : t))
+              : [savedTx, ...prev];
+            return [...updated].sort((a, b) => b.date.localeCompare(a.date));
+          });
+          setActivePrintTransaction(savedTx);
         }
+        await fetchTransactions();
       } else {
         const err = await res.json();
         alert(err.error || 'Aksi gagal dieksekusi.');

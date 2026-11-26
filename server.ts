@@ -9340,7 +9340,7 @@ async function startServer() {
 
     if (status === 'approved') {
       const propObj = sarprasProposals[idx];
-      treasurerTransactions.unshift({
+      const sarprasTx: TreasurerTransaction = {
         id: "tx-bnd-sarpras-" + Date.now(),
         type: "outgoing",
         category: "Operasional",
@@ -9349,10 +9349,13 @@ async function startServer() {
         date: new Date().toISOString().split("T")[0],
         source: "custom",
         createdBy: "Persetujuan Kepala Sekolah"
-      });
+      };
+      treasurerTransactions.unshift(sarprasTx);
+      persistEntity("treasurerTransactions", sarprasTx).catch(err => console.error("Error persisting sarpras expense to MySQL:", err));
     }
 
     saveState();
+    persistEntity("sarprasProposals", sarprasProposals[idx]).catch(err => console.error("Error persisting sarprasProposal to MySQL:", err));
     res.json({ success: true, sarprasProposals, treasurerTransactions });
   });
 
@@ -9716,7 +9719,19 @@ async function startServer() {
       if (idLower.startsWith("tx-misc-") || idLower.startsWith("tx-midtrans-")) return false;
       if (idLower.startsWith("trx-spmb-")) return false;
       if (descLower.includes("krishna") && (descLower.includes("token") || descLower.includes("daftar ulang"))) return false;
-      if (t.category === "Operasional" && descLower.startsWith("pembayaran ")) return false;
+
+      // Never filter out manual Treasurer bookkeeping transactions (tx-bnd-*, tx-kop-*, tx-sal-*, or outgoing expenses)
+      const isManualTreasurerEntry =
+        idLower.startsWith("tx-bnd-") ||
+        idLower.startsWith("tx-kop-") ||
+        idLower.startsWith("tx-sal-") ||
+        t.type === "outgoing" ||
+        createdByLower === "bendahara";
+
+      if (!isManualTreasurerEntry && t.category === "Operasional" && descLower.startsWith("pembayaran ") && (t.studentName || t.nis)) {
+        return false;
+      }
+
       if (
         catLower === "spp siswa" || 
         catLower === "tagihan non-spp" || 
@@ -9741,7 +9756,7 @@ async function startServer() {
         orderId.startsWith("P6") || 
         orderId.startsWith("P5")
       ) return false;
-      if (createdByLower.includes("midtrans")) return false;
+      if (!isManualTreasurerEntry && createdByLower.includes("midtrans")) return false;
       return true;
     });
 
@@ -9969,8 +9984,10 @@ async function startServer() {
 
     treasurerTransactions.push(sourceTx, targetTx);
     saveState();
-    persistEntity("treasurerTransactions", sourceTx).catch(() => {});
-    persistEntity("treasurerTransactions", targetTx).catch(() => {});
+    await Promise.all([
+      persistEntity("treasurerTransactions", sourceTx).catch(err => console.error("Error persisting source transfer tx to MySQL:", err)),
+      persistEntity("treasurerTransactions", targetTx).catch(err => console.error("Error persisting target transfer tx to MySQL:", err))
+    ]);
     res.json({ success: true, sourceTransaction: sourceTx, targetTransaction: targetTx });
   });
 
@@ -10003,22 +10020,22 @@ async function startServer() {
     const newTx: TreasurerTransaction = {
       id: `tx-bnd-${Date.now()}`,
       type: type as 'incoming' | 'outgoing',
-      category: String(category),
+      category: String(category).trim(),
       amount: parsedAmount,
-      description: String(description),
-      date: String(date),
+      description: String(description).trim(),
+      date: String(date).trim(),
       source: 'custom' as const,
       createdBy: 'bendahara',
-      recipientName: recipientName ? String(recipientName) : undefined,
-      fundingSource: fundingSource ? String(fundingSource) : undefined,
-      paymentMethod: paymentMethod ? String(paymentMethod) : undefined,
-      kodeRekening: kodeRekening ? String(kodeRekening) : undefined,
-      noBukti: noBukti ? String(noBukti) : undefined
+      recipientName: recipientName ? String(recipientName).trim() : undefined,
+      fundingSource: fundingSource ? String(fundingSource).trim() : undefined,
+      paymentMethod: paymentMethod === 'bank' ? 'bank' : 'kas',
+      kodeRekening: kodeRekening ? String(kodeRekening).trim() : undefined,
+      noBukti: noBukti ? String(noBukti).trim() : undefined
     };
 
     treasurerTransactions.push(newTx);
     saveState();
-    persistEntity("treasurerTransactions", newTx).catch(() => {});
+    await persistEntity("treasurerTransactions", newTx).catch(err => console.error("Error persisting treasurerTransaction to MySQL:", err));
     res.json({ success: true, transaction: newTx });
   });
 
@@ -10029,7 +10046,7 @@ async function startServer() {
 
     const txIndex = treasurerTransactions.findIndex(t => t.id === id);
     if (txIndex === -1) {
-      return res.status(444).json({ error: "Transaksi manual tidak ditemukan." });
+      return res.status(404).json({ error: "Transaksi manual tidak ditemukan." });
     }
 
     // Parse amount robustly if provided
@@ -10046,20 +10063,20 @@ async function startServer() {
     const updatedTx = {
       ...treasurerTransactions[txIndex],
       type: type ? (type as 'incoming' | 'outgoing') : treasurerTransactions[txIndex].type,
-      category: category ? String(category) : treasurerTransactions[txIndex].category,
+      category: category ? String(category).trim() : treasurerTransactions[txIndex].category,
       amount: parsedAmount,
-      description: description ? String(description) : treasurerTransactions[txIndex].description,
-      date: date ? String(date) : treasurerTransactions[txIndex].date,
-      recipientName: recipientName !== undefined ? String(recipientName) : treasurerTransactions[txIndex].recipientName,
-      fundingSource: fundingSource !== undefined ? (fundingSource ? String(fundingSource) : undefined) : treasurerTransactions[txIndex].fundingSource,
-      paymentMethod: paymentMethod !== undefined ? String(paymentMethod) : treasurerTransactions[txIndex].paymentMethod,
-      kodeRekening: kodeRekening !== undefined ? String(kodeRekening) : treasurerTransactions[txIndex].kodeRekening,
-      noBukti: noBukti !== undefined ? String(noBukti) : treasurerTransactions[txIndex].noBukti
+      description: description ? String(description).trim() : treasurerTransactions[txIndex].description,
+      date: date ? String(date).trim() : treasurerTransactions[txIndex].date,
+      recipientName: recipientName !== undefined ? (recipientName ? String(recipientName).trim() : undefined) : treasurerTransactions[txIndex].recipientName,
+      fundingSource: fundingSource !== undefined ? (fundingSource ? String(fundingSource).trim() : undefined) : treasurerTransactions[txIndex].fundingSource,
+      paymentMethod: paymentMethod !== undefined ? (paymentMethod === 'bank' ? 'bank' : 'kas') : treasurerTransactions[txIndex].paymentMethod,
+      kodeRekening: kodeRekening !== undefined ? (kodeRekening ? String(kodeRekening).trim() : undefined) : treasurerTransactions[txIndex].kodeRekening,
+      noBukti: noBukti !== undefined ? (noBukti ? String(noBukti).trim() : undefined) : treasurerTransactions[txIndex].noBukti
     };
 
     treasurerTransactions[txIndex] = updatedTx;
     saveState();
-    persistEntity("treasurerTransactions", updatedTx).catch(() => {});
+    await persistEntity("treasurerTransactions", updatedTx).catch(err => console.error("Error updating treasurerTransaction in MySQL:", err));
     res.json({ success: true, transaction: updatedTx });
   });
 
@@ -10073,7 +10090,7 @@ async function startServer() {
 
     treasurerTransactions.splice(txIndex, 1);
     saveState();
-    removeEntity("treasurerTransactions", id).catch(() => {});
+    await removeEntity("treasurerTransactions", id).catch(err => console.error("Error deleting treasurerTransaction from MySQL:", err));
     res.json({ success: true, message: "Transaksi berhasil dihapus." });
   });
 
@@ -10235,6 +10252,7 @@ async function startServer() {
     });
 
     saveState();
+    persistEntities("teacherSalaries", teacherSalaries).catch(err => console.error("Error persisting generated salaries to MySQL:", err));
     res.json({ success: true, message: `Berhasil generate ${generatedCount} data gaji. (${skippedCount} sudah dibayar & dilewati).`, salaries: teacherSalaries });
   });
 
@@ -10278,10 +10296,11 @@ async function startServer() {
     sal.totalAmount = sal.baseSalary + sal.homeroomAllowance + sal.tunjanganMasaKerja + sal.vakasi + sal.otherAllowance - (sal.potonganDanaSosial + sal.potonganAbsen + sal.potonganLain);
 
     saveState();
+    persistEntity("teacherSalaries", sal).catch(err => console.error("Error persisting updated salary to MySQL:", err));
     res.json({ success: true, salary: sal });
   });
 
-  app.post("/api/treasurer/salaries/:id/pay", (req, res) => {
+  app.post("/api/treasurer/salaries/:id/pay", async (req, res) => {
     const { id } = req.params;
     const salIndex = teacherSalaries.findIndex(s => s.id === id);
     if (salIndex === -1) {
@@ -10317,6 +10336,10 @@ async function startServer() {
 
     treasurerTransactions.push(newTx);
     saveState();
+    await Promise.all([
+      persistEntity("teacherSalaries", sal).catch(err => console.error("Error persisting paid salary to MySQL:", err)),
+      persistEntity("treasurerTransactions", newTx).catch(err => console.error("Error persisting salary expense tx to MySQL:", err))
+    ]);
 
     // Broadcast notification
     const notification: RealtimeNotification = {
@@ -10331,7 +10354,7 @@ async function startServer() {
     res.json({ success: true, salary: sal, transaction: newTx });
   });
 
-  app.delete("/api/treasurer/salaries/:id", (req, res) => {
+  app.delete("/api/treasurer/salaries/:id", async (req, res) => {
     const { id } = req.params;
     const salIndex = teacherSalaries.findIndex(s => s.id === id);
     if (salIndex === -1) {
@@ -10345,6 +10368,7 @@ async function startServer() {
 
     teacherSalaries.splice(salIndex, 1);
     saveState();
+    await removeEntity("teacherSalaries", id).catch(err => console.error("Error removing salary from MySQL:", err));
     res.json({ success: true, message: "Data gaji berhasil dihapus." });
   });
 

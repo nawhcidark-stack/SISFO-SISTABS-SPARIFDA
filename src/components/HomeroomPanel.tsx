@@ -1133,7 +1133,7 @@ export default function HomeroomPanel({
             getAcademicYearOfBill(b) === rekapSppYearFilter),
       );
       const paid = sBills.filter((b) => b.status === "paid");
-      const unpaid = sBills.filter((b) => b.status === "unpaid" && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
+      const unpaid = sBills.filter((b) => (b.status === "unpaid" || b.status === "pending") && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
       const totalPaidNominal = paid.reduce((sum, b) => sum + b.amount, 0);
       const totalUnpaidNominal = unpaid.reduce((sum, b) => sum + b.amount, 0);
       const pct = sBills.length > 0 ? Math.round((paid.length / sBills.length) * 100) : 0;
@@ -4094,7 +4094,7 @@ Wassalamualaikum Wr. Wb.
     classStudents.forEach(student => {
       totalSavings += student.savingsBalance || 0;
       
-      const sBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
+      const sBills = bills.filter(b => b.studentId === student.id && (b.status === 'unpaid' || b.status === 'pending') && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
       const unpaidSum = sBills.reduce((acc, curr) => acc + curr.amount, 0);
       totalUnpaidSpp += unpaidSum;
       if (sBills.length > 0) {
@@ -5913,7 +5913,7 @@ Wassalamualaikum Wr. Wb.
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {filteredClassStudents.map((student) => {
-                            const overdueBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills))));
+                            const overdueBills = sortSppBills(bills.filter(b => b.studentId === student.id && (b.status === 'unpaid' || b.status === 'pending') && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills))));
                             const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
                             const paidBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'paid'));
 
@@ -6034,7 +6034,7 @@ Wassalamualaikum Wr. Wb.
                     {/* Mobile View (Bento Cards to avoid scroll completely) */}
                     <div className="block md:hidden space-y-4">
                       {filteredClassStudents.map((student) => {
-                        const overdueBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills))));
+                        const overdueBills = sortSppBills(bills.filter(b => b.studentId === student.id && (b.status === 'unpaid' || b.status === 'pending') && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills))));
                         const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
                         const paidBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'paid'));
 

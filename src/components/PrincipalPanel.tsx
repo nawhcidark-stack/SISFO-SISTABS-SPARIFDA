@@ -930,7 +930,7 @@ export default function PrincipalPanel({
   const sppTotalInvoiced = bills.length;
   const sppPaidBillList = bills.filter(b => b.status === 'paid');
   const sppPaidCount = sppPaidBillList.length;
-  const sppUnpaidBillList = bills.filter(b => b.status === 'unpaid');
+  const sppUnpaidBillList = bills.filter(b => b.status === 'unpaid' || b.status === 'pending');
   const sppPendingBillList = bills.filter(b => b.status === 'pending');
 
   const totalSppRevenue = useMemo(() => {

@@ -1739,7 +1739,7 @@ export default function StudentPanel({
         if (billYearStr === selectedAcademicYear) return true;
         // Include unpaid bills from previous academic years
         const billStartYear = parseInt(billYearStr.split('/')[0], 10);
-        if (billStartYear < selectedStartYear && b.status === 'unpaid' && (!isMut || checkIsBillActive(b, bills))) {
+        if (billStartYear < selectedStartYear && (b.status === 'unpaid' || b.status === 'pending') && (!isMut || checkIsBillActive(b, bills))) {
           return true;
         }
         return false;
@@ -1778,7 +1778,7 @@ export default function StudentPanel({
   const handleSelectMultipleMonths = (count: number) => {
     const isMut = currentStudent && (!!currentStudent.mutationDate || (currentStudent.class && (currentStudent.class.toLowerCase() === 'mutasi' || currentStudent.class.toLowerCase() === 'mutasi keluar')));
     const unpaidSorted = [...bills]
-      .filter(b => b.status === 'unpaid' && (!isMut || checkIsBillActive(b, bills)))
+      .filter(b => (b.status === 'unpaid' || b.status === 'pending') && (!isMut || checkIsBillActive(b, bills)))
       .sort((a, b) => {
         if (a.year !== b.year) {
           return a.year - b.year;
@@ -1792,7 +1792,7 @@ export default function StudentPanel({
 
   const unpaidBillsCount = useMemo(() => {
     const isMut = currentStudent && (!!currentStudent.mutationDate || (currentStudent.class && (currentStudent.class.toLowerCase() === 'mutasi' || currentStudent.class.toLowerCase() === 'mutasi keluar')));
-    return filteredBills.filter(b => b.status === 'unpaid' && (!isMut || checkIsBillActive(b, bills))).length;
+    return filteredBills.filter(b => (b.status === 'unpaid' || b.status === 'pending') && (!isMut || checkIsBillActive(b, bills))).length;
   }, [filteredBills, currentStudent, bills]);
   const paidBillsCount = useMemo(() => filteredBills.filter(b => b.status === 'paid').length, [filteredBills]);
 

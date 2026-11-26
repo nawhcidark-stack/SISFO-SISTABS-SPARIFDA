@@ -6495,7 +6495,7 @@ export default function AdminPanel({
                           </div>
 
                           {/* Bayar SPP Multi-Bulan Sekaligus Section */}
-                          {(billsByStudentId.get(selectedStudent.id) || []).filter(b => b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id))).length > 0 && (
+                          {(billsByStudentId.get(selectedStudent.id) || []).filter(b => (b.status === "unpaid" || b.status === "pending") && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id))).length > 0 && (
                             <div className="bg-amber-50/60 p-4 border border-amber-200/80 rounded-xl flex flex-col gap-3 text-xs text-slate-700 shadow-sm">
                               <h5 className="font-extrabold text-amber-900 flex items-center gap-1.5 uppercase text-[10px] tracking-wider">
                                 <ShoppingCart size={13} className="text-amber-600" />
@@ -6507,7 +6507,7 @@ export default function AdminPanel({
 
                               <div className="max-h-[140px] overflow-y-auto border border-amber-200/50 rounded-lg p-2 bg-white/80 flex flex-col gap-1.5">
                                 {(billsByStudentId.get(selectedStudent.id) || [])
-                                  .filter(b => b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id)))
+                                  .filter(b => (b.status === "unpaid" || b.status === "pending") && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id)))
                                   .sort((a, b) => {
                                     const MONTH_MAP: Record<string, number> = {
                                       Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
@@ -6565,7 +6565,7 @@ export default function AdminPanel({
                                   type="button"
                                   onClick={() => {
                                     const unpaidSpp = (billsByStudentId.get(selectedStudent.id) || [])
-                                      .filter(b => b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id)))
+                                      .filter(b => (b.status === "unpaid" || b.status === "pending") && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id)))
                                       .map(b => b.id);
                                     setSelectedSppBills(unpaidSpp);
                                   }}
@@ -6839,7 +6839,7 @@ export default function AdminPanel({
                         {/* FORM APRESIASI BEBAS SPP BEASISWA PRESTASI */}
                           {(() => {
                             const unpaidBillsForWaiver = (billsByStudentId.get(selectedStudent.id) || []).filter(
-                              (b) => b.status === "unpaid" && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id))
+                              (b) => (b.status === "unpaid" || b.status === "pending") && (!isMutationStudent(selectedStudent) || checkIsBillActive(b, selectedStudent.id))
                             );
 
                             return (
@@ -8382,11 +8382,11 @@ export default function AdminPanel({
                           });
                         const isMut = isMutationStudent(student);
                         const rawUnpaidCount = sBills.filter(
-                          (b) => b.status === "unpaid" && (!isMut || checkIsBillActive(b, student.id)),
+                          (b) => (b.status === "unpaid" || b.status === "pending") && (!isMut || checkIsBillActive(b, student.id)),
                         ).length;
                         const unpaidCount = Math.min(rawUnpaidCount, 12);
                         const nextUnpaidBill = sBills.find(
-                          (b) => b.status === "unpaid" && (!isMut || checkIsBillActive(b, student.id)),
+                          (b) => (b.status === "unpaid" || b.status === "pending") && (!isMut || checkIsBillActive(b, student.id)),
                         );
 
                         return (
@@ -13797,7 +13797,7 @@ export default function AdminPanel({
                         return (
                           bills.filter(
                             (b) =>
-                              b.studentId === s.id && b.status === "unpaid",
+                              b.studentId === s.id && (b.status === "unpaid" || b.status === "pending"),
                           ).length > 0
                         );
                       }).length
@@ -13826,7 +13826,7 @@ export default function AdminPanel({
                           student?.class &&
                           (student.class.toLowerCase() === "lulus" ||
                             student.class.toLowerCase() === "lulusan");
-                        return isAl && b.status === "unpaid";
+                        return isAl && (b.status === "unpaid" || b.status === "pending");
                       })
                       .reduce((sum, b) => sum + b.amount, 0)
                       .toLocaleString("id-ID")}
@@ -13932,7 +13932,7 @@ export default function AdminPanel({
                           (b) => b.studentId === alumnus.id,
                         );
                         const unpaidBills = sBills.filter(
-                          (b) => b.status === "unpaid",
+                          (b) => b.status === "unpaid" || b.status === "pending",
                         );
                         const totalUnpaid = unpaidBills.reduce(
                           (sum, b) => sum + b.amount,
@@ -14063,7 +14063,7 @@ export default function AdminPanel({
                           bills.filter(
                             (b) =>
                               b.studentId === selectedStudent.id &&
-                              b.status === "unpaid",
+                              (b.status === "unpaid" || b.status === "pending"),
                           ).length
                         }{" "}
                         Bulan)
@@ -14102,7 +14102,7 @@ export default function AdminPanel({
                                   .filter(
                                     (b) =>
                                       b.studentId === selectedStudent.id &&
-                                      b.status === "unpaid",
+                                      (b.status === "unpaid" || b.status === "pending"),
                                   )
                                   .reduce((sum, b) => sum + b.amount, 0)
                                   .toLocaleString("id-ID")}
@@ -14113,7 +14113,7 @@ export default function AdminPanel({
                                 bills.filter(
                                   (b) =>
                                     b.studentId === selectedStudent.id &&
-                                    b.status === "unpaid",
+                                    (b.status === "unpaid" || b.status === "pending"),
                                 ).length
                               }{" "}
                               Bulan Belum Diselesaikan
@@ -14610,7 +14610,7 @@ export default function AdminPanel({
                         return (
                           bills.filter(
                             (b) =>
-                              b.studentId === s.id && b.status === "unpaid" && checkIsBillActive(b, s.id),
+                              b.studentId === s.id && (b.status === "unpaid" || b.status === "pending") && checkIsBillActive(b, s.id),
                           ).length > 0
                         );
                       }).length
@@ -14667,7 +14667,7 @@ export default function AdminPanel({
                         .filter(
                           (b) => {
                             const isMutated = mutatedStudents.some(s => s.id === b.studentId);
-                            return isMutated && b.status === "unpaid" && checkIsBillActive(b, b.studentId);
+                            return isMutated && (b.status === "unpaid" || b.status === "pending") && checkIsBillActive(b, b.studentId);
                           }
                         )
                         .reduce((sum, b) => sum + b.amount, 0);
@@ -14733,7 +14733,7 @@ export default function AdminPanel({
                           const sUnpaid = bills.filter(
                             (b) =>
                               b.studentId === student.id &&
-                              b.status === "unpaid" && checkIsBillActive(b, student.id),
+                              (b.status === "unpaid" || b.status === "pending") && checkIsBillActive(b, student.id),
                           );
                           const hasDebt = sUnpaid.length > 0;
                           const totalDebt = sUnpaid.reduce(
@@ -14939,7 +14939,7 @@ export default function AdminPanel({
                                   bills.filter(
                                     (b) =>
                                       b.studentId === selectedStudent.id &&
-                                      b.status === "unpaid",
+                                      (b.status === "unpaid" || b.status === "pending"),
                                   ).length
                                 }{" "}
                                 Bulan
@@ -14951,7 +14951,7 @@ export default function AdminPanel({
                                 .filter(
                                   (b) =>
                                     b.studentId === selectedStudent.id &&
-                                    b.status === "unpaid",
+                                    (b.status === "unpaid" || b.status === "pending"),
                                 )
                                 .reduce((sum, b) => sum + b.amount, 0)
                                 .toLocaleString("id-ID")}
@@ -17903,7 +17903,7 @@ export default function AdminPanel({
                   );
                   const paid = sBills.filter((b) => b.status === "paid");
                   const isMut = isMutationStudent(student);
-                  const unpaid = sBills.filter((b) => b.status === "unpaid" && (!isMut || checkIsBillActive(b, student.id)));
+                  const unpaid = sBills.filter((b) => (b.status === "unpaid" || b.status === "pending") && (!isMut || checkIsBillActive(b, student.id)));
                   const totalPaidNominal = paid.reduce(
                     (sum, b) => sum + b.amount,
                     0,
@@ -21659,7 +21659,7 @@ export default function AdminPanel({
                       const paid = sBills.filter((b) => b.status === "paid");
                       const isMut = isMutationStudent(student);
                       const unpaid = sBills.filter(
-                        (b) => b.status === "unpaid" && (!isMut || checkIsBillActive(b, student.id)),
+                        (b) => (b.status === "unpaid" || b.status === "pending") && (!isMut || checkIsBillActive(b, student.id)),
                       );
                       const totalPaidNominal = paid.reduce(
                         (sum, b) => sum + b.amount,

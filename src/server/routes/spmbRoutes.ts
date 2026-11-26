@@ -1055,6 +1055,7 @@ export interface SpmbRouterDeps {
   checkAndAutoTransferExpiredCandidates: (forceCheck?: boolean) => { transferredCount: number; transferredList: any[] };
   recordOrUpdateMidtransTransaction: (data: any) => void;
   treasurerTransactions?: any[];
+  midtransTransactions?: any[];
 }
 
 export function createSpmbRouter(deps: SpmbRouterDeps): Router {
@@ -1071,7 +1072,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     sendWhatsappNotification, 
     checkAndAutoTransferExpiredCandidates,
     recordOrUpdateMidtransTransaction,
-    treasurerTransactions = []
+    treasurerTransactions = [],
+    midtransTransactions = []
   } = deps;
 
   // Jalankan sinkronisasi fisik dokumen untuk semua calon murid baru
@@ -1117,6 +1119,104 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       console.warn("[Midtrans Status Check Error in SPMB]:", e);
     }
     return null;
+  }
+
+  // Helper: Cari semua transaksi Midtrans lokal yang cocok dengan calon murid (Token atau Daftar Ulang)
+  function getMatchingCandidateMidtransTxs(candidate: any, type: 'token' | 'reregistration', explicitOrderId?: string): any[] {
+    if (!candidate || !Array.isArray(midtransTransactions)) return [];
+    const candNisn = String(candidate.nisn || "").trim();
+    const candRegNo = String(candidate.registrationNo || candidate.registrationNumber || "").trim();
+    const candName = String(candidate.fullName || "").trim().toLowerCase();
+    const cleanExplicit = String(explicitOrderId || "").trim();
+
+    const matched = midtransTransactions.filter((t: any) => {
+      if (!t || !t.orderId) return false;
+      const oid = String(t.orderId).trim();
+      const oidUpper = oid.toUpperCase();
+      const bType = String(t.billType || "").toLowerCase();
+
+      if (type === 'reregistration') {
+        const isReregTx =
+          bType === "spmb_reregistration" ||
+          oidUpper.startsWith("SPMB-REREG-") ||
+          oidUpper.startsWith("TUNAI-DU-") ||
+          (cleanExplicit && oid === cleanExplicit && !oidUpper.startsWith("SPMB-TOKEN-"));
+        if (!isReregTx) return false;
+      } else {
+        const isTokenTx =
+          bType === "spmb_token" ||
+          oidUpper.startsWith("SPMB-TOKEN-") ||
+          (cleanExplicit && oid === cleanExplicit && !oidUpper.startsWith("SPMB-REREG-"));
+        if (!isTokenTx) return false;
+      }
+
+      if (cleanExplicit && oid === cleanExplicit) return true;
+      if (type === 'reregistration' && candidate.reRegistrationOrderId && oid === candidate.reRegistrationOrderId) return true;
+      if (type === 'token' && (candidate.tokenPaymentOrderId === oid || candidate.tokenOrderId === oid)) return true;
+      if (candNisn && (String(t.studentNis || "").trim() === candNisn || String(t.nisn || "").trim() === candNisn || oid.includes(candNisn))) {
+        return true;
+      }
+      if (candRegNo && (String(t.studentNis || "").trim() === candRegNo || oid.includes(candRegNo))) {
+        return true;
+      }
+      if (candName && candName.length >= 4 && String(t.studentName || "").trim().toLowerCase() === candName) {
+        return true;
+      }
+      return false;
+    });
+
+    const statusRank = (st?: string) => {
+      const s = String(st || "").toLowerCase();
+      if (s === "settlement" || s === "capture") return 0;
+      if (s === "pending") return 1;
+      return 2;
+    };
+
+    return matched.sort((a: any, b: any) => {
+      const rankDiff = statusRank(a.transactionStatus) - statusRank(b.transactionStatus);
+      if (rankDiff !== 0) return rankDiff;
+      const timeA = Date.parse(a.settlementTime || a.transactionTime || a.updatedAt || a.createdAt || "") || 0;
+      const timeB = Date.parse(b.settlementTime || b.transactionTime || b.updatedAt || b.createdAt || "") || 0;
+      return timeB - timeA;
+    });
+  }
+
+  // Helper: Kumpulkan daftar kandidat Order ID untuk dicek ke Midtrans API (termasuk order ber-timestamp dari midtransTransactions)
+  function getCandidateOrderIdsToVerify(candidate: any, type: 'token' | 'reregistration', explicitOrderId?: string): string[] {
+    const ids: string[] = [];
+    const addId = (val?: string) => {
+      const clean = String(val || "").trim();
+      if (!clean) return;
+      if (!ids.includes(clean)) ids.push(clean);
+    };
+
+    const cleanExplicit = String(explicitOrderId || "").trim();
+    const candNisn = String(candidate?.nisn || "").trim();
+
+    if (cleanExplicit && cleanExplicit !== candNisn) {
+      const upper = cleanExplicit.toUpperCase();
+      if (type === 'reregistration' && !upper.startsWith("SPMB-TOKEN-")) {
+        addId(cleanExplicit);
+      } else if (type === 'token' && !upper.startsWith("SPMB-REREG-")) {
+        addId(cleanExplicit);
+      }
+    }
+
+    if (type === 'reregistration') {
+      addId(candidate?.reRegistrationOrderId);
+    } else {
+      addId(candidate?.tokenPaymentOrderId);
+      addId(candidate?.tokenOrderId);
+    }
+
+    const historyTxs = getMatchingCandidateMidtransTxs(candidate, type, explicitOrderId);
+    historyTxs.forEach(tx => addId(tx.orderId));
+
+    if (candNisn) {
+      addId(type === 'reregistration' ? `SPMB-REREG-${candNisn}` : `SPMB-TOKEN-${candNisn}`);
+    }
+
+    return ids;
   }
 
   // ==========================================
@@ -1529,8 +1629,68 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     }
 
-    // 3. Validasi Status Pembayaran Token & Daftar Ulang
-    const isTokenDone = Boolean((c.tokenPaid || c.tokenPaymentStatus === 'paid' || c.tokenPaymentStatus === 'waived') && c.tokenPaymentStatus !== 'pending');
+    // 3. Validasi Status Pembayaran Token & Daftar Ulang (termasuk pemulihan otomatis dari riwayat transaksi Midtrans)
+    const reregTxs = getMatchingCandidateMidtransTxs(c, 'reregistration');
+    const settledReregTx = reregTxs.find(t => {
+      const st = String(t.transactionStatus || "").toLowerCase();
+      return st === "settlement" || st === "capture";
+    });
+    if (!c.reRegistrationOrderId && reregTxs.length > 0 && reregTxs[0]?.orderId) {
+      c.reRegistrationOrderId = reregTxs[0].orderId;
+      changed = true;
+    }
+    if (settledReregTx && (!c.reRegistrationPaid || c.reRegistrationStatus !== 'paid')) {
+      c.reRegistrationPaid = true;
+      c.reRegistrationStatus = 'paid';
+      c.reRegistrationOrderId = settledReregTx.orderId || c.reRegistrationOrderId;
+      c.reRegistrationPaidAt = c.reRegistrationPaidAt || settledReregTx.settlementTime || settledReregTx.transactionTime || settledReregTx.updatedAt || new Date().toISOString();
+      const methodStr = settledReregTx.paymentType
+        ? (String(settledReregTx.paymentType).toLowerCase().includes("midtrans") ? settledReregTx.paymentType : `Midtrans (${settledReregTx.paymentType})`)
+        : (c.reRegistrationPaymentMethod || c.reRegistrationMethod || "Midtrans Online");
+      c.reRegistrationMethod = methodStr;
+      c.reRegistrationPaymentMethod = methodStr;
+      const amt = Number(settledReregTx.grossAmount) || Number(c.reRegistrationAmount) || Number(c.reRegistrationFee) || 560000;
+      c.reRegistrationAmount = amt;
+      c.totalReRegistrationPaid = amt;
+      c.reRegistrationFee = amt;
+      c.tokenPaid = true;
+      c.tokenPaymentStatus = 'paid';
+      changed = true;
+    }
+
+    const tokenTxs = getMatchingCandidateMidtransTxs(c, 'token');
+    const settledTokenTx = tokenTxs.find(t => {
+      const st = String(t.transactionStatus || "").toLowerCase();
+      return st === "settlement" || st === "capture";
+    });
+    if (!c.tokenPaymentOrderId && tokenTxs.length > 0 && tokenTxs[0]?.orderId) {
+      c.tokenPaymentOrderId = tokenTxs[0].orderId;
+      changed = true;
+    }
+    if (settledTokenTx && (!c.tokenPaid || c.tokenPaymentStatus !== 'paid')) {
+      c.tokenPaid = true;
+      c.tokenPaymentStatus = 'paid';
+      c.tokenPaymentOrderId = settledTokenTx.orderId || c.tokenPaymentOrderId;
+      c.tokenPaidAt = c.tokenPaidAt || settledTokenTx.settlementTime || settledTokenTx.transactionTime || settledTokenTx.updatedAt || new Date().toISOString();
+      c.tokenPaymentMethod = c.tokenPaymentMethod || (settledTokenTx.paymentType ? `Midtrans (${settledTokenTx.paymentType})` : "Midtrans Online");
+      c.tokenAmount = Number(settledTokenTx.grossAmount) || Number(c.tokenAmount) || 50000;
+      changed = true;
+    }
+
+    const hasReregPaidEvidence = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
+    const isTokenDone = Boolean(
+      c.tokenPaid ||
+      c.tokenPaymentStatus === 'paid' ||
+      c.tokenPaymentStatus === 'waived' ||
+      c.registrationType === 'school_collective' ||
+      hasReregPaidEvidence
+    );
+
+    if (isTokenDone && c.tokenPaymentStatus === 'pending' && (c.tokenPaid || hasReregPaidEvidence)) {
+      c.tokenPaymentStatus = 'paid';
+      c.tokenPaid = true;
+      changed = true;
+    }
 
     // Jika token masih pending / belum lunas, pastikan tidak tercatat lunas daftar ulang atau diterima
     if (!isTokenDone && currentNisn !== "0156620618" && currentNisn !== "3140631960" && currentNisn !== "3142636294") {
@@ -1561,7 +1721,17 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (!c.reRegistrationPaid) { c.reRegistrationPaid = true; changed = true; }
       if (c.reRegistrationStatus !== 'paid') { c.reRegistrationStatus = 'paid'; changed = true; }
       if (!c.reRegistrationPaidAt) { c.reRegistrationPaidAt = new Date().toISOString(); changed = true; }
-      if (!c.reRegistrationMethod) { c.reRegistrationMethod = "Midtrans Online"; changed = true; }
+      if (!c.reRegistrationMethod && !c.reRegistrationPaymentMethod) {
+        c.reRegistrationMethod = "Midtrans Online";
+        c.reRegistrationPaymentMethod = "Midtrans Online";
+        changed = true;
+      } else if (!c.reRegistrationMethod && c.reRegistrationPaymentMethod) {
+        c.reRegistrationMethod = c.reRegistrationPaymentMethod;
+        changed = true;
+      } else if (!c.reRegistrationPaymentMethod && c.reRegistrationMethod) {
+        c.reRegistrationPaymentMethod = c.reRegistrationMethod;
+        changed = true;
+      }
       if (!c.reRegistrationAmount || Number(c.reRegistrationAmount) <= 0) {
         c.reRegistrationAmount = Number(c.totalReRegistrationPaid) || Number(c.reRegistrationFee) || (currentNisn === "3140631960" || currentNisn === "3142636294" ? 200000 : 560000);
         changed = true;
@@ -1572,11 +1742,14 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     }
 
-    // 4. Penyelarasan Status Akhir (accepted / form_submitted / registered)
+    // 4. Penyelarasan Status Akhir (accepted / re_registered / form_submitted / registered)
     if (c.isPromotedToStudent) {
       if (c.status !== 'accepted') { c.status = 'accepted'; changed = true; }
     } else if (isTokenDone && isReregPaid && (hasAllMandatoryDocs || hasRealFormData)) {
       if (c.status !== 'accepted') { c.status = 'accepted'; changed = true; }
+    } else if (isTokenDone && isReregPaid && c.status !== 'accepted' && c.status !== 're_registered') {
+      c.status = 're_registered';
+      changed = true;
     } else if (isTokenDone && hasRealFormData && (c.status === 'registered' || !c.status)) {
       c.status = 'form_submitted';
       changed = true;
@@ -2416,23 +2589,40 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
             }
             const idx = spmbCandidates.findIndex(c => c.id === mc.id || (c.nisn && mc.nisn && c.nisn.trim() === mc.nisn.trim()));
             if (idx !== -1) {
+              const existing = spmbCandidates[idx];
               spmbCandidates[idx] = {
-                ...spmbCandidates[idx],
+                ...existing,
                 ...mc,
-                isFormCompleted: spmbCandidates[idx].isFormCompleted || mc.isFormCompleted,
-                documentsUploaded: spmbCandidates[idx].documentsUploaded || mc.documentsUploaded,
-                status: (spmbCandidates[idx].status === 'accepted' || mc.status === 'accepted') ? 'accepted' : (mc.status || spmbCandidates[idx].status),
-                tokenPaid: spmbCandidates[idx].tokenPaid || mc.tokenPaid,
-                tokenPaymentStatus: (spmbCandidates[idx].tokenPaymentStatus === 'paid' || mc.tokenPaymentStatus === 'paid') ? 'paid' : (mc.tokenPaymentStatus || spmbCandidates[idx].tokenPaymentStatus),
-                reRegistrationPaid: spmbCandidates[idx].reRegistrationPaid || mc.reRegistrationPaid,
-                reRegistrationStatus: (spmbCandidates[idx].reRegistrationStatus === 'paid' || mc.reRegistrationStatus === 'paid') ? 'paid' : (mc.reRegistrationStatus || spmbCandidates[idx].reRegistrationStatus),
-                collectiveRefundStatus: (spmbCandidates[idx].collectiveRefundStatus === 'refunded' || mc.collectiveRefundStatus === 'refunded') ? 'refunded' : (mc.collectiveRefundStatus || spmbCandidates[idx].collectiveRefundStatus),
-                documents: { ...(spmbCandidates[idx].documents || {}), ...(mc.documents || {}) }
+                isFormCompleted: existing.isFormCompleted || mc.isFormCompleted,
+                documentsUploaded: existing.documentsUploaded || mc.documentsUploaded,
+                status: (existing.status === 'accepted' || mc.status === 'accepted') ? 'accepted' : (mc.status || existing.status),
+                tokenPaid: existing.tokenPaid || mc.tokenPaid,
+                tokenPaymentStatus: (existing.tokenPaymentStatus === 'paid' || mc.tokenPaymentStatus === 'paid') ? 'paid' : (mc.tokenPaymentStatus || existing.tokenPaymentStatus),
+                tokenPaymentOrderId: mc.tokenPaymentOrderId || existing.tokenPaymentOrderId,
+                tokenPaidAt: mc.tokenPaidAt || existing.tokenPaidAt,
+                tokenPaymentMethod: mc.tokenPaymentMethod || existing.tokenPaymentMethod,
+                reRegistrationPaid: existing.reRegistrationPaid || mc.reRegistrationPaid,
+                reRegistrationStatus: (existing.reRegistrationStatus === 'paid' || mc.reRegistrationStatus === 'paid') ? 'paid' : (mc.reRegistrationStatus || existing.reRegistrationStatus),
+                reRegistrationOrderId: mc.reRegistrationOrderId || existing.reRegistrationOrderId,
+                reRegistrationPaidAt: mc.reRegistrationPaidAt || existing.reRegistrationPaidAt,
+                reRegistrationMethod: mc.reRegistrationMethod || existing.reRegistrationMethod || existing.reRegistrationPaymentMethod,
+                reRegistrationPaymentMethod: mc.reRegistrationPaymentMethod || mc.reRegistrationMethod || existing.reRegistrationPaymentMethod || existing.reRegistrationMethod,
+                reRegistrationAmount: (Number(mc.reRegistrationAmount) > 0 ? Number(mc.reRegistrationAmount) : existing.reRegistrationAmount),
+                totalReRegistrationPaid: (Number(mc.totalReRegistrationPaid) > 0 ? Number(mc.totalReRegistrationPaid) : existing.totalReRegistrationPaid),
+                collectiveRefundStatus: (existing.collectiveRefundStatus === 'refunded' || mc.collectiveRefundStatus === 'refunded') ? 'refunded' : (mc.collectiveRefundStatus || existing.collectiveRefundStatus),
+                documents: { ...(existing.documents || {}), ...(mc.documents || {}) }
               };
-              healCandidateData(spmbCandidates[idx]);
+              const wasHealed = healCandidateData(spmbCandidates[idx]);
+              if (wasHealed) {
+                directSaveEntityToMysql("spmb_candidates", spmbCandidates[idx]).catch(() => {});
+              }
               delete spmbCandidates[idx].documentsRaw;
               delete spmbCandidates[idx].documentsBase64;
             } else {
+              const wasHealed = healCandidateData(mc);
+              if (wasHealed) {
+                directSaveEntityToMysql("spmb_candidates", mc).catch(() => {});
+              }
               spmbCandidates.push(mc);
             }
           }
@@ -2468,99 +2658,142 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   router.post("/reconcile-all", async (req, res) => {
     try {
       let reconciledCount = 0;
-      let alreadyPaidCount = 0;
       const updatedCandidates: SpmbCandidate[] = [];
       const reportDetails: any[] = [];
 
       for (const candidate of spmbCandidates) {
         let candidateModified = false;
-        healCandidateData(candidate);
+        const wasTokenPaid = Boolean(candidate.tokenPaid || candidate.tokenPaymentStatus === 'paid');
+        const wasReregPaid = Boolean(candidate.reRegistrationPaid || candidate.reRegistrationStatus === 'paid');
 
-        // 1. Cek & Rekonsiliasi Token Pendaftaran
+        if (healCandidateData(candidate)) {
+          candidateModified = true;
+          if (!wasTokenPaid && (candidate.tokenPaid || candidate.tokenPaymentStatus === 'paid')) {
+            reconciledCount++;
+            reportDetails.push({
+              nisn: candidate.nisn,
+              fullName: candidate.fullName,
+              type: 'token',
+              orderId: candidate.tokenPaymentOrderId || `SPMB-TOKEN-${candidate.nisn}`,
+              amount: candidate.tokenAmount || 50000,
+              status: 'reconciled',
+              message: `Token pendaftaran Rp ${(candidate.tokenAmount || 50000).toLocaleString('id-ID')} berhasil diverifikasi LUNAS.`
+            });
+          }
+          if (!wasReregPaid && (candidate.reRegistrationPaid || candidate.reRegistrationStatus === 'paid')) {
+            reconciledCount++;
+            reportDetails.push({
+              nisn: candidate.nisn,
+              fullName: candidate.fullName,
+              type: 'reregistration',
+              orderId: candidate.reRegistrationOrderId || `SPMB-REREG-${candidate.nisn}`,
+              amount: candidate.reRegistrationAmount || 0,
+              status: 'reconciled',
+              message: `Daftar Ulang & Seragam Rp ${(candidate.reRegistrationAmount || 0).toLocaleString('id-ID')} berhasil diverifikasi LUNAS.`
+            });
+          }
+        }
+
+        // 1. Cek & Rekonsiliasi Token Pendaftaran ke Midtrans API untuk semua kandidat Order ID
         if (!candidate.tokenPaid && candidate.tokenPaymentStatus !== 'paid') {
-          const tokenOrderId = candidate.tokenPaymentOrderId || candidate.tokenOrderId || `SPMB-TOKEN-${candidate.nisn}`;
-          const mtToken = await checkMidtransOrderStatus(tokenOrderId);
-          if (mtToken) {
-            const ts = String(mtToken.transaction_status || "").toLowerCase();
-            if (ts === "settlement" || ts === "capture") {
-              candidate.tokenPaid = true;
-              candidate.tokenPaymentStatus = "paid";
-              candidate.tokenPaidAt = mtToken.settlement_time || mtToken.transaction_time || new Date().toISOString();
-              candidate.tokenPaymentMethod = `Midtrans (${mtToken.payment_type || 'Online'})`;
-              candidate.tokenPaymentOrderId = tokenOrderId;
-              candidate.tokenAmount = Number(mtToken.gross_amount) || candidate.tokenAmount || 50000;
-              candidateModified = true;
-              reconciledCount++;
+          const tokenOrderIds = getCandidateOrderIdsToVerify(candidate, 'token');
+          for (const tokenOrderId of tokenOrderIds) {
+            const mtToken = await checkMidtransOrderStatus(tokenOrderId);
+            if (mtToken) {
+              const ts = String(mtToken.transaction_status || "").toLowerCase();
+              if (ts === "settlement" || ts === "capture") {
+                candidate.tokenPaid = true;
+                candidate.tokenPaymentStatus = "paid";
+                candidate.tokenPaidAt = mtToken.settlement_time || mtToken.transaction_time || new Date().toISOString();
+                candidate.tokenPaymentMethod = `Midtrans (${mtToken.payment_type || 'Online'})`;
+                candidate.tokenPaymentOrderId = tokenOrderId;
+                candidate.tokenAmount = Number(mtToken.gross_amount) || candidate.tokenAmount || 50000;
+                candidateModified = true;
+                reconciledCount++;
 
-              recordOrUpdateMidtransTransaction({
-                orderId: tokenOrderId,
-                transactionId: mtToken.transaction_id,
-                billType: "spmb_token",
-                grossAmount: candidate.tokenAmount,
-                studentName: candidate.fullName,
-                studentNis: candidate.nisn,
-                description: `Token Formulir SPMB (${candidate.registrationNumber || candidate.nisn})`,
-                transactionStatus: "settlement",
-                paymentType: mtToken.payment_type || 'Online',
-                settlementTime: candidate.tokenPaidAt
-              });
+                recordOrUpdateMidtransTransaction({
+                  orderId: tokenOrderId,
+                  transactionId: mtToken.transaction_id,
+                  billType: "spmb_token",
+                  grossAmount: candidate.tokenAmount,
+                  studentName: candidate.fullName,
+                  studentNis: candidate.nisn,
+                  description: `Token Formulir SPMB (${candidate.registrationNumber || candidate.nisn})`,
+                  transactionStatus: "settlement",
+                  paymentType: mtToken.payment_type || 'Online',
+                  settlementTime: candidate.tokenPaidAt
+                });
 
-              reportDetails.push({
-                nisn: candidate.nisn,
-                fullName: candidate.fullName,
-                type: 'token',
-                orderId: tokenOrderId,
-                amount: candidate.tokenAmount,
-                status: 'reconciled',
-                message: `Token pendaftaran Rp ${candidate.tokenAmount.toLocaleString('id-ID')} berhasil diverifikasi LUNAS.`
-              });
+                reportDetails.push({
+                  nisn: candidate.nisn,
+                  fullName: candidate.fullName,
+                  type: 'token',
+                  orderId: tokenOrderId,
+                  amount: candidate.tokenAmount,
+                  status: 'reconciled',
+                  message: `Token pendaftaran Rp ${candidate.tokenAmount.toLocaleString('id-ID')} berhasil diverifikasi LUNAS.`
+                });
+                break;
+              }
             }
           }
         }
 
-        // 2. Cek & Rekonsiliasi Daftar Ulang & Seragam
+        // 2. Cek & Rekonsiliasi Daftar Ulang & Seragam ke Midtrans API untuk semua kandidat Order ID
         if (!candidate.reRegistrationPaid && candidate.reRegistrationStatus !== 'paid') {
-          const reregOrderId = candidate.reRegistrationOrderId || `SPMB-REREG-${candidate.nisn}`;
-          const mtRereg = await checkMidtransOrderStatus(reregOrderId);
-          if (mtRereg) {
-            const ts = String(mtRereg.transaction_status || "").toLowerCase();
-            if (ts === "settlement" || ts === "capture") {
-              candidate.reRegistrationPaid = true;
-              candidate.reRegistrationStatus = "paid";
-              candidate.reRegistrationPaidAt = mtRereg.settlement_time || mtRereg.transaction_time || new Date().toISOString();
-              candidate.reRegistrationPaymentMethod = `Midtrans (${mtRereg.payment_type || 'Online'})`;
-              candidate.reRegistrationOrderId = reregOrderId;
-              candidate.reRegistrationAmount = Number(mtRereg.gross_amount) || candidate.reRegistrationAmount || 0;
-              candidateModified = true;
-              reconciledCount++;
+          const reregOrderIds = getCandidateOrderIdsToVerify(candidate, 'reregistration');
+          for (const reregOrderId of reregOrderIds) {
+            const mtRereg = await checkMidtransOrderStatus(reregOrderId);
+            if (mtRereg) {
+              const ts = String(mtRereg.transaction_status || "").toLowerCase();
+              if (ts === "settlement" || ts === "capture") {
+                const resolvedMethod = `Midtrans (${mtRereg.payment_type || 'Online'})`;
+                const resolvedAmt = Number(mtRereg.gross_amount) || Number(candidate.reRegistrationAmount) || Number(candidate.reRegistrationFee) || 560000;
+                candidate.tokenPaid = true;
+                candidate.tokenPaymentStatus = "paid";
+                candidate.reRegistrationPaid = true;
+                candidate.reRegistrationStatus = "paid";
+                candidate.reRegistrationPaidAt = mtRereg.settlement_time || mtRereg.transaction_time || new Date().toISOString();
+                candidate.reRegistrationMethod = resolvedMethod;
+                candidate.reRegistrationPaymentMethod = resolvedMethod;
+                candidate.reRegistrationOrderId = reregOrderId;
+                candidate.reRegistrationAmount = resolvedAmt;
+                candidate.totalReRegistrationPaid = resolvedAmt;
+                candidate.reRegistrationFee = resolvedAmt;
+                candidateModified = true;
+                reconciledCount++;
 
-              recordOrUpdateMidtransTransaction({
-                orderId: reregOrderId,
-                transactionId: mtRereg.transaction_id,
-                billType: "spmb_reregistration",
-                grossAmount: candidate.reRegistrationAmount,
-                studentName: candidate.fullName,
-                studentNis: candidate.nisn,
-                description: `Daftar Ulang SPMB (${candidate.registrationNumber || candidate.nisn})`,
-                transactionStatus: "settlement",
-                paymentType: mtRereg.payment_type || 'Online',
-                settlementTime: candidate.reRegistrationPaidAt
-              });
+                recordOrUpdateMidtransTransaction({
+                  orderId: reregOrderId,
+                  transactionId: mtRereg.transaction_id,
+                  billType: "spmb_reregistration",
+                  grossAmount: candidate.reRegistrationAmount,
+                  studentName: candidate.fullName,
+                  studentNis: candidate.nisn,
+                  description: `Daftar Ulang SPMB (${candidate.registrationNumber || candidate.nisn})`,
+                  transactionStatus: "settlement",
+                  paymentType: mtRereg.payment_type || 'Online',
+                  settlementTime: candidate.reRegistrationPaidAt
+                });
 
-              reportDetails.push({
-                nisn: candidate.nisn,
-                fullName: candidate.fullName,
-                type: 'reregistration',
-                orderId: reregOrderId,
-                amount: candidate.reRegistrationAmount,
-                status: 'reconciled',
-                message: `Daftar Ulang & Seragam Rp ${candidate.reRegistrationAmount.toLocaleString('id-ID')} berhasil diverifikasi LUNAS.`
-              });
+                reportDetails.push({
+                  nisn: candidate.nisn,
+                  fullName: candidate.fullName,
+                  type: 'reregistration',
+                  orderId: reregOrderId,
+                  amount: candidate.reRegistrationAmount,
+                  status: 'reconciled',
+                  message: `Daftar Ulang & Seragam Rp ${candidate.reRegistrationAmount.toLocaleString('id-ID')} berhasil diverifikasi LUNAS.`
+                });
+                break;
+              }
             }
           }
         }
 
-        healCandidateData(candidate);
+        if (healCandidateData(candidate)) {
+          candidateModified = true;
+        }
 
         if (candidateModified) {
           candidate.updatedAt = new Date().toISOString();
@@ -2572,6 +2805,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
 
       if (updatedCandidates.length > 0) {
         await directSaveEntitiesBatchToMysql("spmb_candidates", updatedCandidates);
+        lastCandidatesMysqlSync = Date.now();
       }
 
       res.json({
@@ -2581,7 +2815,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         updatedCount: updatedCandidates.length,
         reportDetails,
         message: reconciledCount > 0
-          ? `Berhasil merekonsiliasi ${reconciledCount} transaksi pembayaran SPMB di Midtrans!`
+          ? `Berhasil merekonsiliasi ${reconciledCount} transaksi pembayaran SPMB (Token / Daftar Ulang) di Midtrans!`
           : `Pemeriksaan selesai. Seluruh data transaksi SPMB sudah sinkron dengan Midtrans.`
       });
     } catch (err: any) {
@@ -2590,70 +2824,165 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
   });
 
-  // 3C. Rekonsiliasi Single Candidate by NISN or Order ID
+  // 3C. Rekonsiliasi Single Candidate by NISN, Nama, Nomor Registrasi, atau Order ID Midtrans
   router.post("/reconcile-candidate", async (req, res) => {
     try {
       const { nisn, orderId } = req.body;
       const cleanNisn = String(nisn || "").trim();
       const cleanOrderId = String(orderId || "").trim();
+      const searchVal = cleanOrderId || cleanNisn;
 
-      if (!cleanNisn && !cleanOrderId) {
+      if (!searchVal) {
         return res.status(400).json({ error: "NISN atau Order ID calon murid wajib diisi." });
       }
 
-      let candidate = spmbCandidates.find(c => 
-        (cleanNisn && ((c.nisn || "").trim() === cleanNisn || (c.registrationNumber || "").trim().toLowerCase() === cleanNisn.toLowerCase() || c.id === cleanNisn)) ||
-        (cleanOrderId && (c.tokenPaymentOrderId === cleanOrderId || c.reRegistrationOrderId === cleanOrderId || (c.nisn && cleanOrderId.includes(c.nisn))))
-      );
+      // Jika input berupa Order ID / Transaction ID yang ada di midtransTransactions, ekstrak NISN / Nama dari transaksi tersebut
+      const matchedHistoryTx = Array.isArray(midtransTransactions)
+        ? midtransTransactions.find((t: any) =>
+            t && (
+              String(t.orderId || "").trim().toLowerCase() === searchVal.toLowerCase() ||
+              String(t.transactionId || "").trim().toLowerCase() === searchVal.toLowerCase()
+            )
+          )
+        : undefined;
+      const extractedNisnFromOrder = (() => {
+        if (matchedHistoryTx?.studentNis || matchedHistoryTx?.nisn) {
+          return String(matchedHistoryTx.studentNis || matchedHistoryTx.nisn).trim();
+        }
+        const m = searchVal.match(/SPMB-(?:REREG|TOKEN)-([0-9]{8,12})/i);
+        return m ? m[1] : "";
+      })();
 
-      if (!candidate && cleanNisn) {
-        try {
-          const dbCand = await findSpmbCandidateInMysql(cleanNisn);
-          if (dbCand) {
-            spmbCandidates.push(dbCand);
-            candidate = dbCand;
-          }
-        } catch (e) {}
+      let candidate = spmbCandidates.find(c => {
+        const cNisn = String(c.nisn || "").trim();
+        const cReg = String(c.registrationNumber || c.registrationNo || "").trim().toLowerCase();
+        const cName = String(c.fullName || "").trim().toLowerCase();
+        return (
+          (cleanNisn && (cNisn === cleanNisn || cReg === cleanNisn.toLowerCase() || c.id === cleanNisn || cName === cleanNisn.toLowerCase())) ||
+          (extractedNisnFromOrder && cNisn === extractedNisnFromOrder) ||
+          (matchedHistoryTx?.studentName && cName && cName === String(matchedHistoryTx.studentName).trim().toLowerCase()) ||
+          (cleanOrderId && (
+            c.tokenPaymentOrderId === cleanOrderId ||
+            c.reRegistrationOrderId === cleanOrderId ||
+            (cNisn && cleanOrderId.includes(cNisn))
+          ))
+        );
+      });
+
+      if (!candidate) {
+        const lookupKey = extractedNisnFromOrder || cleanNisn;
+        if (lookupKey) {
+          try {
+            const dbCand = await findSpmbCandidateInMysql(lookupKey);
+            if (dbCand) {
+              spmbCandidates.push(dbCand);
+              candidate = dbCand;
+            }
+          } catch (e) {}
+        }
       }
 
       if (!candidate) {
         return res.status(404).json({ error: "Data calon murid tidak ditemukan di sistem." });
       }
 
+      const wasTokenPaid = Boolean(candidate.tokenPaid || candidate.tokenPaymentStatus === 'paid');
+      const wasReregPaid = Boolean(candidate.reRegistrationPaid || candidate.reRegistrationStatus === 'paid');
+
       let actionTaken = false;
       let tokenReconciled = false;
       let reregReconciled = false;
-      const effectiveNisn = candidate.nisn || cleanNisn;
 
-      // 1. Periksa Token di Midtrans
-      const tokenOrderId = candidate.tokenPaymentOrderId || candidate.tokenOrderId || `SPMB-TOKEN-${effectiveNisn}`;
-      const mtToken = await checkMidtransOrderStatus(tokenOrderId);
-      if (mtToken) {
-        const ts = String(mtToken.transaction_status || "").toLowerCase();
-        if (ts === "settlement" || ts === "capture") {
-          candidate.tokenPaid = true;
-          candidate.tokenPaymentStatus = "paid";
-          candidate.tokenPaidAt = mtToken.settlement_time || mtToken.transaction_time || new Date().toISOString();
-          candidate.tokenPaymentMethod = `Midtrans (${mtToken.payment_type || 'Online'})`;
-          candidate.tokenAmount = Number(mtToken.gross_amount) || candidate.tokenAmount || 50000;
+      // 0. Pulihkan terlebih dahulu jika sudah ada settlement di riwayat midtransTransactions lokal
+      if (healCandidateData(candidate)) {
+        if (!wasTokenPaid && (candidate.tokenPaid || candidate.tokenPaymentStatus === 'paid')) {
           actionTaken = true;
           tokenReconciled = true;
         }
-      }
-
-      // 2. Periksa Daftar Ulang di Midtrans
-      const reregOrderId = candidate.reRegistrationOrderId || `SPMB-REREG-${effectiveNisn}`;
-      const mtRereg = await checkMidtransOrderStatus(reregOrderId);
-      if (mtRereg) {
-        const ts = String(mtRereg.transaction_status || "").toLowerCase();
-        if (ts === "settlement" || ts === "capture") {
-          candidate.reRegistrationPaid = true;
-          candidate.reRegistrationStatus = "paid";
-          candidate.reRegistrationPaidAt = mtRereg.settlement_time || mtRereg.transaction_time || new Date().toISOString();
-          candidate.reRegistrationPaymentMethod = `Midtrans (${mtRereg.payment_type || 'Online'})`;
-          candidate.reRegistrationAmount = Number(mtRereg.gross_amount) || candidate.reRegistrationAmount || 0;
+        if (!wasReregPaid && (candidate.reRegistrationPaid || candidate.reRegistrationStatus === 'paid')) {
           actionTaken = true;
           reregReconciled = true;
+        }
+      }
+
+      // 1. Periksa Token di Midtrans untuk semua kandidat Order ID
+      const tokenOrderIds = getCandidateOrderIdsToVerify(candidate, 'token', cleanOrderId);
+      for (const tokenOrderId of tokenOrderIds) {
+        if (candidate.tokenPaid && candidate.tokenPaymentStatus === 'paid' && !cleanOrderId.toUpperCase().startsWith("SPMB-TOKEN-")) {
+          break;
+        }
+        const mtToken = await checkMidtransOrderStatus(tokenOrderId);
+        if (mtToken) {
+          const ts = String(mtToken.transaction_status || "").toLowerCase();
+          if (ts === "settlement" || ts === "capture") {
+            const resolvedMethod = `Midtrans (${mtToken.payment_type || 'Online'})`;
+            if (!candidate.tokenPaid || candidate.tokenPaymentStatus !== 'paid' || candidate.tokenPaymentOrderId !== tokenOrderId) {
+              actionTaken = true;
+              tokenReconciled = true;
+            }
+            candidate.tokenPaid = true;
+            candidate.tokenPaymentStatus = "paid";
+            candidate.tokenPaidAt = mtToken.settlement_time || mtToken.transaction_time || candidate.tokenPaidAt || new Date().toISOString();
+            candidate.tokenPaymentMethod = resolvedMethod;
+            candidate.tokenPaymentOrderId = tokenOrderId;
+            candidate.tokenAmount = Number(mtToken.gross_amount) || candidate.tokenAmount || 50000;
+
+            recordOrUpdateMidtransTransaction({
+              orderId: tokenOrderId,
+              transactionId: mtToken.transaction_id,
+              billType: "spmb_token",
+              grossAmount: candidate.tokenAmount,
+              studentName: candidate.fullName,
+              studentNis: candidate.nisn,
+              description: `Token Formulir SPMB (${candidate.registrationNumber || candidate.nisn})`,
+              transactionStatus: "settlement",
+              paymentType: mtToken.payment_type || 'Online',
+              settlementTime: candidate.tokenPaidAt
+            });
+            break;
+          }
+        }
+      }
+
+      // 2. Periksa Daftar Ulang di Midtrans untuk semua kandidat Order ID (termasuk order ber-timestamp)
+      const reregOrderIds = getCandidateOrderIdsToVerify(candidate, 'reregistration', cleanOrderId);
+      for (const reregOrderId of reregOrderIds) {
+        const mtRereg = await checkMidtransOrderStatus(reregOrderId);
+        if (mtRereg) {
+          const ts = String(mtRereg.transaction_status || "").toLowerCase();
+          if (ts === "settlement" || ts === "capture") {
+            const resolvedMethod = `Midtrans (${mtRereg.payment_type || 'Online'})`;
+            const resolvedAmt = Number(mtRereg.gross_amount) || Number(candidate.reRegistrationAmount) || Number(candidate.reRegistrationFee) || 560000;
+            if (!candidate.reRegistrationPaid || candidate.reRegistrationStatus !== 'paid' || candidate.reRegistrationOrderId !== reregOrderId) {
+              actionTaken = true;
+              reregReconciled = true;
+            }
+            candidate.tokenPaid = true;
+            candidate.tokenPaymentStatus = "paid";
+            candidate.reRegistrationPaid = true;
+            candidate.reRegistrationStatus = "paid";
+            candidate.reRegistrationPaidAt = mtRereg.settlement_time || mtRereg.transaction_time || candidate.reRegistrationPaidAt || new Date().toISOString();
+            candidate.reRegistrationMethod = resolvedMethod;
+            candidate.reRegistrationPaymentMethod = resolvedMethod;
+            candidate.reRegistrationOrderId = reregOrderId;
+            candidate.reRegistrationAmount = resolvedAmt;
+            candidate.totalReRegistrationPaid = resolvedAmt;
+            candidate.reRegistrationFee = resolvedAmt;
+
+            recordOrUpdateMidtransTransaction({
+              orderId: reregOrderId,
+              transactionId: mtRereg.transaction_id,
+              billType: "spmb_reregistration",
+              grossAmount: candidate.reRegistrationAmount,
+              studentName: candidate.fullName,
+              studentNis: candidate.nisn,
+              description: `Daftar Ulang SPMB (${candidate.registrationNumber || candidate.nisn})`,
+              transactionStatus: "settlement",
+              paymentType: mtRereg.payment_type || 'Online',
+              settlementTime: candidate.reRegistrationPaidAt
+            });
+            break;
+          }
         }
       }
 
@@ -2661,6 +2990,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.updatedAt = new Date().toISOString();
       saveState();
       await directSaveEntityToMysql("spmb_candidates", candidate);
+      lastCandidatesMysqlSync = Date.now();
+
+      const statusSummary = [
+        `Token: ${candidate.tokenPaid || candidate.tokenPaymentStatus === 'paid' ? 'LUNAS' : 'Belum Lunas'}`,
+        `Daftar Ulang: ${candidate.reRegistrationPaid || candidate.reRegistrationStatus === 'paid' ? `LUNAS (Rp ${(candidate.reRegistrationAmount || 0).toLocaleString('id-ID')})` : 'Belum Lunas'}`
+      ].join(' • ');
 
       res.json({
         success: true,
@@ -2669,8 +3004,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         reregReconciled,
         candidate,
         message: actionTaken
-          ? `Berhasil merekonsiliasi pembayaran calon murid ${candidate.fullName}!`
-          : `Pemeriksaan selesai. Status pembayaran calon murid ${candidate.fullName} telah sesuai.`
+          ? `Berhasil merekonsiliasi pembayaran calon murid ${candidate.fullName}! (${statusSummary})`
+          : `Pemeriksaan selesai untuk ${candidate.fullName}. (${statusSummary})`
       });
     } catch (err: any) {
       console.error("Error in /api/spmb/reconcile-candidate:", err);
@@ -2790,17 +3125,32 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       ensureCandidate0148071149();
     }
 
-    // Selalu ambil data terupdate langsung dari tabel MySQL spmb_candidates
+    // Selalu ambil data terupdate langsung dari tabel MySQL spmb_candidates dengan mempertahankan orderId aktif di memori
     let candidate: SpmbCandidate | null = null;
     try {
       const dbCand = await findSpmbCandidateInMysql(rawNisn);
       if (dbCand) {
-        candidate = dbCand;
         const idx = spmbCandidates.findIndex(c => (c.nisn || "").trim() === rawNisn || (c.registrationNumber || "").trim().toLowerCase() === rawNisn.toLowerCase() || c.id === dbCand.id);
         if (idx !== -1) {
-          spmbCandidates[idx] = dbCand;
+          const existing = spmbCandidates[idx];
+          spmbCandidates[idx] = {
+            ...existing,
+            ...dbCand,
+            tokenPaid: existing.tokenPaid || dbCand.tokenPaid,
+            tokenPaymentStatus: (existing.tokenPaymentStatus === 'paid' || dbCand.tokenPaymentStatus === 'paid') ? 'paid' : (dbCand.tokenPaymentStatus || existing.tokenPaymentStatus),
+            tokenPaymentOrderId: dbCand.tokenPaymentOrderId || existing.tokenPaymentOrderId,
+            reRegistrationPaid: existing.reRegistrationPaid || dbCand.reRegistrationPaid,
+            reRegistrationStatus: (existing.reRegistrationStatus === 'paid' || dbCand.reRegistrationStatus === 'paid') ? 'paid' : (dbCand.reRegistrationStatus || existing.reRegistrationStatus),
+            reRegistrationOrderId: dbCand.reRegistrationOrderId || existing.reRegistrationOrderId,
+            reRegistrationMethod: dbCand.reRegistrationMethod || existing.reRegistrationMethod || existing.reRegistrationPaymentMethod,
+            reRegistrationPaymentMethod: dbCand.reRegistrationPaymentMethod || dbCand.reRegistrationMethod || existing.reRegistrationPaymentMethod || existing.reRegistrationMethod,
+            reRegistrationAmount: (Number(dbCand.reRegistrationAmount) > 0 ? Number(dbCand.reRegistrationAmount) : existing.reRegistrationAmount),
+            totalReRegistrationPaid: (Number(dbCand.totalReRegistrationPaid) > 0 ? Number(dbCand.totalReRegistrationPaid) : existing.totalReRegistrationPaid)
+          };
+          candidate = spmbCandidates[idx];
         } else {
           spmbCandidates.push(dbCand);
+          candidate = dbCand;
         }
       }
     } catch (dbErr) {
@@ -2817,58 +3167,72 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     if (!candidate) {
       return res.status(404).json({ error: `Calon murid dengan NISN/Nomor Pendaftaran '${rawNisn}' tidak ditemukan.` });
     }
-    healCandidateData(candidate);
-    const activeOrderId = candidate.tokenPaymentOrderId || candidate.tokenOrderId;
+    let changedByHeal = healCandidateData(candidate);
 
-    // Selalu verifikasi status terkini ke Midtrans jika belum lunas daftar ulang (untuk memastikan kebenaran status Token)
-    if (activeOrderId && !candidate.tokenPaid) {
-      const mtStatus = await checkMidtransOrderStatus(activeOrderId);
-      if (mtStatus) {
-        const ts = String(mtStatus.transaction_status || "").toLowerCase();
-        const isSettled = ts === "settlement" || ts === "capture";
-        const isExpired = ts === "expire" || ts === "cancel" || ts === "deny";
+    // Selalu verifikasi status terkini ke Midtrans jika belum lunas Token
+    if (!candidate.tokenPaid) {
+      const tokenOrderIds = getCandidateOrderIdsToVerify(candidate, 'token');
+      for (const activeOrderId of tokenOrderIds) {
+        const mtStatus = await checkMidtransOrderStatus(activeOrderId);
+        if (mtStatus) {
+          const ts = String(mtStatus.transaction_status || "").toLowerCase();
+          const isSettled = ts === "settlement" || ts === "capture";
+          const isExpired = ts === "expire" || ts === "cancel" || ts === "deny";
 
-        if (isSettled) {
-          candidate.tokenPaid = true;
-          candidate.tokenPaymentStatus = "paid";
-          candidate.tokenPaidAt = mtStatus.settlement_time || mtStatus.transaction_time || new Date().toISOString();
-          candidate.tokenPaymentMethod = `Midtrans (${mtStatus.payment_type || 'Online'})`;
-          candidate.updatedAt = new Date().toISOString();
-          saveState();
-          directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
-        } else if (isExpired) {
-          // Jangan pernah menghapus data calon murid dari database MySQL atau memori!
-          if (candidate.tokenPaymentStatus !== 'paid' && !candidate.tokenPaid) {
-            candidate.tokenPaymentStatus = "pending";
+          if (isSettled) {
+            candidate.tokenPaid = true;
+            candidate.tokenPaymentStatus = "paid";
+            candidate.tokenPaymentOrderId = activeOrderId;
+            candidate.tokenPaidAt = mtStatus.settlement_time || mtStatus.transaction_time || new Date().toISOString();
+            candidate.tokenPaymentMethod = `Midtrans (${mtStatus.payment_type || 'Online'})`;
             candidate.updatedAt = new Date().toISOString();
             saveState();
             directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+            break;
+          } else if (isExpired) {
+            if (candidate.tokenPaymentStatus !== 'paid' && !candidate.tokenPaid) {
+              candidate.tokenPaymentStatus = "pending";
+              candidate.updatedAt = new Date().toISOString();
+              saveState();
+              directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+            }
           }
         }
       }
     }
 
-    // Cek juga status Daftar Ulang ke Midtrans jika belum lunas
-    const reregOrderId = candidate.reRegistrationOrderId || `SPMB-REREG-${candidate.nisn}`;
-    if (reregOrderId && candidate.reRegistrationStatus !== 'paid') {
-      const mtRereg = await checkMidtransOrderStatus(reregOrderId);
-      if (mtRereg) {
-        const ts = String(mtRereg.transaction_status || "").toLowerCase();
-        if (ts === "settlement" || ts === "capture") {
-          candidate.reRegistrationPaid = true;
-          candidate.reRegistrationStatus = "paid";
-          candidate.reRegistrationPaidAt = mtRereg.settlement_time || mtRereg.transaction_time || new Date().toISOString();
-          candidate.reRegistrationPaymentMethod = `Midtrans (${mtRereg.payment_type || 'Online'})`;
-          candidate.reRegistrationAmount = Number(mtRereg.gross_amount) || candidate.reRegistrationAmount || 0;
-          candidate.updatedAt = new Date().toISOString();
-          healCandidateData(candidate);
-          saveState();
-          directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+    // Cek juga status Daftar Ulang ke Midtrans untuk semua kandidat Order ID jika belum lunas
+    if (candidate.reRegistrationStatus !== 'paid' || !candidate.reRegistrationPaid) {
+      const reregOrderIds = getCandidateOrderIdsToVerify(candidate, 'reregistration');
+      for (const reregOrderId of reregOrderIds) {
+        const mtRereg = await checkMidtransOrderStatus(reregOrderId);
+        if (mtRereg) {
+          const ts = String(mtRereg.transaction_status || "").toLowerCase();
+          if (ts === "settlement" || ts === "capture") {
+            const resolvedMethod = `Midtrans (${mtRereg.payment_type || 'Online'})`;
+            const resolvedAmt = Number(mtRereg.gross_amount) || Number(candidate.reRegistrationAmount) || Number(candidate.reRegistrationFee) || 560000;
+            candidate.tokenPaid = true;
+            candidate.tokenPaymentStatus = "paid";
+            candidate.reRegistrationPaid = true;
+            candidate.reRegistrationStatus = "paid";
+            candidate.reRegistrationOrderId = reregOrderId;
+            candidate.reRegistrationPaidAt = mtRereg.settlement_time || mtRereg.transaction_time || new Date().toISOString();
+            candidate.reRegistrationMethod = resolvedMethod;
+            candidate.reRegistrationPaymentMethod = resolvedMethod;
+            candidate.reRegistrationAmount = resolvedAmt;
+            candidate.totalReRegistrationPaid = resolvedAmt;
+            candidate.reRegistrationFee = resolvedAmt;
+            candidate.updatedAt = new Date().toISOString();
+            healCandidateData(candidate);
+            saveState();
+            directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+            break;
+          }
         }
       }
     }
 
-    const changed = healCandidateData(candidate);
+    const changed = healCandidateData(candidate) || changedByHeal;
     if (changed) {
       candidate.updatedAt = new Date().toISOString();
       saveState();
@@ -3790,10 +4154,13 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         candidate.reRegistrationPaid = true;
         candidate.reRegistrationStatus = "paid";
         candidate.reRegistrationPaidAt = new Date().toISOString();
+        candidate.reRegistrationMethod = "Gratis / Beasiswa (Diskon 100%)";
         candidate.reRegistrationPaymentMethod = "Gratis / Beasiswa (Diskon 100%)";
         candidate.reRegistrationFee = 0;
         candidate.reRegistrationAmount = 0;
         saveState();
+        directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+        lastCandidatesMysqlSync = Date.now();
 
         broadcastNotification({
           id: `notif-${Date.now()}`,
@@ -3812,6 +4179,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
 
       saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+      lastCandidatesMysqlSync = Date.now();
 
       let snapToken = "";
       let redirectUrl = "";
@@ -3938,6 +4307,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
             rawResponse: snapJson
           });
           saveState();
+          directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+          lastCandidatesMysqlSync = Date.now();
         } else {
           const errText = await snapResponse.text();
           console.warn("Midtrans Snap error for SPMB reregistration:", errText);

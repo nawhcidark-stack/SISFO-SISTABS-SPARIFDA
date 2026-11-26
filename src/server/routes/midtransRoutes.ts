@@ -1779,7 +1779,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         c.tokenPaymentOrderId === activeOrderId || 
         c.reRegistrationOrderId === activeOrderId ||
         c.tokenPaymentOrderId === cleanOrderId ||
-        c.reRegistrationOrderId === cleanOrderId
+        c.reRegistrationOrderId === cleanOrderId ||
+        (c.nisn && (activeOrderId.includes(c.nisn) || cleanOrderId.includes(c.nisn))) ||
+        (c.registrationNo && (activeOrderId.includes(c.registrationNo) || cleanOrderId.includes(c.registrationNo)))
       );
 
       if (candidate) {
@@ -1790,13 +1792,17 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             candidate.tokenPaidAt = resolvedPaidAt;
             candidate.tokenPaymentMethod = actualPaymentType;
             candidate.tokenPaymentOrderId = targetOrderId;
+            if (!candidate.status || (candidate.status as string) === "pending" || (candidate.status as string) === "token_pending") {
+              candidate.status = "registered";
+            }
+            candidate.updatedAt = new Date().toISOString();
             actionTaken = true;
 
             recordOrUpdateMidtransTransaction({
               orderId: targetOrderId,
               transactionId: targetTransactionId,
               billType: "spmb_token",
-              grossAmount: Number(candidate.tokenAmount) || 50000,
+              grossAmount: Number(statusData?.gross_amount) || Number(candidate.tokenAmount) || 50000,
               studentName: candidate.fullName,
               studentNis: candidate.nisn || candidate.registrationNo,
               description: `Token Formulir SPMB (${candidate.registrationNo})`,
@@ -1842,18 +1848,28 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             detailMessage = `Pembayaran token SPMB a.n ${candidate.fullName} telah expired di Midtrans. Masa tenggang diperpanjang 3 hari untuk opsi Bayar Tunai di Sekolah (s.d. ${candidate.tokenExpiryTime} WIB).`;
           }
         } else if (isRereg) {
-          if (isSettled && candidate.reRegistrationStatus !== "paid") {
+          if (isSettled) {
+            const grossAmt = Number(statusData?.gross_amount) || Number(candidate.reRegistrationAmount) || Number(candidate.reRegistrationFee) || 560000;
+            candidate.tokenPaid = true;
+            candidate.tokenPaymentStatus = "paid";
+            candidate.reRegistrationPaid = true;
             candidate.reRegistrationStatus = "paid";
             candidate.reRegistrationPaidAt = resolvedPaidAt;
+            candidate.reRegistrationMethod = actualPaymentType;
             candidate.reRegistrationPaymentMethod = actualPaymentType;
             candidate.reRegistrationOrderId = targetOrderId;
+            candidate.reRegistrationAmount = grossAmt;
+            candidate.totalReRegistrationPaid = grossAmt;
+            candidate.reRegistrationFee = grossAmt;
+            candidate.status = (candidate.documentsUploaded || candidate.isFormCompleted) ? "accepted" : "re_registered";
+            candidate.updatedAt = new Date().toISOString();
             actionTaken = true;
 
             recordOrUpdateMidtransTransaction({
               orderId: targetOrderId,
               transactionId: targetTransactionId,
               billType: "spmb_reregistration",
-              grossAmount: Number(candidate.reRegistrationAmount) || 0,
+              grossAmount: grossAmt,
               studentName: candidate.fullName,
               studentNis: candidate.nisn || candidate.registrationNo,
               description: `Daftar Ulang SPMB (${candidate.registrationNo})`,
@@ -1862,7 +1878,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               settlementTime: resolvedPaidAt
             });
 
-            detailMessage = `Daftar Ulang SPMB a.n ${candidate.fullName} (${candidate.registrationNo}) berhasil di-settle LUNAS.`;
+            detailMessage = `Daftar Ulang SPMB a.n ${candidate.fullName} (${candidate.registrationNo}) sebesar Rp ${grossAmt.toLocaleString('id-ID')} berhasil di-settle LUNAS.`;
           } else if (isExpired && candidate.reRegistrationStatus === "pending") {
             candidate.reRegistrationStatus = "unpaid";
             candidate.reRegistrationOrderId = undefined;
@@ -3203,10 +3219,13 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
     try {
       // 1. Catat di riwayat transaksi Midtrans
+      const upperWebhookOrderId = String(order_id).toUpperCase();
       recordOrUpdateMidtransTransaction({
         orderId: order_id,
         transactionId: transaction_id,
-        billType: String(order_id).startsWith("SPMB-") ? "spmb_token" : "other",
+        billType: upperWebhookOrderId.startsWith("SPMB-REREG-")
+          ? "spmb_reregistration"
+          : (upperWebhookOrderId.startsWith("SPMB-") ? "spmb_token" : "other"),
         grossAmount: Number(gross_amount) || 0,
         transactionStatus: transaction_status,
         paymentType: formatMidtransPaymentMethod(payment_type),
@@ -3214,13 +3233,13 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         description: `Callback Midtrans [${order_id}] - Status: ${transaction_status}`
       });
 
-      // 2. Jika transaksi SPMB Token, sinkronkan langsung status calon murid baru
+      // 2. Jika transaksi SPMB Token atau Daftar Ulang, sinkronkan langsung status calon murid baru
       let spmbActionTaken = false;
-      if (String(order_id).toUpperCase().startsWith("SPMB-TOKEN-")) {
+      if (upperWebhookOrderId.startsWith("SPMB-TOKEN-")) {
         const candIdx = spmbCandidates.findIndex(c => 
           c.tokenPaymentOrderId === order_id || 
           c.tokenOrderId === order_id || 
-          String(order_id).includes(c.nisn)
+          (c.nisn && String(order_id).includes(c.nisn))
         );
         if (candIdx !== -1) {
           const candidate = spmbCandidates[candIdx];
@@ -3234,7 +3253,10 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             candidate.tokenPaymentStatus = "paid";
             candidate.tokenPaidAt = webhookData.settlement_time || webhookData.transaction_time || new Date().toISOString();
             candidate.tokenPaymentMethod = formatMidtransPaymentMethod(payment_type);
-            candidate.status = "registered";
+            candidate.tokenPaymentOrderId = order_id;
+            if (!candidate.status || (candidate.status as string) === "pending" || (candidate.status as string) === "token_pending") {
+              candidate.status = "registered";
+            }
             candidate.updatedAt = new Date().toISOString();
             saveState();
             if (persistEntity) persistEntity("spmbCandidates", candidate).catch(() => {});
@@ -3274,13 +3296,65 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             spmbActionTaken = true;
           }
         }
+      } else if (upperWebhookOrderId.startsWith("SPMB-REREG-")) {
+        const candIdx = spmbCandidates.findIndex(c => 
+          c.reRegistrationOrderId === order_id || 
+          (c.nisn && String(order_id).includes(c.nisn))
+        );
+        if (candIdx !== -1) {
+          const candidate = spmbCandidates[candIdx];
+          const ts = String(transaction_status || "").toLowerCase();
+          const isSettled = ts === "settlement" || ts === "capture";
+          const isPending = ts === "pending";
+          const isExpired = ts === "expire" || ts === "cancel" || ts === "deny";
+
+          if (isSettled) {
+            const grossAmt = Number(gross_amount) || Number(candidate.reRegistrationAmount) || Number(candidate.reRegistrationFee) || 560000;
+            const formattedMethod = formatMidtransPaymentMethod(payment_type);
+            candidate.tokenPaid = true;
+            candidate.tokenPaymentStatus = "paid";
+            candidate.reRegistrationPaid = true;
+            candidate.reRegistrationStatus = "paid";
+            candidate.reRegistrationPaidAt = webhookData.settlement_time || webhookData.transaction_time || new Date().toISOString();
+            candidate.reRegistrationMethod = formattedMethod;
+            candidate.reRegistrationPaymentMethod = formattedMethod;
+            candidate.reRegistrationOrderId = order_id;
+            candidate.reRegistrationAmount = grossAmt;
+            candidate.totalReRegistrationPaid = grossAmt;
+            candidate.reRegistrationFee = grossAmt;
+            candidate.status = (candidate.documentsUploaded || candidate.isFormCompleted) ? "accepted" : "re_registered";
+            candidate.updatedAt = new Date().toISOString();
+            saveState();
+            if (persistEntity) persistEntity("spmbCandidates", candidate).catch(() => {});
+            spmbActionTaken = true;
+          } else if (isPending) {
+            if (candidate.reRegistrationStatus !== "paid") {
+              candidate.reRegistrationStatus = "pending";
+              candidate.reRegistrationOrderId = order_id;
+              candidate.reRegistrationMethod = formatMidtransPaymentMethod(payment_type);
+              candidate.reRegistrationPaymentMethod = formatMidtransPaymentMethod(payment_type);
+              candidate.updatedAt = new Date().toISOString();
+              saveState();
+              if (persistEntity) persistEntity("spmbCandidates", candidate).catch(() => {});
+              spmbActionTaken = true;
+            }
+          } else if (isExpired) {
+            if (candidate.reRegistrationStatus === "pending") {
+              candidate.reRegistrationStatus = "unpaid";
+              candidate.updatedAt = new Date().toISOString();
+              saveState();
+              if (persistEntity) persistEntity("spmbCandidates", candidate).catch(() => {});
+              spmbActionTaken = true;
+            }
+          }
+        }
       }
 
       res.json({
         status: "ok",
         actionTaken: spmbActionTaken,
         message: spmbActionTaken 
-          ? `Callback Midtrans untuk Token SPMB [${order_id}] berhasil diproses (Status: ${transaction_status}).`
+          ? `Callback Midtrans untuk SPMB [${order_id}] berhasil diproses (Status: ${transaction_status}).`
           : "Callback Midtrans diterima dan dicatat dalam riwayat transaksi. Rekonsiliasi otomatis dinonaktifkan untuk tagihan internal sekolah."
       });
     } catch (e) {
@@ -3780,7 +3854,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         (t.id && t.id.toLowerCase() === cleanLower) ||
         (t.transactionId && t.transactionId.toLowerCase() === cleanLower)
       );
-      const localMatchedMidtransTx = midtransTransactions.find(t =>
+      let localMatchedMidtransTx = midtransTransactions.find(t =>
         (t.orderId && t.orderId.toLowerCase() === cleanLower) ||
         (t.transactionId && t.transactionId.toLowerCase() === cleanLower)
       );
@@ -3789,6 +3863,68 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         s.id.toLowerCase() === cleanLower ||
         s.id.toLowerCase() === `std-${cleanLower}`
       );
+
+      // Search SPMB Candidates (Daftar Ulang SPMB-REREG-... or Token SPMB-TOKEN-... or by NISN/RegistrationNo)
+      const isReregQuery = cleanQuery.toUpperCase().startsWith("SPMB-REREG-");
+      const isTokenQuery = cleanQuery.toUpperCase().startsWith("SPMB-TOKEN-");
+      const localMatchedSpmbCandidate = spmbCandidates.find(c =>
+        (c.reRegistrationOrderId && c.reRegistrationOrderId.toLowerCase() === cleanLower) ||
+        (c.tokenPaymentOrderId && c.tokenPaymentOrderId.toLowerCase() === cleanLower) ||
+        (c.nisn && c.nisn.trim().toLowerCase() === cleanLower) ||
+        (c.registrationNo && c.registrationNo.trim().toLowerCase() === cleanLower) ||
+        (c.nisn && (isReregQuery || isTokenQuery) && cleanQuery.includes(c.nisn))
+      );
+
+      // If user searched by NISN or partial SPMB Order ID and Midtrans returned 404, try discovering their actual timestamped SPMB order IDs
+      if (!midtransStatus && localMatchedSpmbCandidate) {
+        const candidateNisn = (localMatchedSpmbCandidate.nisn || "").trim();
+        const candidateOrdersToTry: string[] = [];
+        if (localMatchedSpmbCandidate.reRegistrationOrderId) {
+          candidateOrdersToTry.push(localMatchedSpmbCandidate.reRegistrationOrderId);
+        }
+        for (const tx of midtransTransactions) {
+          const oid = String(tx.orderId || "").trim();
+          if (!oid) continue;
+          if (
+            (candidateNisn && oid.includes(candidateNisn) && oid.toUpperCase().startsWith("SPMB-")) ||
+            (tx.studentNis && String(tx.studentNis).trim() === candidateNisn && oid.toUpperCase().startsWith("SPMB-"))
+          ) {
+            if (!candidateOrdersToTry.includes(oid)) {
+              candidateOrdersToTry.push(oid);
+            }
+          }
+        }
+        if (localMatchedSpmbCandidate.tokenPaymentOrderId && !candidateOrdersToTry.includes(localMatchedSpmbCandidate.tokenPaymentOrderId)) {
+          candidateOrdersToTry.push(localMatchedSpmbCandidate.tokenPaymentOrderId);
+        }
+
+        // Prioritize SPMB-REREG orders if not specifically querying SPMB-TOKEN
+        candidateOrdersToTry.sort((a, b) => {
+          const aRereg = a.toUpperCase().startsWith("SPMB-REREG-") ? 0 : 1;
+          const bRereg = b.toUpperCase().startsWith("SPMB-REREG-") ? 0 : 1;
+          return aRereg - bRereg;
+        });
+
+        for (const candOrderId of candidateOrdersToTry) {
+          try {
+            const st = await getMidtransStatus(candOrderId);
+            if (st) {
+              midtransStatus = st;
+              if (st.transaction_status === "settlement" || st.transaction_status === "capture") {
+                break;
+              }
+            }
+          } catch (_) {}
+        }
+
+        if (!localMatchedMidtransTx && candidateNisn) {
+          localMatchedMidtransTx = midtransTransactions.find(t =>
+            t.orderId && t.orderId.toUpperCase().startsWith("SPMB-REREG-") && t.orderId.includes(candidateNisn) && (t.transactionStatus === "settlement" || t.transactionStatus === "capture")
+          ) || midtransTransactions.find(t =>
+            t.orderId && t.orderId.includes(candidateNisn)
+          );
+        }
+      }
 
       // Resolve candidate student
       let candidateStudent: Student | undefined = localMatchedStudentByNis;
@@ -3855,11 +3991,19 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       const isPendingInMidtrans = ts === "pending";
       const isExpiredInMidtrans = ts === "expire" || ts === "cancel" || ts === "deny";
 
+      const effectiveSpmbOrderId = String(midtransStatus?.order_id || localMatchedMidtransTx?.orderId || cleanQuery).toUpperCase();
+      const isSpmbTokenTarget = isTokenQuery || (effectiveSpmbOrderId.startsWith("SPMB-TOKEN-") && !isReregQuery);
+
       // Check whether internal bill is already paid
       let isAlreadyPaidInLocal = 
         (localMatchedSpp && localMatchedSpp.status === "paid") ||
         (localMatchedMisc && localMatchedMisc.status === "paid") ||
         (localMatchedSavings && localMatchedSavings.status === "success") ||
+        (localMatchedSpmbCandidate && (
+          isSpmbTokenTarget
+            ? (localMatchedSpmbCandidate.tokenPaymentStatus === "paid" || localMatchedSpmbCandidate.tokenPaid === true)
+            : (localMatchedSpmbCandidate.reRegistrationStatus === "paid" || localMatchedSpmbCandidate.reRegistrationPaid === true)
+        )) ||
         false;
 
       if (!isAlreadyPaidInLocal && candidateStudent && midtransStatus) {
@@ -3911,6 +4055,71 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
       // Handle Case B: Force Reconcile against Local Pending Bill (when Gateway status 404 or dev/offline)
       if (forceReconcileLocal) {
+        if (localMatchedSpmbCandidate) {
+          const nowIso = new Date().toISOString();
+          if (isSpmbTokenTarget) {
+            localMatchedSpmbCandidate.tokenPaid = true;
+            localMatchedSpmbCandidate.tokenPaymentStatus = "paid";
+            localMatchedSpmbCandidate.tokenPaidAt = nowIso;
+            localMatchedSpmbCandidate.tokenPaymentMethod = "Midtrans (Paksa Rekonsiliasi Internal)";
+            localMatchedSpmbCandidate.tokenPaymentOrderId = localMatchedSpmbCandidate.tokenPaymentOrderId || `SPMB-TOKEN-${localMatchedSpmbCandidate.nisn}-${Date.now()}`;
+            if (!localMatchedSpmbCandidate.status || (localMatchedSpmbCandidate.status as string) === "pending" || (localMatchedSpmbCandidate.status as string) === "token_pending") {
+              localMatchedSpmbCandidate.status = "registered";
+            }
+            localMatchedSpmbCandidate.updatedAt = nowIso;
+          } else {
+            const reregAmt = Number(localMatchedMidtransTx?.grossAmount) || Number(localMatchedSpmbCandidate.reRegistrationAmount) || Number(localMatchedSpmbCandidate.reRegistrationFee) || 560000;
+            const resolvedOrderId = cleanQuery.toUpperCase().startsWith("SPMB-REREG-")
+              ? cleanQuery
+              : (localMatchedSpmbCandidate.reRegistrationOrderId || localMatchedMidtransTx?.orderId || `SPMB-REREG-${localMatchedSpmbCandidate.nisn}-${Date.now()}`);
+            localMatchedSpmbCandidate.tokenPaid = true;
+            localMatchedSpmbCandidate.tokenPaymentStatus = "paid";
+            localMatchedSpmbCandidate.reRegistrationPaid = true;
+            localMatchedSpmbCandidate.reRegistrationStatus = "paid";
+            localMatchedSpmbCandidate.reRegistrationPaidAt = localMatchedMidtransTx?.settlementTime || nowIso;
+            localMatchedSpmbCandidate.reRegistrationMethod = localMatchedMidtransTx?.paymentType || "Midtrans (Paksa Rekonsiliasi Internal)";
+            localMatchedSpmbCandidate.reRegistrationPaymentMethod = localMatchedMidtransTx?.paymentType || "Midtrans (Paksa Rekonsiliasi Internal)";
+            localMatchedSpmbCandidate.reRegistrationOrderId = resolvedOrderId;
+            localMatchedSpmbCandidate.reRegistrationAmount = reregAmt;
+            localMatchedSpmbCandidate.totalReRegistrationPaid = reregAmt;
+            localMatchedSpmbCandidate.reRegistrationFee = reregAmt;
+            localMatchedSpmbCandidate.status = (localMatchedSpmbCandidate.documentsUploaded || localMatchedSpmbCandidate.isFormCompleted) ? "accepted" : "re_registered";
+            localMatchedSpmbCandidate.updatedAt = nowIso;
+
+            recordOrUpdateMidtransTransaction({
+              orderId: resolvedOrderId,
+              billType: "spmb_reregistration",
+              grossAmount: reregAmt,
+              studentName: localMatchedSpmbCandidate.fullName,
+              studentNis: localMatchedSpmbCandidate.nisn,
+              description: `Daftar Ulang SPMB (${localMatchedSpmbCandidate.registrationNo || localMatchedSpmbCandidate.nisn})`,
+              transactionStatus: "settlement",
+              paymentType: localMatchedSpmbCandidate.reRegistrationPaymentMethod,
+              settlementTime: localMatchedSpmbCandidate.reRegistrationPaidAt
+            });
+          }
+
+          saveState();
+          if (persistEntity) {
+            await persistEntity("spmbCandidates", localMatchedSpmbCandidate).catch(e => console.error("Error saving force local SPMB candidate to MySQL:", e));
+          }
+
+          return res.json({
+            success: true,
+            actionTaken: true,
+            message: isSpmbTokenTarget
+              ? `Token Formulir SPMB a.n ${localMatchedSpmbCandidate.fullName} (NISN: ${localMatchedSpmbCandidate.nisn}) berhasil direkonsiliasi LUNAS.`
+              : `Daftar Ulang SPMB a.n ${localMatchedSpmbCandidate.fullName} (NISN: ${localMatchedSpmbCandidate.nisn}) berhasil direkonsiliasi LUNAS.`,
+            midtransData: normalizedMidtransData,
+            matchedStudent: {
+              id: localMatchedSpmbCandidate.id,
+              name: localMatchedSpmbCandidate.fullName,
+              nis: localMatchedSpmbCandidate.nisn,
+              class: `Calon Murid SPMB (${localMatchedSpmbCandidate.sessionId || "Umum"})`
+            }
+          });
+        }
+
         if (localMatchedSpp && localMatchedSpp.status !== "paid") {
           localMatchedSpp.isVoidedByAdmin = false;
           delete localMatchedSpp.voidedAt;
@@ -4046,7 +4255,13 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             class: candidateStudent.class,
             phone: candidateStudent.phone,
             savingsBalance: candidateStudent.savingsBalance
-          } : null,
+          } : (localMatchedSpmbCandidate ? {
+            id: localMatchedSpmbCandidate.id,
+            name: localMatchedSpmbCandidate.fullName,
+            nis: localMatchedSpmbCandidate.nisn,
+            class: `Calon Murid SPMB (${localMatchedSpmbCandidate.sessionId || "Umum"})`,
+            phone: localMatchedSpmbCandidate.phone
+          } : null),
           unpaidBills: {
             spp: studentUnpaidSpp.map(b => ({ id: b.id, month: b.month, year: b.year, amount: b.amount })),
             misc: studentUnpaidMisc.map(m => ({ id: m.id, title: m.title, amount: m.amount }))
@@ -4061,7 +4276,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         isCheckOnly: true,
         foundInMidtrans: !!midtransStatus,
         midtransData: normalizedMidtransData,
-        foundInLocal: !!(localMatchedSpp || localMatchedMisc || localMatchedSavings || localMatchedMidtransTx || localMatchedStudentByNis),
+        foundInLocal: !!(localMatchedSpp || localMatchedMisc || localMatchedSavings || localMatchedMidtransTx || localMatchedStudentByNis || localMatchedSpmbCandidate),
         localMatchedItem: localMatchedSpp ? {
           type: "spp",
           title: `SPP ${localMatchedSpp.month} ${localMatchedSpp.year}`,
@@ -4083,7 +4298,21 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           status: localMatchedSavings.status,
           orderId: localMatchedSavings.orderId,
           transactionId: localMatchedSavings.transactionId
-        } : null)),
+        } : (localMatchedSpmbCandidate ? {
+          type: isSpmbTokenTarget ? "spmb_token" : "spmb_reregistration",
+          title: isSpmbTokenTarget
+            ? `Token Formulir SPMB (${localMatchedSpmbCandidate.fullName})`
+            : `Daftar Ulang SPMB (${localMatchedSpmbCandidate.fullName})`,
+          amount: isSpmbTokenTarget
+            ? (Number(localMatchedSpmbCandidate.tokenAmount) || 50000)
+            : (Number(midtransStatus?.gross_amount) || Number(localMatchedMidtransTx?.grossAmount) || Number(localMatchedSpmbCandidate.reRegistrationAmount) || Number(localMatchedSpmbCandidate.reRegistrationFee) || 560000),
+          status: isSpmbTokenTarget
+            ? (localMatchedSpmbCandidate.tokenPaid || localMatchedSpmbCandidate.tokenPaymentStatus === "paid" ? "paid" : (localMatchedSpmbCandidate.tokenPaymentStatus || "unpaid"))
+            : (localMatchedSpmbCandidate.reRegistrationPaid || localMatchedSpmbCandidate.reRegistrationStatus === "paid" ? "paid" : (localMatchedSpmbCandidate.reRegistrationStatus || "unpaid")),
+          orderId: isSpmbTokenTarget
+            ? localMatchedSpmbCandidate.tokenPaymentOrderId
+            : (localMatchedSpmbCandidate.reRegistrationOrderId || midtransStatus?.order_id || localMatchedMidtransTx?.orderId)
+        } : null))),
         matchedStudent: candidateStudent ? {
           id: candidateStudent.id,
           name: candidateStudent.name,
@@ -4091,7 +4320,13 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           class: candidateStudent.class,
           phone: candidateStudent.phone,
           savingsBalance: candidateStudent.savingsBalance
-        } : null,
+        } : (localMatchedSpmbCandidate ? {
+          id: localMatchedSpmbCandidate.id,
+          name: localMatchedSpmbCandidate.fullName,
+          nis: localMatchedSpmbCandidate.nisn,
+          class: `Calon Murid SPMB (${localMatchedSpmbCandidate.sessionId || "Umum"})`,
+          phone: localMatchedSpmbCandidate.phone
+        } : null),
         unpaidBills: {
           spp: studentUnpaidSpp.map(b => ({ id: b.id, month: b.month, year: b.year, amount: b.amount })),
           misc: studentUnpaidMisc.map(m => ({ id: m.id, title: m.title, amount: m.amount }))
@@ -4102,7 +4337,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           ? (isSettledInMidtrans 
               ? (isAlreadyPaidInLocal ? "Transaksi LUNAS di Midtrans dan SUDAH LUNAS di database sekolah." : "Transaksi LUNAS di Midtrans. Siap direkonsiliasikan ke database sekolah.")
               : (isPendingInMidtrans ? "Transaksi masih PENDING di Midtrans (menunggu pembayaran oleh wali murid)." : `Status transaksi di Midtrans: ${ts.toUpperCase()}`))
-          : (localMatchedSpp || localMatchedMisc || localMatchedSavings 
+          : (localMatchedSpp || localMatchedMisc || localMatchedSavings || localMatchedSpmbCandidate
               ? "Transaksi tidak tercatat di Gateway Midtrans, namun ada di database lokal sekolah."
               : "Transaksi tidak ditemukan di Gateway Midtrans maupun database lokal sekolah.")
       });

@@ -1643,6 +1643,33 @@ export default function AdminSpmbManagement({
         </div>
       )}
 
+      {/* Banner Hasil Rekonsiliasi Calon Murid (Tampil di Semua Tab) */}
+      {reconcileSingleMsg && activeTab !== 'reconciliation' && (
+        <div
+          className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 shadow-md transition-all ${
+            reconcileSingleMsg.type === 'success'
+              ? 'bg-emerald-50 border-emerald-400 text-emerald-950'
+              : 'bg-rose-50 border-rose-400 text-rose-950'
+          }`}
+        >
+          <div className="flex items-center gap-2.5 text-xs font-bold">
+            {reconcileSingleMsg.type === 'success' ? (
+              <CheckCircle2 size={18} className="text-emerald-700 shrink-0" />
+            ) : (
+              <AlertTriangle size={18} className="text-rose-700 shrink-0" />
+            )}
+            <span>{reconcileSingleMsg.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReconcileSingleMsg(null)}
+            className="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-900/10 hover:bg-slate-900/20 text-slate-800 cursor-pointer"
+          >
+            Tutup
+          </button>
+        </div>
+      )}
+
       {/* ================= TAB 1: DAFTAR CALON MURID ================= */}
       {activeTab === 'candidates' && (
         <div className="space-y-4">

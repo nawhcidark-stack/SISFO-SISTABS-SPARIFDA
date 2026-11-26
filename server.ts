@@ -14308,7 +14308,8 @@ async function startServer() {
     sendWhatsappNotification,
     checkAndAutoTransferExpiredCandidates,
     recordOrUpdateMidtransTransaction,
-    treasurerTransactions
+    treasurerTransactions,
+    midtransTransactions
   }));
 
   // Dynamic PWA manifest.json generation synchronized with modern PWA standards

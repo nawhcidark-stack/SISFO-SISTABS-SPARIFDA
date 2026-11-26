@@ -93,7 +93,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   onRefreshTreasurerTransactions
 }) => {
   // Default subTab is 'cashier' so Bendahara can immediately perform direct POS transactions in the panel
-  const [subTab, setSubTab] = useState<'cashier' | 'inventory' | 'daily_report' | 'financial_report'>('cashier');
+  const [subTab, setSubTab] = useState<'cashier' | 'inventory' | 'daily_report' | 'item_report' | 'financial_report'>('cashier');
   const [products, setProducts] = useState<KoperasiProduct[]>([]);
   const [sales, setSales] = useState<KoperasiSaleTransaction[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -230,6 +230,13 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
   const [dailyCategoryFilter, setDailyCategoryFilter] = useState<string>('Semua');
   const [excludedDailyCategories, setExcludedDailyCategories] = useState<string[]>([]);
   const [dailySizeFilter, setDailySizeFilter] = useState<string>('Semua');
+
+  // Per-Item Sales Report Filter & View Mode
+  const [itemReportViewMode, setItemReportViewMode] = useState<'summary' | 'detail'>('summary');
+  const [itemReportSearch, setItemReportSearch] = useState<string>('');
+  const [itemReportProductKey, setItemReportProductKey] = useState<string>('Semua');
+  const [itemReportSortBy, setItemReportSortBy] = useState<'qty_desc' | 'omzet_desc' | 'profit_desc' | 'name_asc'>('qty_desc');
+  const [expandedItemKey, setExpandedItemKey] = useState<string | null>(null);
 
   // Financial Report Filter
   const [financialMonth, setFinancialMonth] = useState<string>(currentMonthIso);
@@ -1234,6 +1241,293 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     };
   }, [filteredDailySales]);
 
+  // Per-Item Sales Report Calculations (Rekap Akumulasi Per Item & Rincian Transaksi Per Item)
+  const itemSalesReportData = useMemo(() => {
+    const productById = new Map<string, KoperasiProduct>();
+    const productByCode = new Map<string, KoperasiProduct>();
+    for (const p of products) {
+      if (p.id) productById.set(p.id, p);
+      if (p.code) productByCode.set(p.code.toLowerCase(), p);
+    }
+
+    interface ItemBuyerRow {
+      invoiceNumber: string;
+      date: string;
+      buyerName: string;
+      buyerType: 'student' | 'teacher' | 'general';
+      buyerSubLabel: string;
+      studentNis: string;
+      itemKey: string;
+      productId: string;
+      productCode: string;
+      productName: string;
+      category: string;
+      size: string;
+      unit: string;
+      qty: number;
+      basePrice: number;
+      sellingPrice: number;
+      subtotalBase: number;
+      subtotalSelling: number;
+      profit: number;
+      paymentMethod: 'kas' | 'bank' | 'midtrans';
+      paymentLabel: string;
+      cashierName: string;
+      saleObj: KoperasiSaleTransaction;
+    }
+
+    interface ItemSummaryGroup {
+      itemKey: string;
+      productId: string;
+      productCode: string;
+      productName: string;
+      category: string;
+      size: string;
+      unit: string;
+      invoiceSet: Set<string>;
+      txCount: number;
+      totalQty: number;
+      basePrice: number;
+      sellingPrice: number;
+      totalBaseAmount: number;
+      totalSellingAmount: number;
+      totalProfit: number;
+      kasQty: number;
+      kasAmount: number;
+      bankQty: number;
+      bankAmount: number;
+      midtransQty: number;
+      midtransAmount: number;
+      currentStock: number | null;
+      isNonStock: boolean;
+      buyers: ItemBuyerRow[];
+    }
+
+    const groupsMap = new Map<string, ItemSummaryGroup>();
+    const allFlatRows: ItemBuyerRow[] = [];
+
+    for (const sale of filteredDailySales) {
+      const buyerSubLabel =
+        sale.buyerType === 'teacher'
+          ? sale.teacherRole || 'Guru / Tendik'
+          : sale.buyerType === 'student'
+          ? sale.studentClass
+            ? `Kelas ${sale.studentClass}`
+            : 'Siswa'
+          : sale.studentClass || 'Umum';
+
+      const paymentLabel =
+        sale.paymentMethod === 'midtrans'
+          ? `${sale.midtransPaymentType || 'Midtrans (QRIS)'}`
+          : sale.paymentMethod === 'bank'
+          ? 'Transfer (Bank)'
+          : 'Tunai (Kas)';
+
+      for (const it of sale.items || []) {
+        const matchedProd =
+          (it.productId && productById.get(it.productId)) ||
+          (it.productCode && productByCode.get(String(it.productCode).toLowerCase())) ||
+          null;
+
+        const pCode = it.productCode || matchedProd?.code || '-';
+        const pName = it.productName || matchedProd?.name || 'Item Koperasi';
+        const pCat = it.category || matchedProd?.category || 'Lainnya';
+        const pSize = it.size || matchedProd?.size || 'All Size';
+        const pUnit = it.unit || matchedProd?.unit || 'Pcs';
+        const itemKey = `${pCode}__${pName}__${pSize}__${pCat}`;
+
+        const qty = Number(it.qty) || 0;
+        const unitBase = Number(it.basePrice) || 0;
+        const unitSelling = Number(it.sellingPrice) || 0;
+        const subBase = Number(it.subtotalBase) || qty * unitBase;
+        const subSelling = Number(it.subtotalSelling) || qty * unitSelling;
+        const subProfit = Number(it.profit) || subSelling - subBase;
+
+        const rowObj: ItemBuyerRow = {
+          invoiceNumber: sale.invoiceNumber,
+          date: sale.date,
+          buyerName: sale.buyerName,
+          buyerType: sale.buyerType || 'student',
+          buyerSubLabel,
+          studentNis: sale.studentNis || '-',
+          itemKey,
+          productId: it.productId || matchedProd?.id || '',
+          productCode: pCode,
+          productName: pName,
+          category: pCat,
+          size: pSize,
+          unit: pUnit,
+          qty,
+          basePrice: unitBase,
+          sellingPrice: unitSelling,
+          subtotalBase: subBase,
+          subtotalSelling: subSelling,
+          profit: subProfit,
+          paymentMethod: sale.paymentMethod,
+          paymentLabel,
+          cashierName: sale.cashierName || 'Kasir Koperasi',
+          saleObj: sale
+        };
+
+        allFlatRows.push(rowObj);
+
+        let grp = groupsMap.get(itemKey);
+        if (!grp) {
+          grp = {
+            itemKey,
+            productId: it.productId || matchedProd?.id || '',
+            productCode: pCode,
+            productName: pName,
+            category: pCat,
+            size: pSize,
+            unit: pUnit,
+            invoiceSet: new Set<string>(),
+            txCount: 0,
+            totalQty: 0,
+            basePrice: unitBase,
+            sellingPrice: unitSelling,
+            totalBaseAmount: 0,
+            totalSellingAmount: 0,
+            totalProfit: 0,
+            kasQty: 0,
+            kasAmount: 0,
+            bankQty: 0,
+            bankAmount: 0,
+            midtransQty: 0,
+            midtransAmount: 0,
+            currentStock: matchedProd ? Number(matchedProd.stock) || 0 : null,
+            isNonStock: Boolean(matchedProd?.isNonStock),
+            buyers: []
+          };
+          groupsMap.set(itemKey, grp);
+        }
+
+        grp.invoiceSet.add(sale.invoiceNumber);
+        grp.txCount = grp.invoiceSet.size;
+        grp.totalQty += qty;
+        grp.totalBaseAmount += subBase;
+        grp.totalSellingAmount += subSelling;
+        grp.totalProfit += subProfit;
+        // Keep latest unit prices for display
+        if (unitBase > 0) grp.basePrice = unitBase;
+        if (unitSelling > 0) grp.sellingPrice = unitSelling;
+
+        if (sale.paymentMethod === 'midtrans') {
+          grp.midtransQty += qty;
+          grp.midtransAmount += subSelling;
+        } else if (sale.paymentMethod === 'bank') {
+          grp.bankQty += qty;
+          grp.bankAmount += subSelling;
+        } else {
+          grp.kasQty += qty;
+          grp.kasAmount += subSelling;
+        }
+
+        grp.buyers.push(rowObj);
+      }
+    }
+
+    const allGroups = Array.from(groupsMap.values());
+    const availableDropdownItems = allGroups
+      .map(g => ({
+        itemKey: g.itemKey,
+        label: `[${g.category}] ${g.productName} (${g.size}) — ${g.productCode} (${g.totalQty} ${g.unit})`
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'id'));
+
+    const q = itemReportSearch.trim().toLowerCase();
+
+    const filteredGroups = allGroups.filter(g => {
+      if (itemReportProductKey !== 'Semua' && g.itemKey !== itemReportProductKey) {
+        return false;
+      }
+      if (!q) return true;
+      const matchItem =
+        g.productName.toLowerCase().includes(q) ||
+        g.productCode.toLowerCase().includes(q) ||
+        g.category.toLowerCase().includes(q) ||
+        g.size.toLowerCase().includes(q);
+      const matchBuyer = g.buyers.some(
+        b =>
+          b.buyerName.toLowerCase().includes(q) ||
+          b.invoiceNumber.toLowerCase().includes(q) ||
+          b.buyerSubLabel.toLowerCase().includes(q)
+      );
+      return matchItem || matchBuyer;
+    });
+
+    filteredGroups.sort((a, b) => {
+      if (itemReportSortBy === 'omzet_desc') {
+        return b.totalSellingAmount - a.totalSellingAmount || b.totalQty - a.totalQty;
+      }
+      if (itemReportSortBy === 'profit_desc') {
+        return b.totalProfit - a.totalProfit || b.totalQty - a.totalQty;
+      }
+      if (itemReportSortBy === 'name_asc') {
+        return a.productName.localeCompare(b.productName, 'id');
+      }
+      // default qty_desc
+      return b.totalQty - a.totalQty || b.totalSellingAmount - a.totalSellingAmount;
+    });
+
+    const filteredFlatRows = allFlatRows.filter(r => {
+      if (itemReportProductKey !== 'Semua' && r.itemKey !== itemReportProductKey) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        r.productName.toLowerCase().includes(q) ||
+        r.productCode.toLowerCase().includes(q) ||
+        r.category.toLowerCase().includes(q) ||
+        r.size.toLowerCase().includes(q) ||
+        r.buyerName.toLowerCase().includes(q) ||
+        r.invoiceNumber.toLowerCase().includes(q) ||
+        r.buyerSubLabel.toLowerCase().includes(q)
+      );
+    });
+
+    const uniqueInvoices = new Set<string>();
+    let totalQty = 0;
+    let totalBase = 0;
+    let totalSelling = 0;
+    let totalProfit = 0;
+    let totalKas = 0;
+    let totalBank = 0;
+    let totalMidtrans = 0;
+
+    for (const r of filteredFlatRows) {
+      uniqueInvoices.add(r.invoiceNumber);
+      totalQty += r.qty;
+      totalBase += r.subtotalBase;
+      totalSelling += r.subtotalSelling;
+      totalProfit += r.profit;
+      if (r.paymentMethod === 'midtrans') {
+        totalMidtrans += r.subtotalSelling;
+      } else if (r.paymentMethod === 'bank') {
+        totalBank += r.subtotalSelling;
+      } else {
+        totalKas += r.subtotalSelling;
+      }
+    }
+
+    return {
+      availableDropdownItems,
+      itemSummaries: filteredGroups,
+      flatItemRows: filteredFlatRows,
+      totals: {
+        uniqueItemsCount: filteredGroups.length,
+        txCount: uniqueInvoices.size,
+        totalQty,
+        totalBase,
+        totalSelling,
+        totalProfit,
+        totalKas,
+        totalBank,
+        totalMidtrans
+      }
+    };
+  }, [filteredDailySales, products, itemReportSearch, itemReportProductKey, itemReportSortBy]);
+
   // Financial Report Calculations (Sales + Bookkeeping Integration + Category Exclusion Checklist)
   const financialSales = useMemo(() => {
     const periodSales = financialAllPeriods
@@ -1401,6 +1695,62 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
     XLSX.writeFile(wb, `Laporan_Penjualan_Harian_Koperasi_${periodLabel}.xlsx`);
   };
 
+  // Export Per-Item Sales Report to Excel (2 Sheets: Rekap Per Item & Rincian Transaksi Per Item)
+  const handleExportItemSalesExcel = () => {
+    const summaryRows = itemSalesReportData.itemSummaries.map((g, idx) => ({
+      No: idx + 1,
+      'Kode Barcode': g.productCode,
+      'Nama Item / Atribut': g.productName,
+      Kategori: g.category,
+      Ukuran: g.size,
+      Satuan: g.unit,
+      'Jumlah Nota': g.txCount,
+      'Total Qty Terjual': g.totalQty,
+      'Sisa Stok Saat Ini': g.isNonStock ? 'Layanan Non-Stok' : g.currentStock ?? '-',
+      'Harga Dasar / HPP Satuan (Rp)': g.basePrice,
+      'Harga Jual Satuan (Rp)': g.sellingPrice,
+      'Total HPP Terjual (Rp)': g.totalBaseAmount,
+      'Penjualan Tunai / Kas (Rp)': g.kasAmount,
+      'Penjualan Transfer Bank (Rp)': g.bankAmount,
+      'Penjualan Midtrans QRIS (Rp)': g.midtransAmount,
+      'Total Omzet Penjualan (Rp)': g.totalSellingAmount,
+      'Total Laba Bersih Item (Rp)': g.totalProfit
+    }));
+
+    const detailRows = itemSalesReportData.flatItemRows.map((r, idx) => ({
+      No: idx + 1,
+      Tanggal: r.date,
+      'No. Nota / Struk': r.invoiceNumber,
+      'Kode Barcode': r.productCode,
+      'Nama Item / Atribut': r.productName,
+      Kategori: r.category,
+      Ukuran: r.size,
+      'Nama Pembeli': r.buyerName,
+      'Kelas / Jabatan': r.buyerSubLabel,
+      NIS: r.studentNis,
+      Qty: r.qty,
+      Satuan: r.unit,
+      'Harga Dasar Satuan (Rp)': r.basePrice,
+      'Harga Jual Satuan (Rp)': r.sellingPrice,
+      'Subtotal HPP (Rp)': r.subtotalBase,
+      'Subtotal Harga Jual (Rp)': r.subtotalSelling,
+      'Laba Bersih (Rp)': r.profit,
+      'Metode Pembayaran': r.paymentLabel,
+      'Petugas Kasir': r.cashierName
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Rekap Penjualan Per Item');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailRows), 'Rincian Transaksi Per Item');
+    const periodLabel =
+      dailyFilterMode === 'single_day'
+        ? selectedDate
+        : dailyFilterMode === 'date_range'
+        ? `${startDate}_sd_${endDate}`
+        : 'Semua_Periode';
+    XLSX.writeFile(wb, `Laporan_Penjualan_Per_Item_Koperasi_${periodLabel}.xlsx`);
+  };
+
   // Export Financial Report to Excel
   const handleExportFinancialExcel = () => {
     const summaryRows = [
@@ -1524,6 +1874,156 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       </table>
     `;
     instantPrintHtmlDocument(html, css, `Laporan_Harian_Koperasi_${periodText}`);
+  };
+
+  const handleInstantPrintItemReport = () => {
+    const periodText =
+      dailyFilterMode === 'single_day'
+        ? selectedDate
+        : dailyFilterMode === 'date_range'
+        ? `${startDate} s/d ${endDate}`
+        : 'Semua Periode';
+    const excludeText =
+      excludedDailyCategories.length > 0
+        ? ` • Kecuali Kategori: ${excludedDailyCategories.join(', ')}`
+        : '';
+    const selectedItemLabel =
+      itemReportProductKey === 'Semua'
+        ? 'Semua Item'
+        : itemSalesReportData.availableDropdownItems.find(i => i.itemKey === itemReportProductKey)?.label ||
+          'Item Terpilih';
+    const filterMeta = `Item: ${selectedItemLabel} • Kategori: ${dailyCategoryFilter}${excludeText} • Ukuran: ${dailySizeFilter}`;
+
+    const css = `
+      @page { size: A4 landscape; margin: 10mm; }
+      body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000; }
+      .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+      .title { font-size: 15px; font-weight: bold; text-transform: uppercase; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th, td { border: 1px solid #000; padding: 5px 6px; font-size: 10px; vertical-align: top; }
+      th { background: #f0f0f0; text-transform: uppercase; }
+    `;
+
+    if (itemReportViewMode === 'summary') {
+      const rowsHtml = itemSalesReportData.itemSummaries
+        .map(
+          (g, idx) => `
+          <tr>
+            <td style="text-align:center;">${idx + 1}</td>
+            <td><strong>${g.productCode}</strong></td>
+            <td><strong>${g.productName}</strong></td>
+            <td style="text-align:center;">${g.category}</td>
+            <td style="text-align:center;">${g.size}</td>
+            <td style="text-align:center;">${g.txCount} Nota</td>
+            <td style="text-align:center;"><strong>${g.totalQty} ${g.unit}</strong></td>
+            <td style="text-align:center;">${g.isNonStock ? 'Non-Stok' : `${g.currentStock ?? '-'} ${g.unit}`}</td>
+            <td style="text-align:right;">Rp ${g.basePrice.toLocaleString('id-ID')}</td>
+            <td style="text-align:right;">Rp ${g.sellingPrice.toLocaleString('id-ID')}</td>
+            <td style="text-align:right;">Rp ${g.totalBaseAmount.toLocaleString('id-ID')}</td>
+            <td style="text-align:right;"><strong>Rp ${g.totalSellingAmount.toLocaleString('id-ID')}</strong></td>
+            <td style="text-align:right;">+Rp ${g.totalProfit.toLocaleString('id-ID')}</td>
+          </tr>`
+        )
+        .join('');
+
+      const html = `
+        <div class="header">
+          <div class="title">LAPORAN REKAP PENJUALAN PER ITEM KOPERASI — ${schoolName}</div>
+          <div>${schoolAddress}</div>
+          <div style="margin-top:4px;font-weight:bold;">Periode: ${periodText} • ${filterMeta} • Total Jenis Item: ${itemSalesReportData.totals.uniqueItemsCount} (${itemSalesReportData.totals.totalQty} Unit Terjual)</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:28px;">No</th>
+              <th>Kode</th>
+              <th>Nama Item / Atribut</th>
+              <th>Kategori</th>
+              <th>Ukuran</th>
+              <th>Jml Nota</th>
+              <th>Qty Terjual</th>
+              <th>Sisa Stok</th>
+              <th>HPP Satuan</th>
+              <th>Harga Jual</th>
+              <th>Total HPP</th>
+              <th>Total Omzet</th>
+              <th>Total Laba</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+          <tfoot>
+            <tr style="font-weight:bold;background:#f8f8f8;">
+              <td colspan="6" style="text-align:right;">TOTAL AKUMULASI (${itemSalesReportData.totals.uniqueItemsCount} Jenis Item / ${itemSalesReportData.totals.txCount} Nota):</td>
+              <td style="text-align:center;">${itemSalesReportData.totals.totalQty} Unit</td>
+              <td colspan="3" style="text-align:right;">Total Akumulasi Rupiah:</td>
+              <td style="text-align:right;">Rp ${itemSalesReportData.totals.totalBase.toLocaleString('id-ID')}</td>
+              <td style="text-align:right;">Rp ${itemSalesReportData.totals.totalSelling.toLocaleString('id-ID')}</td>
+              <td style="text-align:right;">+Rp ${itemSalesReportData.totals.totalProfit.toLocaleString('id-ID')}</td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+      instantPrintHtmlDocument(html, css, `Laporan_Rekap_Per_Item_Koperasi_${periodText}`);
+    } else {
+      const rowsHtml = itemSalesReportData.flatItemRows
+        .map(
+          (r, idx) => `
+          <tr>
+            <td style="text-align:center;">${idx + 1}</td>
+            <td>${r.date}</td>
+            <td><strong>${r.invoiceNumber}</strong></td>
+            <td><strong>${r.productName}</strong><br/><small>${r.productCode} • [${r.category}] Uk: ${r.size}</small></td>
+            <td><strong>${r.buyerName}</strong><br/><small>${r.buyerSubLabel}</small></td>
+            <td style="text-align:center;"><strong>${r.qty} ${r.unit}</strong></td>
+            <td style="text-align:right;">Rp ${r.basePrice.toLocaleString('id-ID')}</td>
+            <td style="text-align:right;">Rp ${r.sellingPrice.toLocaleString('id-ID')}</td>
+            <td style="text-align:right;">Rp ${r.subtotalBase.toLocaleString('id-ID')}</td>
+            <td style="text-align:right;"><strong>Rp ${r.subtotalSelling.toLocaleString('id-ID')}</strong></td>
+            <td style="text-align:right;">+Rp ${r.profit.toLocaleString('id-ID')}</td>
+            <td style="text-align:center;">${r.paymentLabel}</td>
+          </tr>`
+        )
+        .join('');
+
+      const html = `
+        <div class="header">
+          <div class="title">LAPORAN RINCIAN TRANSAKSI PENJUALAN PER ITEM KOPERASI — ${schoolName}</div>
+          <div>${schoolAddress}</div>
+          <div style="margin-top:4px;font-weight:bold;">Periode: ${periodText} • ${filterMeta} • Total Baris Item: ${itemSalesReportData.flatItemRows.length} (${itemSalesReportData.totals.totalQty} Unit Terjual)</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:28px;">No</th>
+              <th>Tanggal</th>
+              <th>No. Nota</th>
+              <th>Nama Item / Atribut</th>
+              <th>Pembeli</th>
+              <th>Qty</th>
+              <th>HPP Satuan</th>
+              <th>Jual Satuan</th>
+              <th>Subtotal HPP</th>
+              <th>Subtotal Jual</th>
+              <th>Laba</th>
+              <th>Metode</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+          <tfoot>
+            <tr style="font-weight:bold;background:#f8f8f8;">
+              <td colspan="5" style="text-align:right;">TOTAL AKUMULASI (${itemSalesReportData.flatItemRows.length} Transaksi Item):</td>
+              <td style="text-align:center;">${itemSalesReportData.totals.totalQty} Unit</td>
+              <td colspan="2"></td>
+              <td style="text-align:right;">Rp ${itemSalesReportData.totals.totalBase.toLocaleString('id-ID')}</td>
+              <td style="text-align:right;">Rp ${itemSalesReportData.totals.totalSelling.toLocaleString('id-ID')}</td>
+              <td style="text-align:right;">+Rp ${itemSalesReportData.totals.totalProfit.toLocaleString('id-ID')}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+      instantPrintHtmlDocument(html, css, `Laporan_Rincian_Per_Item_Koperasi_${periodText}`);
+    }
   };
 
   const handleInstantPrintFinancialReport = () => {
@@ -1707,6 +2207,19 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
 
           <button
             type="button"
+            onClick={() => setSubTab('item_report')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer ${
+              subTab === 'item_report'
+                ? 'bg-emerald-700 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Receipt className="w-4 h-4" />
+            <span>4. Laporan Penjualan Per Item</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setSubTab('financial_report')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition cursor-pointer ${
               subTab === 'financial_report'
@@ -1715,7 +2228,7 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
             }`}
           >
             <TrendingUp className="w-4 h-4" />
-            <span>4. Laporan Keuangan &amp; BKU</span>
+            <span>5. Laporan Keuangan &amp; BKU</span>
           </button>
         </div>
 
@@ -3318,7 +3831,742 @@ export const KoperasiAdminPanel: React.FC<KoperasiAdminPanelProps> = ({
       )}
 
       {/* =================================================================== */}
-      {/* SUB-TAB 4: LAPORAN KEUANGAN KOPERASI & INTEGRASI BKU BENDAHARA      */}
+      {/* SUB-TAB 4: LAPORAN PENJUALAN PER ITEM (REKAP ITEM & RINCIAN ITEM)   */}
+      {/* =================================================================== */}
+      {subTab === 'item_report' && (
+        <div className="space-y-5">
+          {/* Filter Bar Laporan Penjualan Per Item */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3.5 print:hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Period Filter Buttons & Date Pickers */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDailyFilterMode('single_day')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold cursor-pointer ${
+                    dailyFilterMode === 'single_day'
+                      ? 'bg-emerald-700 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Per Tanggal Harian
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDailyFilterMode('date_range')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold cursor-pointer ${
+                    dailyFilterMode === 'date_range'
+                      ? 'bg-emerald-700 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Rentang Tanggal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDailyFilterMode('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold cursor-pointer ${
+                    dailyFilterMode === 'all'
+                      ? 'bg-emerald-700 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Semua Transaksi
+                </button>
+
+                {dailyFilterMode === 'single_day' && (
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={e => setSelectedDate(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold"
+                  />
+                )}
+
+                {dailyFilterMode === 'date_range' && (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={e => setStartDate(e.target.value)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold"
+                    />
+                    <span className="text-xs font-bold text-slate-400">s/d</span>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={e => setEndDate(e.target.value)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-bold"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* View Mode Switcher + Export Excel + Print */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setItemReportViewMode('summary')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                      itemReportViewMode === 'summary'
+                        ? 'bg-emerald-700 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Rekap Akumulasi Per Item ({itemSalesReportData.itemSummaries.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setItemReportViewMode('detail')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                      itemReportViewMode === 'detail'
+                        ? 'bg-emerald-700 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Rincian Transaksi Per Item ({itemSalesReportData.flatItemRows.length})
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleExportItemSalesExcel}
+                  disabled={itemSalesReportData.flatItemRows.length === 0}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs sm:text-sm font-extrabold shadow-xs cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>Export Excel Per Item (.xlsx)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleInstantPrintItemReport}
+                  disabled={itemSalesReportData.flatItemRows.length === 0}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs sm:text-sm font-extrabold shadow-xs cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak Laporan Per Item</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Row 2: Specific Item Dropdown, Search Input, Category, Size, Payment, Sort */}
+            <div className="pt-2.5 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-2.5">
+              {/* Filter Pilih Item Spesifik */}
+              <div className="lg:col-span-2">
+                <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
+                  Pilih Item / Produk Spesifik:
+                </label>
+                <select
+                  value={itemReportProductKey}
+                  onChange={e => setItemReportProductKey(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-slate-50 text-slate-800"
+                >
+                  <option value="Semua">
+                    Semua Item Terjual ({itemSalesReportData.availableDropdownItems.length} Jenis Item)
+                  </option>
+                  {itemSalesReportData.availableDropdownItems.map(item => (
+                    <option key={item.itemKey} value={item.itemKey}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Pencarian Nama Item / Kode Barcode / Pembeli */}
+              <div>
+                <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
+                  Cari Nama Item / Kode / Pembeli:
+                </label>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={itemReportSearch}
+                    onChange={e => setItemReportSearch(e.target.value)}
+                    placeholder="Ketik nama item, kode, siswa..."
+                    className="w-full pl-8 pr-7 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white text-slate-800"
+                  />
+                  {itemReportSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setItemReportSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Filter Kategori */}
+              <div>
+                <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
+                  Filter Kategori:
+                </label>
+                <select
+                  value={dailyCategoryFilter}
+                  onChange={e => setDailyCategoryFilter(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-slate-50 text-slate-800"
+                >
+                  {availableDailyCategories.map(cat => (
+                    <option key={cat} value={cat}>
+                      {cat === 'Semua' ? 'Semua Kategori' : cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Ukuran & Metode Bayar */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <div>
+                  <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
+                    Ukuran:
+                  </label>
+                  <select
+                    value={dailySizeFilter}
+                    onChange={e => setDailySizeFilter(e.target.value)}
+                    className="w-full px-2 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-slate-50 text-slate-800"
+                  >
+                    <option value="Semua">Semua</option>
+                    {SIZES.map(sz => (
+                      <option key={sz} value={sz}>
+                        {sz}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
+                    Metode:
+                  </label>
+                  <select
+                    value={dailyPaymentFilter}
+                    onChange={e => setDailyPaymentFilter(e.target.value as 'all' | 'kas' | 'bank' | 'midtrans')}
+                    className="w-full px-2 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-slate-50 text-slate-800"
+                  >
+                    <option value="all">Semua</option>
+                    <option value="kas">Tunai</option>
+                    <option value="bank">Bank</option>
+                    <option value="midtrans">QRIS</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Urutkan Rekap Item */}
+              <div>
+                <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
+                  Urutkan Item:
+                </label>
+                <select
+                  value={itemReportSortBy}
+                  onChange={e =>
+                    setItemReportSortBy(
+                      e.target.value as 'qty_desc' | 'omzet_desc' | 'profit_desc' | 'name_asc'
+                    )
+                  }
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-slate-50 text-slate-800"
+                >
+                  <option value="qty_desc">Terlaris (Qty Terbanyak)</option>
+                  <option value="omzet_desc">Omzet Penjualan Tertinggi</option>
+                  <option value="profit_desc">Laba Bersih Tertinggi</option>
+                  <option value="name_asc">Nama Item (A - Z)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Row 3: Checklist Pengecualian Kategori (Misal: Semua Kecuali Foto Copy) */}
+            <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-extrabold uppercase text-slate-500">
+                  Filter Pengecualian Kategori (Cek List):
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const isfc =
+                      excludedDailyCategories.length === 1 &&
+                      excludedDailyCategories[0].toLowerCase() === 'foto copy';
+                    setExcludedDailyCategories(isfc ? [] : ['Foto Copy']);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border transition cursor-pointer ${
+                    excludedDailyCategories.some(c => c.toLowerCase() === 'foto copy')
+                      ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-2xs'
+                      : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                  }`}
+                >
+                  {excludedDailyCategories.some(c => c.toLowerCase() === 'foto copy')
+                    ? '✓ Aktif: Semua Kecuali Foto Copy'
+                    : 'Semua Kecuali Foto Copy'}
+                </button>
+                {excludedDailyCategories.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setExcludedDailyCategories([])}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                  >
+                    Tampilkan Semua Kategori
+                  </button>
+                )}
+              </div>
+
+              {(dailyCategoryFilter !== 'Semua' ||
+                excludedDailyCategories.length > 0 ||
+                dailySizeFilter !== 'Semua' ||
+                dailyPaymentFilter !== 'all' ||
+                itemReportProductKey !== 'Semua' ||
+                itemReportSearch.trim() !== '') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDailyCategoryFilter('Semua');
+                    setExcludedDailyCategories([]);
+                    setDailySizeFilter('Semua');
+                    setDailyPaymentFilter('all');
+                    setItemReportProductKey('Semua');
+                    setItemReportSearch('');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-extrabold cursor-pointer"
+                >
+                  Reset Semua Filter Item
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {availableDailyCategories
+                .filter(cat => cat !== 'Semua')
+                .map(cat => {
+                  const isExcluded = excludedDailyCategories.some(
+                    c => c.toLowerCase() === cat.toLowerCase()
+                  );
+                  const isIncluded = !isExcluded;
+                  return (
+                    <label
+                      key={cat}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer select-none transition ${
+                        isIncluded
+                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                          : 'bg-rose-50 border-rose-200 text-rose-700 line-through opacity-75'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isIncluded}
+                        onChange={() => {
+                          setExcludedDailyCategories(prev =>
+                            isExcluded
+                              ? prev.filter(c => c.toLowerCase() !== cat.toLowerCase())
+                              : [...prev, cat]
+                          );
+                        }}
+                        className="rounded text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span>{cat}</span>
+                    </label>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* 4 Summary Cards Laporan Penjualan Per Item */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="text-[11px] font-bold uppercase text-slate-400">
+                Jenis Item &amp; Total Unit Terjual
+              </div>
+              <div className="text-2xl font-black text-slate-900 mt-1">
+                {itemSalesReportData.totals.uniqueItemsCount} Jenis Item
+              </div>
+              <div className="text-xs font-bold text-emerald-700 mt-1">
+                Total Terjual: {itemSalesReportData.totals.totalQty} Unit ({itemSalesReportData.totals.txCount} Nota)
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="text-[11px] font-bold uppercase text-slate-400">
+                Total Modal Pokok / HPP Item Terjual
+              </div>
+              <div className="text-2xl font-black text-slate-800 mt-1">
+                Rp {itemSalesReportData.totals.totalBase.toLocaleString('id-ID')}
+              </div>
+              <div className="text-xs font-semibold text-slate-500 mt-1">
+                Akumulasi Harga Dasar (HPP) per item
+              </div>
+            </div>
+
+            <div className="bg-emerald-50/80 p-4 rounded-2xl border border-emerald-200 shadow-xs">
+              <div className="text-[11px] font-extrabold uppercase text-emerald-800">
+                Total Omzet Penjualan Item (Harga Jual)
+              </div>
+              <div className="text-2xl font-black text-emerald-900 mt-1">
+                Rp {itemSalesReportData.totals.totalSelling.toLocaleString('id-ID')}
+              </div>
+              <div className="text-[11px] font-bold text-emerald-700 mt-1">
+                Kas: Rp {itemSalesReportData.totals.totalKas.toLocaleString('id-ID')} • Bank: Rp{' '}
+                {itemSalesReportData.totals.totalBank.toLocaleString('id-ID')} • QRIS: Rp{' '}
+                {itemSalesReportData.totals.totalMidtrans.toLocaleString('id-ID')}
+              </div>
+            </div>
+
+            <div className="bg-amber-50/80 p-4 rounded-2xl border border-amber-200 shadow-xs">
+              <div className="text-[11px] font-extrabold uppercase text-amber-800">
+                Total Laba Bersih Penjualan Item
+              </div>
+              <div className="text-2xl font-black text-amber-900 mt-1">
+                +Rp {itemSalesReportData.totals.totalProfit.toLocaleString('id-ID')}
+              </div>
+              <div className="text-xs font-bold text-amber-700 mt-1">
+                Selisih Harga Jual dikurangi Harga Dasar (HPP)
+              </div>
+            </div>
+          </div>
+
+          {/* Table View: Mode 1 = Rekap Akumulasi Per Item, Mode 2 = Rincian Transaksi Per Item */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-slate-50">
+              <div>
+                <h3 className="text-sm sm:text-base font-black text-slate-900">
+                  {itemReportViewMode === 'summary'
+                    ? 'Tabel Rekap Akumulasi Penjualan Per Item (Produk / Atribut)'
+                    : 'Tabel Rincian Transaksi Penjualan Per Item (Baris Pembelian per Item)'}{' '}
+                  (
+                  {dailyFilterMode === 'single_day'
+                    ? `Tanggal: ${selectedDate}`
+                    : dailyFilterMode === 'date_range'
+                    ? `Periode: ${startDate} s/d ${endDate}`
+                    : 'Seluruh Periode'}
+                  )
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {itemReportViewMode === 'summary'
+                    ? 'Klik tombol "Rincian Pembeli" pada baris item untuk melihat daftar siswa/guru yang membeli item tersebut.'
+                    : 'Menampilkan setiap baris item yang terjual beserta nomor nota, pembeli, harga dasar, harga jual, dan laba.'}
+                </p>
+              </div>
+            </div>
+
+            {itemSalesReportData.flatItemRows.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 text-sm font-semibold">
+                Belum ada data penjualan item pada filter periode atau kriteria yang dipilih.
+              </div>
+            ) : itemReportViewMode === 'summary' ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100/90 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
+                      <th className="p-3.5 text-center w-10">No</th>
+                      <th className="p-3.5">Kode &amp; Nama Item / Atribut</th>
+                      <th className="p-3.5 text-center">Kategori &amp; Ukuran</th>
+                      <th className="p-3.5 text-center">Jml Nota</th>
+                      <th className="p-3.5 text-center">Total Qty Terjual</th>
+                      <th className="p-3.5 text-center">Sisa Stok</th>
+                      <th className="p-3.5 text-right">Harga Dasar (HPP)</th>
+                      <th className="p-3.5 text-right">Harga Jual</th>
+                      <th className="p-3.5 text-right">Total HPP</th>
+                      <th className="p-3.5 text-right">Total Omzet Jual</th>
+                      <th className="p-3.5 text-right">Total Laba Item</th>
+                      <th className="p-3.5 text-center print:hidden">Rincian Pembeli</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 text-xs sm:text-sm">
+                    {itemSalesReportData.itemSummaries.map((grp, idx) => {
+                      const isExpanded = expandedItemKey === grp.itemKey;
+                      return (
+                        <React.Fragment key={grp.itemKey}>
+                          <tr className="hover:bg-slate-50/80 transition">
+                            <td className="p-3.5 text-center font-bold text-slate-500">{idx + 1}</td>
+                            <td className="p-3.5">
+                              <div className="font-black text-slate-900">{grp.productName}</div>
+                              <div className="text-[11px] font-mono font-bold text-slate-500">
+                                Kode: {grp.productCode}
+                              </div>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[11px]">
+                                {grp.category}
+                              </span>
+                              <div className="text-[11px] font-bold text-slate-500 mt-0.5">
+                                Uk: {grp.size}
+                              </div>
+                            </td>
+                            <td className="p-3.5 text-center font-bold text-slate-700">
+                              {grp.txCount} Nota
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-900 font-black text-xs">
+                                {grp.totalQty} {grp.unit}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              {grp.isNonStock ? (
+                                <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold text-[11px]">
+                                  Non-Stok
+                                </span>
+                              ) : (
+                                <span
+                                  className={`font-extrabold text-xs ${
+                                    (grp.currentStock ?? 0) <= 5 ? 'text-rose-600' : 'text-slate-700'
+                                  }`}
+                                >
+                                  {grp.currentStock ?? '-'} {grp.unit}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3.5 text-right font-semibold text-slate-600">
+                              Rp {grp.basePrice.toLocaleString('id-ID')}
+                            </td>
+                            <td className="p-3.5 text-right font-bold text-slate-800">
+                              Rp {grp.sellingPrice.toLocaleString('id-ID')}
+                            </td>
+                            <td className="p-3.5 text-right font-bold text-slate-700">
+                              Rp {grp.totalBaseAmount.toLocaleString('id-ID')}
+                            </td>
+                            <td className="p-3.5 text-right">
+                              <div className="font-black text-emerald-800">
+                                Rp {grp.totalSellingAmount.toLocaleString('id-ID')}
+                              </div>
+                              <div className="text-[10px] font-semibold text-slate-400">
+                                {grp.kasAmount > 0 ? `Kas: Rp ${grp.kasAmount.toLocaleString('id-ID')} ` : ''}
+                                {grp.bankAmount > 0 ? `Bank: Rp ${grp.bankAmount.toLocaleString('id-ID')} ` : ''}
+                                {grp.midtransAmount > 0 ? `QRIS: Rp ${grp.midtransAmount.toLocaleString('id-ID')}` : ''}
+                              </div>
+                            </td>
+                            <td className="p-3.5 text-right font-black text-amber-700">
+                              +Rp {grp.totalProfit.toLocaleString('id-ID')}
+                            </td>
+                            <td className="p-3.5 text-center print:hidden">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedItemKey(prev => (prev === grp.itemKey ? null : grp.itemKey))
+                                }
+                                className={`px-2.5 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                                  isExpanded
+                                    ? 'bg-slate-900 text-white'
+                                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                }`}
+                              >
+                                {isExpanded ? 'Tutup Rincian' : `Lihat Pembeli (${grp.buyers.length})`}
+                              </button>
+                            </td>
+                          </tr>
+
+                          {isExpanded && (
+                            <tr className="bg-slate-50/90 print:hidden">
+                              <td colSpan={12} className="p-4 border-b border-slate-200">
+                                <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs space-y-2.5">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="text-xs font-black text-slate-800">
+                                      Daftar Pembeli Item: <span className="text-emerald-700">{grp.productName}</span> ({grp.productCode} • Uk: {grp.size}) — Total {grp.totalQty} {grp.unit} dari {grp.txCount} Nota
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setItemReportProductKey(grp.itemKey);
+                                        setItemReportViewMode('detail');
+                                      }}
+                                      className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-extrabold cursor-pointer"
+                                    >
+                                      Fokus Filter Hanya Item Ini &rarr;
+                                    </button>
+                                  </div>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                      <thead>
+                                        <tr className="bg-slate-100 text-slate-600 text-[10px] font-extrabold uppercase">
+                                          <th className="p-2 text-center">No</th>
+                                          <th className="p-2">Tanggal</th>
+                                          <th className="p-2">No. Nota</th>
+                                          <th className="p-2">Nama Pembeli</th>
+                                          <th className="p-2">Kelas / Jabatan</th>
+                                          <th className="p-2 text-center">Qty</th>
+                                          <th className="p-2 text-right">Subtotal HPP</th>
+                                          <th className="p-2 text-right">Subtotal Jual</th>
+                                          <th className="p-2 text-right">Laba</th>
+                                          <th className="p-2 text-center">Metode</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {grp.buyers.map((b, bIdx) => (
+                                          <tr key={`${b.invoiceNumber}-${bIdx}`} className="hover:bg-slate-50">
+                                            <td className="p-2 text-center font-bold text-slate-400">{bIdx + 1}</td>
+                                            <td className="p-2 font-semibold text-slate-700">{b.date}</td>
+                                            <td className="p-2 font-mono font-bold text-slate-800">{b.invoiceNumber}</td>
+                                            <td className="p-2 font-bold text-slate-900">{b.buyerName}</td>
+                                            <td className="p-2 text-slate-600">{b.buyerSubLabel}</td>
+                                            <td className="p-2 text-center font-black text-emerald-700">
+                                              {b.qty} {b.unit}
+                                            </td>
+                                            <td className="p-2 text-right text-slate-600">
+                                              Rp {b.subtotalBase.toLocaleString('id-ID')}
+                                            </td>
+                                            <td className="p-2 text-right font-bold text-emerald-800">
+                                              Rp {b.subtotalSelling.toLocaleString('id-ID')}
+                                            </td>
+                                            <td className="p-2 text-right font-bold text-amber-700">
+                                              +Rp {b.profit.toLocaleString('id-ID')}
+                                            </td>
+                                            <td className="p-2 text-center font-semibold text-slate-600">
+                                              {b.paymentLabel}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-900 text-white font-black text-xs sm:text-sm">
+                      <td colSpan={4} className="p-3.5 text-right uppercase">
+                        Total Akumulasi ({itemSalesReportData.totals.uniqueItemsCount} Jenis Item /{' '}
+                        {itemSalesReportData.totals.txCount} Nota):
+                      </td>
+                      <td className="p-3.5 text-center text-emerald-300">
+                        {itemSalesReportData.totals.totalQty} Unit
+                      </td>
+                      <td colSpan={3} className="p-3.5 text-right uppercase text-slate-400">
+                        Total Rupiah:
+                      </td>
+                      <td className="p-3.5 text-right text-slate-300">
+                        Rp {itemSalesReportData.totals.totalBase.toLocaleString('id-ID')}
+                      </td>
+                      <td className="p-3.5 text-right text-emerald-400">
+                        Rp {itemSalesReportData.totals.totalSelling.toLocaleString('id-ID')}
+                      </td>
+                      <td className="p-3.5 text-right text-amber-400">
+                        +Rp {itemSalesReportData.totals.totalProfit.toLocaleString('id-ID')}
+                      </td>
+                      <td className="print:hidden" />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100/90 text-slate-600 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-200">
+                      <th className="p-3.5 text-center w-10">No</th>
+                      <th className="p-3.5">Tanggal &amp; No. Nota</th>
+                      <th className="p-3.5">Nama Item / Atribut</th>
+                      <th className="p-3.5 text-center">Kategori &amp; Ukuran</th>
+                      <th className="p-3.5">Pembeli</th>
+                      <th className="p-3.5 text-center">Qty</th>
+                      <th className="p-3.5 text-right">HPP Satuan</th>
+                      <th className="p-3.5 text-right">Harga Jual</th>
+                      <th className="p-3.5 text-right">Subtotal HPP</th>
+                      <th className="p-3.5 text-right">Subtotal Jual</th>
+                      <th className="p-3.5 text-right">Laba Item</th>
+                      <th className="p-3.5 text-center">Metode Bayar</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 text-xs sm:text-sm">
+                    {itemSalesReportData.flatItemRows.map((row, idx) => (
+                      <tr key={`${row.invoiceNumber}-${row.itemKey}-${idx}`} className="hover:bg-slate-50/80 transition">
+                        <td className="p-3.5 text-center font-bold text-slate-500">{idx + 1}</td>
+                        <td className="p-3.5">
+                          <div className="font-bold text-slate-900">{row.date}</div>
+                          <div className="text-[11px] font-mono font-bold text-emerald-700">
+                            {row.invoiceNumber}
+                          </div>
+                        </td>
+                        <td className="p-3.5">
+                          <div className="font-black text-slate-900">{row.productName}</div>
+                          <div className="text-[11px] font-mono font-semibold text-slate-500">
+                            Kode: {row.productCode}
+                          </div>
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[11px]">
+                            {row.category}
+                          </span>
+                          <div className="text-[11px] font-bold text-slate-500 mt-0.5">
+                            Uk: {row.size}
+                          </div>
+                        </td>
+                        <td className="p-3.5">
+                          <div className="font-bold text-slate-900">{row.buyerName}</div>
+                          <div className="text-[11px] font-semibold text-slate-500">
+                            {row.buyerSubLabel}
+                          </div>
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-900 font-black text-xs">
+                            {row.qty} {row.unit}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-right font-semibold text-slate-600">
+                          Rp {row.basePrice.toLocaleString('id-ID')}
+                        </td>
+                        <td className="p-3.5 text-right font-bold text-slate-800">
+                          Rp {row.sellingPrice.toLocaleString('id-ID')}
+                        </td>
+                        <td className="p-3.5 text-right font-bold text-slate-700">
+                          Rp {row.subtotalBase.toLocaleString('id-ID')}
+                        </td>
+                        <td className="p-3.5 text-right font-black text-emerald-800">
+                          Rp {row.subtotalSelling.toLocaleString('id-ID')}
+                        </td>
+                        <td className="p-3.5 text-right font-black text-amber-700">
+                          +Rp {row.profit.toLocaleString('id-ID')}
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-extrabold ${
+                              row.paymentMethod === 'midtrans'
+                                ? 'bg-cyan-100 text-cyan-900'
+                                : row.paymentMethod === 'bank'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {row.paymentLabel}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-900 text-white font-black text-xs sm:text-sm">
+                      <td colSpan={5} className="p-3.5 text-right uppercase">
+                        Total Akumulasi ({itemSalesReportData.flatItemRows.length} Baris Transaksi Item):
+                      </td>
+                      <td className="p-3.5 text-center text-emerald-300">
+                        {itemSalesReportData.totals.totalQty} Unit
+                      </td>
+                      <td colSpan={2} className="p-3.5 text-right uppercase text-slate-400">
+                        Total Rupiah:
+                      </td>
+                      <td className="p-3.5 text-right text-slate-300">
+                        Rp {itemSalesReportData.totals.totalBase.toLocaleString('id-ID')}
+                      </td>
+                      <td className="p-3.5 text-right text-emerald-400">
+                        Rp {itemSalesReportData.totals.totalSelling.toLocaleString('id-ID')}
+                      </td>
+                      <td className="p-3.5 text-right text-amber-400">
+                        +Rp {itemSalesReportData.totals.totalProfit.toLocaleString('id-ID')}
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* SUB-TAB 5: LAPORAN KEUANGAN KOPERASI & INTEGRASI BKU BENDAHARA      */}
       {/* =================================================================== */}
       {subTab === 'financial_report' && (
         <div className="space-y-5">

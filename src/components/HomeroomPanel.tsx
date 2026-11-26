@@ -3459,7 +3459,7 @@ export default function HomeroomPanel({
     )
   );
 
-  // Status Absensi Wali Kelas & Semua Guru Mapel yang Mengajar di Kelas Ini pada Tanggal Terpilih
+  // Status Absensi Wali Kelas & Guru Mapel yang Mengajar Sesuai Jadwal Hari Itu di Kelas Ini
   const classTeacherAttendanceStatuses = useMemo(() => {
     const normDate = (selectedDate || '').substring(0, 10);
     const targetClassNorm = (currentTeacher.className || '').trim().toLowerCase();
@@ -3544,29 +3544,16 @@ export default function HomeroomPanel({
       }
     };
 
-    // A. Ambil semua guru yang mengajar di kelas ini dari Jadwal Pelajaran (Waka Kurikulum)
+    // A. Ambil HANYA guru mapel yang memiliki jadwal mengajar di kelas ini pada HARI TERPILIH (selectedDayName)
     (classSchedules || []).forEach(sched => {
-      if ((sched.className || '').trim().toLowerCase() === targetClassNorm) {
+      const isSameClass = (sched.className || '').trim().toLowerCase() === targetClassNorm;
+      const isSameDay = (sched.day || '').trim().toLowerCase() === selectedDayName.toLowerCase();
+      if (isSameClass && isSameDay) {
         registerSubjectTeacher(sched.subject, sched.teacherName, sched.day, sched.jamKe);
       }
     });
 
-    // B. Jika ada guru mapel / wali kelas yang ditugaskan mengajar di kelas ini atau tercatat pada jurnal kelas ini
-    (allTeachingJournalsList || []).forEach((j: any) => {
-      if ((j.className || '').trim().toLowerCase() === targetClassNorm) {
-        registerSubjectTeacher(j.subject, j.teacherName);
-      }
-    });
-
-    rawDateClassLogs.forEach(l => {
-      if (Array.isArray(l.subjectNotes)) {
-        l.subjectNotes.forEach((sn: any) => {
-          registerSubjectTeacher(sn?.subject, sn?.teacherName);
-        });
-      }
-    });
-
-    // C. Lengkapi dari daftar Guru Mapel & Wali Kelas jika mapel di kelas ini belum ada di jadwal atau belum memiliki nama guru
+    // B. Lengkapi nama guru hanya untuk mapel yang memang terjadwal hari ini tetapi belum terisi nama gurunya di jadwal
     const allTeachersPool = [
       ...(subjectTeachers || []),
       ...(homerooms || [])
@@ -3579,18 +3566,6 @@ export default function HomeroomPanel({
       if (t.subject && typeof t.subject === 'string') tSubjects.push(t.subject);
       if (Array.isArray(t.subjects)) tSubjects.push(...t.subjects);
 
-      // Cek apakah guru ini mengajar di kelas ini (via classSchedules, className, atau SEMUA KELAS)
-      const tClass = (t.className || '').trim().toLowerCase();
-      const teachesInThisClass =
-        tClass === targetClassNorm ||
-        tClass === 'semua kelas' ||
-        (Array.isArray(t.assignments) && t.assignments.some((a: any) => (a.className || '').trim().toLowerCase() === targetClassNorm));
-
-      if (teachesInThisClass) {
-        tSubjects.forEach(sub => registerSubjectTeacher(sub, tName));
-      }
-
-      // Isi nama guru jika mapelnya sudah terdaftar namun belum ada nama gurunya
       tSubjects.forEach(sub => {
         if (!sub || isIgnoredActivity(sub)) return;
         const canonicalSubj = toMasterSubjectName(sub.trim(), masterCurriculumSubjects);
@@ -3602,36 +3577,12 @@ export default function HomeroomPanel({
       });
     });
 
-    // D. Pastikan seluruh mata pelajaran kurikulum yang memiliki guru pengampu di sekolah ikut tampil jika belum ada di jadwal kelas
-    (masterCurriculumSubjects || []).forEach((sub: any) => {
-      const subName = typeof sub === 'string' ? sub : (sub?.name || '');
-      if (!subName || isIgnoredActivity(subName)) return;
-      const canonicalSubj = toMasterSubjectName(subName.trim(), masterCurriculumSubjects);
-      const normKey = normalizeSubject(canonicalSubj).toLowerCase();
-      if (!subjectEntriesMap.has(normKey)) {
-        // Cari guru yang mengampu mapel ini
-        const matchingTeachers = allTeachersPool.filter((t: any) => {
-          const subs: string[] = [];
-          if (t?.subject) subs.push(t.subject);
-          if (Array.isArray(t?.subjects)) subs.push(...t.subjects);
-          return subs.some(s => isSameSubject(s, canonicalSubj));
-        });
-        if (matchingTeachers.length > 0) {
-          registerSubjectTeacher(
-            canonicalSubj,
-            matchingTeachers.map((t: any) => t.name).filter(Boolean).join(', ')
-          );
-        }
-      }
-    });
-
-    // E. Evaluasi status Sudah/Belum absen pada selectedDate untuk masing-masing guru mapel
+    // C. Evaluasi status Sudah/Belum absen pada selectedDate untuk masing-masing guru mapel yang terjadwal hari itu
     const subjectItems: SubjectTeacherStatusItem[] = Array.from(subjectEntriesMap.entries()).map(([normKey, info]) => {
       const teacherList = Array.from(info.teacherNames);
       const teacherDisplay = teacherList.length > 0 ? teacherList.join(', ') : 'Belum Ditentukan';
       const scheduleDays = Array.from(info.scheduleDays);
       const jamKeToday = Array.from(info.jamKeToday);
-      const isScheduledToday = scheduleDays.some(d => d.toLowerCase() === selectedDayName.toLowerCase());
 
       // Cek apakah guru mapel sudah melakukan absensi pada tanggal terpilih (via subjectNotes atau teachingJournals)
       const hasSubjectNoteOnDate = rawDateClassLogs.some(l =>
@@ -3650,17 +3601,22 @@ export default function HomeroomPanel({
         teacherName: teacherDisplay,
         scheduleDays,
         jamKeToday,
-        isScheduledToday,
+        isScheduledToday: true,
         hasAttended: hasSubjectNoteOnDate || hasJournalOnDate,
         isHomeroomRole: false
       };
     });
 
-    // Urutkan: yang ada jadwal hari ini di atas, lalu berdasarkan nama mapel
+    // Urutkan berdasarkan jam pelajaran hari ini, lalu berdasarkan nama mapel
+    const parseFirstHour = (jams: string[]) => {
+      if (!jams || jams.length === 0) return 999;
+      const match = jams.join(' ').match(/\d+/);
+      return match ? parseInt(match[0], 10) : 999;
+    };
+
     subjectItems.sort((a, b) => {
-      if (a.isScheduledToday !== b.isScheduledToday) {
-        return a.isScheduledToday ? -1 : 1;
-      }
+      const hourDiff = parseFirstHour(a.jamKeToday) - parseFirstHour(b.jamKeToday);
+      if (hourDiff !== 0) return hourDiff;
       return a.subject.localeCompare(b.subject, 'id');
     });
 
@@ -3669,7 +3625,7 @@ export default function HomeroomPanel({
       roleLabel: `Wali Kelas (${currentTeacher.className})`,
       subject: 'Absensi Harian Kelas',
       teacherName: currentTeacher.name,
-      scheduleDays: ['Setiap Hari'],
+      scheduleDays: [selectedDayName],
       jamKeToday: [],
       isScheduledToday: true,
       hasAttended: isHomeroomDone,
@@ -4926,7 +4882,7 @@ Wassalamualaikum Wr. Wb.
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Pantauan pengisian absensi harian antara Wali Kelas dan seluruh Guru Mapel yang mengajar di Kelas {currentTeacher.className}. Absensi Guru Mapel tidak mengubah posisi tombol default absensi Wali Kelas.
+                      Menampilkan status absensi Wali Kelas dan Guru Mata Pelajaran yang memiliki jadwal mengajar di Kelas {currentTeacher.className} pada hari {classTeacherAttendanceStatuses.selectedDayName}.
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-[10px] font-extrabold">
@@ -4939,65 +4895,65 @@ Wassalamualaikum Wr. Wb.
                   </div>
                 </div>
 
-                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {classTeacherAttendanceStatuses.allItems.map((item) => (
-                    <div
-                      key={item.key}
-                      className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-all ${
-                        item.isHomeroomRole
-                          ? item.hasAttended
-                            ? 'bg-emerald-50/70 border-emerald-300 shadow-2xs'
-                            : 'bg-indigo-50/60 border-indigo-200 shadow-2xs'
-                          : item.hasAttended
-                            ? 'bg-emerald-50/40 border-emerald-200'
-                            : item.isScheduledToday
-                              ? 'bg-amber-50/40 border-amber-200'
-                              : 'bg-slate-50/60 border-slate-200'
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-[11px] font-extrabold truncate ${
-                            item.isHomeroomRole ? 'text-indigo-950' : 'text-slate-800'
-                          }`}>
-                            {item.roleLabel}
-                          </span>
-                          {item.isHomeroomRole && (
-                            <span className="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[8.5px] font-black uppercase tracking-wider shrink-0">
-                              Utama
+                <div className="p-4 flex flex-col gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {classTeacherAttendanceStatuses.allItems.map((item) => (
+                      <div
+                        key={item.key}
+                        className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-all ${
+                          item.isHomeroomRole
+                            ? item.hasAttended
+                              ? 'bg-emerald-50/70 border-emerald-300 shadow-2xs'
+                              : 'bg-indigo-50/60 border-indigo-200 shadow-2xs'
+                            : item.hasAttended
+                              ? 'bg-emerald-50/40 border-emerald-200'
+                              : 'bg-amber-50/40 border-amber-200'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`text-[11px] font-extrabold truncate ${
+                              item.isHomeroomRole ? 'text-indigo-950' : 'text-slate-800'
+                            }`}>
+                              {item.roleLabel}
                             </span>
-                          )}
-                          {!item.isHomeroomRole && item.isScheduledToday && (
-                            <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 border border-purple-200 text-[8.5px] font-bold shrink-0">
-                              Jadwal Hari Ini{item.jamKeToday.length > 0 ? ` (Jam ${item.jamKeToday.join(', ')})` : ''}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-slate-500 font-semibold truncate mt-0.5">
-                          {item.teacherName}
-                        </div>
-                        {!item.isHomeroomRole && item.scheduleDays.length > 0 && (
-                          <div className="text-[9px] text-slate-400 truncate mt-0.5">
-                            Hari Mengajar: {item.scheduleDays.join(', ')}
+                            {item.isHomeroomRole && (
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[8.5px] font-black uppercase tracking-wider shrink-0">
+                                Utama
+                              </span>
+                            )}
+                            {!item.isHomeroomRole && item.jamKeToday.length > 0 && (
+                              <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 border border-purple-200 text-[8.5px] font-bold shrink-0">
+                                Jam Ke-{item.jamKeToday.join(', ')}
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </div>
+                          <div className="text-[10px] text-slate-500 font-semibold truncate mt-0.5">
+                            {item.teacherName}
+                          </div>
+                        </div>
 
-                      <div className="shrink-0">
-                        {item.hasAttended ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-black shadow-2xs">
-                            <CheckCircle size={12} className="stroke-[2.5]" />
-                            Sudah
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-200 text-slate-700 text-[10px] font-extrabold">
-                            <Clock size={12} className="stroke-[2.2]" />
-                            Belum
-                          </span>
-                        )}
+                        <div className="shrink-0">
+                          {item.hasAttended ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-black shadow-2xs">
+                              <CheckCircle size={12} className="stroke-[2.5]" />
+                              Sudah
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-200 text-slate-700 text-[10px] font-extrabold">
+                              <Clock size={12} className="stroke-[2.2]" />
+                              Belum
+                            </span>
+                          )}
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                  {classTeacherAttendanceStatuses.subjectItems.length === 0 && (
+                    <div className="text-[11px] text-slate-400 italic px-1">
+                      Tidak ada jadwal Guru Mata Pelajaran untuk Kelas {currentTeacher.className} pada hari {classTeacherAttendanceStatuses.selectedDayName}.
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
 

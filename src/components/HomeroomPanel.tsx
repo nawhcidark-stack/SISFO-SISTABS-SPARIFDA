@@ -24,6 +24,7 @@ import {
   getIdbCollection,
   setIdbCollection
 } from '../utils/instantDbCache';
+import { getIndonesianCalendarHoliday, CalendarHolidayInfo } from '../utils/indonesianHolidays';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
@@ -3898,6 +3899,10 @@ export default function HomeroomPanel({
   const [recordViewTab, setRecordViewTab] = useState<'form' | 'unrecorded_dates'>('form');
   const [unrecordedMonthFilter, setUnrecordedMonthFilter] = useState<string>('ALL');
 
+  const selectedDateHolidayInfo = useMemo(() => {
+    return getIndonesianCalendarHoliday(selectedDate, { includeSunday: true });
+  }, [selectedDate]);
+
   // Hitung daftar tanggal sesuai jadwal yang sudah lewat (date < todayStr) namun Wali Kelas belum mengisi absensi harian siswa
   const unrecordedHomeroomDates = useMemo(() => {
     const className = (currentTeacher.className || '').trim();
@@ -3984,6 +3989,7 @@ export default function HomeroomPanel({
       scheduledSubjects: string[];
       subjectTeachersRecordedCount: number;
       daysAgo: number;
+      holidayInfo: CalendarHolidayInfo | null;
     }> = [];
 
     const [startY, startM, startD] = startDateStr.split('-').map(Number);
@@ -4013,6 +4019,7 @@ export default function HomeroomPanel({
       const scheduledSubjects = dayScheduleSubjectsMap.get(dayName) || [];
       const subjectTeachersRecordedCount = subjectTeacherRecordedCountByDate.get(dStr)?.size || 0;
       const daysAgo = Math.round((todayUtc - curUtc) / oneDayMs);
+      const holidayInfo = getIndonesianCalendarHoliday(dStr, { includeSunday: true });
 
       results.push({
         date: dStr,
@@ -4023,6 +4030,7 @@ export default function HomeroomPanel({
         scheduledSubjects,
         subjectTeachersRecordedCount,
         daysAgo,
+        holidayInfo,
       });
     }
 
@@ -4037,14 +4045,37 @@ export default function HomeroomPanel({
     todayStr
   ]);
 
+  const unrecordedStatsSummary = useMemo(() => {
+    let holidayCount = 0;
+    let activeSchoolDayCount = 0;
+    unrecordedHomeroomDates.forEach(item => {
+      if (item.holidayInfo) {
+        holidayCount += 1;
+      } else {
+        activeSchoolDayCount += 1;
+      }
+    });
+    return {
+      total: unrecordedHomeroomDates.length,
+      holidayCount,
+      activeSchoolDayCount,
+    };
+  }, [unrecordedHomeroomDates]);
+
   const unrecordedMonthsList = useMemo(() => {
-    const map = new Map<string, { key: string; label: string; count: number }>();
+    const map = new Map<string, { key: string; label: string; count: number; holidayCount: number }>();
     unrecordedHomeroomDates.forEach(item => {
       const existing = map.get(item.monthKey);
       if (existing) {
         existing.count += 1;
+        if (item.holidayInfo) existing.holidayCount += 1;
       } else {
-        map.set(item.monthKey, { key: item.monthKey, label: item.monthLabel, count: 1 });
+        map.set(item.monthKey, {
+          key: item.monthKey,
+          label: item.monthLabel,
+          count: 1,
+          holidayCount: item.holidayInfo ? 1 : 0,
+        });
       }
     });
     return Array.from(map.values());
@@ -5347,7 +5378,12 @@ Wassalamualaikum Wr. Wb.
                     </button>
                   </div>
 
-                  {unrecordedHomeroomDates.some(d => d.date === selectedDate) && (
+                  {selectedDateHolidayInfo ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 border border-red-300 text-red-800 text-[11px] font-extrabold shadow-2xs">
+                      <Calendar size={13} className="text-red-600 shrink-0" />
+                      <span>Tanggal Merah Kalender Masehi: Libur — {selectedDateHolidayInfo.name}</span>
+                    </span>
+                  ) : unrecordedHomeroomDates.some(d => d.date === selectedDate) && (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-extrabold">
                       <AlertCircle size={13} className="text-amber-600 shrink-0" />
                       <span>Tanggal ini ({selectedDate}) belum diabsen Wali Kelas</span>
@@ -5369,9 +5405,14 @@ Wassalamualaikum Wr. Wb.
                             <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black">
                               {unrecordedHomeroomDates.length} Tanggal Belum Diabsen Wali Kelas
                             </span>
+                            {unrecordedStatsSummary.holidayCount > 0 && (
+                              <span className="px-2 py-0.5 rounded-md bg-red-100 text-red-800 border border-red-300 text-[10px] font-black">
+                                🗓️ {unrecordedStatsSummary.holidayCount} Tanggal Merah / Libur Nasional
+                              </span>
+                            )}
                           </div>
                           <p className="text-[11px] text-rose-800/90 font-medium mt-0.5">
-                            Klik langsung salah satu tanggal di bawah ini untuk membuka lembar absensi pada tanggal tersebut dan mengisi kehadiran siswa:
+                            Klik langsung salah satu tanggal di bawah ini untuk membuka lembar absensi pada tanggal tersebut (otomatis menampilkan keterangan <strong className="font-extrabold text-red-700">Libur / Tanggal Merah Kalender Masehi</strong> jika bertepatan dengan hari libur):
                           </p>
                         </div>
                       </div>
@@ -5385,43 +5426,64 @@ Wassalamualaikum Wr. Wb.
                       </button>
                     </div>
 
-                    {/* Daftar Chip Tanggal Klik Langsung (Menampilkan hingga 8 tanggal terbaru) */}
+                    {/* Daftar Chip Tanggal Klik Langsung (Menampilkan hingga 8 tanggal terbaru + Tanggal Merah yang terdeteksi) */}
                     <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                      {unrecordedHomeroomDates.slice(0, 8).map((item) => {
-                        const isCurrentlySelected = item.date === selectedDate;
-                        return (
-                          <button
-                            key={item.date}
-                            type="button"
-                            onClick={() => handleJumpToUnrecordedDate(item.date)}
-                            title={`Klik untuk langsung mengisi absensi tanggal ${item.formattedDate}`}
-                            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 border ${
-                              isCurrentlySelected
-                                ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-rose-400'
-                                : 'bg-white hover:bg-rose-600 text-rose-900 hover:text-white border-rose-200 hover:border-rose-600 shadow-2xs group'
-                            }`}
-                          >
-                            <Calendar size={11} className={isCurrentlySelected ? 'text-rose-300' : 'text-rose-500 group-hover:text-white'} />
-                            <span>{item.dayName}, {item.date}</span>
-                            {item.subjectTeachersRecordedCount > 0 && (
-                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
+                      {(() => {
+                        const topRecent = unrecordedHomeroomDates.slice(0, 8);
+                        const topDatesSet = new Set(topRecent.map(d => d.date));
+                        const extraHolidays = unrecordedHomeroomDates.filter(d => d.holidayInfo && !topDatesSet.has(d.date));
+                        const displayChips = [...topRecent, ...extraHolidays];
+                        return displayChips.map((item) => {
+                          const isCurrentlySelected = item.date === selectedDate;
+                          const isHoliday = Boolean(item.holidayInfo);
+                          return (
+                            <button
+                              key={item.date}
+                              type="button"
+                              onClick={() => handleJumpToUnrecordedDate(item.date)}
+                              title={
+                                item.holidayInfo
+                                  ? `${item.formattedDate} — Keterangan Otomatis: LIBUR (${item.holidayInfo.category}: ${item.holidayInfo.name})`
+                                  : `Klik untuk langsung mengisi absensi tanggal ${item.formattedDate}`
+                              }
+                              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 border ${
                                 isCurrentlySelected
-                                  ? 'bg-emerald-500 text-white'
-                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200 group-hover:bg-white/20 group-hover:text-white group-hover:border-transparent'
-                              }`}>
-                                {item.subjectTeachersRecordedCount} Mapel Absen
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
+                                  ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-rose-400'
+                                  : isHoliday
+                                    ? 'bg-red-50 hover:bg-red-600 text-red-900 hover:text-white border-red-300 hover:border-red-600 shadow-2xs group'
+                                    : 'bg-white hover:bg-rose-600 text-rose-900 hover:text-white border-rose-200 hover:border-rose-600 shadow-2xs group'
+                              }`}
+                            >
+                              <Calendar size={11} className={isCurrentlySelected ? 'text-rose-300' : isHoliday ? 'text-red-600 group-hover:text-white' : 'text-rose-500 group-hover:text-white'} />
+                              <span>{item.dayName}, {item.date}</span>
+                              {item.holidayInfo ? (
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${
+                                  isCurrentlySelected
+                                    ? 'bg-red-500 text-white'
+                                    : 'bg-red-600 text-white group-hover:bg-white group-hover:text-red-700'
+                                }`}>
+                                  Libur: {item.holidayInfo.name}
+                                </span>
+                              ) : item.subjectTeachersRecordedCount > 0 ? (
+                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
+                                  isCurrentlySelected
+                                    ? 'bg-emerald-500 text-white'
+                                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200 group-hover:bg-white/20 group-hover:text-white group-hover:border-transparent'
+                                }`}>
+                                  {item.subjectTeachersRecordedCount} Mapel Absen
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        });
+                      })()}
                       {unrecordedHomeroomDates.length > 8 && (
                         <button
                           type="button"
                           onClick={() => setRecordViewTab('unrecorded_dates')}
                           className="px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 text-[10.5px] font-extrabold transition-all cursor-pointer"
                         >
-                          +{unrecordedHomeroomDates.length - 8} tanggal lainnya...
+                          Lihat seluruh {unrecordedHomeroomDates.length} tanggal...
                         </button>
                       )}
                     </div>
@@ -5441,9 +5503,14 @@ Wassalamualaikum Wr. Wb.
                         <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black">
                           {unrecordedHomeroomDates.length} Hari Belum Diabsen
                         </span>
+                        {unrecordedStatsSummary.holidayCount > 0 && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300 text-[10px] font-black">
+                            🗓️ {unrecordedStatsSummary.holidayCount} Tanggal Merah (Otomatis Keterangan Libur)
+                          </span>
+                        )}
                       </div>
                       <p className="text-[11px] text-slate-600 mt-0.5 font-medium">
-                        Klik pada kartu tanggal mana saja di bawah ini untuk langsung membuka Lembar Absensi Harian Kelas pada tanggal tersebut.
+                        Klik pada kartu tanggal mana saja di bawah ini untuk langsung membuka Lembar Absensi Harian Kelas. Tanggal yang bertepatan dengan tanggal merah kalender Masehi otomatis dilengkapi keterangan libur.
                       </p>
                     </div>
 
@@ -5491,13 +5558,22 @@ Wassalamualaikum Wr. Wb.
                             key={m.key}
                             type="button"
                             onClick={() => setUnrecordedMonthFilter(m.key)}
-                            className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer ${
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
                               unrecordedMonthFilter === m.key
                                 ? 'bg-rose-600 text-white shadow-2xs'
                                 : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
                             }`}
                           >
-                            {m.label} ({m.count})
+                            <span>{m.label} ({m.count})</span>
+                            {m.holidayCount > 0 && (
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
+                                unrecordedMonthFilter === m.key
+                                  ? 'bg-white text-red-700'
+                                  : 'bg-red-600 text-white'
+                              }`}>
+                                {m.holidayCount} Libur
+                              </span>
+                            )}
                           </button>
                         ))}
                       </div>
@@ -5506,6 +5582,7 @@ Wassalamualaikum Wr. Wb.
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {filteredUnrecordedHomeroomDates.map((item) => {
                           const isSelected = item.date === selectedDate;
+                          const isHoliday = Boolean(item.holidayInfo);
                           return (
                             <div
                               key={item.date}
@@ -5521,29 +5598,46 @@ Wassalamualaikum Wr. Wb.
                               className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 group ${
                                 isSelected
                                   ? 'bg-indigo-50/70 border-indigo-400 ring-2 ring-indigo-300 shadow-xs'
-                                  : 'bg-white hover:bg-rose-50/50 border-slate-200 hover:border-rose-300 shadow-2xs hover:shadow-md'
+                                  : isHoliday
+                                    ? 'bg-red-50/60 hover:bg-red-50 border-red-300 hover:border-red-400 shadow-2xs hover:shadow-md'
+                                    : 'bg-white hover:bg-rose-50/50 border-slate-200 hover:border-rose-300 shadow-2xs hover:shadow-md'
                               }`}
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex items-start gap-3">
-                                  <div className="w-10 h-10 rounded-xl bg-rose-100 group-hover:bg-rose-600 text-rose-700 group-hover:text-white flex flex-col items-center justify-center shrink-0 transition-colors font-black">
+                                  <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center shrink-0 transition-colors font-black ${
+                                    isHoliday
+                                      ? 'bg-red-600 text-white shadow-2xs'
+                                      : 'bg-rose-100 group-hover:bg-rose-600 text-rose-700 group-hover:text-white'
+                                  }`}>
                                     <span className="text-[9px] uppercase leading-none">{item.dayName.slice(0, 3)}</span>
                                     <span className="text-xs leading-tight mt-0.5">{item.date.split('-')[2]}</span>
                                   </div>
                                   <div>
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      <h4 className="text-xs font-extrabold text-slate-900 group-hover:text-rose-700 transition-colors">
+                                      <h4 className={`text-xs font-extrabold transition-colors ${
+                                        isHoliday ? 'text-red-800' : 'text-slate-900 group-hover:text-rose-700'
+                                      }`}>
                                         {item.formattedDate}
                                       </h4>
                                       <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[9.5px] font-bold font-mono">
                                         {item.date}
                                       </span>
+                                      {item.holidayInfo && (
+                                        <span className="px-2 py-0.5 rounded-md bg-red-600 text-white text-[9.5px] font-black uppercase tracking-wider shadow-2xs">
+                                          Tanggal Merah / Libur
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                                       <span className="text-[10px] font-bold text-rose-600">
                                         &bull; {item.daysAgo === 1 ? 'Kemarin (1 hari lalu)' : `${item.daysAgo} hari yang lalu`}
                                       </span>
-                                      {item.subjectTeachersRecordedCount > 0 ? (
+                                      {item.holidayInfo ? (
+                                        <span className="px-2 py-0.5 rounded-md bg-red-100 text-red-800 border border-red-300 text-[9.5px] font-extrabold">
+                                          Keterangan Otomatis: Libur — {item.holidayInfo.name}
+                                        </span>
+                                      ) : item.subjectTeachersRecordedCount > 0 ? (
                                         <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9.5px] font-extrabold">
                                           {item.subjectTeachersRecordedCount} Guru Mapel Sudah Mengabsen
                                         </span>
@@ -5556,10 +5650,25 @@ Wassalamualaikum Wr. Wb.
                                   </div>
                                 </div>
 
-                                <span className="px-2.5 py-1.5 rounded-lg bg-slate-900 group-hover:bg-rose-600 text-white text-[10px] font-extrabold shrink-0 transition-colors shadow-2xs">
-                                  Isi Absen &rarr;
+                                <span className={`px-2.5 py-1.5 rounded-lg text-white text-[10px] font-extrabold shrink-0 transition-colors shadow-2xs ${
+                                  isHoliday
+                                    ? 'bg-red-600 group-hover:bg-red-700'
+                                    : 'bg-slate-900 group-hover:bg-rose-600'
+                                }`}>
+                                  {isHoliday ? 'Lihat Tanggal &rarr;' : 'Isi Absen &rarr;'}
                                 </span>
                               </div>
+
+                              {/* Keterangan Otomatis Libur Kalender Masehi */}
+                              {item.holidayInfo && (
+                                <div className="p-2.5 rounded-lg bg-red-100/80 border border-red-300 flex items-center gap-2 text-red-900">
+                                  <Calendar size={14} className="text-red-700 shrink-0" />
+                                  <div className="text-[10.5px] font-bold leading-snug">
+                                    <span className="font-black uppercase">Keterangan Libur Otomatis (Kalender Masehi):</span>{' '}
+                                    Hari ini bertepatan dengan Tanggal Merah <strong className="underline">{item.holidayInfo.name}</strong> ({item.holidayInfo.category}). Kegiatan KBM &amp; Absensi Harian diliburkan.
+                                  </div>
+                                </div>
+                              )}
 
                               {item.scheduledSubjects.length > 0 && (
                                 <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
@@ -5569,7 +5678,11 @@ Wassalamualaikum Wr. Wb.
                                   {item.scheduledSubjects.map((subj, idx) => (
                                     <span
                                       key={idx}
-                                      className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[9.5px] font-semibold"
+                                      className={`px-2 py-0.5 rounded text-[9.5px] font-semibold ${
+                                        isHoliday
+                                          ? 'bg-red-100/70 text-red-700 line-through'
+                                          : 'bg-slate-100 text-slate-700'
+                                      }`}
                                     >
                                       {subj}
                                     </span>
@@ -5589,13 +5702,18 @@ Wassalamualaikum Wr. Wb.
               <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left">
                 <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between flex-wrap gap-2">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-extrabold text-slate-800 text-xs md:text-sm">
                         Status Absensi Wali Kelas &amp; Guru Mata Pelajaran — Kelas {currentTeacher.className}
                       </h3>
                       <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black">
                         {classTeacherAttendanceStatuses.selectedDayName}, {selectedDate}
                       </span>
+                      {selectedDateHolidayInfo && (
+                        <span className="px-2 py-0.5 rounded-md bg-red-600 text-white text-[10px] font-black">
+                          🗓️ LIBUR: {selectedDateHolidayInfo.name}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       Menampilkan status absensi Wali Kelas dan Guru Mata Pelajaran yang memiliki jadwal mengajar di Kelas {currentTeacher.className} pada hari {classTeacherAttendanceStatuses.selectedDayName}.
@@ -5655,6 +5773,11 @@ Wassalamualaikum Wr. Wb.
                               <CheckCircle size={12} className="stroke-[2.5]" />
                               Sudah
                             </span>
+                          ) : selectedDateHolidayInfo ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-100 text-red-700 border border-red-200 text-[10px] font-extrabold">
+                              <Calendar size={12} className="stroke-[2.2]" />
+                              Libur
+                            </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-200 text-slate-700 text-[10px] font-extrabold">
                               <Clock size={12} className="stroke-[2.2]" />
@@ -5677,7 +5800,14 @@ Wassalamualaikum Wr. Wb.
               {/* Header */}
               <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-2 select-none">
                 <div>
-                  <h2 className="font-extrabold text-slate-800 text-sm">Lembar Absensi Harian Kelas</h2>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="font-extrabold text-slate-800 text-sm">Lembar Absensi Harian Kelas</h2>
+                    {selectedDateHolidayInfo && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-wide shadow-2xs">
+                        Tanggal Merah: Libur — {selectedDateHolidayInfo.name}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-slate-450 text-[11px] mt-0.5 font-bold text-indigo-700">Tanggal: {new Date(selectedDate).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
                 </div>
 
@@ -5685,6 +5815,26 @@ Wassalamualaikum Wr. Wb.
                   <span>H:{stats.hadir}</span> &bull; <span>T:{stats.terlambat}</span> &bull; <span>S:{stats.sakit}</span> &bull; <span>I:{stats.izin}</span> &bull; <span>A:{stats.alpa}</span>
                 </div>
               </div>
+
+              {/* Banner Otomatis Keterangan Libur Kalender Masehi di Lembar Absensi */}
+              {selectedDateHolidayInfo && (
+                <div className="mx-6 mt-4 p-3.5 rounded-xl bg-red-50 border border-red-300 text-red-900 flex items-start gap-3 shadow-2xs">
+                  <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                    <Calendar size={16} />
+                  </div>
+                  <div className="text-xs leading-relaxed">
+                    <div className="font-extrabold text-red-950 flex items-center gap-2 flex-wrap">
+                      <span>Keterangan Otomatis Kalender Masehi: HARI LIBUR / TANGGAL MERAH</span>
+                      <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-black">
+                        {selectedDateHolidayInfo.category}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-red-800 font-semibold mt-0.5">
+                      Tanggal <strong>{selectedDate}</strong> bertepatan dengan <strong>{selectedDateHolidayInfo.name}</strong> pada Kalender Masehi. Wali Kelas tidak wajib mengisi absensi pada hari libur ini, atau tetap dapat menyimpan catatan khusus jika diperlukan.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Compact Date Picker for Mobile Screens inside Right Panel when sidebar is hidden */}
               <div className="md:hidden px-6 py-3.5 bg-slate-50 border-b border-slate-100 flex flex-col gap-1.5 text-left">

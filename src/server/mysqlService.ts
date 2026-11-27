@@ -2203,6 +2203,13 @@ export async function pullDataFromMysql(): Promise<{
 
     // 9. Teaching Journals
     if (hasTable('teaching_journals')) {
+      try {
+        await connection.query(
+          "DELETE FROM `teaching_journals` WHERE `id` LIKE 'tj-absent-%' OR `topic` LIKE 'Tidak Hadir (Guru tidak mengisi jurnal KBM%'"
+        );
+      } catch (cleanupErr) {
+        // Ignore cleanup error if read-only
+      }
       const [rows]: any = await connection.query('SELECT * FROM `teaching_journals`');
       resultData.teachingJournals = rows.map((r: any) => {
         let attendanceData = undefined;

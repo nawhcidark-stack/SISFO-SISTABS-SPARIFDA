@@ -16,6 +16,25 @@ const WakaKurikulumPanel = lazy(() => import('./components/WakaKurikulumPanel'))
 const SpmbLandingPage = lazy(() => import('./components/SpmbLandingPage'));
 const GuestBookPublicForm = lazy(() => import('./components/GuestBookPublicForm'));
 
+// Eagerly preload the active user role's panel chunk so there is zero Suspense loading wait on startup
+if (typeof window !== 'undefined') {
+  try {
+    const activeRole = localStorage.getItem('smp_maarif_role');
+    const isAuthed = localStorage.getItem('smp_maarif_logged_in') === 'true';
+    if (isAuthed) {
+      if (activeRole === 'admin') import('./components/AdminPanel');
+      else if (activeRole === 'homeroom') import('./components/HomeroomPanel');
+      else if (activeRole === 'subject_teacher') import('./components/SubjectTeacherPanel');
+      else if (activeRole === 'treasurer') import('./components/TreasurerPanel');
+      else if (activeRole === 'principal') import('./components/PrincipalPanel');
+      else if (activeRole === 'waka_sarpras') import('./components/WakaSarprasPanel');
+      else if (activeRole === 'bk') import('./components/CounselorPanel');
+      else if (activeRole === 'waka_kurikulum') import('./components/WakaKurikulumPanel');
+      else import('./components/StudentPanel');
+    }
+  } catch {}
+}
+
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
@@ -33,6 +52,13 @@ import {
   isTransactionInAcademicYear,
   getPeriodicHomerooms
 } from './utils/academicYearUtils';
+import {
+  getInstantBootSnapshot,
+  updateInstantBootSnapshot,
+  extractCompactRecentAttendance,
+  getIdbCollection,
+  setIdbCollection
+} from './utils/instantDbCache';
 
 // Helper utility to make fetch requests that strictly bypass any browser, webview or device caching layers
 export async function fetchNoCache(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -146,10 +172,23 @@ export default function App() {
     };
   }, []);
 
-  // School data states
-  const [studentsList, setStudentsList] = useState<Student[]>([]);
+  // School data states (hydrated synchronously at 0ms from instant boot cache)
+  const [studentsList, setStudentsList] = useState<Student[]>(() => {
+    const snap = getInstantBootSnapshot();
+    return Array.isArray(snap.students) ? snap.students : [];
+  });
   const [miscBillsList, setMiscBillsList] = useState<MiscBill[]>([]);
-  const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
+  const [currentStudent, setCurrentStudent] = useState<Student | null>(() => {
+    const snap = getInstantBootSnapshot();
+    const list = Array.isArray(snap.students) ? snap.students : [];
+    if (list.length === 0) return null;
+    const savedId = typeof window !== 'undefined' ? localStorage.getItem('smp_maarif_student_id') : null;
+    if (savedId) {
+      const found = list.find(s => s.id === savedId || s.nis === savedId);
+      if (found) return found;
+    }
+    return list[0] || null;
+  });
 
   const currentStudentRef = useRef<Student | null>(null);
   useEffect(() => {
@@ -163,7 +202,10 @@ export default function App() {
 
   const [studentBills, setStudentBills] = useState<SppBill[]>([]);
   const [studentTransactions, setStudentTransactions] = useState<SavingsTransaction[]>([]);
-  const [globalNotifications, setGlobalNotifications] = useState<RealtimeNotification[]>([]);
+  const [globalNotifications, setGlobalNotifications] = useState<RealtimeNotification[]>(() => {
+    const snap = getInstantBootSnapshot();
+    return Array.isArray(snap.notifications) ? snap.notifications : [];
+  });
   const [activeToasts, setActiveToasts] = useState<RealtimeNotification[]>([]);
   const [readNotifIds, setReadNotifIds] = useState<string[]>(() => {
     try {
@@ -187,24 +229,39 @@ export default function App() {
   }, [isNotifHistoryOpen, globalNotifications]);
   const [notifSearchQuery, setNotifSearchQuery] = useState<string>('');
   const [activeNotifCategory, setActiveNotifCategory] = useState<NotifTabCategory>('semua');
-  const [attendanceList, setAttendanceList] = useState<AttendanceLog[]>([]);
-  const [homeroomsList, setHomeroomsList] = useState<HomeroomTeacher[]>([]);
-  const [subjectTeachersList, setSubjectTeachersList] = useState<SubjectTeacher[]>([]);
+  const [attendanceList, setAttendanceList] = useState<AttendanceLog[]>(() => {
+    const snap = getInstantBootSnapshot();
+    return Array.isArray(snap.recentAttendance) ? snap.recentAttendance : [];
+  });
+  const [homeroomsList, setHomeroomsList] = useState<HomeroomTeacher[]>(() => {
+    const snap = getInstantBootSnapshot();
+    return Array.isArray(snap.homerooms) ? snap.homerooms : [];
+  });
+  const [subjectTeachersList, setSubjectTeachersList] = useState<SubjectTeacher[]>(() => {
+    const snap = getInstantBootSnapshot();
+    return Array.isArray(snap.subjectTeachers) ? snap.subjectTeachers : [];
+  });
   const [merdekaAssessmentsList, setMerdekaAssessmentsList] = useState<MerdekaAssessment[]>([]);
-  const [schedulesList, setSchedulesList] = useState<ClassSchedule[]>([]);
+  const [schedulesList, setSchedulesList] = useState<ClassSchedule[]>(() => {
+    const snap = getInstantBootSnapshot();
+    return Array.isArray(snap.schedules) ? snap.schedules : [];
+  });
   
   // School Identity state
-  const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentity>({
-    name: "SMP MA'ARIF NU PANDAAN",
-    subheading: "LP MA'ARIF NU CABANG PASURUAN",
-    accreditation: "Terakreditasi A",
-    address: "Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan, Jawa Timur",
-    phone: "(0343) 631234",
-    principal: "H. Ahmad Fuad, S.Pd, M.PdI",
-    treasurer: "Bendahara Sekolah NU",
-    logo: "",
-    logo2: "",
-    letterhead: ""
+  const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentity>(() => {
+    const snap = getInstantBootSnapshot();
+    return snap.schoolIdentity || {
+      name: "SMP MA'ARIF NU PANDAAN",
+      subheading: "LP MA'ARIF NU CABANG PASURUAN",
+      accreditation: "Terakreditasi A",
+      address: "Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan, Jawa Timur",
+      phone: "(0343) 631234",
+      principal: "H. Ahmad Fuad, S.Pd, M.PdI",
+      treasurer: "Bendahara Sekolah NU",
+      logo: "",
+      logo2: "",
+      letterhead: ""
+    };
   });
 
   // Academic Year State & Switcher
@@ -332,8 +389,123 @@ export default function App() {
   const [adminSavingsToPrint, setAdminSavingsToPrint] = useState<{ studentId: string; orderId: string; amount: number } | null>(null);
 
   // System indicators
-  const [sysStatus, setSysStatus] = useState<{ merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; isDisabled?: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean; hasPin?: boolean } | null>(null);
+  const [sysStatus, setSysStatus] = useState<{ merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; isDisabled?: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean; hasPin?: boolean } | null>(() => {
+    const snap = getInstantBootSnapshot();
+    return snap.sysStatus || null;
+  });
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // Non-blocking IndexedDB hydration on mount + idle background persistence
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      getIdbCollection<SchoolIdentity>('schoolIdentity'),
+      getIdbCollection<SppBill[]>('bills'),
+      getIdbCollection<MiscBill[]>('miscBills'),
+      getIdbCollection<SavingsTransaction[]>('transactions'),
+      getIdbCollection<AttendanceLog[]>('attendance'),
+      getIdbCollection<MerdekaAssessment[]>('merdekaAssessments')
+    ]).then(([idbIdentity, idbBills, idbMisc, idbTxs, idbAtt, idbMa]) => {
+      if (!active) return;
+      if (idbIdentity && typeof idbIdentity === 'object') {
+        setSchoolIdentity(prev => ({ ...idbIdentity, ...prev, logo: prev.logo || idbIdentity.logo, logo2: prev.logo2 || idbIdentity.logo2, letterhead: prev.letterhead || idbIdentity.letterhead }));
+      }
+      if (Array.isArray(idbBills) && idbBills.length > 0) {
+        setStudentBills(prev => (prev.length === 0 ? idbBills : prev));
+      }
+      if (Array.isArray(idbMisc) && idbMisc.length > 0) {
+        setMiscBillsList(prev => (prev.length === 0 ? idbMisc : prev));
+      }
+      if (Array.isArray(idbTxs) && idbTxs.length > 0) {
+        setStudentTransactions(prev => (prev.length === 0 ? idbTxs : prev));
+      }
+      if (Array.isArray(idbAtt) && idbAtt.length > 0) {
+        setAttendanceList(prev => (prev.length <= 1200 && idbAtt.length > prev.length ? idbAtt : prev));
+      }
+      if (Array.isArray(idbMa) && idbMa.length > 0) {
+        setMerdekaAssessmentsList(prev => (prev.length === 0 ? idbMa : prev));
+      }
+    }).catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (studentsList.length > 0) {
+      updateInstantBootSnapshot({ students: studentsList });
+    }
+  }, [studentsList]);
+
+  useEffect(() => {
+    if (homeroomsList.length > 0) {
+      updateInstantBootSnapshot({ homerooms: homeroomsList });
+    }
+  }, [homeroomsList]);
+
+  useEffect(() => {
+    if (subjectTeachersList.length > 0) {
+      updateInstantBootSnapshot({ subjectTeachers: subjectTeachersList });
+    }
+  }, [subjectTeachersList]);
+
+  useEffect(() => {
+    if (schedulesList.length > 0) {
+      updateInstantBootSnapshot({ schedules: schedulesList });
+    }
+  }, [schedulesList]);
+
+  useEffect(() => {
+    if (schoolIdentity && schoolIdentity.name) {
+      updateInstantBootSnapshot({ schoolIdentity });
+      setIdbCollection('schoolIdentity', schoolIdentity);
+    }
+  }, [schoolIdentity]);
+
+  useEffect(() => {
+    if (sysStatus) {
+      updateInstantBootSnapshot({ sysStatus });
+    }
+  }, [sysStatus]);
+
+  useEffect(() => {
+    if (globalNotifications.length > 0) {
+      updateInstantBootSnapshot({ notifications: globalNotifications });
+    }
+  }, [globalNotifications]);
+
+  useEffect(() => {
+    if (attendanceList.length > 0) {
+      updateInstantBootSnapshot({ recentAttendance: extractCompactRecentAttendance(attendanceList) });
+      if (attendanceList.length > 1200) {
+        setIdbCollection('attendance', attendanceList);
+      }
+    }
+  }, [attendanceList]);
+
+  useEffect(() => {
+    if (studentBills.length > 0) {
+      setIdbCollection('bills', studentBills);
+    }
+  }, [studentBills]);
+
+  useEffect(() => {
+    if (miscBillsList.length > 0) {
+      setIdbCollection('miscBills', miscBillsList);
+    }
+  }, [miscBillsList]);
+
+  useEffect(() => {
+    if (studentTransactions.length > 0) {
+      setIdbCollection('transactions', studentTransactions);
+    }
+  }, [studentTransactions]);
+
+  useEffect(() => {
+    if (merdekaAssessmentsList.length > 0) {
+      setIdbCollection('merdekaAssessments', merdekaAssessmentsList);
+    }
+  }, [merdekaAssessmentsList]);
   const [timeStr, setTimeStr] = useState<string>('');
 
   // Audio trigger for sound feedback of real-time events
@@ -633,17 +805,77 @@ export default function App() {
     }
   };
 
-  // 1. Optimized parallel load of essential data
+  // 1. Instant cached hydration + single-roundtrip /api/bootstrap background revalidation
   const initSystemData = async (silent: boolean = false) => {
     try {
+      const isUserLoggedIn = localStorage.getItem('smp_maarif_logged_in') === 'true';
+      const userRole = (localStorage.getItem('smp_maarif_role') as any) || 'student';
+      const storedStudentId = localStorage.getItem('smp_maarif_student_id') || '';
+
+      // Single fast round-trip bootstrap request
+      const bootRes = await fetchNoCache(
+        `/api/bootstrap?role=${encodeURIComponent(userRole)}&studentId=${encodeURIComponent(storedStudentId)}`
+      );
+
+      if (bootRes.ok) {
+        const bootData = await bootRes.json();
+        if (bootData.schoolIdentity) {
+          setSchoolIdentity(bootData.schoolIdentity);
+        }
+        if (Array.isArray(bootData.students)) {
+          setStudentsList(bootData.students);
+        }
+        if (Array.isArray(bootData.homerooms)) {
+          setHomeroomsList(prev =>
+            JSON.stringify(prev) === JSON.stringify(bootData.homerooms) ? prev : bootData.homerooms
+          );
+        }
+        if (Array.isArray(bootData.subjectTeachers)) {
+          setSubjectTeachersList(prev =>
+            JSON.stringify(prev) === JSON.stringify(bootData.subjectTeachers) ? prev : bootData.subjectTeachers
+          );
+        }
+        if (Array.isArray(bootData.schedules)) {
+          setSchedulesList(bootData.schedules);
+        }
+        if (Array.isArray(bootData.miscBills)) {
+          setMiscBillsList(bootData.miscBills);
+        }
+        if (bootData.midtransConfig) {
+          setSysStatus(bootData.midtransConfig);
+        }
+        if (Array.isArray(bootData.notifications)) {
+          setGlobalNotifications(bootData.notifications);
+        }
+        if (isUserLoggedIn) {
+          if (bootData.currentStudent) {
+            setCurrentStudent(bootData.currentStudent);
+          }
+          if (Array.isArray(bootData.bills)) {
+            setStudentBills(bootData.bills);
+          }
+          if (Array.isArray(bootData.transactions)) {
+            setStudentTransactions(
+              [...bootData.transactions].sort(
+                (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+              )
+            );
+          }
+        }
+        setIsLoading(false);
+
+        if (isUserLoggedIn) {
+          // Stream full attendance and assessments in parallel without blocking UI
+          Promise.allSettled([fetchAttendance(), fetchMerdekaAssessments()]);
+        }
+        return;
+      }
+
+      // Fallback if /api/bootstrap is unavailable
       if (!silent && studentsList.length === 0) {
         setIsLoading(true);
       }
-      const isUserLoggedIn = localStorage.getItem('smp_maarif_logged_in') === 'true';
-      const userRole = (localStorage.getItem('smp_maarif_role') as any) || 'student';
-      const storedStudentId = localStorage.getItem('smp_maarif_student_id');
 
-      // 1. School Identity is the only critical asset needed for initial screen render
       const identityPromise = fetchNoCache('/api/school-identity').then(async (res) => {
         if (res.ok) {
           const sData = await res.json();
@@ -654,35 +886,11 @@ export default function App() {
       }).catch(e => console.error("Gagal memuat identitas sekolah", e));
 
       if (!isUserLoggedIn) {
-        // Fast path for login / SPMB visitors: render UI immediately once identity is ready!
         await identityPromise;
         setIsLoading(false);
-
-        // Fetch students & supporting data asynchronously in background
-        Promise.allSettled([
-          fetchNoCache('/api/students').then(async (res) => {
-            if (res.ok) {
-              const stdData = await res.json();
-              setStudentsList(stdData);
-            }
-          }).catch(() => {}),
-          fetchNoCache('/api/midtrans-config').then(async (res) => {
-            if (res.ok) {
-              const keysData = await res.json();
-              setSysStatus(keysData);
-            }
-          }).catch(() => {}),
-          fetchNoCache('/api/notifications').then(async (res) => {
-            if (res.ok) {
-              const notifData = await res.json();
-              setGlobalNotifications(notifData);
-            }
-          }).catch(() => {})
-        ]);
         return;
       }
 
-      // 2. For authenticated users: fetch students and essential status
       const studentPromise = fetchNoCache('/api/students').then(async (res) => {
         if (res.ok) {
           const stdData = await res.json();
@@ -694,34 +902,17 @@ export default function App() {
         }
       }).catch(e => console.error("Gagal memuat data siswa", e));
 
-      const midtransPromise = fetchNoCache('/api/midtrans-config').then(async (res) => {
-        if (res.ok) {
-          const keysData = await res.json();
-          setSysStatus(keysData);
-        }
-      }).catch(() => {});
-
-      const notifPromise = fetchNoCache('/api/notifications').then(async (res) => {
-        if (res.ok) {
-          const notifData = await res.json();
-          setGlobalNotifications(notifData);
-        }
-      }).catch(() => {});
-
-      await Promise.allSettled([identityPromise, studentPromise, midtransPromise, notifPromise]);
+      await Promise.allSettled([identityPromise, studentPromise]);
       setIsLoading(false);
 
-      // Operational secondary data can hydrate smoothly in background without blocking
-      setTimeout(() => {
-        Promise.allSettled([
-          fetchAttendance(),
-          fetchHomerooms(),
-          fetchSubjectTeachers(),
-          fetchMerdekaAssessments(),
-          fetchSchedules(),
-          fetchMiscBills()
-        ]);
-      }, 100);
+      Promise.allSettled([
+        fetchAttendance(),
+        fetchHomerooms(),
+        fetchSubjectTeachers(),
+        fetchMerdekaAssessments(),
+        fetchSchedules(),
+        fetchMiscBills()
+      ]);
 
     } catch (err) {
       console.error('Failed to boot initial data', err);

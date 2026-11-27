@@ -1921,6 +1921,230 @@ function normalizeJournalTeacherIds() {
   }
 }
 
+function isAutoAbsentJournalRecord(j: any): boolean {
+  if (!j) return true;
+  const idStr = String(j.id || "").trim();
+  const topicStr = String(j.topic || "").trim().toLowerCase();
+  const notesStr = String(j.notes || "").trim().toLowerCase();
+  return (
+    idStr.startsWith("tj-absent-") ||
+    topicStr.startsWith("tidak hadir (guru tidak mengisi jurnal kbm") ||
+    (notesStr === "tidak hadir" && (!Array.isArray(j.attendance) || j.attendance.length === 0))
+  );
+}
+
+function normalizeSubjectKeyForSync(raw?: string): string {
+  if (!raw) return "";
+  const s = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  if (s === "b. indonesia" || s === "bhs indonesia" || s === "bahasa indonesia") return "bahasa indonesia";
+  if (s === "b. inggris" || s === "bhs inggris" || s === "bahasa inggris") return "bahasa inggris";
+  if (s === "b. jawa" || s === "bhs jawa" || s === "bahasa jawa") return "bahasa jawa";
+  if (s === "ipa" || s === "ilmu pengetahuan alam") return "ipa";
+  if (s === "ips" || s === "ilmu pengetahuan sosial") return "ips";
+  if (s === "pjok" || s === "penjas" || s === "pendidikan jasmani olahraga dan kesehatan" || s === "pendidikan jasmani, olahraga, dan kesehatan") return "pjok";
+  if (s === "pai" || s === "pendidikan agama islam" || s === "pendidikan agama islam dan budi pekerti" || s === "pai & bp") return "pai";
+  if (s === "pkn" || s === "ppkn" || s === "pendidikan pancasila" || s === "pendidikan pancasila dan kewarganegaraan") return "pendidikan pancasila";
+  if (s === "tik" || s === "informatika") return "informatika";
+  if (s === "sbk" || s === "seni" || s === "seni budaya" || s === "seni dan budaya") return "seni budaya";
+  if (s === "aswaja" || s === "ke-nu-an" || s === "pendidikan aswaja dan ke-nu-an") return "aswaja";
+  return s;
+}
+
+function reconcileAndDeduplicateAttendanceAndJournals() {
+  try {
+    // 1. Filter out auto-absent placeholder bloat from teachingJournals
+    const realJournals = teachingJournals.filter(j => !isAutoAbsentJournalRecord(j));
+    if (realJournals.length !== teachingJournals.length) {
+      teachingJournals.length = 0;
+      teachingJournals.push(...realJournals);
+    }
+
+    // Build fast student lookup maps
+    const studentById = new Map<string, Student>();
+    const studentByNis = new Map<string, Student>();
+    const studentByClassAndName = new Map<string, Student>();
+    const studentByNameOnly = new Map<string, Student>();
+
+    students.forEach(s => {
+      if (s.id) {
+        studentById.set(s.id, s);
+        studentById.set(s.id.toLowerCase(), s);
+      }
+      if (s.nis) {
+        studentByNis.set(String(s.nis).trim(), s);
+      }
+      if (s.name) {
+        const cleanName = s.name.trim().toLowerCase();
+        studentByNameOnly.set(cleanName, s);
+        if (s.class) {
+          studentByClassAndName.set(`${s.class.trim().toUpperCase()}_${cleanName}`, s);
+        }
+      }
+    });
+
+    const resolveStudent = (studentId?: string, studentName?: string, className?: string): Student | undefined => {
+      if (studentId) {
+        const byId = studentById.get(studentId) || studentById.get(studentId.toLowerCase()) || studentByNis.get(studentId);
+        if (byId) return byId;
+      }
+      if (studentName) {
+        const cleanName = studentName.trim().toLowerCase();
+        if (className) {
+          const byClsName = studentByClassAndName.get(`${className.trim().toUpperCase()}_${cleanName}`);
+          if (byClsName) return byClsName;
+        }
+        const byName = studentByNameOnly.get(cleanName);
+        if (byName) return byName;
+      }
+      return undefined;
+    };
+
+    // 2. Deduplicate attendanceLogs by (canonicalStudentId, normDate) and merge subjectNotes
+    const logByStudentDate = new Map<string, AttendanceLog>();
+    const duplicateLogIdsToDelete: string[] = [];
+    const logsToPersistMap = new Map<string, AttendanceLog>();
+
+    for (const log of attendanceLogs) {
+      const normDate = (log.date || "").substring(0, 10);
+      if (!normDate) continue;
+      const st = resolveStudent(log.studentId, log.studentName, log.className);
+      const canonicalStudentId = st ? st.id : log.studentId;
+      if (!canonicalStudentId) continue;
+
+      log.studentId = canonicalStudentId;
+      log.date = normDate;
+      if (st?.name && (!log.studentName || log.studentName.startsWith("Siswa (std-"))) {
+        log.studentName = st.name;
+      }
+      if (st?.class && !log.className) {
+        log.className = st.class;
+      }
+
+      const key = `${canonicalStudentId}_${normDate}`;
+      const existing = logByStudentDate.get(key);
+      if (!existing) {
+        logByStudentDate.set(key, log);
+      } else {
+        // Merge duplicate log into existing
+        if (log.id && log.id !== existing.id) {
+          duplicateLogIdsToDelete.push(log.id);
+        }
+        if (log.homeroomRecorded !== false) {
+          existing.homeroomRecorded = true;
+        }
+        if (existing.status === "Hadir" && log.status && log.status !== "Hadir") {
+          existing.status = log.status;
+        }
+        if (!existing.notes && log.notes) {
+          existing.notes = log.notes;
+        }
+        if (Array.isArray(log.subjectNotes) && log.subjectNotes.length > 0) {
+          if (!Array.isArray(existing.subjectNotes)) {
+            existing.subjectNotes = [];
+          }
+          for (const sn of log.subjectNotes) {
+            if (!sn || !sn.subject) continue;
+            const snKey = normalizeSubjectKeyForSync(sn.subject);
+            const idx = existing.subjectNotes.findIndex(
+              (eSn: any) => normalizeSubjectKeyForSync(eSn?.subject) === snKey
+            );
+            if (idx === -1) {
+              existing.subjectNotes.push({
+                ...sn,
+                homeroomRecorded: existing.homeroomRecorded !== false
+              });
+            } else if ((!existing.subjectNotes[idx].notes && sn.notes) || (existing.subjectNotes[idx].status === "Hadir" && sn.status !== "Hadir")) {
+              existing.subjectNotes[idx] = {
+                ...sn,
+                homeroomRecorded: existing.homeroomRecorded !== false
+              };
+            }
+          }
+        }
+        logsToPersistMap.set(existing.id, existing);
+      }
+    }
+
+    if (duplicateLogIdsToDelete.length > 0) {
+      attendanceLogs.length = 0;
+      attendanceLogs.push(...Array.from(logByStudentDate.values()));
+      directDeleteEntitiesBatchFromMysql("attendance", duplicateLogIdsToDelete).catch(() => {});
+    }
+
+    // 3. Backfill all real teachingJournals attendance into attendanceLogs.subjectNotes
+    for (const j of teachingJournals) {
+      if (isAutoAbsentJournalRecord(j)) continue;
+      const normDate = (j.date || "").substring(0, 10);
+      const resolvedSubject = (j.subject || "").trim();
+      const resolvedClass = (j.className || "").trim();
+      if (!normDate || !resolvedSubject || !Array.isArray(j.attendance) || j.attendance.length === 0) continue;
+
+      const subjKey = normalizeSubjectKeyForSync(resolvedSubject);
+
+      for (const studentAtt of j.attendance) {
+        if (!studentAtt) continue;
+        const st = resolveStudent(studentAtt.studentId, studentAtt.studentName, resolvedClass);
+        const targetStudentId = st ? st.id : studentAtt.studentId;
+        if (!targetStudentId) continue;
+
+        const targetName = st?.name || studentAtt.studentName || "";
+        const targetClass = st?.class || resolvedClass;
+        const key = `${targetStudentId}_${normDate}`;
+        let existingLog = logByStudentDate.get(key);
+
+        const newSubNote = {
+          subject: resolvedSubject,
+          teacherName: j.teacherName || "",
+          status: studentAtt.status || "Hadir",
+          notes: studentAtt.notes || ""
+        };
+
+        if (existingLog) {
+          if (!Array.isArray(existingLog.subjectNotes)) {
+            existingLog.subjectNotes = [];
+          }
+          const hasSubj = existingLog.subjectNotes.some(
+            (sn: any) => normalizeSubjectKeyForSync(sn?.subject) === subjKey
+          );
+          if (!hasSubj) {
+            const wasHomeroomRecorded = existingLog.homeroomRecorded !== false;
+            existingLog.subjectNotes.push({
+              ...newSubNote,
+              homeroomRecorded: wasHomeroomRecorded
+            });
+            logsToPersistMap.set(existingLog.id, existingLog);
+          }
+        } else {
+          const createdLog: AttendanceLog = {
+            id: `att-sync-${normDate}-${targetStudentId.replace(/[^a-zA-Z0-9]/g, "").slice(-10)}`,
+            studentId: targetStudentId,
+            studentName: targetName,
+            className: targetClass,
+            date: normDate,
+            status: "Hadir",
+            notes: "",
+            homeroomRecorded: false,
+            subjectNotes: [{ ...newSubNote, homeroomRecorded: false }]
+          };
+          attendanceLogs.push(createdLog);
+          logByStudentDate.set(key, createdLog);
+          logsToPersistMap.set(createdLog.id, createdLog);
+        }
+      }
+    }
+
+    if (logsToPersistMap.size > 0) {
+      const batchToSave = Array.from(logsToPersistMap.values());
+      console.log(`[Attendance Sync] Backfilled/merged ${batchToSave.length} attendance logs from teaching journals.`);
+      persistEntities("attendance", batchToSave).catch(err =>
+        console.error("[Attendance Sync Persist Error]:", err)
+      );
+    }
+  } catch (err) {
+    console.error("Error in reconcileAndDeduplicateAttendanceAndJournals:", err);
+  }
+}
+
 async function refreshConfigsFromMysql(): Promise<void> {
   try {
     const configs = await getAllConfigsFromMysql();
@@ -2059,6 +2283,7 @@ function applyDataFromMysql(pulledData: any) {
     if (Array.isArray(pulledData.teachingJournals) && pulledData.teachingJournals.length > 0) {
       teachingJournals.length = 0;
       pulledData.teachingJournals.forEach((j: any) => {
+        if (isAutoAbsentJournalRecord(j)) return;
         if (!Array.isArray(j.attendance)) {
           j.attendance = Array.isArray(j.attendanceData) ? j.attendanceData : [];
         }
@@ -2066,6 +2291,7 @@ function applyDataFromMysql(pulledData: any) {
       });
       normalizeJournalTeacherIds();
     }
+    reconcileAndDeduplicateAttendanceAndJournals();
 
     if (Array.isArray(pulledData.studentDevelopmentLogs) && pulledData.studentDevelopmentLogs.length > 0) {
       studentDevelopmentLogs.length = 0;
@@ -3758,6 +3984,80 @@ async function startServer() {
     res.json({ success: true, schoolIdentity: { ...schoolIdentity, sppRates } });
   });
 
+  // Fast single-roundtrip bootstrap endpoint for instant frontend hydration
+  app.get("/api/bootstrap", (req, res) => {
+    const role = String(req.query.role || "").trim().toLowerCase();
+    const studentId = String(req.query.studentId || "").trim();
+
+    // Ensure homeroom subject mappings are normalized
+    homeroomTeachers.forEach(ht => {
+      const authMap = AUTHORITATIVE_HOMEROOM_MAP[ht.username.toLowerCase()];
+      if (authMap) {
+        if (!ht.subject) {
+          ht.subject = authMap.subject;
+          ht.subjectId = authMap.subjectId;
+        }
+        if (!ht.subjects || ht.subjects.length === 0) {
+          ht.subjects = [ht.subject || authMap.subject];
+        }
+      }
+    });
+
+    const isStaffRole =
+      role === "admin" ||
+      role === "homeroom" ||
+      role === "treasurer" ||
+      role === "principal" ||
+      role === "waka_kurikulum" ||
+      role === "waka_sarpras" ||
+      role === "bk" ||
+      role === "subject_teacher";
+
+    let targetStudent: Student | null = null;
+    if (studentId) {
+      targetStudent = students.find(s => s.id === studentId || s.nis === studentId) || null;
+    } else if (students.length > 0) {
+      targetStudent = students[0];
+    }
+
+    let billsPayload: SppBill[] = [];
+    let transactionsPayload: SavingsTransaction[] = [];
+
+    if (role === "admin" || role === "homeroom" || role === "treasurer" || role === "principal") {
+      billsPayload = sppBills;
+      transactionsPayload = savingsTransactions;
+    } else if (targetStudent) {
+      billsPayload = sppBills.filter(b => b.studentId === targetStudent!.id);
+      transactionsPayload = savingsTransactions.filter(t => t.studentId === targetStudent!.id);
+    }
+
+    res.json({
+      success: true,
+      schoolIdentity: { ...schoolIdentity, sppRates },
+      students,
+      homerooms: homeroomTeachers,
+      subjectTeachers,
+      schedules: classSchedules,
+      miscBills,
+      bills: billsPayload,
+      transactions: transactionsPayload,
+      currentStudent: targetStudent,
+      notifications: notifications.slice(0, 100),
+      midtransConfig: {
+        merchantId: midtransConfig.merchantId,
+        clientKey: midtransConfig.clientKey,
+        hasServerKey: !!midtransConfig.serverKey,
+        isProduction: midtransConfig.isProduction,
+        isDisabled: !!midtransConfig.isDisabled,
+        adminFee: 0,
+        systemMaintenanceFee: 0,
+        chargeFeesToUser: false,
+        hasPin: !!midtransConfig.pin
+      },
+      isStaffRole
+    });
+  });
+
   // Update School Identity settings
   app.post("/api/admin/set-school-identity", async (req, res) => {
     try {
@@ -4485,36 +4785,23 @@ async function startServer() {
 
   // --- STUDENT ATTENDANCE (ABSENSI) ENDPOINTS ---
   app.get("/api/attendance", (req, res) => {
+    const studentNameMap = new Map<string, string>();
+    for (const s of students) {
+      if (s.id && s.name) {
+        studentNameMap.set(s.id, s.name);
+        studentNameMap.set(s.id.toLowerCase(), s.name);
+      }
+      if (s.nis && s.name) {
+        studentNameMap.set(String(s.nis).trim(), s.name);
+      }
+    }
     const enrichedLogs = attendanceLogs.map(log => {
       let resolvedName = log.studentName;
       if (!resolvedName || resolvedName.startsWith("Siswa (std-")) {
-        const st = students.find(s => 
-          s.id === log.studentId || 
-          (s.id && s.id.toLowerCase() === log.studentId?.toLowerCase()) ||
-          s.nis === log.studentId || 
-          (s.nis && s.nis.toLowerCase() === log.studentId?.toLowerCase())
-        );
-        if (st && st.name) {
-          resolvedName = st.name;
-        } else {
-          for (const j of teachingJournals) {
-            if (Array.isArray(j.attendance)) {
-              const att = j.attendance.find((a: any) => 
-                a.studentId === log.studentId || 
-                (a.studentId && a.studentId.toLowerCase() === log.studentId?.toLowerCase())
-              );
-              if (att && att.studentName && !att.studentName.startsWith("Siswa (std-")) {
-                resolvedName = att.studentName;
-                break;
-              }
-            }
-          }
-        }
+        const sid = String(log.studentId || "").trim();
+        resolvedName = studentNameMap.get(sid) || studentNameMap.get(sid.toLowerCase()) || resolvedName || "";
       }
-      return {
-        ...log,
-        studentName: resolvedName || log.studentName || ""
-      };
+      return resolvedName !== log.studentName ? { ...log, studentName: resolvedName } : log;
     });
     res.json(enrichedLogs);
   });
@@ -8699,7 +8986,6 @@ async function startServer() {
   });
 
   app.get("/api/curriculum/schedules", async (req, res) => {
-    autoGenerateAbsentJournals().catch(e => console.error("Error in autoGenerateAbsentJournals:", e));
     const deduplicated = deduplicateClassSchedules(classSchedules);
     if (deduplicated.length !== classSchedules.length) {
       classSchedules.length = 0;
@@ -15582,13 +15868,8 @@ Petunjuk Ekstraksi:
     });
   }
 
-  // Background check for teacher absent journals (runs on startup and every hour)
-  setTimeout(() => {
-    autoGenerateAbsentJournals().catch(e => console.error("Startup auto absent check error:", e));
-  }, 5000);
-  setInterval(() => {
-    autoGenerateAbsentJournals().catch(e => console.error("Periodic auto absent check error:", e));
-  }, 3600000);
+  // Auto-absent journal generation is only triggered manually when requested by curriculum admin
+
 
   // Periodic background synchronization of all Admin Panel & role configs from MySQL (keeps Dev and Public instances 100% in sync)
   setInterval(() => {

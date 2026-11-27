@@ -17,6 +17,13 @@ import {
   exportSavingsRecapToExcel 
 } from '../utils/excelExport';
 import { printClassFinancialRecapPdf } from '../utils/financialRecapPrint';
+import {
+  getInstantBootSnapshot,
+  updateInstantBootSnapshot,
+  extractCompactRecentJournals,
+  getIdbCollection,
+  setIdbCollection
+} from '../utils/instantDbCache';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
@@ -1461,10 +1468,42 @@ export default function HomeroomPanel({
     }
   };
 
-  // Teaching Journals state and printing systems
-  const [teachingJournalsList, setTeachingJournalsList] = useState<any[]>([]);
-  const [allTeachingJournalsList, setAllTeachingJournalsList] = useState<any[]>([]);
+  // Teaching Journals state and printing systems (hydrated at 0ms from instant cache)
+  const [allTeachingJournalsList, setAllTeachingJournalsList] = useState<any[]>(() => {
+    const snap = getInstantBootSnapshot();
+    return Array.isArray(snap.recentJournals) ? snap.recentJournals : [];
+  });
+  const [teachingJournalsList, setTeachingJournalsList] = useState<any[]>(() => {
+    const snap = getInstantBootSnapshot();
+    const list = Array.isArray(snap.recentJournals) ? snap.recentJournals : [];
+    const cName = currentTeacher?.name ? currentTeacher.name.trim().toLowerCase() : '';
+    const cClass = currentTeacher?.className ? currentTeacher.className.toLowerCase() : '';
+    return list.filter((j: any) =>
+      (j.className && j.className.toLowerCase() === cClass) ||
+      j.teacherId === currentTeacher?.id ||
+      (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName)
+    );
+  });
   const [loadingJournals, setLoadingJournals] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getIdbCollection<any[]>('teachingJournals').then(idbJournals => {
+      if (!active || !Array.isArray(idbJournals) || idbJournals.length === 0) return;
+      setAllTeachingJournalsList(prev => (idbJournals.length > prev.length ? idbJournals : prev));
+      const cName = currentTeacher?.name ? currentTeacher.name.trim().toLowerCase() : '';
+      const cClass = currentTeacher?.className ? currentTeacher.className.toLowerCase() : '';
+      const filtered = idbJournals.filter((j: any) =>
+        (j.className && j.className.toLowerCase() === cClass) ||
+        j.teacherId === currentTeacher?.id ||
+        (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName)
+      );
+      setTeachingJournalsList(prev => (filtered.length > prev.length ? filtered : prev));
+    }).catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [currentTeacher?.id, currentTeacher?.className, currentTeacher?.name]);
   const [journalViewMode, setJournalViewMode] = useState<'presensi' | 'kbm'>('presensi');
   const [kbmJournalSubTab, setKbmJournalSubTab] = useState<'binaan' | 'kelas_lain'>('binaan');
   const [selectedJournalToPrint, setSelectedJournalToPrint] = useState<any | null>(null);
@@ -1875,19 +1914,30 @@ export default function HomeroomPanel({
   };
 
   const fetchTeachingJournals = async () => {
-    setLoadingJournals(true);
+    if (allTeachingJournalsList.length === 0) {
+      setLoadingJournals(true);
+    }
     try {
       const res = await fetch('/api/teaching-journals');
       if (res.ok) {
         const rawData = await res.json();
         const dataList = Array.isArray(rawData) ? rawData : [];
-        const normalized = dataList.map((j: any) => ({
-          ...j,
-          attendance: Array.isArray(j.attendance)
-            ? j.attendance
-            : (Array.isArray(j.attendanceData) ? j.attendanceData : [])
-        }));
+        const normalized = dataList
+          .filter((j: any) => {
+            if (!j) return false;
+            const idStr = String(j.id || '').trim();
+            const topicStr = String(j.topic || '').trim().toLowerCase();
+            return !idStr.startsWith('tj-absent-') && !topicStr.startsWith('tidak hadir (guru tidak mengisi jurnal kbm');
+          })
+          .map((j: any) => ({
+            ...j,
+            attendance: Array.isArray(j.attendance)
+              ? j.attendance
+              : (Array.isArray(j.attendanceData) ? j.attendanceData : [])
+          }));
         setAllTeachingJournalsList(normalized);
+        updateInstantBootSnapshot({ recentJournals: extractCompactRecentJournals(normalized) });
+        setIdbCollection('teachingJournals', normalized);
         // Filter journals that belong to current homeroom teacher's class OR are taught by this teacher
         const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
         const filtered = normalized.filter((j: any) => 
@@ -3311,10 +3361,12 @@ export default function HomeroomPanel({
     
     classStudents.forEach((student) => {
       const existing = attendanceLogs.find(
-        (log) => (log.studentId === student.id || (student.nis && log.studentId === student.nis)) &&
-          ((log.date || '').substring(0, 10) === normDate)
+        (log) =>
+          (log.studentId === student.id || (student.nis && log.studentId === student.nis)) &&
+          ((log.date || '').substring(0, 10) === normDate) &&
+          isHomeroomAttendanceRecorded(log)
       );
-      if (existing && isHomeroomAttendanceRecorded(existing)) {
+      if (existing) {
         statusMap[student.id] = {
           status: existing.status,
           notes: existing.notes || ''
@@ -3476,8 +3528,19 @@ export default function HomeroomPanel({
       );
     });
 
-    // 2. Jurnal KBM pada tanggal terpilih untuk kelas ini
+    // 2. Jurnal KBM nyata pada tanggal terpilih untuk kelas ini (abaikan jurnal auto-absent)
     const dateClassJournals = (allTeachingJournalsList || []).filter((j: any) => {
+      if (!j) return false;
+      const idStr = String(j.id || '').trim();
+      const topicStr = String(j.topic || '').trim().toLowerCase();
+      const notesStr = String(j.notes || '').trim().toLowerCase();
+      if (
+        idStr.startsWith('tj-absent-') ||
+        topicStr.startsWith('tidak hadir (guru tidak mengisi jurnal kbm') ||
+        (notesStr === 'tidak hadir' && (!Array.isArray(j.attendance) || j.attendance.length === 0))
+      ) {
+        return false;
+      }
       const jDate = (j.date || '').substring(0, 10);
       const jClass = (j.className || '').trim().toLowerCase();
       return jDate === normDate && jClass === targetClassNorm;
@@ -3544,7 +3607,7 @@ export default function HomeroomPanel({
       }
     };
 
-    // A. Ambil HANYA guru mapel yang memiliki jadwal mengajar di kelas ini pada HARI TERPILIH (selectedDayName)
+    // A. Ambil guru mapel yang memiliki jadwal mengajar di kelas ini pada HARI TERPILIH (selectedDayName)
     (classSchedules || []).forEach(sched => {
       const isSameClass = (sched.className || '').trim().toLowerCase() === targetClassNorm;
       const isSameDay = (sched.day || '').trim().toLowerCase() === selectedDayName.toLowerCase();
@@ -3553,7 +3616,23 @@ export default function HomeroomPanel({
       }
     });
 
-    // B. Lengkapi nama guru hanya untuk mapel yang memang terjadwal hari ini tetapi belum terisi nama gurunya di jadwal
+    // A2. Sertakan juga guru mapel yang sudah melakukan absensi pada tanggal tersebut (dari subjectNotes maupun jurnal KBM)
+    rawDateClassLogs.forEach(l => {
+      if (Array.isArray(l.subjectNotes)) {
+        l.subjectNotes.forEach((sn: any) => {
+          if (sn && sn.subject && !isIgnoredActivity(sn.subject)) {
+            registerSubjectTeacher(sn.subject, sn.teacherName, selectedDayName);
+          }
+        });
+      }
+    });
+    dateClassJournals.forEach((j: any) => {
+      if (j && j.subject && !isIgnoredActivity(j.subject)) {
+        registerSubjectTeacher(j.subject, j.teacherName, selectedDayName, j.jamKe);
+      }
+    });
+
+    // B. Lengkapi nama guru hanya untuk mapel yang memang terdaftar hari ini tetapi belum terisi nama gurunya
     const allTeachersPool = [
       ...(subjectTeachers || []),
       ...(homerooms || [])
@@ -3577,7 +3656,7 @@ export default function HomeroomPanel({
       });
     });
 
-    // C. Evaluasi status Sudah/Belum absen pada selectedDate untuk masing-masing guru mapel yang terjadwal hari itu
+    // C. Evaluasi status Sudah/Belum absen pada selectedDate untuk masing-masing guru mapel
     const subjectItems: SubjectTeacherStatusItem[] = Array.from(subjectEntriesMap.entries()).map(([normKey, info]) => {
       const teacherList = Array.from(info.teacherNames);
       const teacherDisplay = teacherList.length > 0 ? teacherList.join(', ') : 'Belum Ditentukan';
@@ -3656,6 +3735,163 @@ export default function HomeroomPanel({
     classSchedules,
     subjectTeachers,
     homerooms,
+    masterCurriculumSubjects
+  ]);
+
+  // Gabungkan seluruh status & catatan absensi guru mapel per siswa pada tanggal terpilih
+  // (dari seluruh log attendanceLogs siswa tersebut + seluruh teachingJournals kelas pada tanggal tersebut)
+  const studentSubjectNotesByDateMap = useMemo(() => {
+    const resultMap = new Map<string, Array<{ subject: string; teacherName: string; status: string; notes: string }>>();
+    const normDate = (selectedDate || '').substring(0, 10);
+    const targetClassNorm = (currentTeacher.className || '').trim().toLowerCase();
+
+    // 1. Kumpulkan seluruh log absensi pada tanggal terpilih
+    const logsOnDate = attendanceLogs.filter(l => (l.date || '').substring(0, 10) === normDate);
+
+    // 2. Kumpulkan seluruh jurnal KBM nyata pada tanggal terpilih untuk kelas ini
+    const sourceJournals = allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList;
+    const journalsOnDateForClass = (sourceJournals || []).filter((j: any) => {
+      if (!j) return false;
+      const idStr = String(j.id || '').trim();
+      const topicStr = String(j.topic || '').trim().toLowerCase();
+      const notesStr = String(j.notes || '').trim().toLowerCase();
+      if (
+        idStr.startsWith('tj-absent-') ||
+        topicStr.startsWith('tidak hadir (guru tidak mengisi jurnal kbm') ||
+        (notesStr === 'tidak hadir' && (!Array.isArray(j.attendance) || j.attendance.length === 0))
+      ) {
+        return false;
+      }
+      const jDate = (j.date || '').substring(0, 10);
+      const jClass = (j.className || '').trim().toLowerCase();
+      return jDate === normDate && jClass === targetClassNorm;
+    });
+
+    // 3. Kumpulkan daftar guru mapel yang sudah melakukan absensi di kelas ini pada tanggal terpilih
+    // (sebagai fallback jika ada siswa baru di kelas yang log-nya belum memiliki entri mapel tersebut)
+    const classActiveSubjectsMap = new Map<string, { subject: string; teacherName: string }>();
+    logsOnDate.forEach(l => {
+      const isClassStudent = classStudents.some(s =>
+        s.id === l.studentId ||
+        (s.nis && s.nis === l.studentId) ||
+        (l.studentId && l.studentId.toLowerCase() === s.id.toLowerCase()) ||
+        (l.studentName && s.name && l.studentName.trim().toLowerCase() === s.name.trim().toLowerCase())
+      );
+      if (!isClassStudent || !Array.isArray(l.subjectNotes)) return;
+      l.subjectNotes.forEach((sn: any) => {
+        if (!sn || !sn.subject) return;
+        const canonicalSubj = toMasterSubjectName(sn.subject.trim(), masterCurriculumSubjects);
+        const normKey = normalizeSubject(canonicalSubj).toLowerCase();
+        if (normKey && !classActiveSubjectsMap.has(normKey)) {
+          classActiveSubjectsMap.set(normKey, {
+            subject: sn.subject.trim(),
+            teacherName: sn.teacherName || ''
+          });
+        }
+      });
+    });
+
+    classStudents.forEach(student => {
+      const mergedList: Array<{ subject: string; teacherName: string; status: string; notes: string }> = [];
+
+      const upsertSubjectNote = (rawEntry: { subject: string; teacherName?: string; status?: string; notes?: string }, isFallback: boolean = false) => {
+        if (!rawEntry || !rawEntry.subject || !rawEntry.subject.trim()) return;
+        const cleanSubj = rawEntry.subject.trim();
+        const existingIdx = mergedList.findIndex(item => isSameSubject(item.subject, cleanSubj));
+        if (existingIdx === -1) {
+          mergedList.push({
+            subject: cleanSubj,
+            teacherName: rawEntry.teacherName || '',
+            status: rawEntry.status || 'Hadir',
+            notes: rawEntry.notes || ''
+          });
+        } else if (!isFallback) {
+          const cur = mergedList[existingIdx];
+          if ((!cur.notes && rawEntry.notes) || (cur.status === 'Hadir' && rawEntry.status && rawEntry.status !== 'Hadir') || (!cur.teacherName && rawEntry.teacherName)) {
+            mergedList[existingIdx] = {
+              subject: cur.subject,
+              teacherName: rawEntry.teacherName || cur.teacherName,
+              status: (cur.status === 'Hadir' && rawEntry.status) ? rawEntry.status : cur.status,
+              notes: rawEntry.notes || cur.notes
+            };
+          }
+        }
+      };
+
+      // A. Ambil dari seluruh log attendanceLogs yang cocok dengan siswa ini pada tanggal terpilih
+      const studentLogs = logsOnDate.filter(log =>
+        log.studentId === student.id ||
+        (student.nis && log.studentId === student.nis) ||
+        (log.studentId && log.studentId.toLowerCase() === student.id.toLowerCase()) ||
+        (log.studentName && student.name && log.studentName.trim().toLowerCase() === student.name.trim().toLowerCase() &&
+          (!log.className || log.className.trim().toLowerCase() === targetClassNorm))
+      );
+
+      studentLogs.forEach(log => {
+        if (Array.isArray(log.subjectNotes)) {
+          log.subjectNotes.forEach((sn: any) => {
+            if (sn && sn.subject) {
+              upsertSubjectNote({
+                subject: sn.subject,
+                teacherName: sn.teacherName || '',
+                status: sn.status || 'Hadir',
+                notes: sn.notes || ''
+              }, false);
+            }
+          });
+        }
+      });
+
+      // B. Gabungkan dari seluruh jurnal KBM kelas pada tanggal terpilih
+      journalsOnDateForClass.forEach((j: any) => {
+        if (!j || !j.subject) return;
+        const attList = Array.isArray(j.attendance) ? j.attendance : [];
+        const matchedAtt = attList.find((a: any) =>
+          a &&
+          (a.studentId === student.id ||
+            (student.nis && a.studentId === student.nis) ||
+            (a.studentId && a.studentId.toLowerCase() === student.id.toLowerCase()) ||
+            (a.studentName && student.name && a.studentName.trim().toLowerCase() === student.name.trim().toLowerCase()))
+        );
+        if (matchedAtt) {
+          upsertSubjectNote({
+            subject: j.subject,
+            teacherName: j.teacherName || '',
+            status: matchedAtt.status || 'Hadir',
+            notes: matchedAtt.notes || ''
+          }, false);
+        } else if (attList.length > 0) {
+          // Guru mapel sudah melakukan absensi pada kelas ini di tanggal tersebut
+          upsertSubjectNote({
+            subject: j.subject,
+            teacherName: j.teacherName || '',
+            status: 'Hadir',
+            notes: ''
+          }, true);
+        }
+      });
+
+      // C. Pastikan jika guru mapel sudah tercatat mengabsen kelas ini pada tanggal tersebut, status tetap tampil konsisten
+      classActiveSubjectsMap.forEach(activeSub => {
+        upsertSubjectNote({
+          subject: activeSub.subject,
+          teacherName: activeSub.teacherName,
+          status: 'Hadir',
+          notes: ''
+        }, true);
+      });
+
+      resultMap.set(student.id, mergedList);
+    });
+
+    return resultMap;
+  }, [
+    selectedDate,
+    currentTeacher.className,
+    attendanceLogs,
+    classStudents,
+    allTeachingJournalsList,
+    teachingJournalsList,
     masterCurriculumSubjects
   ]);
 
@@ -5024,10 +5260,7 @@ Wassalamualaikum Wr. Wb.
                                 <div className="font-bold text-slate-800">{student.name}</div>
                                 <div className="text-[10px] text-slate-400 font-mono mt-0.5">NIS: {student.nis}</div>
                                 {(() => {
-                                  const matchingLog = attendanceLogs.find(
-                                    (log) => log.studentId === student.id && log.date === selectedDate
-                                  );
-                                  const subjectNotesList = matchingLog?.subjectNotes || [];
+                                  const subjectNotesList = studentSubjectNotesByDateMap.get(student.id) || [];
                                   if (subjectNotesList.length === 0) return null;
                                   return (
                                     <div className="mt-2 flex flex-col gap-1 max-w-sm">
@@ -5100,10 +5333,7 @@ Wassalamualaikum Wr. Wb.
                             <span className="font-bold text-slate-800 text-sm">{student.name}</span>
                             <span className="text-[10px] text-slate-400 font-mono font-medium">NIS: {student.nis}</span>
                             {(() => {
-                              const matchingLog = attendanceLogs.find(
-                                (log) => log.studentId === student.id && log.date === selectedDate
-                              );
-                              const subjectNotesList = matchingLog?.subjectNotes || [];
+                              const subjectNotesList = studentSubjectNotesByDateMap.get(student.id) || [];
                               if (subjectNotesList.length === 0) return null;
                               return (
                                 <div className="mt-2 flex flex-col gap-1">

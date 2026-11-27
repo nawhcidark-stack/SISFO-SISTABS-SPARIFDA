@@ -3895,6 +3895,178 @@ export default function HomeroomPanel({
     masterCurriculumSubjects
   ]);
 
+  const [recordViewTab, setRecordViewTab] = useState<'form' | 'unrecorded_dates'>('form');
+  const [unrecordedMonthFilter, setUnrecordedMonthFilter] = useState<string>('ALL');
+
+  // Hitung daftar tanggal sesuai jadwal yang sudah lewat (date < todayStr) namun Wali Kelas belum mengisi absensi harian siswa
+  const unrecordedHomeroomDates = useMemo(() => {
+    const className = (currentTeacher.className || '').trim();
+    if (!className) return [];
+
+    // 1. Tentukan hari-hari jadwal aktif kelas ini beserta daftar mata pelajarannya
+    const dayScheduleSubjectsMap = new Map<string, string[]>();
+    classSchedules.forEach(s => {
+      if ((s.className || '').trim() === className && s.day) {
+        const day = s.day.trim();
+        if (!dayScheduleSubjectsMap.has(day)) {
+          dayScheduleSubjectsMap.set(day, []);
+        }
+        const subj = (s.subject || '').trim();
+        if (subj && !dayScheduleSubjectsMap.get(day)!.includes(subj)) {
+          dayScheduleSubjectsMap.get(day)!.push(subj);
+        }
+      }
+    });
+
+    // Jika kelas belum punya jadwal di classSchedules, fallback Senin-Sabtu
+    const activeDayNames = dayScheduleSubjectsMap.size > 0
+      ? new Set<string>(Array.from(dayScheduleSubjectsMap.keys()))
+      : new Set<string>(['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']);
+
+    // 2. Kumpulkan tanggal di mana Wali Kelas SUDAH melakukan absensi untuk siswa di kelas ini
+    const classStudentIds = new Set(classStudents.map(s => s.id));
+    const homeroomRecordedDates = new Set<string>();
+    const subjectTeacherRecordedCountByDate = new Map<string, Set<string>>();
+
+    attendanceLogs.forEach(log => {
+      const logClass = (log.className || '').trim();
+      const belongsToClass = logClass === className || (log.studentId && classStudentIds.has(log.studentId));
+      if (!belongsToClass || !log.date) return;
+
+      if (isHomeroomAttendanceRecorded(log)) {
+        homeroomRecordedDates.add(log.date);
+      }
+
+      if (Array.isArray(log.subjectNotes) && log.subjectNotes.length > 0) {
+        if (!subjectTeacherRecordedCountByDate.has(log.date)) {
+          subjectTeacherRecordedCountByDate.set(log.date, new Set());
+        }
+        const subSet = subjectTeacherRecordedCountByDate.get(log.date)!;
+        log.subjectNotes.forEach(sn => {
+          if (sn && sn.subject) subSet.add(sn.subject.trim().toLowerCase());
+        });
+      }
+    });
+
+    const combinedJournals = allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList;
+    combinedJournals.forEach(j => {
+      if ((j.className || '').trim() === className && j.date && j.subject && !String(j.id || '').startsWith('tj-absent-')) {
+        if (!subjectTeacherRecordedCountByDate.has(j.date)) {
+          subjectTeacherRecordedCountByDate.set(j.date, new Set());
+        }
+        subjectTeacherRecordedCountByDate.get(j.date)!.add(j.subject.trim().toLowerCase());
+      }
+    });
+
+    // 3. Tentukan rentang tanggal mulai dari awal tahun ajaran / tanggal log absensi sekolah paling awal di semester aktif
+    let startDateStr = '2026-07-20';
+    attendanceLogs.forEach(l => {
+      if (l.date && l.date >= '2026-07-01' && l.date < startDateStr) {
+        startDateStr = l.date;
+      }
+    });
+    if (startDateStr >= todayStr) {
+      startDateStr = '2026-07-20';
+    }
+
+    const dayNamesId = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const monthNamesId = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+
+    const results: Array<{
+      date: string;
+      dayName: string;
+      formattedDate: string;
+      monthKey: string;
+      monthLabel: string;
+      scheduledSubjects: string[];
+      subjectTeachersRecordedCount: number;
+      daysAgo: number;
+    }> = [];
+
+    const [startY, startM, startD] = startDateStr.split('-').map(Number);
+    const [todayY, todayM, todayD] = todayStr.split('-').map(Number);
+    if (!startY || !todayY) return [];
+
+    const startUtc = Date.UTC(startY, startM - 1, startD, 12, 0, 0);
+    const todayUtc = Date.UTC(todayY, todayM - 1, todayD, 12, 0, 0);
+    const oneDayMs = 24 * 60 * 60 * 1000;
+
+    // Iterasi dari kemarin (todayUtc - oneDayMs) mundur ke startUtc (agar terurut terbaru -> terlama)
+    for (let curUtc = todayUtc - oneDayMs; curUtc >= startUtc; curUtc -= oneDayMs) {
+      const dt = new Date(curUtc);
+      const yyyy = dt.getUTCFullYear();
+      const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getUTCDate()).padStart(2, '0');
+      const dStr = `${yyyy}-${mm}-${dd}`;
+      const dayName = dayNamesId[dt.getUTCDay()];
+
+      if (!activeDayNames.has(dayName)) continue;
+      if (homeroomRecordedDates.has(dStr)) continue;
+
+      const monthIdx = dt.getUTCMonth();
+      const monthKey = `${yyyy}-${mm}`;
+      const monthLabel = `${monthNamesId[monthIdx]} ${yyyy}`;
+      const formattedDate = `${dayName}, ${dt.getUTCDate()} ${monthNamesId[monthIdx]} ${yyyy}`;
+      const scheduledSubjects = dayScheduleSubjectsMap.get(dayName) || [];
+      const subjectTeachersRecordedCount = subjectTeacherRecordedCountByDate.get(dStr)?.size || 0;
+      const daysAgo = Math.round((todayUtc - curUtc) / oneDayMs);
+
+      results.push({
+        date: dStr,
+        dayName,
+        formattedDate,
+        monthKey,
+        monthLabel,
+        scheduledSubjects,
+        subjectTeachersRecordedCount,
+        daysAgo,
+      });
+    }
+
+    return results;
+  }, [
+    currentTeacher.className,
+    classSchedules,
+    classStudents,
+    attendanceLogs,
+    allTeachingJournalsList,
+    teachingJournalsList,
+    todayStr
+  ]);
+
+  const unrecordedMonthsList = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; count: number }>();
+    unrecordedHomeroomDates.forEach(item => {
+      const existing = map.get(item.monthKey);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        map.set(item.monthKey, { key: item.monthKey, label: item.monthLabel, count: 1 });
+      }
+    });
+    return Array.from(map.values());
+  }, [unrecordedHomeroomDates]);
+
+  const filteredUnrecordedHomeroomDates = useMemo(() => {
+    if (unrecordedMonthFilter === 'ALL') return unrecordedHomeroomDates;
+    return unrecordedHomeroomDates.filter(item => item.monthKey === unrecordedMonthFilter);
+  }, [unrecordedHomeroomDates, unrecordedMonthFilter]);
+
+  const handleJumpToUnrecordedDate = (dateStr: string) => {
+    setSelectedDate(dateStr);
+    setActiveSubTab('record');
+    setRecordViewTab('form');
+    setTimeout(() => {
+      const formEl = document.getElementById('lembar-absensi-harian-form');
+      if (formEl) {
+        formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 80);
+  };
+
   // Filtered Student Development Logs
   const filteredDevLogs = useMemo(() => {
     return devLogsList.filter(log => {
@@ -4763,24 +4935,43 @@ Wassalamualaikum Wr. Wb.
             <div className="flex flex-col gap-1.5 p-1 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
               <button
                 id="tab-btn-record"
-                onClick={() => setActiveSubTab('record')}
-                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center whitespace-nowrap overflow-hidden focus:outline-none ${
+                onClick={() => {
+                  setActiveSubTab('record');
+                  setRecordViewTab('form');
+                }}
+                className={`py-2 px-2.5 text-xs font-bold rounded-lg cursor-pointer transition-all duration-300 ease-in-out flex items-center justify-between whitespace-nowrap overflow-hidden focus:outline-none ${
                   activeSubTab === 'record'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
-                title="Pengisian Absensi"
+                title={unrecordedHomeroomDates.length > 0 ? `Pengisian Absensi (${unrecordedHomeroomDates.length} tanggal jadwal lewat belum diabsen)` : 'Pengisian Absensi'}
               >
-                <span className="text-sm shrink-0 w-5 text-center">📝</span>
-                <span
-                  className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
-                    isSidebarCollapsed
-                      ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
-                      : 'max-w-[180px] opacity-100 translate-x-0 ml-2'
-                  }`}
-                >
-                  Pengisian Absensi
-                </span>
+                <div className="flex items-center min-w-0">
+                  <span className="text-sm shrink-0 w-5 text-center relative">
+                    📝
+                    {isSidebarCollapsed && unrecordedHomeroomDates.length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
+                    )}
+                  </span>
+                  <span
+                    className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-in-out ${
+                      isSidebarCollapsed
+                        ? 'max-w-0 opacity-0 -translate-x-4 ml-0'
+                        : 'max-w-[150px] opacity-100 translate-x-0 ml-2'
+                    }`}
+                  >
+                    Pengisian Absensi
+                  </span>
+                </div>
+                {!isSidebarCollapsed && unrecordedHomeroomDates.length > 0 && (
+                  <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[9.5px] font-black shrink-0 ${
+                    activeSubTab === 'record'
+                      ? 'bg-rose-500 text-white shadow-2xs'
+                      : 'bg-rose-100 text-rose-700 border border-rose-200'
+                  }`}>
+                    {unrecordedHomeroomDates.length}
+                  </span>
+                )}
               </button>
               <button
                 id="tab-btn-jadwal"
@@ -5105,6 +5296,295 @@ Wassalamualaikum Wr. Wb.
         <div className="flex-1 min-w-0 w-full font-sans flex flex-col gap-4 transition-all duration-300 ease-in-out">
           {activeSubTab === 'record' && (
             <>
+              {/* Navigasi Tab Internal Lembar Absensi & Notifikasi Tanggal Belum Diabsen Wali Kelas */}
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-xs p-3 flex flex-col gap-3 text-left">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setRecordViewTab('form')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${
+                        recordViewTab === 'form'
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <span>📝 Lembar Absensi Harian</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                        recordViewTab === 'form' ? 'bg-slate-700 text-slate-100' : 'bg-slate-200 text-slate-700'
+                      }`}>
+                        {selectedDate}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRecordViewTab('unrecorded_dates')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${
+                        recordViewTab === 'unrecorded_dates'
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : unrecordedHomeroomDates.length > 0
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <span className="relative flex items-center">
+                        🔔
+                        {unrecordedHomeroomDates.length > 0 && recordViewTab !== 'unrecorded_dates' && (
+                          <span className=" -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 animate-ping absolute" />
+                        )}
+                      </span>
+                      <span>Tanggal Belum Diabsen Wali Kelas</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                        recordViewTab === 'unrecorded_dates'
+                          ? 'bg-white text-rose-700'
+                          : unrecordedHomeroomDates.length > 0
+                            ? 'bg-rose-600 text-white shadow-2xs'
+                            : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {unrecordedHomeroomDates.length > 0 ? `${unrecordedHomeroomDates.length} Hari` : 'Lengkap'}
+                      </span>
+                    </button>
+                  </div>
+
+                  {unrecordedHomeroomDates.some(d => d.date === selectedDate) && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-extrabold">
+                      <AlertCircle size={13} className="text-amber-600 shrink-0" />
+                      <span>Tanggal ini ({selectedDate}) belum diabsen Wali Kelas</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Banner Notifikasi Cepat saat berada di tab Lembar Absensi dan ada tanggal jadwal lewat yang belum diabsen */}
+                {recordViewTab === 'form' && unrecordedHomeroomDates.length > 0 && (
+                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-rose-50 via-amber-50/70 to-rose-50/60 border border-rose-200/90 flex flex-col gap-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-start gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                          <AlertCircle size={15} />
+                        </div>
+                        <div>
+                          <div className="text-xs font-extrabold text-rose-950 flex items-center gap-1.5 flex-wrap">
+                            <span>Notifikasi Jadwal Absensi Terlewat:</span>
+                            <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black">
+                              {unrecordedHomeroomDates.length} Tanggal Belum Diabsen Wali Kelas
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-rose-800/90 font-medium mt-0.5">
+                            Klik langsung salah satu tanggal di bawah ini untuk membuka lembar absensi pada tanggal tersebut dan mengisi kehadiran siswa:
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setRecordViewTab('unrecorded_dates')}
+                        className="px-3 py-1.5 rounded-lg bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 text-[11px] font-extrabold transition-all cursor-pointer shrink-0 self-start sm:self-center shadow-2xs"
+                      >
+                        Lihat Semua ({unrecordedHomeroomDates.length} Tanggal) &rarr;
+                      </button>
+                    </div>
+
+                    {/* Daftar Chip Tanggal Klik Langsung (Menampilkan hingga 8 tanggal terbaru) */}
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                      {unrecordedHomeroomDates.slice(0, 8).map((item) => {
+                        const isCurrentlySelected = item.date === selectedDate;
+                        return (
+                          <button
+                            key={item.date}
+                            type="button"
+                            onClick={() => handleJumpToUnrecordedDate(item.date)}
+                            title={`Klik untuk langsung mengisi absensi tanggal ${item.formattedDate}`}
+                            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                              isCurrentlySelected
+                                ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-rose-400'
+                                : 'bg-white hover:bg-rose-600 text-rose-900 hover:text-white border-rose-200 hover:border-rose-600 shadow-2xs group'
+                            }`}
+                          >
+                            <Calendar size={11} className={isCurrentlySelected ? 'text-rose-300' : 'text-rose-500 group-hover:text-white'} />
+                            <span>{item.dayName}, {item.date}</span>
+                            {item.subjectTeachersRecordedCount > 0 && (
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
+                                isCurrentlySelected
+                                  ? 'bg-emerald-500 text-white'
+                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200 group-hover:bg-white/20 group-hover:text-white group-hover:border-transparent'
+                              }`}>
+                                {item.subjectTeachersRecordedCount} Mapel Absen
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                      {unrecordedHomeroomDates.length > 8 && (
+                        <button
+                          type="button"
+                          onClick={() => setRecordViewTab('unrecorded_dates')}
+                          className="px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 text-[10.5px] font-extrabold transition-all cursor-pointer"
+                        >
+                          +{unrecordedHomeroomDates.length - 8} tanggal lainnya...
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* TAMPILAN TAB DAFTAR TANGGAL BELUM DIABSEN WALI KELAS */}
+              {recordViewTab === 'unrecorded_dates' && (
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left flex flex-col">
+                  <div className="px-6 py-4 border-b border-slate-100 bg-rose-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="font-extrabold text-slate-900 text-sm">
+                          Daftar Tanggal Jadwal Lewat Belum Diabsen Wali Kelas — Kelas {currentTeacher.className}
+                        </h2>
+                        <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black">
+                          {unrecordedHomeroomDates.length} Hari Belum Diabsen
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-0.5 font-medium">
+                        Klik pada kartu tanggal mana saja di bawah ini untuk langsung membuka Lembar Absensi Harian Kelas pada tanggal tersebut.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setRecordViewTab('form')}
+                      className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold transition-all cursor-pointer shrink-0 self-start sm:self-center"
+                    >
+                      &larr; Kembali ke Lembar Absensi
+                    </button>
+                  </div>
+
+                  {unrecordedHomeroomDates.length === 0 ? (
+                    <div className="p-12 text-center flex flex-col items-center justify-center gap-2.5">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                        <CheckCircle size={26} />
+                      </div>
+                      <h3 className="text-sm font-extrabold text-slate-800">
+                        Semua Jadwal Absensi Wali Kelas Sudah Lengkap!
+                      </h3>
+                      <p className="text-xs text-slate-500 max-w-md">
+                        Tidak ada tanggal jadwal mengajar yang terlewat. Seluruh absensi harian siswa Kelas {currentTeacher.className} yang sudah lewat telah diisi oleh Wali Kelas.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-5 flex flex-col gap-4">
+                      {/* Filter Bulan */}
+                      <div className="flex items-center gap-1.5 flex-wrap pb-2 border-b border-slate-100">
+                        <span className="text-[10.5px] font-extrabold text-slate-400 uppercase tracking-wider mr-1">
+                          Filter Bulan:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setUnrecordedMonthFilter('ALL')}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer ${
+                            unrecordedMonthFilter === 'ALL'
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          Semua Bulan ({unrecordedHomeroomDates.length})
+                        </button>
+                        {unrecordedMonthsList.map((m) => (
+                          <button
+                            key={m.key}
+                            type="button"
+                            onClick={() => setUnrecordedMonthFilter(m.key)}
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer ${
+                              unrecordedMonthFilter === m.key
+                                ? 'bg-rose-600 text-white shadow-2xs'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                            }`}
+                          >
+                            {m.label} ({m.count})
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Grid Kartu Tanggal yang Bisa Diklik Langsung */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {filteredUnrecordedHomeroomDates.map((item) => {
+                          const isSelected = item.date === selectedDate;
+                          return (
+                            <div
+                              key={item.date}
+                              onClick={() => handleJumpToUnrecordedDate(item.date)}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleJumpToUnrecordedDate(item.date);
+                                }
+                              }}
+                              className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-3 group ${
+                                isSelected
+                                  ? 'bg-indigo-50/70 border-indigo-400 ring-2 ring-indigo-300 shadow-xs'
+                                  : 'bg-white hover:bg-rose-50/50 border-slate-200 hover:border-rose-300 shadow-2xs hover:shadow-md'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-start gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-rose-100 group-hover:bg-rose-600 text-rose-700 group-hover:text-white flex flex-col items-center justify-center shrink-0 transition-colors font-black">
+                                    <span className="text-[9px] uppercase leading-none">{item.dayName.slice(0, 3)}</span>
+                                    <span className="text-xs leading-tight mt-0.5">{item.date.split('-')[2]}</span>
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <h4 className="text-xs font-extrabold text-slate-900 group-hover:text-rose-700 transition-colors">
+                                        {item.formattedDate}
+                                      </h4>
+                                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[9.5px] font-bold font-mono">
+                                        {item.date}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                      <span className="text-[10px] font-bold text-rose-600">
+                                        &bull; {item.daysAgo === 1 ? 'Kemarin (1 hari lalu)' : `${item.daysAgo} hari yang lalu`}
+                                      </span>
+                                      {item.subjectTeachersRecordedCount > 0 ? (
+                                        <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9.5px] font-extrabold">
+                                          {item.subjectTeachersRecordedCount} Guru Mapel Sudah Mengabsen
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[9.5px] font-bold">
+                                          Belum Ada Absen Mapel
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <span className="px-2.5 py-1.5 rounded-lg bg-slate-900 group-hover:bg-rose-600 text-white text-[10px] font-extrabold shrink-0 transition-colors shadow-2xs">
+                                  Isi Absen &rarr;
+                                </span>
+                              </div>
+
+                              {item.scheduledSubjects.length > 0 && (
+                                <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[9.5px] font-extrabold text-slate-400 uppercase tracking-wider">
+                                    Jadwal Mapel ({item.dayName}):
+                                  </span>
+                                  {item.scheduledSubjects.map((subj, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[9.5px] font-semibold"
+                                    >
+                                      {subj}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Dashboard Status Absensi Wali Kelas & Guru Mata Pelajaran di Kelas Ini */}
               <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left">
                 <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between flex-wrap gap-2">
@@ -5193,7 +5673,7 @@ Wassalamualaikum Wr. Wb.
                 </div>
               </div>
 
-            <form onSubmit={handleSubmitAttendance} className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left flex flex-col">
+            <form id="lembar-absensi-harian-form" onSubmit={handleSubmitAttendance} className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left flex flex-col">
               {/* Header */}
               <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-2 select-none">
                 <div>
